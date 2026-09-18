@@ -1,1 +1,2 @@
-"""Live objects, naming, removal and the saved-workspace schema and config store."""
+"""Live objects, naming, removal, and the saved-workspace schema, persistence and
+config store."""

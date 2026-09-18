@@ -1,1 +1,2 @@
-"""Document job state, the Processes panel and last-used work records."""
+"""Document background work: admission and delivery, durable-workflow attachment,
+the job table behind the Processes panel and last-used work records."""

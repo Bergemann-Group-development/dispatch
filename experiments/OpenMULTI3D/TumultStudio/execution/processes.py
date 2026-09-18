@@ -12,11 +12,16 @@ cached load) never flickers a row.
 Server-side Python jobs (loads, line strengths, fits of broadening, normalisations, grid
 transfers) run on one thread each and are not counted in the header, which shows the
 daemon's threads in use plus those of external runs on this host over its budget.
+
+:class:`ProcessesPanel` is the document's owner of those two surfaces: it holds their
+bridges, watches the daemon through :class:`LiveJobs` and repaints when either its own
+jobs or the daemon's change. Everything else here renders a value and keeps no state.
 """
 from __future__ import annotations
 
 import html
 import json
+import logging
 from pathlib import Path
 import time
 
@@ -374,3 +379,82 @@ def recovery_html(recovery):
             f'<span class="process-state" title="{html.escape(note)}">{html.escape(note)}</span>'
             f'{logs}</div>{"".join(buttons)}</div>')
     return "".join(rows)
+
+
+class LiveJobs:
+    """The workflow daemon's queued and running jobs, watched for one document.
+
+    The view exists once this process holds a daemon connection (a Bokeh server connects
+    when it loads, a harness when it first submits). Every change the daemon reports
+    repaints the Processes panel, coalesced to one repaint per document tick, and a
+    document that has closed is not repainted at all.
+    """
+
+    def __init__(self, ctx, on_change):
+        self.ctx = ctx
+        self._on_change = on_change
+        self._view = None
+        self._unwatch = None
+        self._repaint = False
+
+    def view(self):
+        """The daemon's live view, reconnecting and rewatching when it changed; ``None``
+        when the daemon cannot be reached (the reason is logged, not shown)."""
+        from tumult.synthesis import daemon as workflow_daemon
+        try:
+            view = workflow_daemon.live_jobs()
+        except (OSError, workflow_daemon.DaemonError):
+            logging.getLogger("tumultstudio.jobs").warning(
+                "The workflow daemon cannot be reached", exc_info=True)
+            return None
+        if view is not None and view is not self._view:
+            if self._unwatch is not None:
+                self._unwatch()
+            self._view, self._unwatch = view, view.watch(self._event)
+        return view
+
+    def get(self, job_id):
+        """The daemon's summary of ``job_id``, or ``None``."""
+        view = self.view()
+        return view.get(job_id) if view is not None else None
+
+    def _event(self, event):
+        if self.ctx.closed or self._repaint:
+            return
+        self._repaint = True
+
+        def apply():
+            self._repaint = False
+            self._on_change()
+        self.ctx.schedule(apply)
+
+    def close(self):
+        """Stop watching (the document is closing)."""
+        if self._unwatch is not None:
+            self._unwatch()
+
+
+class ProcessesPanel:
+    """The Processes panel of one document: its bridges, the daemon jobs it lists beside
+    this document's own, and the repaint that keeps them current."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+        # named so a harness can read what the panel shows
+        self._body = ctx.bridges.html("processes", name="processes")
+        self._usage = ctx.bridges.html("processes-usage", name="processes-usage")
+        self.live = LiveJobs(ctx, self.repaint)
+
+    def repaint(self):
+        view = self.live.view()
+        self._body.value = processes_html(self.ctx.jobs, view, self.ctx.recovery)
+        self._usage.value = usage_html(view)
+
+    @property
+    def body_html(self):
+        """What the panel currently shows (the first paint's template variable)."""
+        return self._body.value
+
+    @property
+    def usage_html(self):
+        return self._usage.value

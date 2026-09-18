@@ -1,8 +1,11 @@
 """AppContext - the one shared services object for the TumultStudio GUI.
 
-``app.build`` creates the context first and installs the document-level services on it
-as they come into existence; every tool is then built against the context rather than a
-bundle of closures, and cross-tool reactions go through its event bus:
+``app.build`` creates the context first and composes the document's services onto it as
+they come into existence: the :class:`~.execution.delivery.DeliveryService` installs the
+submit entry points, the :class:`~.execution.workflows.WorkflowService` the durable-
+workflow ones, and the :class:`~.workspace.persistence.WorkspacePersistence` the
+workspace ones. Every tool is then built against the context rather than a bundle of
+closures, and cross-tool reactions go through its event bus:
 
 * ``ctx.bridges`` - the shared :class:`htmlbridge.BridgeSet`; each tool creates and
   owns its hidden server->client bridges here (they are all collected into the single
@@ -17,8 +20,9 @@ bundle of closures, and cross-tool reactions go through its event bus:
 * ``ctx.notify``  - the footer status message (installed once the footer bridge exists;
   safe to call before that - it no-ops).
 * ``ctx.run_busy`` / ``ctx.schedule`` / ``ctx.submit`` - deferred-work helpers
-  (``submit`` is the background loader ``app.load_async``: a document-owned job on the
-  IO pool, cancelled when the session closes unless admitted as detached).
+  (``submit`` is :meth:`~.execution.delivery.DeliveryService.submit`: a document-owned
+  job on the CPU-budgeted pool, cancelled when the session closes unless admitted as
+  detached).
 * ``ctx.submit_io`` - the same for work that waits on the network or disk (a grid
   download), on the IO pool rather than the CPU-budgeted one.
 * ``ctx.submit_operation`` - queue one public operation of :mod:`tumult.synthesis.tasks`
@@ -38,7 +42,9 @@ bundle of closures, and cross-tool reactions go through its event bus:
   delivery for another generation is dropped. ``advance_generation`` marks a workspace
   boundary (a session load).
 * ``ctx.restore_workspace`` - load a saved workspace slot as one document operation
-  (see ``session.py`` for the schema and the load policy).
+  (:mod:`workspace.persistence`; ``session.py`` holds the schema and the load policy).
+  ``ctx.workspace_changed`` tells that owner the live workspace moved, which is what
+  keeps the autosave slot current.
 * ``ctx.busy``    - raise/lower the footer progress bar without deferring anything, for
   work that already owns a tick of its own (``run_busy`` is this plus the deferral).
 * ``ctx.removal`` - the :class:`removal.Removal` every sidebar remove button requests
@@ -79,19 +85,19 @@ class AppContext:
         self.notify = lambda *a, **k: None
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
-        self.workspace_changed = lambda: None  # lightweight dirty notification; by main
+        self.workspace_changed = lambda: None  # dirty notification; by persistence
         self.submit = None
         self.submit_io = None
-        self.submit_operation = None  # (name, operation, request, on_done, ...) -> Job; by main
+        self.submit_operation = None  # (name, operation, request, on_done, ...) -> Job; by workflows
         # a tool's delivery of a record of its kind that this document did not submit
         # (a reconnect, a loaded slot): operation name -> fn(result, handle) for the finished
         # result and fn(snapshot, handle) for an intermediate one; tools register both
         self.task_importers = {}
         self.task_progress = {}
-        self.restore_workspace = None  # (snapshot, name, workflows) -> LoadReport; by main
-        self.discover_workflows = None  # () -> offered ids; by main
-        self.attach_workflow = None     # (id) -> Job | None; by main
-        self.import_workflow = None     # (id) -> future | None; by main
+        self.restore_workspace = None  # (snapshot, name, workflows) -> LoadReport; by persistence
+        self.discover_workflows = None  # () -> offered ids; by workflows
+        self.attach_workflow = None     # (id) -> Job | None; by workflows
+        self.import_workflow = None     # (id) -> future | None; by workflows
         self.execution = None       # shared dispatch service; bound by main
         self.removal = None         # removal.Removal; by main
         self._subscribers = {}

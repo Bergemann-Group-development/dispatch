@@ -7,17 +7,14 @@ import itertools
 from copy import deepcopy
 import logging
 import os
-import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 import astropy.units as u
-import numpy as np
 from bokeh.io import curdoc
 from bokeh.layouts import column
 
-from tumult.spectrum_io import Spectrum, load_spectrum, load_file, is_run, load_run
+from tumult.spectrum_io import Spectrum, load_file, is_run, load_run
 from .spectrum.canvas import SpectrumCanvas, DASH_CSS, LINE
 from .context import AppContext
 from .ui.controls import Field, Form, FORM_SCRIPT, NUM_INPUT_SCRIPT
@@ -37,44 +34,31 @@ from .synthesis.synthmodal import SynthModal
 from .synthesis.synthsetup import ATMOS_SCRIPT, SynthSetup
 from .analysis.abundancetool import AbundanceTool
 from .analysis.abundwizard import ANALYSIS_SCRIPT, PROFILES  # (shared EW-profile choices)
-from .atoms.atomtool import AtomTool, AtomObject
+from .atoms.atomtool import AtomTool
 from .analysis.abundcorrtool import AbundCorrTool
 from .analysis.ionbalance import IonBalanceTool
 from .workspace import naming
 from .workspace.removal import Removal, register_workspace as register_removals
 from .workspace.editmenu import EditMenu, Target as EditTarget
-from tumult.synthesis import workflows as synth  # (CancelToken/CancelledError for cancellable loads)
-from tumult.synthesis import submit_operation as submit_operation_record
-from tumult.synthesis import submission  # (open workflows on reconnect)
-from tumult.synthesis import daemon as workflow_daemon
+from tumult.synthesis import workflows as synth  # (execution_root of the configured prefs)
 from .preferences.synthprefs import PREF_LABELS, load_prefs, _resolve_path  # (the configured workflow root)
 from .ui.filepicker import FilePicker
 from .ui.toolmanager import ToolManager
-from .workspace import session
-from .workspace.session import (Workspace, SpectrumSnap, MaskSnap, AtomSnap, ResultsSnap, ViewSnap,
-                     FilterSnap, FocusSnap, ToolsSnap, PreparedWorkspace, PreparedSpectrum,
-                     PreparedAtom, FOCUS_TOOL, RESULT_TOOLS)
-from .ui.htmlbridge import BridgeSet, pulse, toggle
-from .execution.jobs import (ExternalRun, Job, Recoverable, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED,
-                  CANCELLED)
-from .execution import processes
-from .execution.processes import processes_html
+from .workspace.session import FOCUS_TOOL, RESULT_TOOLS
+from .workspace.persistence import WorkspaceParts, WorkspacePersistence
+from .ui.htmlbridge import BridgeSet, toggle
+from .execution.delivery import DeliveryService
+from .execution.processes import ProcessesPanel
+from .execution.workflows import WorkflowService
 from .ui.debounce import Trailing
-from .execution.latestwork import LatestWork
 from .ui.units import X_UNITS, Y_UNITS, to_range
 from tumult import linestrength
-from tumult.synthesis.runtime import (IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC,
+from tumult.synthesis.runtime import (WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC,
                                       get_runtime as _get_runtime)
-from .profiling import profiled
 from .workspace import store
 
 
 HERE = Path(__file__).parent          # the TumultStudio package directory
-_nonce_counter = itertools.count()
-
-
-def _nonce():
-    return next(_nonce_counter)
 
 
 # how long the view has to hold still before the visible band's line strengths are computed
@@ -115,28 +99,11 @@ def _load_obj(obj):
     return load_run(obj.path) if obj.kind == "run" else load_file(obj.path)
 
 
-def sessions_html(slots):
-    """Render the saved-session slots as a clickable list (game-style save menu)."""
-    if not slots:
-        return '<div class="file-empty">No saved sessions yet — make one below.</div>'
-    rows = []
-    for s in slots:
-        try:
-            when = datetime.fromtimestamp(s.get("saved_at", 0)).strftime("%Y-%m-%d %H:%M")
-        except (OSError, ValueError, OverflowError):
-            when = ""
-        sub = session.summary(s.get("snapshot")) + (f' · {when}' if when else "")
-        auto = s.get("autosave", False)     # the running document's own slot, listed first
-        rows.append(
-            f'<div class="session-item{" autosave" if auto else ""}" data-sid="{s["id"]}" '
-            f'tabindex="0" role="button" title="{"The last session, kept current while a document runs" if auto else "Select saved workspace"}">'
-            f'<i class="ti ti-{"history" if auto else "device-floppy"}"></i>'
-            f'<div class="session-meta"><span class="session-name">{html.escape(s["name"])}</span>'
-            f'<span class="session-sub">{html.escape(sub)}</span></div>'
-            f'<button class="session-del" data-sid="{s["id"]}" '
-            f'title="Delete saved workspace"><i class="ti ti-trash"></i></button>'
-            f'</div>')
-    return '<div class="session-list">' + "".join(rows) + "</div>"
+def _load_atom(path):
+    """Load a saved workspace's model atom (imported on demand: parsing an atom pulls in
+    the whole atomic-data stack, which a document that opens none never needs)."""
+    from tumult.atom import AtomClass
+    return AtomClass(str(path))
 
 
 def build_settings(canvas, on_units=None):
@@ -269,14 +236,8 @@ def build():
     ctx = AppContext(curdoc(), B, tools)
 
     objects_bridge = B.html("objects")
-    # the job list, bottom left; named so a harness can read what the panel shows
-    processes_bridge = B.html("processes", name="processes")
-    processes_usage_bridge = B.html("processes-usage", name="processes-usage")
-    # the job details and recovery modals, filled before they open
-    job_details_bridge = B.html("job-details", name="job-details")
-    job_modal = B.dialog("job-modal")
-    recovery_bridge = B.html("recovery-list", name="recovery-list")
-    recovery_modal = B.dialog("recovery-modal")
+    # the job list, bottom left, and the daemon's live jobs it also shows
+    panel = ProcessesPanel(ctx)
     inspector_bridge = B.html("inspector")
     footer_bridge = B.html("footer-info")
     # transient info messages (left of footer); named for the same reason
@@ -354,7 +315,6 @@ def build():
     atomtool = None
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
-    autosave = None         # ditto: the workspace autosave, defined with the session actions
     edit_menu = None        # ditto: the toolbar's Edit menu, built once every list exists
     jobs = ctx.jobs         # every background operation this document admitted
 
@@ -367,97 +327,6 @@ def build():
             finally:
                 toggle(loading_bridge, False)
         curdoc().add_next_tick_callback(work)
-
-    def _range(r):
-        """``[start, end]`` of a Bokeh range when it holds an explicit finite interval."""
-        lo, hi = r.start, r.end
-        if not all(isinstance(v, (int, float)) and np.isfinite(v) for v in (lo, hi)):
-            return None
-        return [float(lo), float(hi)] if lo < hi else None
-
-    def snapshot():
-        """The live workspace as a :class:`session.Workspace` dict."""
-        specs = []
-        for o in canvas.objects:
-            kind, path = o.source if o.source else (None, None)
-            if kind == "synth":
-                data, path = o.raw.to_dict(), ""
-            elif kind in ("file", "run") and path:
-                data = None
-            else:
-                continue          # nothing to restore it from
-            g = o.line.glyph
-            knots = ({"x": list(map(float, o.norm_knots[0])),
-                      "y": list(map(float, o.norm_knots[1]))}
-                     if o.norm_knots is not None else None)
-            # synth params are tiny and have no source file, so persist them; FITS metadata
-            # is large and re-read from disk on restore, so isn't stored.
-            specs.append(SpectrumSnap(
-                uid=o.uid, kind=kind, name=o.name, path=path, data=data,
-                meta=o.meta if kind == "synth" else None,
-                color=g.line_color, dash=o.dash, width=g.line_width, alpha=g.line_alpha,
-                visible=o.visible, conv=dict(o.conv), norm_knots=knots,
-                already_normalised=bool(o.already_normalised)))
-        saved_uids = {sp.uid for sp in specs}
-        spectrum_selected = canvas.selected_uid if canvas.selected_uid in saved_uids else None
-        configured = filtertool._configured
-        # only persist a low-pass cutoff when a low-pass filter actually exists
-        has_lowpass = (filtertool.method == "lowpass"
-                       and any(o.filtered is not None for o in canvas.objects))
-        focus_kind, focus_uid = focused()
-        if focus_kind == "spectrum":
-            focus_uid = spectrum_selected
-        return Workspace(
-            spectra=specs, spectrum_selected=spectrum_selected,
-            masks=MaskSnap(**mask_store.snapshot()),
-            atoms=[AtomSnap(uid=a.uid, path=a.path) for a in atomtool.atoms],
-            atom_selected=atomtool.selected_uid,
-            results={name: ResultsSnap(**w.snapshot()) for name, w in wizards.items()},
-            view=ViewSnap(xunit=canvas.xlabel, yunit=canvas.ylabel,
-                          main_x=_range(canvas.main.x_range), main_y=_range(canvas.main.y_range),
-                          nav_x=_range(canvas.nav.x_range), nav_y=_range(canvas.nav.y_range)),
-            filter=FilterSnap(
-                active=canvas.show_filtered, method=filtertool.method,
-                res=filtertool.form.value("res") if has_lowpass else None,
-                fmax=filtertool.fmax if configured else None,
-                floor=filtertool.floor if configured else None),
-            focus=FocusSnap(kind=focus_kind, uid=focus_uid),
-            tools=ToolsSnap(active=tools.active_name(), atom_tab=atomtool.tab,
-                            steps={name: w.step for name, w in wizards.items()},
-                            jumped={name: w._jumped for name, w in wizards.items()}),
-        ).to_dict()
-
-    # the daemon's running and queued jobs and its thread use, once this process holds a
-    # daemon connection (a Bokeh server connects when it loads, a harness when it first
-    # submits); each change repaints the Processes panel, coalesced per tick
-    live_view = {"view": None, "unwatch": None, "repaint": False}
-
-    def live():
-        try:
-            view = workflow_daemon.live_jobs()
-        except (OSError, workflow_daemon.DaemonError):
-            log.warning("The workflow daemon cannot be reached", exc_info=True)
-            return None
-        if view is not None and view is not live_view["view"]:
-            if live_view["unwatch"] is not None:
-                live_view["unwatch"]()
-            live_view["view"], live_view["unwatch"] = view, view.watch(_on_live_event)
-        return view
-
-    def _on_live_event(event):
-        if ctx.closed or live_view["repaint"]:
-            return
-        live_view["repaint"] = True
-
-        def apply():
-            live_view["repaint"] = False
-            repaint_processes()
-        ctx.schedule(apply)
-
-    def repaint_processes():
-        view = live()
-        processes_bridge.value = processes_html(jobs, view, ctx.recovery)
-        processes_usage_bridge.value = processes.usage_html(view)
 
     def focused():
         """``(kind, uid)`` of the object holding the single left-sidebar focus."""
@@ -472,7 +341,7 @@ def build():
 
     def update_status():
         """Refresh job/loading surfaces without invalidating scientific tool state."""
-        repaint_processes()
+        panel.repaint()
         footer_bridge.value = footer_html(canvas)
         active = bool(jobs.active)
         toggle(loading_bridge, active)
@@ -502,14 +371,19 @@ def build():
             abundancetool.refresh()  # keep the abundance modal's reference selector in sync
         if ionbaltool is not None:
             ionbaltool.refresh()     # ditto for the balance modal's target selector
-        if autosave is not None:
-            autosave()               # the workspace changed: keep the autosave slot current
+        ctx.workspace_changed()      # the workspace changed: keep the autosave slot current
 
     canvas = SpectrumCanvas(on_change=update_all)  # empty until a spectrum is opened
     ctx.canvas = canvas
     ctx.notify = notify
     ctx.run_busy = run_busy
     ctx.busy = lambda on: toggle(loading_bridge, bool(on))
+    # Background work: a Processes row now, the outcome delivered on the document. The
+    # service installs ctx.submit / ctx.submit_io; `load_async` is its plain-pool entry
+    # point, used by the loads and fits this module still composes.
+    delivery = DeliveryService(ctx, panel, on_status=update_status)
+    load_async = delivery.load_async
+    ctx.execution = _get_runtime()
 
     def edit_fit():
         """Edit-tab "Fit to target": broaden the selected (model) spectrum to best match
@@ -740,8 +614,11 @@ def build():
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
         synth_modal.refresh_cache()  # the new run is now in the cache listing
 
-    # every synthesis and every fit goes through ctx.submit_operation (durable,
-    # detached), installed below before any submission can run
+    # This document's attachment to the durable workflows every dispatch calculation is:
+    # the service installs ctx.submit_operation and the recovery actions, so every
+    # synthesis and every fit built below submits through the context.
+    workflows = WorkflowService(ctx, delivery, panel, add_spectrum=add_synth,
+                                workflow_roots=workflow_roots, on_status=update_status)
     synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
@@ -869,7 +746,7 @@ def build():
     tools.register("ionbal", ionbaltool)
     tools.register("atom", atomtool)
 
-    # --- session save / restore -------------------------------------------
+    # --- naming, removal and the Edit menu, across every object list ------
     # the three result lists, by the name of their tool (the session's result sections)
     wizards = {"abundance": abundancetool, "abundcorr": abundcorrtool, "ionbal": ionbaltool}
     assert tuple(wizards) == RESULT_TOOLS
@@ -922,509 +799,22 @@ def build():
         fixed_note="A model atom is identified by its file"))
     edit_menu.render()
 
-    def _restore_range(rng, vals):
-        if not vals:
-            return
-        lo, hi = vals
-        if rng.bounds:
-            lo, hi = max(lo, min(rng.bounds)), min(hi, max(rng.bounds))
-        if lo < hi:
-            rng.start, rng.end = lo, hi
-
-    def prepare_workspace(snap):
-        """Validate a slot and build its objects off the live workspace
-        (:func:`session.prepare`); :class:`SessionError` when the slot is unusable."""
-        from tumult.atom import AtomClass
-        ws = Workspace.from_dict(snap)
-        return session.prepare(ws, load_spectrum=_load_obj,
-                               load_atom=lambda path: AtomClass(str(path)), tools=wizards)
-
-    def _capture_live():
-        """The live workspace as a prepared one (no file reads): what a failed commit
-        re-applies."""
-        ws = Workspace.from_dict(snapshot())
-        by_uid = {o.uid: o for o in canvas.objects}
-        return PreparedWorkspace(
-            spectra=[PreparedSpectrum(sp, by_uid[sp.uid].raw, by_uid[sp.uid].meta)
-                     for sp in ws.spectra],
-            spectrum_selected=ws.spectrum_selected,
-            mask_sets=list(mask_store.sets), mask_current=mask_store.current_uid,
-            mask_active=mask_store.active,
-            atoms=[PreparedAtom(AtomSnap(uid=a.uid, path=a.path), a.atom)
-                   for a in atomtool.atoms],
-            atom_selected=atomtool.selected_uid,
-            results={name: (list(w.results), w.selected_uid) for name, w in wizards.items()},
-            view=ws.view, filter=ws.filter, focus=ws.focus, tools=ws.tools)
-
-    def _place_spectrum(ps):
-        snap, spec = ps.snap, ps.spectrum
-        o = canvas.add_object(spec, name=snap.name, color=snap.color, dash=snap.dash,
-                              source=(snap.kind, snap.path or None), meta=ps.meta,
-                              uid=snap.uid)
-        if snap.width is not None or snap.alpha is not None:
-            canvas.set_style(o, width=snap.width, alpha=snap.alpha)
-        knots = snap.norm_knots
-        o.already_normalised = snap.already_normalised
-        if knots and knots["x"]:
-            o.norm_knots = (np.asarray(knots["x"], float), np.asarray(knots["y"], float))
-        if o.already_normalised or (knots and knots["x"]):
-            canvas.normalise_object(o)
-        o.conv = dict(snap.conv)
-        if o.conv or o.already_normalised or (knots and knots["x"]):
-            canvas._refresh_object(o)  # apply conv/normalisation to main + nav
-        if not snap.visible:
-            canvas.toggle_object(o.uid)
-
-    def _apply_workspace(p):
-        """Replace every collection with the prepared workspace ``p`` and restore its
-        view, selections and focus. Every collection is replaced, empty ones included;
-        spectra, masks and atoms land before the results that refer to them."""
-        tools.deactivate_active()           # whatever view was open, the canvas returns
-        for w in wizards.values():
-            w.blur()
-        ctx.focus_kind = "spectrum"
-        filtertool.clear()
-        with canvas.batch_update():
-            for o in list(canvas.objects):
-                canvas.remove_object(o.uid)
-            for ps in p.spectra:
-                _place_spectrum(ps)
-        canvas.selected_uid = p.spectrum_selected     # None when none was, or it is gone
-        mask_store.restore(p.mask_sets, p.mask_current, p.mask_active)
-        atomtool.atoms = [AtomObject(path=a.snap.path, atom=a.atom, uid=a.snap.uid)
-                          for a in p.atoms]
-        atomtool.selected_uid = p.atom_selected
-        atomtool.set_tab(p.tools.atom_tab)
-        for name, w in wizards.items():
-            results, selected = p.results[name]
-            w.restore(results, selected)
-            if name in p.tools.steps:
-                w.set_step(p.tools.steps[name])
-        atomtool.render_objects()
-        v = p.view
-        if v.xunit:
-            canvas.set_xunit(v.xunit)
-        if v.yunit:
-            canvas.set_yunit(v.yunit)
-        settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the prefs form
-        f = p.filter
-        if canvas.objects and f.method == "lowpass" and f.res is not None:
-            filtertool.apply_saved_lowpass(f.res)
-            if not f.active:
-                filtertool.set_visible(False)
-        elif canvas.objects and f.fmax is not None and f.floor is not None:
-            filtertool.apply_saved(f.fmax, f.floor)
-            if not f.active:
-                filtertool.set_visible(False)
-        # the focus, through the same routing a click takes, so the panels it opens are
-        # the ones the user had; a cleared focus leaves the plain canvas
-        focus = p.focus
-        if focus.kind == "spectrum":
-            if focus.uid is not None:
-                focus_spectrum(focus.uid)
-        elif focus.kind == "linemask":
-            masktool.select_set(focus.uid)
-        elif focus.kind == "atom":
-            atomtool.select(focus.uid)
-        elif focus.uid is not None:
-            wizards[FOCUS_TOOL[focus.kind]].select_result(focus.uid)
-        for name, w in wizards.items():
-            jumped = p.tools.jumped.get(name)
-            res = w.selected()
-            if jumped is None or res is None or jumped >= len(res.lines):
-                continue
-            if w.active and w.is_focused():
-                w._jump_line(str(jumped))      # the accent, hatch and CoG of that line
-            else:
-                w._jumped = jumped             # painted when its view is next opened
-        # a panel open beside the canvas (a wizard's steps, the mask or atom view) is
-        # reopened; the range, filter and normalise gestures are transient and stay closed
-        active = p.tools.active
-        if active in ("abundance", "abundcorr", "ionbal", "linemask", "atom") \
-                and tools.active_name() != active:
-            tools.activate(active)
-        # the explicit ranges last, after everything above that moves the view
-        _restore_range(canvas.nav.x_range, v.nav_x)
-        _restore_range(canvas.main.x_range, v.main_x)
-        _restore_range(canvas.main.y_range, v.main_y)
-        _restore_range(canvas.nav.y_range, v.nav_y)
-        update_all(canvas)
-
-    def _commit_workspace(prepared, name="save", workflows=(), live=None):
-        """Commit an already-prepared slot on the document thread with rollback."""
-        if live is None:
-            live = _capture_live()
-        ctx.advance_generation()
-        cancelled = [job.name for job in jobs.active if not job.detached]
-        for job in list(jobs.active):
-            if not job.detached:
-                jobs.request_cancel(job.pid)
-        try:
-            _apply_workspace(prepared)
-        except Exception as exc:
-            logging.exception("Applying the saved workspace %r failed; restoring the "
-                              "previous workspace", name)
-            try:
-                _apply_workspace(live)
-            except Exception:
-                logging.exception("The previous workspace could not be restored either")
-                notify(f"Loading “{name}” failed: {exc}; the previous workspace could not "
-                       "be restored", level="danger", revert_ms=10000)
-                return None
-            notify(f"Loading “{name}” failed: {exc}; the previous workspace was restored",
-                   level="danger", revert_ms=10000)
-            return None
-        outcomes, gone = _reattach(workflows)
-        report = session.LoadReport(name, prepared.counts(), prepared.skipped + gone,
-                                    prepared.unresolved, cancelled, outcomes)
-        update_all(canvas)
-        for line in report.details():
-            log.warning("%s", line)
-        notify(report.message(), level="warn" if report.partial else "success",
-               revert_ms=12000 if report.partial else 4000)
-        return report
-
-    def restore_workspace(snap, name="save", workflows=()):
-        """Load a slot synchronously (used by local harnesses).
-
-        The interactive session action prepares through :func:`load_async`; both paths
-        use the same validated commit and rollback below. The commit marks a workspace
-        boundary (new generation, old result subscriptions forgotten, this document's
-        non-detached jobs cancelled) and replaces every collection. If applying fails,
-        the previous workspace is put back. The slot's ``workflows`` references then
-        replace this document's (see ``_reattach``). Returns the
-        :class:`session.LoadReport`, or ``None`` when nothing was loaded."""
-        try:
-            prepared = prepare_workspace(snap)
-            live = _capture_live()
-        except Exception as exc:      # SessionError names the field; anything else is logged
-            logging.exception("The saved workspace %r cannot be loaded", name)
-            notify(f"Could not load “{name}”: {exc}", level="danger", revert_ms=10000)
-            return None
-        return _commit_workspace(prepared, name, workflows, live)
-
-    ctx.restore_workspace = restore_workspace   # local harnesses load slots through it
-
-    # --- background work: a Processes row now, the outcome delivered on the document ----
-    def _admit(name, *, heavy=False, detached=False, path=None, delivers=True,
-               operation=None):
-        job = Job(_nonce(), name, synth.CancelToken(), ctx.generation,
-                  heavy=heavy, detached=detached, path=str(path) if path else None,
-                  delivers=delivers, operation=operation)
-        jobs.add(job)
-        # the row appears once the job has lasted SHOW_AFTER_S (see processes_html)
-        try:
-            ctx.doc.add_timeout_callback(lambda: None if job.terminal or ctx.closed
-                                         else repaint_processes(),
-                                         int(processes.SHOW_AFTER_S * 1000) + 20)
-        except Exception:
-            pass                     # the document went away
-        return job
-
-    def _admission_failed(job, exc):
-        """The pool refused the job: the same terminal path as a failure in flight, so
-        the spinner clears and the row keeps the reason."""
-        log.exception("%s (job %d) could not be admitted", job.name, job.pid)
-        jobs.settle(job.pid, FAILED, error=f"{type(exc).__name__}: {exc}")
-        notify(f"{job.name} could not start: {exc} — see Processes", level="danger")
-        update_status()
-
-    def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False,
-                   delivers=True):
-        """Run ``loader(token)`` on ``executor`` and hand its value to ``on_done`` on the
-        document thread. Returns the pool future, or ``None`` when the pool refused it.
-        ``delivers`` False marks work whose outcome stays off the canvas (a grid
-        download), so the empty state does not wait for it."""
-        job = _admit(name, heavy=executor is _SYNTH_EXEC, detached=detached, path=path,
-                     delivers=delivers)
-        token = job.token                # the loader threads it into synth.* for hard cancel
-        update_status()                  # show the queued row immediately
-
-        def work():                      # runs in a worker thread
-            if token.cancelled:          # cancelled before the worker even started
-                _settle(job, None, None, None)
-                return
-            if job.state == QUEUED:
-                job.state, job.started = RUNNING, time.time()
-                ctx.schedule(update_status)
-            try:
-                result = profiled(name, lambda: loader(token))
-            except synth.CancelledError:
-                _settle(job, None, None, None)  # token.cancelled -> dropped
-            except Exception as exc:
-                # the full traceback belongs to the server log whether or not the
-                # document that asked still exists; the row gets the concise message
-                log.exception("%s (job %d) failed", name, job.pid)
-                _settle(job, None, None, exc)
-            else:
-                _settle(job, result, on_done, None)
-
-        try:
-            job.future = executor.submit(work)
-        except Exception as exc:
-            _admission_failed(job, exc)
-            return None
-        return job.future
-
-    # Document-owned work on the CPU-budgeted pool (a line measurement, a broadening fit,
-    # a normalisation): cancelled when the session closes. Dispatch calculations do not
-    # come through here; they are durable workflows (submit_operation).
-    ctx.submit = lambda name, loader, on_done, detached=False: load_async(
-        name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
-    # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
-    ctx.submit_io = lambda name, loader, on_done: load_async(name, loader, on_done,
-                                                            delivers=False)
-    ctx.execution = _get_runtime()
-
-    def restore_workspace_async(snap, name="save", workflows=(), on_done=None):
-        """Prepare a saved workspace on a worker, then commit the current generation."""
-        try:
-            live = _capture_live()
-        except Exception as exc:
-            logging.exception("The current workspace could not be captured")
-            notify(f"Could not start loading “{name}”: {exc}", level="danger")
-            return None
-
-        def prepared(value):
-            report = _commit_workspace(value, name, workflows, live)
-            if report is not None and on_done is not None:
-                on_done(report)
-
-        return load_async(f"load {name}", lambda token: prepare_workspace(snap), prepared,
-                          executor=_EXEC)
-
-    def _import_result(handle):
-        """The delivery of a workflow this document did not submit: a synthesis adds
-        every spectrum of its result under the name and annotations recorded at
-        submission; any other operation goes to the importer its tool registered."""
-        kind = handle.kind.name
-        if kind != "synthesis.synthesize":
-            importer = ctx.task_importers.get(kind)
-            if importer is None:
-                raise ValueError(f"no tool imports a {kind} result")
-            return lambda result: importer(result, handle)
-
-        def deliver(result):
-            with canvas.batch_update():
-                for index, spec in enumerate(result.spectra, start=1):
-                    suffix = f"·{index}" if len(result.spectra) > 1 else ""
-                    add_synth(spec, handle.label + suffix, meta=handle.meta)
-        return deliver
-
-    def _import_progress(handle):
-        """The progress delivery of a tool record this document did not submit, or
-        ``None`` for a kind without progress or without a registered tool."""
-        kind = handle.kind
-        follow = ctx.task_progress.get(kind.name) if kind.progress else None
-        return None if follow is None else (lambda snapshot: follow(snapshot, handle))
-
-    def _subscribe(job, handle, on_done, on_error=None):
-        """Deliver ``handle``'s outcome to ``job`` once it settles; the delivery marks
-        the workflow imported so a later load does not offer its result again."""
-        def deliver(result):
-            on_done(result)
-            ctx.workflow_refs.mark_imported(handle.id)
-
-        def settled(handle):             # worker thread (or the canceller's), never waits
-            try:
-                result = handle.result()
-            except synth.CancelledError:
-                _settle(job, None, None, None)
-            except Exception as exc:
-                _settle(job, None, None, exc, on_error)
-            else:
-                _settle(job, result, deliver, None)
-
-        handle.add_done_callback(settled)
-
-    PROGRESS_POLL_MS = 2000        # Slurm records only; the daemon reports its snapshots
-
-    def _follow_progress(job, handle, on_progress):
-        """While ``job`` runs, hand every new progress snapshot of its record to
-        ``on_progress`` on the document thread. The daemon reports each snapshot's stamp
-        (a Slurm record is polled instead); the snapshot is decoded off the document
-        thread, since it can carry a spectrum, one read at a time, and a stamp that
-        arrives during a read is read next. Ends with the job, the document or the
-        workspace generation."""
-        if on_progress is None or not handle.kind.progress:
-            return
-        state = {"stamp": None, "busy": False, "stop": None}
-
-        def stop():
-            stopper, state["stop"] = state["stop"], None
-            if stopper is not None:
-                try:
-                    stopper()
-                except Exception:
-                    pass                 # already removed, or the document is gone
-
-        def tick():
-            if job.terminal or ctx.closed or job.generation is not ctx.generation:
-                stop()
-                return
-            if state["busy"]:
-                return
-            try:
-                stamp = handle.progress_stamp()
-            except OSError:
-                return
-            if stamp is None or stamp == state["stamp"]:
-                return
-            state["busy"] = True
-
-            def read():                  # IO pool
-                try:
-                    snapshot = handle.progress_result()
-                except Exception:
-                    log.exception("%s (job %d): progress snapshot unreadable", job.name, job.pid)
-                    snapshot = None
-
-                def deliver():
-                    state["busy"], state["stamp"] = False, stamp
-                    if snapshot is None or job.terminal or job.generation is not ctx.generation:
-                        return
-                    try:
-                        on_progress(snapshot)
-                    except Exception:
-                        log.exception("%s (job %d): progress not applied", job.name, job.pid)
-                    tick()               # a newer snapshot written during the read
-                ctx.schedule(deliver)
-            _EXEC.submit(read)
-
-        if handle.detached == "slurm":
-            callback = ctx.doc.add_periodic_callback(tick, PROGRESS_POLL_MS)
-            state["stop"] = lambda: ctx.doc.remove_periodic_callback(callback)
-        else:
-            state["stop"] = handle.on_progress(lambda stamp: ctx.schedule(tick))
-            ctx.schedule(tick)           # a snapshot written before this document followed
-
-    def submit_operation(name, operation, request, on_done, *, kwargs=None, meta=None,
-                         on_progress=None, on_error=None):
-        """Queue one public operation (:mod:`tumult.synthesis.tasks`) on ``request`` as a
-        durable workflow and deliver its result to ``on_done`` once its handle settles, a
-        failure to ``on_error`` after the row has recorded it, and every progress snapshot
-        of the record to ``on_progress`` while it runs. Submission happens here, once;
-        nothing waits on the workflow from another pool thread, and the document thread
-        never blocks on the result. The workflow is detached: closing the tab leaves it
-        running, and only its Processes row cancels it, through the handle. ``name`` and
-        ``meta`` go into the record, so a later document lists and imports it as it was
-        submitted, and the workflow is referenced beside the workspace from now on. The
-        driver and the record root follow the request's configuration. Returns the job,
-        or ``None`` when submission failed (the row keeps the reason)."""
-        job = _admit(name, heavy=True, detached=True, operation=operation)
-        try:
-            handle = submit_operation_record(operation, request, label=name, meta=meta,
-                                             **(kwargs or {}))
-        except Exception as exc:
-            _admission_failed(job, exc)
-            return None
-        job.handle = handle
-        # the row's cancel token forwards to the handle, so a settle can tell a cancelled
-        # workflow's late outcome from a wanted one the same way it does for loads
-        job.token.add_callback(handle.cancel)
-        ctx.workflow_refs.attach(handle, name)
-        update_status()
-        if autosave is not None:
-            autosave()
-        _subscribe(job, handle, on_done, on_error)
-        _follow_progress(job, handle, on_progress)
-        return job
-
-    ctx.submit_operation = submit_operation
-
-    # --- recovery of durable workflows after a reconnect ------------------------------
-    def _offer(handle, referenced=False):
-        """List ``handle`` for recovery unless this document already follows it or has
-        imported its result. Returns the entry, or ``None``."""
-        if jobs.find_workflow(handle.id) is not None or ctx.workflow_refs.imported(handle.id):
-            return None
-        try:
-            entry = Recoverable.from_handle(handle, referenced)
-        except (OSError, ValueError, KeyError) as exc:
-            log.warning("Workflow record %s cannot be read: %s", handle.folder, exc)
-            return None
-        return ctx.recovery.offer(entry)
-
-    def discover_workflows(limit=20):
-        """Ask the daemon for the newest settled records under the configured roots and
-        offer the ones this document has not imported in the recovery modal, which opens
-        on them. Running and queued workflows are rows of the panel already. Returns the
-        ids offered."""
-        try:
-            workflow_daemon.client()
-            view = live()
-            reply = view.refresh(workflow_roots(), limit) if view is not None else {"jobs": []}
-        except (OSError, workflow_daemon.DaemonError) as exc:
-            notify(f"The workflow daemon cannot be reached: {exc}", level="danger")
-            return []
-        offered = []
-        for summary in reply["jobs"]:
-            if summary["type"] != "workflow" or summary["state"] in (QUEUED, RUNNING):
-                continue
-            handle = submission.open_workflow(summary["folder"])
-            entry = _offer(handle, referenced=handle.id in ctx.workflow_refs)
-            if entry is not None:
-                offered.append(entry.id)
-        show_recovery()
-        return offered
-
-    def show_recovery():
-        recovery_bridge.value = processes.recovery_html(ctx.recovery)
-        repaint_processes()
-        pulse(recovery_modal, "open")
-
-    def _live_summary(job_id):
-        view = live()
-        return view.get(job_id) if view is not None else None
-
-    def _external_run(run_id):
-        summary = _live_summary(run_id)
-        if summary is None or summary["type"] != "external":
-            return None
-        return ExternalRun.from_summary(summary)
-
-    def cancel_run(run_id):
-        """End an external run through the daemon, which signals it only when the process
-        table confirms the recorded pid still runs that input (or scancels it)."""
-        entry = _external_run(run_id)
-        if entry is None:
-            return
-        try:
-            state = workflow_daemon.client().request("cancel", job=run_id)["state"]
-        except (OSError, workflow_daemon.DaemonError) as exc:
-            notify(f"{entry.name} could not be ended: {exc}", level="danger")
-            return
-        if state == CANCELLED:
-            notify(f"Ended {entry.name}", level="info")
-            pulse(job_modal, "close")
-        else:
-            notify(f"{entry.name} could not be signalled from here; it is {state}", level="warn")
-        repaint_processes()
-
-    def cancel_workflow(workflow_id):
-        """Cancel a daemon workflow this document does not follow (another tab's, a
-        script's) from its row."""
-        summary = _live_summary(workflow_id)
-        folder = summary["folder"] if summary else None
-        if folder is None:
-            entry = ctx.recovery.get(workflow_id)
-            folder = entry.handle.folder if entry is not None else None
-        if folder is None:
-            return
-        handle = submission.open_workflow(folder)
-        try:
-            told = handle.cancel()
-        except (OSError, workflow_daemon.DaemonError) as exc:
-            notify(f"{handle.label} could not be cancelled: {exc}", level="danger")
-            return
-        notify(f"Cancelling {handle.label}…" if told else f"{handle.label} is {handle.status}",
-               level="info" if told else "warn")
-        pulse(job_modal, "close")
-        repaint_processes()
+    # --- session save / restore -------------------------------------------
+    # The workspace owner: the snapshot, the validate -> prepare -> commit flow with its
+    # rollback, the skipped-file report and the autosave slot. It installs
+    # ctx.restore_workspace (local harnesses load slots through it) and
+    # ctx.workspace_changed, and owns the session-slot action channel and its dialogs.
+    persist = WorkspacePersistence(
+        ctx,
+        WorkspaceParts(atoms=atomtool, mask_view=masktool, results=wizards,
+                       filter=filtertool, settings=settings, focused=focused,
+                       focus_spectrum=focus_spectrum,
+                       refresh=lambda: update_all(canvas)),
+        delivery, workflows, load_spectrum=_load_obj, load_atom=_load_atom)
 
     def use_run_departures(run_id):
         """Hand a departure solve to the synthesis modal's Saved departures field."""
-        entry = _external_run(run_id)
+        entry = workflows.external_run(run_id)
         if entry is None:
             return
         synth_modal.setup.mode_form.set_values(mode="NLTE", departures=entry.folder)
@@ -1432,278 +822,15 @@ def build():
         synth_modal.setup._save_mode("departures", entry.folder)
         notify(f"Synthesis modal set to reuse departures from {entry.name}", level="info")
 
-    def _details_target(uid):
-        """What a details button names: ``("job", Job)``, ``("workflow", handle,
-        summary, recoverable)`` or ``("run", ExternalRun)``; ``None`` if it is gone."""
-        if uid.startswith("job-"):
-            try:
-                job = jobs.get(int(uid[4:]))
-            except ValueError:
-                return None
-            return None if job is None else ("job", job)
-        summary = _live_summary(uid)
-        if summary is not None and summary["type"] == "external":
-            return ("run", ExternalRun.from_summary(summary))
-        recoverable = ctx.recovery.get(uid)
-        if summary is not None:
-            return ("workflow", submission.open_workflow(summary["folder"]), summary, None)
-        if recoverable is not None:
-            return ("workflow", recoverable.handle, None, recoverable)
-        ref = ctx.workflow_refs.get(uid)
-        if ref is not None:
-            return ("workflow", submission.open_workflow(ref.folder), None, None)
-        return None
-
-    def show_details(uid):
-        """Fill and open the job details modal for a row's details button."""
-        target = _details_target(uid)
-        if target is None:
-            notify("That job is no longer listed", level="warn")
-            repaint_processes()
-            return
-        try:
-            if target[0] == "run":
-                body = processes.run_details_html(target[1])
-            elif target[0] == "job" and target[1].handle is None:
-                body = processes.job_details_html(target[1])
-            elif target[0] == "job":
-                job = target[1]
-                body = processes.workflow_details_html(
-                    job.handle, _live_summary(job.workflow_id), job=job)
-            else:
-                _, handle, summary, recoverable = target
-                follower = jobs.find_workflow(handle.id)
-                body = processes.workflow_details_html(handle, summary, job=follower,
-                                                       recoverable=recoverable)
-        except (OSError, ValueError, KeyError) as exc:
-            notify(f"The details cannot be read: {exc}", level="danger")
-            return
-        job_details_bridge.value = body
-        pulse(job_modal, "open")
-
-    def open_folder(uid):
-        """Show a job's folder in the file manager of the machine the server runs on."""
-        import subprocess
-        target = _details_target(uid)
-        if target is None:
-            return
-        if target[0] == "run":
-            folder = target[1].folder
-        elif target[0] == "job":
-            folder = target[1].handle.folder if target[1].handle is not None else None
-        else:
-            folder = target[1].folder
-        if folder is None:
-            return
-        opener = "open" if sys.platform == "darwin" else "xdg-open"
-        try:
-            subprocess.Popen([opener, str(folder)], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-        except OSError as exc:
-            notify(f"Could not open {folder}: {exc}", level="warn")
-
-    def _reopen(workflow_id):
-        """The handle for an offered, referenced or live workflow; ``None`` if it is
-        unknown."""
-        entry = ctx.recovery.get(workflow_id)
-        if entry is not None:
-            return entry.handle
-        ref = ctx.workflow_refs.get(workflow_id)
-        if ref is not None:
-            return submission.open_workflow(ref.folder)
-        summary = _live_summary(workflow_id)
-        return submission.open_workflow(summary["folder"]) if summary is not None else None
-
-    def attach_workflow(workflow_id):
-        """Follow a live workflow from here: a new job under the current generation whose
-        row can cancel it through the handle and whose completion is delivered once. Live
-        means queued or running in the daemon, or a Slurm job that still exists; a record
-        without one cannot be attached and nothing is resumed."""
-        handle = _reopen(workflow_id)
-        if handle is None:
-            return None
-        job = jobs.find_workflow(workflow_id)
-        if job is not None:
-            return job
-        try:
-            state = handle.status
-        except OSError as exc:
-            notify(f"Workflow {workflow_id} cannot be read: {exc}", level="danger")
-            return None
-        if handle.done or state not in (QUEUED, RUNNING):
-            notify(f"{handle.label} is {state}; it cannot be attached", level="warn")
-            return None
-        try:
-            deliver = _import_result(handle)
-        except ValueError as exc:
-            notify(f"{handle.label} cannot be attached: {exc}", level="warn")
-            return None
-        job = _admit(handle.label, heavy=True, detached=True)
-        job.handle = handle
-        job.started = handle.to_dict().get("started")
-        job.token.add_callback(handle.cancel)
-        ctx.workflow_refs.attach(handle, handle.label)
-        ctx.recovery.forget(workflow_id)
-        pulse(job_modal, "close")
-        _subscribe(job, handle, deliver)
-        _follow_progress(job, handle, _import_progress(handle))
-        update_status()
-        if autosave is not None:
-            autosave()
-        return job
-
-    def import_workflow(workflow_id):
-        """Load a finished workflow's saved result off the document thread and add its
-        spectra once; a workflow already imported is refused."""
-        handle = _reopen(workflow_id)
-        if handle is None:
-            return None
-        if ctx.workflow_refs.imported(workflow_id):
-            notify(f"{handle.label} was already imported", level="warn")
-            ctx.recovery.forget(workflow_id)
-            update_status()
-            return None
-        try:
-            deliver = _import_result(handle)
-        except ValueError as exc:
-            notify(f"{handle.label} cannot be imported: {exc}", level="warn")
-            return None
-
-        def done(result):
-            deliver(result)
-            ctx.workflow_refs.attach(handle, handle.label, imported=True)
-
-        ctx.recovery.forget(workflow_id)
-        recovery_bridge.value = processes.recovery_html(ctx.recovery)
-        return load_async(f"import {handle.label}", lambda token=None: handle.result(), done)
-
-    def forget_workflow(workflow_id):
-        if ctx.recovery.forget(workflow_id) is not None:
-            recovery_bridge.value = processes.recovery_html(ctx.recovery)
-            update_status()
-
-    def _reattach(refs):
-        """Adopt a loaded slot's workflow references: a live one is followed again (a job
-        already following it is re-subscribed under the new generation), a finished one
-        not yet imported is offered for import, an interrupted, failed or cancelled one is
-        shown as such. Returns the outcome lines for the load report and the references
-        whose record is gone."""
-        ctx.workflow_refs.replace(refs)
-        outcomes, gone = [], []
-        for ref in ctx.workflow_refs:
-            handle = submission.open_workflow(ref.folder)
-            try:
-                state = handle.status
-            except (OSError, ValueError) as exc:
-                gone.append(session.Skipped("workflow", ref.id, ref.name, ref.folder,
-                                            "no record" if isinstance(exc, FileNotFoundError)
-                                            else str(exc)))
-                continue
-            job = jobs.find_workflow(ref.id)
-            if job is not None and not handle.done:
-                job.generation = ctx.generation      # the slot names it: subscribe anew
-                ctx.recovery.forget(ref.id)
-                outcomes.append(f"{ref.name} ({state}, followed)")
-            elif not handle.done and state in (QUEUED, RUNNING):
-                attach_workflow(ref.id)
-                outcomes.append(f"{ref.name} ({state}, reattached)")
-            elif ref.imported:
-                continue                              # its spectra are in the slot itself
-            elif _offer(handle, referenced=True) is not None:
-                outcomes.append(f"{ref.name} ({state}"
-                                + (", result to import)" if state == FINISHED else ")"))
-        return outcomes, gone
-
-    ctx.discover_workflows = discover_workflows
-    ctx.attach_workflow = attach_workflow
-    ctx.import_workflow = import_workflow
-
     def session_closed(session_context):
-        # Closing a tab cancels this document's work (loads, fits, analysis jobs), except
-        # the jobs that asked not to be: every synthesis is a durable workflow that keeps
-        # running and writes its record and result under its `_workflows/` folder, where
-        # a later document can reopen it by id.
-        for job in jobs.active:
-            if not job.detached:
-                jobs.request_cancel(job.pid)
+        delivery.cancel_document_work()   # loads, fits, analysis jobs; not the detached
         # Cancel a queued older autosave before the synchronous durability boundary. If it
         # is already writing, the store lock orders this newer snapshot after it.
-        autosave(now=True)      # the document's last state, for Resume last session
+        persist.autosave(now=True)   # the document's last state, for Resume last session
         ctx.closed = True
-        if live_view["unwatch"] is not None:
-            live_view["unwatch"]()
+        panel.live.close()
 
     ctx.doc.on_session_destroyed(session_closed)
-
-    def _settle(job, result, on_done, exc, on_error=None):
-        """Deliver a job's outcome on the document thread. Called from the worker (or,
-        for a queued cancellation, the cancelling thread); the state and any delivery
-        are applied on the document, guarded by its lifetime and the workspace
-        generation the job was admitted under. A closed document only records."""
-        def apply():
-            if job.token.cancelled:
-                jobs.settle(job.pid, CANCELLED)   # user cancelled: drop whatever arrived
-            elif exc is not None:
-                logs = job.handle.logs if job.handle is not None else ()
-                jobs.settle(job.pid, FAILED, error=f"{type(exc).__name__}: {exc}", logs=logs)
-            else:
-                jobs.settle(job.pid, FINISHED)
-            if ctx.closed:
-                return                       # recorded; there is no document to tell
-            if job.state == FAILED:
-                notify(f"{job.name} failed: {exc} — see Processes", level="danger")
-                if on_error is not None and job.generation is ctx.generation:
-                    try:
-                        on_error(exc)
-                    except Exception:
-                        log.exception("%s (job %d): failure not applied", job.name, job.pid)
-            elif job.state == FINISHED:
-                if job.generation is not ctx.generation:
-                    log.info("%s (job %d) finished after its workspace was replaced; dropped",
-                             job.name, job.pid)
-                elif on_done is not None:
-                    try:
-                        on_done(result)      # add_object -> on_change -> update_all
-                    except Exception as err:
-                        log.exception("Failed to add %s (job %d)", job.name, job.pid)
-                        notify(f"{job.name} could not be added: {err}", level="danger")
-            update_status()                  # clear the spinner without broad invalidation
-
-        if ctx.closed:
-            apply()                      # no document to deliver to: record only
-            return
-        try:
-            ctx.doc.add_next_tick_callback(apply)
-        except Exception:
-            apply()                      # the document went away under us
-
-    def cancel_pending(pid):
-        """Cancel a job from its row in the Processes panel. A still-queued job settles
-        at once; a running one is told through its token (a dispatch child is killed, a
-        shared dispatch job continues for its other subscribers) and its row shows
-        the request until the worker settles. Its result, if any still arrives, is
-        dropped in _settle."""
-        try:
-            pid = int(pid)
-        except (TypeError, ValueError):
-            return
-        job = jobs.request_cancel(pid)
-        if job is None:
-            return
-        update_status()
-        if job.terminal:
-            notify(f"Cancelled {job.name}", level="info")
-        else:
-            notify(f"Cancelling {job.name}…", level="info")
-
-    def dismiss_job(pid):
-        """Drop a retained (failed) row from the Processes panel."""
-        try:
-            pid = int(pid)
-        except (TypeError, ValueError):
-            return
-        if jobs.dismiss(pid) is not None:
-            update_status()
 
     def on_select(filepath):
         remember_recent(filepath)
@@ -1739,16 +866,16 @@ def build():
     ACTIONS = {
         "toggle":       canvas.toggle_object,
         "remove":       lambda uid: ctx.removal.request("spectrum", uid),
-        "cancel-pending": cancel_pending,
-        "dismiss-job":  dismiss_job,
-        "workflow-discover": lambda v: discover_workflows(),
-        "workflow-attach": attach_workflow,
-        "workflow-import": import_workflow,
-        "workflow-forget": forget_workflow,
-        "workflow-cancel": cancel_workflow,
-        "job-details":  show_details,
-        "folder-open":  open_folder,
-        "run-cancel":   cancel_run,
+        "cancel-pending": delivery.cancel_pending,
+        "dismiss-job":  delivery.dismiss_job,
+        "workflow-discover": lambda v: workflows.discover(),
+        "workflow-attach": workflows.attach,
+        "workflow-import": workflows.import_result,
+        "workflow-forget": workflows.forget,
+        "workflow-cancel": workflows.cancel_workflow,
+        "job-details":  workflows.show_details,
+        "folder-open":  workflows.open_folder,
+        "run-cancel":   workflows.cancel_run,
         "run-departures": use_run_departures,
         "select":       focus_spectrum,
         "color":        set_color,
@@ -1795,158 +922,6 @@ def build():
             handler(value)
 
     actions.on_change("value", on_action)
-
-    # --- session save slots (named saves kept in the config file) ---------
-    # a dedicated space-delimited channel: names may contain spaces/colons, so the
-    # ":"-delimited object-actions bridge can't carry them safely (cf. cache-actions).
-    session_actions = B.action("session-actions")
-    # broadcast to every session list on the page: the Sessions modal *and* the inline
-    # empty-state loader shown over the canvas when nothing is loaded
-    sessions_bridge = B.html_all(".js-session-results", name="session-render")
-    sessions_bridge.value = sessions_html(store.list_sessions())  # seed initial list
-
-    def render_sessions():
-        """Re-read the slots into every session list; a config the store rejects leaves
-        the list as it was and reports why."""
-        try:
-            sessions_bridge.value = sessions_html(store.list_sessions())
-        except store.ConfigError as exc:
-            logging.exception("Could not list the saved sessions")
-            notify(f"Could not read saved sessions: {exc}", level="danger")
-
-    saved_workspace = {"snapshot": snapshot(), "pending": None}
-    load_prompt = B.dialog("workspace-load-modal")
-    sessions_dialog = B.dialog("session-modal")
-
-    # --- autosave: the live workspace kept in one slot, so a closed tab resumes ---------
-    # Every update_all (a load, a result, a view change) schedules a write once the burst
-    # settles; the session-destroyed hook writes at once. A blank workspace is never
-    # written, so a fresh tab does not replace the last real session, and a snapshot equal
-    # to the last one written is skipped. Failures are logged: this must never interrupt
-    # the operation that triggered it.
-    AUTOSAVE_DELAY_MS = 2000
-    autosave_delay = Trailing(AUTOSAVE_DELAY_MS)
-    autosaved = {"snapshot": None, "requested": None}
-    def autosave_failed(exc):
-        autosaved["requested"] = None
-        logging.error("Autosave failed: %s", exc)
-    autosave_work = LatestWork(
-        lambda *args: ctx.submit_io(*args), "autosave workspace",
-        autosave_failed, immediate=getattr(ctx.doc, "session_context", None) is None)
-
-    def write_autosave(synchronous=False):
-        try:
-            snap = snapshot()
-            if (session.is_blank(snap) or snap == autosaved["snapshot"]
-                    or snap == autosaved["requested"]):
-                return
-            workflows = ctx.workflow_refs.to_list()
-            if synchronous:
-                store.save_autosave(snap, workflows=workflows)
-                autosaved["snapshot"] = snap
-                return
-            autosaved["requested"] = snap
-
-            def work(token):
-                store.save_autosave(snap, workflows=workflows)
-                return snap
-
-            def done(saved):
-                autosaved["snapshot"] = saved
-                if autosaved["requested"] == saved:
-                    autosaved["requested"] = None
-
-            autosave_work.request(work, done)
-        except Exception:
-            logging.exception("Autosave failed")
-
-    def autosave(now=False):
-        if now:
-            autosave_delay.cancel("autosave")
-            write_autosave(synchronous=True)
-        else:
-            autosave_delay("autosave", write_autosave)
-
-    ctx.workspace_changed = autosave
-
-    def on_session_action(attr, old, new):
-        if not new:
-            return
-        kind, _, rest = new.partition(" ")
-        arg = rest.rsplit(" ", 1)[0]  # strip the trailing nonce
-        # every store call may raise ConfigError (unreadable/invalid config, failed
-        # replacement, lock timeout); the message names the path and the cause, and the
-        # live workspace stays as it is so the user can retry after fixing the cause.
-        if kind == "save":
-            name = arg.strip() or time.strftime("Save %Y-%m-%d %H:%M")
-            snap = snapshot()
-            workflows = ctx.workflow_refs.to_list()
-
-            def saved(slot):
-                saved_workspace["snapshot"] = snap
-                render_sessions()
-                notify(f"Saved “{name}”", level="success")
-
-            if getattr(ctx.doc, "session_context", None) is None:
-                saved(store.save_session(name, snap, workflows=workflows))
-            else:
-                ctx.submit_io(f"save {name}",
-                              lambda token: store.save_session(name, snap,
-                                                               workflows=workflows),
-                              saved)
-        elif kind in ("load", "load-discard", "load-save"):
-            if kind == "load" and snapshot() != saved_workspace["snapshot"]:
-                saved_workspace["pending"] = arg
-                pulse(load_prompt, "open")
-                return
-            if kind != "load":
-                arg = saved_workspace["pending"]
-                if arg is None:
-                    return
-                if kind == "load-save":
-                    try:
-                        store.save_session(time.strftime("Workspace %Y-%m-%d %H:%M"),
-                                           snapshot(), workflows=ctx.workflow_refs.to_list())
-                    except store.ConfigError as exc:
-                        notify(f"Could not save workspace: {exc}", level="danger")
-                        return
-                pulse(load_prompt, "close")
-            try:
-                slot = store.get_slot(int(arg))
-            except store.ConfigError as exc:
-                logging.exception("Could not read the saved session %s", arg)
-                notify(f"Could not read the save: {exc}", level="danger")
-                return
-            if slot is None:
-                notify("That save is no longer available.", level="danger")
-                render_sessions()
-            else:
-                def loaded(report):
-                    saved_workspace["snapshot"] = snapshot()
-                    saved_workspace["pending"] = None
-                    pulse(sessions_dialog, "close")
-                if getattr(ctx.doc, "session_context", None) is None:
-                    report = restore_workspace(slot["snapshot"], slot["name"],
-                                               slot["workflows"])
-                    if report is not None:
-                        loaded(report)
-                else:
-                    restore_workspace_async(slot["snapshot"], slot["name"],
-                                            slot["workflows"], loaded)
-        elif kind == "delete":
-            try:
-                found = store.delete_session(int(arg))
-            except store.ConfigError as exc:
-                logging.exception("Could not delete the saved session %s", arg)
-                notify(f"Delete failed: {exc}", level="danger")
-                return
-            render_sessions()
-            if not found:
-                notify("That save was already gone.", level="warn")
-        elif kind == "refresh":
-            render_sessions()  # re-read slots (another tab may have changed them)
-
-    session_actions.on_change("value", on_session_action)
 
     # separate channel for the cache page, format "kind <arg> <nonce>" (space-delimited):
     # kind/nonce have no spaces, so partition+rsplit recover an arg path even with spaces.
@@ -2068,7 +1043,7 @@ def build():
 
     ionbaltool.refresh()      # the balance modal's target selector
 
-    repaint_processes()       # the daemon's jobs are rows from the first paint on
+    panel.repaint()           # the daemon's jobs are rows from the first paint on
 
     inspector.bind(canvas.selected())
     sel = canvas.selected()
@@ -2078,8 +1053,8 @@ def build():
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
         objects_html=objects_panel_html(canvas),
-        processes_html=processes_bridge.value,
-        processes_usage_html=processes_usage_bridge.value,
+        processes_html=panel.body_html,
+        processes_usage_html=panel.usage_html,
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),
@@ -2121,7 +1096,7 @@ def build():
         linemask_auto_path=html.escape(Path(_auto.linelist_path).name) if _auto else "",
         linemask_auto_html=_auto.form.html() if _auto else "",
         linemask_objects_html=masktool.objects_html(),
-        sessions_html=sessions_html(store.list_sessions()),
+        sessions_html=persist.slots_html(),
         abund_results_html=abundancetool.results_html(),
         abund_table_html="",
         abund_ref_html=abundancetool.ref_html(),

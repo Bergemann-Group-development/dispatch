@@ -245,6 +245,16 @@ class AtomTool(Tool):
             if obj is not None:
                 self.corr.open_for(obj)
 
+    def restore(self, prepared, selected, tab):
+        """Replace the loaded atoms with a saved workspace's prepared ones (each carrying
+        its snapshot identity and its parsed file), the selection and the open tab. The
+        sidebar is repainted by the caller, after the correction results that hang off
+        these atoms have been restored too."""
+        self.atoms = [AtomObject(path=a.snap.path, atom=a.atom, uid=a.snap.uid)
+                      for a in prepared]
+        self.selected_uid = selected
+        self.set_tab(tab)
+
     def set_tab(self, tab):
         if tab not in TABS:
             return

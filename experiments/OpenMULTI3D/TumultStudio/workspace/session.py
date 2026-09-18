@@ -19,7 +19,8 @@ is known to be usable:
    and a focus or selection that named a skipped object is cleared rather than moved to a
    different object. A malformed embedded object (knots, a result, a mask set) is a
    :class:`SessionError`, since the slot itself is broken.
-3. ``app.restore_workspace`` commits the prepared workspace as one document operation.
+3. ``persistence.WorkspacePersistence`` commits the prepared workspace as one
+   document operation, with the rollback and the load report.
 
 Identities: a spectrum, an atom and a result are identified by their string ``uid``, a mask
 set by its integer ``uid`` (the :class:`maskstore.MaskStore` counter). References are by
