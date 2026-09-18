@@ -158,6 +158,30 @@ hashes and the generating revision.
 | Ambient input discovery: [test_linemask.py](../tests/test_linemask.py) `test_have_linemask_files` and the cases parameterised from `input/linemasks`, which is absent from a clean checkout. | Test selection must not depend on a developer machine's accumulated files. Replaced by committed fixtures in **I8**. |
 | Cross-entry-point equivalence obligations: `Spectrum.get_weq` equals `utils.get_weq`, `Spectrum.measure` equals `get_weq`, `Spectrum.convolve` equals `crop(...)`, `gui_ab.reduced_ew is reduced_ew` ([test_ew_profiles.py](../tests/test_ew_profiles.py), [test_spectrum_api.py](../tests/test_spectrum_api.py), `cases.py`). | Passthroughs. One requirement per behaviour, tested at the chosen current entry point, replaces the whole family. |
 
+## Maintainer decisions
+
+Recorded 18 September 2026. These are settled; the tests implement them.
+
+- **Q3, wavelength medium.** Air at the user-facing boundary, vacuum inside. User-facing
+  windows, line masks and `Run.lam` are in air; native grids and `out_segments.txt` are in
+  vacuum. [GLOSSARY.md](../docs/GLOSSARY.md) gets an entry fixing the convention per
+  boundary, and every science and io case states the medium it assumes.
+- **Q4, abundance recovery.** `0.01 dex` on a `0.1 dex` lattice, in the weak-line regime
+  only. Record it in [docs/FAQ.md](../docs/FAQ.md) as the accuracy the lattice is intended
+  to deliver. The saturated regime stays out of the first cases.
+- **Q6, continuum definition.** Test the properties that follow from the definition, not the
+  percentile arithmetic: spikes and NaNs ignored, knots strictly increasing, flat beyond the
+  knots, no overshoot between them. State the definition once in the glossary; the
+  percentile values remain tunable.
+- **Q7 and the golden files.** Delete all eight `.npz` files, the two HOP references
+  included. `native/` keeps invariants alone (finiteness, positivity, EOS inversion, the
+  chunking identity, thread reproducibility) until an independently validated reference
+  exists. `tests/cases.py` and `tests/gen_goldens.py` are retired with them.
+
+**Q1** (the HOP chunking bound) and **Q5** (the EOS convergence tolerance) remain open and
+are decided at the native step. **Q2** is settled by its recommendation: one departure solve
+per abundance rung, asserted as a rung-to-solve mapping.
+
 ## Contested or uncertain items
 
 Each is a question I could not settle from the repository, with the answer I recommend.
