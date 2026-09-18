@@ -158,10 +158,9 @@ class MaskTool(Tool):
     # --- left-sidebar line-mask objects ----------------------------------------------------
     def _push_focus(self, kind):
         """Hand the single left-sidebar selection to (or back from) the mask list."""
-        if getattr(self.ctx, "focus_kind", "spectrum") == kind:
+        if self.ctx.workspace.focus_kind == kind:
             return
-        self.ctx.focus_kind = kind
-        self.ctx.emit("focus-changed", kind=kind)
+        self.ctx.workspace.focus(kind)
 
     def select_set(self, uid):
         """A line-mask object was clicked: make it the current set and open the view."""
@@ -191,7 +190,7 @@ class MaskTool(Tool):
         sets = self.store.listed
         if not sets:
             return ""
-        focused = getattr(self.ctx, "focus_kind", "spectrum") == "linemask"
+        focused = self.ctx.workspace.focus_kind == "linemask"
         rows = []
         for s in sets:
             sel = " selected" if (focused and s.uid == self.store.current_uid) else ""
@@ -328,7 +327,7 @@ class MaskTool(Tool):
         self.ctx.tools.activate("linemask")
         if mset.masks:
             self._jump_to_active()
-        elif self.canvas.objects:
+        elif self.canvas.spectra:
             self._start_placing()
         else:
             message += " Open a spectrum to draw windows."

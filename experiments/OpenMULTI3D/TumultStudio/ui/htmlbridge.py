@@ -1,6 +1,7 @@
 """A tiny server->client bridge: a hidden widget whose value is pushed as
 innerHTML into a light-DOM element (so it can be styled with ordinary CSS and
 support event delegation, unlike Bokeh's shadow-DOM widgets)."""
+import html
 import itertools
 
 from bokeh.models import CustomJS, TextInput
@@ -150,6 +151,45 @@ class BridgeSet:
     def action(self, name):
         """A hidden client->server channel (a named ``TextInput`` the page writes to)."""
         return self._keep(TextInput(value="", visible=False, name=name))
+
+
+class StatusLine:
+    """A transient message in an HTML bridge that quietly reverts to "Ready".
+
+    Each message replaces the inner node, so the page's CSS animation restarts and
+    re-catches the eye; ``level`` (info/warn/danger/success) drives the semantic colour and
+    the pop/glow flash. A token guards against an earlier message's revert wiping out a
+    newer one. ``undo`` is a removal token (:mod:`..workspace.removal`): the message then
+    offers an Undo button carrying it.
+    """
+    LEVELS = {"info", "warn", "danger", "success"}
+
+    def __init__(self, bridge, doc):
+        self.bridge = bridge
+        self.doc = doc
+        self._token = itertools.count()
+        self._last = -1
+
+    def notify(self, message, level="warn", revert_ms=4000, undo=None):
+        lvl = level if level in self.LEVELS else "info"
+        n = next(self._token)
+        self._last = n
+        button = ("" if undo is None else
+                  f'<button class="status-action" data-undo="{html.escape(str(undo))}">'
+                  'Undo</button>')
+        # trailing comment keeps the pushed string unique, so an identical repeat
+        # message still fires the bridge's change event and replays the flash
+        self.bridge.value = (f'<span class="status-msg status-{lvl}">'
+                             f'{html.escape(str(message))}{button}</span><!--{n}-->')
+
+        def restore():
+            if self._last == n:
+                self.bridge.value = "Ready"
+
+        try:
+            self.doc.add_timeout_callback(restore, revert_ms)
+        except Exception:
+            pass
 
 
 def pulse(bridge, state):

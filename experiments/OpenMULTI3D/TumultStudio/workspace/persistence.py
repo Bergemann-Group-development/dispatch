@@ -15,51 +15,47 @@ where reattachment happens (:mod:`..execution.workflows`). If applying the prepa
 workspace fails, the live one captured beforehand is put back and the failure is
 reported; if that fails too, the document says so rather than pretending.
 
-The live collections are reached through :class:`WorkspaceParts`, the seam where a single
-owner of live objects and focus belongs. Until that owner exists, this is the explicit
-list of what a workspace is made of, rather than a closure over the whole document.
+The live objects, the focus and the collections' views are reached through the document's
+:class:`.objects.WorkspaceObjects`; the filter tool and the display-settings form, whose
+state a slot also records, are passed in beside it.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 import html
 import logging
 import time
-from typing import Callable
 
 import numpy as np
 
-from ..execution.latestwork import LatestWork
+from tumult.spectrum_io import Spectrum, load_file, load_run
+
+from ..ui.latestwork import LatestWork
 from ..ui.debounce import Trailing
 from ..ui.htmlbridge import pulse
 from . import session, store
-from .session import (AtomSnap, FilterSnap, FOCUS_TOOL, FocusSnap, MaskSnap,
-                      PreparedAtom, PreparedSpectrum, PreparedWorkspace, ResultsSnap,
-                      SpectrumSnap, ToolsSnap, ViewSnap, Workspace)
+from .objects import FOCUS_TOOLS
+from .session import (AtomSnap, FilterSnap, FocusSnap, MaskSnap, PreparedAtom,
+                      PreparedSpectrum, PreparedWorkspace, ResultsSnap, SpectrumSnap,
+                      ToolsSnap, ViewSnap, Workspace)
 
 log = logging.getLogger("tumultstudio.jobs")
 
 AUTOSAVE_DELAY_MS = 2000
 
 
-@dataclass(frozen=True)
-class WorkspaceParts:
-    """The live collections of one document that a saved workspace covers.
+def load_spectrum(obj):
+    """A saved spectrum reference -> Spectrum (embedded synth data, a file, or a tumult run)."""
+    if obj.kind == "synth":
+        return Spectrum.from_dict(obj.data)
+    return load_run(obj.path) if obj.kind == "run" else load_file(obj.path)
 
-    The canvas, the tool manager and the mask store are reached through the context;
-    these are the rest. ``focused`` reports the single left-sidebar focus as
-    ``(kind, uid)``, ``focus_spectrum`` routes a focus change the way a click does, and
-    ``refresh`` is the document's full repaint after a restore.
-    """
-    atoms: object                        # AtomTool
-    mask_view: object                    # MaskTool (the line-mask view)
-    results: dict                        # tool name -> the result view owning that list
-    filter: object                       # FilterTool
-    settings: object                     # the display-settings Form
-    focused: Callable[[], tuple]
-    focus_spectrum: Callable[[str], None]
-    refresh: Callable[[], None]
+
+def load_atom(path):
+    """A saved workspace's model atom (imported on demand: parsing an atom pulls in the
+    whole atomic-data stack, which a document that opens none never needs)."""
+    from tumult.atom import AtomClass
+    return AtomClass(str(path))
 
 
 def _range(r):
@@ -107,19 +103,24 @@ def sessions_html(slots):
 class WorkspacePersistence:
     """Snapshot, restore and autosave of one document's workspace.
 
-    ``load_spectrum`` reads a saved spectrum reference (embedded synthesis data, a file or
-    a tumult run) and ``load_atom`` a model atom; ``deserialise_results`` and
-    ``relink_results`` build and relink a saved result section (:mod:`..analysis.results`).
-    All four are plain functions used off the document thread, so a slot is interpreted
-    without constructing any view.
+    ``workspace`` is the document's :class:`.objects.WorkspaceObjects`; ``filter`` the
+    filter tool and ``settings`` the display-settings form, whose state a slot records too;
+    ``refresh`` the document's full repaint after a restore. ``deserialise_results`` and
+    ``relink_results`` build and relink a saved result section (:mod:`..analysis.results`);
+    with :func:`load_spectrum` and :func:`load_atom` they are plain functions used off the
+    document thread, so a slot is interpreted without constructing any view.
     """
 
-    def __init__(self, ctx, parts, delivery, workflows, *, load_spectrum, load_atom,
-                 deserialise_results, relink_results):
+    def __init__(self, ctx, workspace, delivery, workflows, *, filter, settings, refresh,
+                 deserialise_results, relink_results,
+                 load_spectrum=load_spectrum, load_atom=load_atom):
         self.ctx = ctx
-        self.parts = parts
+        self.workspace = workspace
         self.delivery = delivery
         self.workflows = workflows
+        self.filter = filter
+        self.settings = settings
+        self.refresh = refresh
         self._load_spectrum = load_spectrum
         self._load_atom = load_atom
         self._deserialise_results = deserialise_results
@@ -163,10 +164,11 @@ class WorkspacePersistence:
     # --- the snapshot ----------------------------------------------------------------
     def snapshot(self):
         """The live workspace as a :class:`session.Workspace` dict."""
-        canvas, parts = self.ctx.canvas, self.parts
-        filtertool, atomtool = parts.filter, parts.atoms
+        ws, filtertool = self.workspace, self.filter
+        canvas = ws.canvas
+        spectra, atomtool = ws.spectra, ws.atoms
         specs = []
-        for o in canvas.objects:
+        for o in spectra:
             kind, path = o.source if o.source else (None, None)
             if kind == "synth":
                 data, path = o.raw.to_dict(), ""
@@ -174,7 +176,6 @@ class WorkspacePersistence:
                 data = None
             else:
                 continue          # nothing to restore it from
-            g = o.line.glyph
             knots = ({"x": list(map(float, o.norm_knots[0])),
                       "y": list(map(float, o.norm_knots[1]))}
                      if o.norm_knots is not None else None)
@@ -183,22 +184,23 @@ class WorkspacePersistence:
             specs.append(SpectrumSnap(
                 uid=o.uid, kind=kind, name=o.name, path=path, data=data,
                 meta=o.meta if kind == "synth" else None,
-                color=g.line_color, dash=o.dash, width=g.line_width, alpha=g.line_alpha,
+                color=o.color, dash=o.dash, width=o.width, alpha=o.alpha,
                 visible=o.visible, conv=dict(o.conv), norm_knots=knots,
                 already_normalised=bool(o.already_normalised)))
         saved_uids = {sp.uid for sp in specs}
-        spectrum_selected = canvas.selected_uid if canvas.selected_uid in saved_uids else None
+        spectrum_selected = (spectra.selected_uid if spectra.selected_uid in saved_uids
+                             else None)
         configured = filtertool._configured
         # only persist a low-pass cutoff when a low-pass filter actually exists
         has_lowpass = (filtertool.method == "lowpass"
-                       and any(o.filtered is not None for o in canvas.objects))
-        focus_kind, focus_uid = parts.focused()
+                       and any(o.filtered is not None for o in spectra))
+        focus_kind, focus_uid = ws.focused()
         if focus_kind == "spectrum":
             focus_uid = spectrum_selected
-        wizards = parts.results
+        wizards = ws.results
         return Workspace(
             spectra=specs, spectrum_selected=spectrum_selected,
-            masks=MaskSnap(**self.ctx.masks.snapshot()),
+            masks=MaskSnap(**ws.masks.snapshot()),
             atoms=[AtomSnap(uid=a.uid, path=a.path) for a in atomtool.atoms],
             atom_selected=atomtool.selected_uid,
             results={name: ResultsSnap(**w.snapshot()) for name, w in wizards.items()},
@@ -229,24 +231,24 @@ class WorkspacePersistence:
     def capture_live(self):
         """The live workspace as a prepared one (no file reads): what a failed commit
         re-applies."""
-        ws = Workspace.from_dict(self.snapshot())
-        by_uid = {o.uid: o for o in self.ctx.canvas.objects}
-        wizards = self.parts.results
+        saved = Workspace.from_dict(self.snapshot())
+        ws = self.workspace
+        by_uid = {o.uid: o for o in ws.spectra}
         return PreparedWorkspace(
             spectra=[PreparedSpectrum(sp, by_uid[sp.uid].raw, by_uid[sp.uid].meta)
-                     for sp in ws.spectra],
-            spectrum_selected=ws.spectrum_selected,
-            mask_sets=list(self.ctx.masks.sets), mask_current=self.ctx.masks.current_uid,
-            mask_active=self.ctx.masks.active,
+                     for sp in saved.spectra],
+            spectrum_selected=saved.spectrum_selected,
+            mask_sets=list(ws.masks.sets), mask_current=ws.masks.current_uid,
+            mask_active=ws.masks.active,
             atoms=[PreparedAtom(AtomSnap(uid=a.uid, path=a.path), a.atom)
-                   for a in self.parts.atoms.atoms],
-            atom_selected=self.parts.atoms.selected_uid,
+                   for a in ws.atoms.atoms],
+            atom_selected=ws.atoms.selected_uid,
             results={name: (list(w.results), w.results.selected)
-                     for name, w in wizards.items()},
-            view=ws.view, filter=ws.filter, focus=ws.focus, tools=ws.tools)
+                     for name, w in ws.results.items()},
+            view=saved.view, filter=saved.filter, focus=saved.focus, tools=saved.tools)
 
     def _place_spectrum(self, ps):
-        canvas = self.ctx.canvas
+        canvas = self.workspace.canvas
         snap, spec = ps.snap, ps.spectrum
         o = canvas.add_object(spec, name=snap.name, color=snap.color, dash=snap.dash,
                               source=(snap.kind, snap.path or None), meta=ps.meta,
@@ -269,54 +271,45 @@ class WorkspacePersistence:
         """Replace every collection with the prepared workspace ``p`` and restore its
         view, selections and focus. Every collection is replaced, empty ones included;
         spectra, masks and atoms land before the results that refer to them."""
-        ctx, parts = self.ctx, self.parts
-        canvas, wizards = ctx.canvas, parts.results
+        ctx, ws, filtertool = self.ctx, self.workspace, self.filter
+        canvas, spectra, wizards = ws.canvas, ws.spectra, ws.results
         ctx.tools.deactivate_active()       # whatever view was open, the canvas returns
         for w in wizards.values():
             w.blur()
-        ctx.focus_kind = "spectrum"
-        parts.filter.clear()
+        ws.focus_kind = "spectrum"
+        filtertool.clear()
         with canvas.batch_update():
-            for o in list(canvas.objects):
+            for o in list(spectra):
                 canvas.remove_object(o.uid)
             for ps in p.spectra:
                 self._place_spectrum(ps)
-        canvas.selected_uid = p.spectrum_selected     # None when none was, or it is gone
-        ctx.masks.restore(p.mask_sets, p.mask_current, p.mask_active)
-        parts.atoms.restore(p.atoms, p.atom_selected, p.tools.atom_tab)
+        spectra.selected_uid = p.spectrum_selected     # None when none was, or it is gone
+        ws.masks.restore(p.mask_sets, p.mask_current, p.mask_active)
+        ws.atoms.restore(p.atoms, p.atom_selected, p.tools.atom_tab)
         for name, w in wizards.items():
             results, selected = p.results[name]
             w.restore(results, selected)
             if name in p.tools.steps:
                 w.set_step(p.tools.steps[name])
-        parts.atoms.render_objects()
+        ws.atoms.render_objects()
         v = p.view
         if v.xunit:
             canvas.set_xunit(v.xunit)
         if v.yunit:
             canvas.set_yunit(v.yunit)
-        parts.settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the form
+        self.settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the form
         f = p.filter
-        if canvas.objects and f.method == "lowpass" and f.res is not None:
-            parts.filter.apply_saved_lowpass(f.res)
+        if spectra.objects and f.method == "lowpass" and f.res is not None:
+            filtertool.apply_saved_lowpass(f.res)
             if not f.active:
-                parts.filter.set_visible(False)
-        elif canvas.objects and f.fmax is not None and f.floor is not None:
-            parts.filter.apply_saved(f.fmax, f.floor)
+                filtertool.set_visible(False)
+        elif spectra.objects and f.fmax is not None and f.floor is not None:
+            filtertool.apply_saved(f.fmax, f.floor)
             if not f.active:
-                parts.filter.set_visible(False)
+                filtertool.set_visible(False)
         # the focus, through the same routing a click takes, so the panels it opens are
         # the ones the user had; a cleared focus leaves the plain canvas
-        focus = p.focus
-        if focus.kind == "spectrum":
-            if focus.uid is not None:
-                parts.focus_spectrum(focus.uid)
-        elif focus.kind == "linemask":
-            parts.mask_view.select_set(focus.uid)
-        elif focus.kind == "atom":
-            parts.atoms.select(focus.uid)
-        elif focus.uid is not None:
-            wizards[FOCUS_TOOL[focus.kind]].select_result(focus.uid)
+        ws.focus_object(p.focus.kind, p.focus.uid)
         for name, w in wizards.items():
             jumped = p.tools.jumped.get(name)
             res = w.selected()
@@ -329,15 +322,14 @@ class WorkspacePersistence:
         # a panel open beside the canvas (a wizard's steps, the mask or atom view) is
         # reopened; the range, filter and normalise gestures are transient and stay closed
         active = p.tools.active
-        if active in ("abundance", "abundcorr", "ionbal", "linemask", "atom") \
-                and ctx.tools.active_name() != active:
+        if active in FOCUS_TOOLS and ctx.tools.active_name() != active:
             ctx.tools.activate(active)
         # the explicit ranges last, after everything above that moves the view
         _restore_range(canvas.nav.x_range, v.nav_x)
         _restore_range(canvas.main.x_range, v.main_x)
         _restore_range(canvas.main.y_range, v.main_y)
         _restore_range(canvas.nav.y_range, v.nav_y)
-        parts.refresh()
+        self.refresh()
 
     def commit(self, prepared, name="save", workflows=(), live=None):
         """Commit an already-prepared slot on the document thread with rollback."""
@@ -365,7 +357,7 @@ class WorkspacePersistence:
         outcomes, gone = self.workflows.reattach(workflows)
         report = session.LoadReport(name, prepared.counts(), prepared.skipped + gone,
                                     prepared.unresolved, cancelled, outcomes)
-        self.parts.refresh()
+        self.refresh()
         for line in report.details():
             log.warning("%s", line)
         ctx.notify(report.message(), level="warn" if report.partial else "success",

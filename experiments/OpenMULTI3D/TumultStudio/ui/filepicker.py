@@ -36,7 +36,7 @@ from bokeh.models import CustomJS, InlineStyleSheet, TextInput
 
 from .debounce import Trailing
 from .htmlbridge import html_bridge
-from ..execution.latestwork import LatestWork
+from .latestwork import LatestWork
 from tumult.synthesis.runtime import IO
 
 # plain string: a fresh InlineStyleSheet model is built per instance (a Bokeh

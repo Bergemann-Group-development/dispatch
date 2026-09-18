@@ -21,7 +21,7 @@ synthesises and inverts, their table columns and what they draw on the spectrum 
 the controller, through the hooks marked "subclass" below.
 
 Subclasses set the class attributes below (``prefix`` namespaces the DOM/bridge ids,
-``kind`` is the left-sidebar focus kind coordinated through ``ctx.focus_kind``).
+``kind`` is the left-sidebar focus kind the workspace coordinates, ``ctx.workspace.focus_kind``).
 """
 from __future__ import annotations
 
@@ -151,7 +151,7 @@ class ResultView(Tool):
     # --- subclass configuration --------------------------------------------------------
     prefix = ""            # DOM/bridge namespace: "abund" | "corr" | "ionbal"
     steps = 3              # how many step panels the view's switcher drives
-    kind = ""              # ctx.focus_kind value while a result owns the centre view
+    kind = ""              # the workspace focus_kind value while a result owns the centre view
     section = ""           # store section for the view's own form values
     empty_table_msg = "No result selected"
     y_axis_label = "A(X)"
@@ -276,13 +276,12 @@ class ResultView(Tool):
 
     # --- focus-kind coordination (which left-sidebar list owns the selection) -----------
     def is_focused(self):
-        return getattr(self.ctx, "focus_kind", "spectrum") == self.kind
+        return self.ctx.workspace.focus_kind == self.kind
 
     def push_view(self, state):
         """Show/hide the view's centre pane and hand the selection focus around."""
         pulse(self._view_bridge, state)
-        self.ctx.focus_kind = self.kind if state == "on" else "spectrum"
-        self.ctx.emit("focus-changed", kind=self.ctx.focus_kind)
+        self.ctx.workspace.focus(self.kind if state == "on" else "spectrum")
 
     def set_step(self, n):
         self.step = max(1, min(self.steps, int(n)))
@@ -392,7 +391,7 @@ class ResultView(Tool):
         outcome = ab.refresh_ews(spec, res.lines, profile=res.profile, snr=res.snr,
                                  cont_pct=res.cont_pct)
         line_list = (res.preparation or {}).get("line_list")
-        res.preparation = self.canvas.preparation(self.canvas._find(res.ref_uid))
+        res.preparation = self.canvas.preparation(self.canvas.spectra.find(res.ref_uid))
         if line_list:
             res.preparation["line_list"] = line_list
         self.report_refresh(res, outcome)
@@ -455,7 +454,7 @@ class ResultView(Tool):
 
     def _add_result(self, res, name):
         """List ``res`` under ``name``, made unique in the document, and select it."""
-        res.name = self.ctx.unique_name(name, pending=False)
+        res.name = self.ctx.workspace.unique_name(name, pending=False)
         self.results.append(res)
 
     def import_task_progress(self, snapshot, handle):
@@ -558,7 +557,7 @@ class ResultView(Tool):
             self.notify(f"{res.name} is still being computed; rename it once it has "
                         "finished or been cancelled.")
             return None
-        res.name = self.ctx.unique_name(name, own=res.name)
+        res.name = self.ctx.workspace.unique_name(name, own=res.name)
         self.push_results()
         return res
 

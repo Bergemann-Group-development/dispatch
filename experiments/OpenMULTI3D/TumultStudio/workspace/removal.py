@@ -180,20 +180,23 @@ class Removal:
         self.notify(f"Restored “{name}”.", level="success")
 
 
-def register_workspace(removal, canvas, masktool, wizards, atomtool):
-    """The workspace's removable kinds: spectra, line mask sets, the analysis results
-    (``wizards`` by tool name) and model atoms."""
+def register_workspace(removal, workspace):
+    """The workspace's removable kinds (:class:`.objects.WorkspaceObjects`): spectra, line
+    mask sets, the analysis results and model atoms."""
+    canvas, spectra = workspace.canvas, workspace.spectra
+    masktool, wizards, atomtool = workspace.mask_view, workspace.results, workspace.atoms
+
     def results_naming(test):
         return [r.name for w in wizards.values() for r in w.results if test(r)]
 
     def detach_spectrum(obj):
-        index = canvas.objects.index(obj)
-        selected = canvas.selected_uid == obj.uid
+        index = spectra.objects.index(obj)
+        selected = spectra.selected_uid == obj.uid
         canvas.remove_object(obj.uid)
         return lambda: canvas.restore_object(obj, index, select=selected)
 
     removal.register("spectrum", Kind(
-        label="spectrum", find=canvas._find, detach=detach_spectrum,
+        label="spectrum", find=spectra.find, detach=detach_spectrum,
         dependents=lambda obj: results_naming(lambda r: r.ref_uid == obj.uid)))
 
     def find_set(uid):

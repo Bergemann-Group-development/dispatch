@@ -43,7 +43,7 @@ from bokeh.models import TextInput
 from tumult import refstars
 from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
                               DepartureRequest, Departures, Snapshot, Star, SynthRequest)
-from tumult.synthesis.snapshot_grid import is_snapshot_grid
+from tumult.synthesis.snapshot_grid import SNAPSHOT_FORMATS, is_snapshot_grid
 
 from ..workspace import store
 from tumult.synthesis import workflows as synth
@@ -60,13 +60,11 @@ _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundanc
                  "departures", "atmos_mode", "atmos_file",
                  "atmos_individual_format")
 
-_SNAPSHOT_FORMATS = {"stagger", "stagger2", "co5bold", "m3dis", "must", "multi"}
-
 
 def model_is_3d(atmos_format, path=None, root=None):
     """Infer dimensionality from the selected format, inspecting saved meshes as needed."""
     fmt = str(atmos_format or "").strip().lower()
-    if fmt in _SNAPSHOT_FORMATS:
+    if fmt in SNAPSHOT_FORMATS:
         return True
     if fmt != "save" or not path:
         return False
@@ -490,6 +488,12 @@ class SynthSetup:
         self._sync_mode_fields()
         if self.on_mode_change:
             self.on_mode_change(self.is_nlte)
+
+    def use_departures(self, folder):
+        """Reuse a finished departure solve: NLTE with its folder as the Saved departures."""
+        self.mode_form.set_values(mode="NLTE", departures=folder)
+        self._save_mode("mode", "NLTE")
+        self._save_mode("departures", folder)
 
     # --- inherit / reload -------------------------------------------------------------
     def inherit_from(self, run_section="synth_run", grid_section="synthesis",

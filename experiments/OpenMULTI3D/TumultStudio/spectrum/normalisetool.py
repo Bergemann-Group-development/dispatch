@@ -27,10 +27,11 @@ from scipy.signal import argrelextrema
 from tumult import Spectrum, continuum
 from tumult.utils import pchip_mono
 
-from .canvas import ACCENT, NORM_PERCENTILE
+from .canvas import NORM_PERCENTILE
+from ..ui.style import ACCENT
 from ..ui.controls import Field, Form
 from ..ui.debounce import Debouncer
-from ..execution.latestwork import LatestWork
+from ..ui.latestwork import LatestWork
 from ..ui.tool import Tool, suppress_callbacks
 from ..ui.units import to_value
 
@@ -89,7 +90,7 @@ class NormaliseTool(Tool):
 
     # --- activation -------------------------------------------------------
     def activate(self):
-        obj = self.canvas.selected()
+        obj = self.canvas.spectra.selected()
         if obj is None:
             self.notify("Load and select a spectrum before normalising.")
             return
@@ -281,8 +282,8 @@ class NormaliseTool(Tool):
 
     def update(self):
         """From main.update_all: leave the mode if the selection changed underneath us."""
-        if self.active and (self.canvas.selected() is None
-                            or self.canvas.selected().uid != self._uid):
+        if self.active and (self.canvas.spectra.selected() is None
+                            or self.canvas.spectra.selected().uid != self._uid):
             self.deactivate()
 
     # --- panel ------------------------------------------------------------
@@ -359,7 +360,7 @@ class NormaliseTool(Tool):
             return knots, cont, spectrum
 
         def apply(result):
-            current = self.canvas._find(uid)
+            current = self.canvas.spectra.find(uid)
             if current is not obj or current.raw is not raw:
                 return
             current.norm_knots, current.continuum, current.spectrum = result
@@ -406,7 +407,7 @@ class NormaliseTool(Tool):
 
     # --- helpers ----------------------------------------------------------
     def _obs(self):
-        return self.canvas._find(self._uid) if self._uid is not None else None
+        return self.canvas.spectra.find(self._uid) if self._uid is not None else None
 
     def _seed_knots(self, obj):
         if obj.norm_knots is None:

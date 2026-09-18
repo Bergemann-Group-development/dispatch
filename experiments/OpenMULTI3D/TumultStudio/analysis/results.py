@@ -131,7 +131,7 @@ class ResultReferences:
         the convolution stays in the record as provenance but is not applied to the target
         the lines are measured on."""
         recorded = res.preparation or {}
-        obj = self.canvas._find(res.ref_uid) if res.ref_uid is not None else None
+        obj = self.canvas.spectra.find(res.ref_uid) if res.ref_uid is not None else None
         if not recorded or obj is None:
             return []
         now = self.canvas.preparation(obj)

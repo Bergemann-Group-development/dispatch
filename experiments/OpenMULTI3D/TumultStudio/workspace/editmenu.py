@@ -1,6 +1,6 @@
 """The toolbar's Edit menu: **Rename…**, **Duplicate** and **Delete** on the focused object.
 
-The menu acts on the object holding the single left-sidebar focus (``ctx.focus_kind``): a
+The menu acts on the object holding the single left-sidebar focus (``workspace.focus_kind``): a
 spectrum, a line mask set, a result or a model atom. Each kind registers a :class:`Target`
 saying how its objects are found, renamed and duplicated; an action a kind lacks is shown
 disabled. A model atom is identified by its file (loading the file again replaces it), so it

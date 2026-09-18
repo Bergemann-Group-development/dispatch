@@ -27,7 +27,7 @@ from bokeh.plotting import figure
 
 from tumult import abundance as ab
 
-from ..spectrum.canvas import ACCENT, style_dark
+from ..ui.style import ACCENT, style_dark
 
 # scatter x axes: key -> (axis label, per-line value fn)
 X_AXES = {

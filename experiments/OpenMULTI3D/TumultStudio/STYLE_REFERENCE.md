@@ -26,6 +26,11 @@ place in the cascade. The markup is `templates/` (`index.html` plus one template
 owner) and the behaviour `static/js/` (`bridge.js` plus one script per owner), served
 from the application's own static route.
 
+The Bokeh plots follow the same tokens from Python: `ui/style.py` holds the surface,
+border, grid, muted-text and accent colours, the line palette the spectra are drawn in
+(`PALETTE`, with `LINE` the default gray and `RUN_COLORS` the run colours), the line
+dashes and their CSS swatch styles, and `style_dark`, which every figure is styled by.
+
 ## 1. Design Principles
 
 1. **Dark, low-contrast surfaces.** A near-black background with a small set of slightly

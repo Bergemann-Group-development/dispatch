@@ -1,15 +1,18 @@
 """Bokeh view: an overview (nav) plot above a detailed (main) plot.
 
-Holds any number of objects (loaded observations, tumult runs, synthetic spectra)
-at once — observations share one colour and are distinguished by **line dash**
-style (solid, dashed, dotted, …); runs get distinct colours. Windowing /
-cropping happens in each spectrum's native units; only the decimated result is
+Draws the document's spectrum objects (:class:`~..workspace.objects.Spectra`, owned by the
+workspace) — observations share one colour and are distinguished by **line dash** style
+(solid, dashed, dotted, …); runs get distinct colours. The canvas keeps the Bokeh
+renderers of every object (:class:`ObjectRenderers`) and the view state: the ranges, the
+display units, the filter and continuum-edit views and the overlays the tools draw.
+Windowing / cropping happens in each spectrum's native units; only the decimated result is
 converted to the chosen display units.
 """
 from __future__ import annotations
 
 import logging
 from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 
 import astropy.units as u
 import numpy as np
@@ -19,7 +22,9 @@ from bokeh.plotting import figure
 
 from tumult import Spectrum, continuum
 
+from ..ui.controls import Field, Form
 from ..ui.debounce import Debouncer
+from ..ui.style import ACCENT, LINE, SYNTH_FIT, style_dark
 from ..ui.units import X_UNITS, Y_UNITS, label_for, to_value, to_range
 
 # percentile of the flux used as the flat continuum when a spectrum is first loaded,
@@ -30,77 +35,22 @@ NORM_PERCENTILE = 98.0
 # here so a noisy spike / emission peak can't squash the normalised continuum flat
 NAV_Y_MAX = 1.05
 
-# --- palette (mirrors STYLE_REFERENCE.md) ------------------------------------
-BG = "#1e1e1e"
-SURFACE = "#2a2a2a"
-BORDER = "#3a3a3a"
-GRID = "#2c2c2c"
-MUTED = "#888888"
-ACCENT = "#4a90e2"
-# distinct from ACCENT so the abundance best-fit synthetic reads clearly against the (ACCENT)
-# EW hatch it is drawn over
-SYNTH_FIT = "#3ec46d"
-LINE = "#cfd2d6"
-
-# fixed line-colour palette; PALETTE[0] == LINE is the default (gray) object colour,
-# PALETTE[1:] are the non-gray colours assigned to tumult runs. The first run colour is a
-# cornflower blue kept distinct from ACCENT (#4a90e2) so a run never matches the UI accent.
-PALETTE = ["#cfd2d6", "#7b8cde", "#50c878", "#e0a030", "#e05c5c", "#b084e8", "#34c9a0"]
-RUN_COLORS = PALETTE[1:]
-
-# objects are distinguished by dash; runs by colour (then dash once colours run out)
-DASHES = ["solid", "dashed", "dotted", "dotdash", "dashdot"]
-DASH_CSS = {"solid": "solid", "dashed": "dashed", "dotted": "dotted",
-            "dotdash": "dashed", "dashdot": "dotted"}
-
-
-def _style(p):
-    p.background_fill_color = BG
-    p.border_fill_color = BG  # dark plot surround to match the darkened work surface
-    p.outline_line_color = BORDER
-    p.grid.grid_line_color = GRID
-    p.axis.axis_line_color = BORDER
-    p.axis.major_tick_line_color = BORDER
-    p.axis.minor_tick_line_color = None
-    p.axis.major_label_text_color = MUTED
-    p.axis.axis_label_text_color = MUTED
-    # no Bokeh toolbar anywhere: the tools stay usable (wheel zoom, pan, tap, hover, the
-    # active drag the tools switch) and the page's own toolbar holds every button
-    p.toolbar_location = None
-
-
-# public alias so other panels (e.g. the abundance scatter) get the same dark theme
-style_dark = _style
-
-
-class SpectrumObject:
-    """One loaded spectrum and its renderers on the two plots."""
-
-    def __init__(self, spectrum, name, dash, uid):
-        self.spectrum = spectrum   # the displayed, continuum-normalised spectrum (~0–1)
-        self.raw = spectrum        # the originally loaded spectrum, in its native units
-        self.norm_knots = None     # (kx, ky) continuum-spline knots in native units, or None
-        self.continuum = None      # last continuum evaluated over raw.xdata (for the overlay)
-        self.already_normalised = False  # treat the spectrum as pre-normalised (continuum ≡ 1)
-        self.name = name
-        self.dash = dash
-        self.uid = uid
-        self.visible = True
-        self.source = None  # (kind, path) where it was loaded from, for session save/restore
-        self.meta = None  # provenance for the Info tab: FITS header cards or synth params
-        self.filtered = None  # filtered Spectrum (reversible); used when canvas.show_filtered
-        self.conv = {}  # convolution params applied to the main view (vshift/vdop/…)
-        self.main_source = ColumnDataSource(dict(x=[], y=[]))
-        self.nav_source = ColumnDataSource(dict(x=[], y=[]))
-        self.line = self.markers = self.nav_line = None  # set when added to a canvas
+@dataclass
+class ObjectRenderers:
+    """One object's glyphs on the two plots and the decimated data they draw."""
+    main_source: ColumnDataSource
+    nav_source: ColumnDataSource
+    line: object          # the main-plot line
+    markers: object       # its point markers, shown once the window is sparse enough
+    nav_line: object      # the overview line
 
 
 class SpectrumCanvas:
-    def __init__(self, spectrum=None, name="Object 1", init_width=25.0,
+    def __init__(self, spectra, init_width=25.0,
                  n_main=5000, n_nav=2500, marker_threshold=300, debounce_ms=50,
                  on_change=None):
-        self.objects: list[SpectrumObject] = []
-        self.selected_uid = None
+        self.spectra = spectra      # the workspace's objects and selection (objects.py)
+        self._views: dict[str, ObjectRenderers] = {}  # by uid; kept through a removal for its Undo
         self.show_filtered = False  # when True, plot each obj's filtered spectrum
         self.norm_edit_uid = None   # uid being continuum-edited (shown raw, others hidden)
         self.norm_edit_spectrum = None  # tool-supplied spectrum to draw for it (e.g. smoothed)
@@ -108,25 +58,21 @@ class SpectrumCanvas:
         self.n_nav = n_nav
         self.marker_threshold = marker_threshold
         self._debounce = Debouncer(debounce_ms)  # coalesce range-driven redraws
-        self.on_change = on_change  # called with the object list whenever it changes
+        self.on_change = on_change  # called with the canvas whenever the objects change
         self._batch_depth = 0
         self._batch_changed = False
         self._view_listeners = []   # called after every main-view redraw (see add_view_listener)
 
-        # x display unit starts at the first spectrum's native unit (Å when the canvas
+        # x display unit starts at the first spectrum's native unit (Å while the canvas
         # is empty, until the first object is added); y is always the normalised
         # (dimensionless) axis since every spectrum is continuum-normalised
-        self.xunit = spectrum.xunit if spectrum is not None else u.AA
+        self.xunit = u.AA
         self.yunit = u.dimensionless_unscaled
         self.xlabel = label_for(self.xunit, X_UNITS, str(self.xunit))
         self.ylabel = label_for(self.yunit, Y_UNITS, str(self.yunit))
 
         # placeholder span for an empty canvas; real bounds are set on the first add
-        if spectrum is not None:
-            x, _ = spectrum.values
-            wmin, wmax = float(x.min()), float(x.max())
-        else:
-            wmin, wmax = 0.0, init_width
+        wmin, wmax = 0.0, init_width
 
         # --- main (detail) plot --------------------------------------------
         main = figure(
@@ -138,7 +84,7 @@ class SpectrumCanvas:
             x_axis_label=self._x_axis_label(), y_axis_label=self._y_axis_label(),
             min_border_left=62, min_border_bottom=42,  # fixed frame insets (see .ew-controls)
         )
-        _style(main)
+        style_dark(main)
         # maintain_focus=True (Bokeh's default) anchors the zoom on the cursor, so once a
         # range bound is reached on one side the wheel can no longer widen the view fully
         for tool in main.select(WheelZoomTool):
@@ -154,7 +100,7 @@ class SpectrumCanvas:
                      min_border_left=62)  # align the overview frame with the main frame
         nav.yaxis.visible = False
         nav.xaxis.axis_label = None
-        _style(nav)
+        style_dark(nav)
         range_tool = RangeTool(x_range=main.x_range, start_gesture="pan")
         range_tool.overlay.fill_color = ACCENT
         range_tool.overlay.fill_alpha = 0.12
@@ -252,9 +198,6 @@ class SpectrumCanvas:
         self.main.name = "main_fig"
         self.nav.name = "nav_fig"
 
-        if spectrum is not None:
-            self.add_object(spectrum, name)
-
     # --- objects -----------------------------------------------------
     def include_in_y_fit(self, renderer):
         """Let ``renderer`` participate in the main figure's y auto-fit, alongside the loaded
@@ -285,59 +228,36 @@ class SpectrumCanvas:
         toolbar = self.main.toolbar
         toolbar.active_drag, toolbar.active_tap = "auto", self._edit_tap
 
-    def next_run_style(self):
-        """Pick a (color, dash) for a tumult run: the first unused non-gray palette
-        colour, then iterate line styles once every colour is taken."""
-        used = {(o.line.glyph.line_color, o.dash) for o in self.objects}
-        used_colors = {c for c, _ in used}
-        for color in RUN_COLORS:
-            if color not in used_colors:
-                return color, DASHES[0]
-        for dash in DASHES:
-            for color in RUN_COLORS:
-                if (color, dash) not in used:
-                    return color, dash
-        n = len(self.objects)
-        return RUN_COLORS[n % len(RUN_COLORS)], DASHES[n % len(DASHES)]
-
     def add_object(self, spectrum, name=None, color=None, dash=None, source=None, meta=None,
                    uid=None, select=True):
-        first = not self.objects
-        name = name or f"Object {len(self.objects) + 1}"
-        color = color or LINE
+        """List and draw a spectrum (:meth:`Spectra.new` fills in the defaults)."""
+        first = not self.spectra.objects
         if first and spectrum.xunit != self.xunit:
             # the first object on an empty canvas sets the display x unit to its native one
             self.xunit = spectrum.xunit
             self.xlabel = label_for(self.xunit, X_UNITS, str(self.xunit))
             self.main.xaxis.axis_label = self._x_axis_label()
-        if dash is None:
-            # first line style not currently in use (cycle once every style is taken)
-            used = {o.dash for o in self.objects}
-            dash = next((d for d in DASHES if d not in used),
-                        DASHES[len(self.objects) % len(DASHES)])
-        if uid is None:
-            import uuid
-            uid = uuid.uuid4().hex
-        if self._find(uid) is not None:
-            raise ValueError(f"Duplicate observation identity: {uid}")
-        obj = SpectrumObject(spectrum, name, dash, uid)
+        obj = self.spectra.new(spectrum, name=name, color=color, dash=dash, uid=uid)
         obj.source = source
         obj.meta = meta
         self.normalise_object(obj)  # raw -> ~0–1; flat continuum until a spline is set
-        obj.line = self.main.line("x", "y", source=obj.main_source,
-                                  color=color, line_width=1, line_dash=dash)
-        obj.markers = self.main.scatter("x", "y", source=obj.main_source, size=5,
-                                        fill_color=color, line_color=color,
-                                        fill_alpha=0.55, line_alpha=0.55,
-                                        level="underlay",  # always beneath the lines
-                                        visible=False)
-        obj.nav_line = self.nav.line("x", "y", source=obj.nav_source,
-                                     color=color, line_width=1, line_dash=dash)
-        self._y_fit_renderers += [obj.line, obj.markers]
+        main_source = ColumnDataSource(dict(x=[], y=[]))
+        nav_source = ColumnDataSource(dict(x=[], y=[]))
+        v = ObjectRenderers(
+            main_source, nav_source,
+            line=self.main.line("x", "y", source=main_source,
+                                color=obj.color, line_width=1, line_dash=obj.dash),
+            markers=self.main.scatter("x", "y", source=main_source, size=5,
+                                      fill_color=obj.color, line_color=obj.color,
+                                      fill_alpha=0.55, line_alpha=0.55,
+                                      level="underlay",  # always beneath the lines
+                                      visible=False),
+            nav_line=self.nav.line("x", "y", source=nav_source,
+                                   color=obj.color, line_width=1, line_dash=obj.dash))
+        self._views[obj.uid] = v
+        self._y_fit_renderers += [v.line, v.markers]
         self.main.y_range.renderers = list(self._y_fit_renderers)
-        self.objects.append(obj)
-        if select or first:
-            self.selected_uid = obj.uid
+        self.spectra.append(obj, select)
 
         if self._batch_depth:
             self._batch_changed = True
@@ -362,63 +282,51 @@ class SpectrumCanvas:
             self.on_change(self)
         return obj
 
-    def _find(self, uid):
-        return next((o for o in self.objects if o.uid == uid), None)
-
-    def selected(self):
-        return self._find(self.selected_uid)
+    def changed(self):
+        """Tell the document the objects changed (the repaint every mutation ends with)."""
+        if self.on_change:
+            self.on_change(self)
 
     def select_object(self, uid):
-        if self._find(uid) is not None:
-            self.selected_uid = uid
-            if self.on_change:
-                self.on_change(self)
+        if self.spectra.select(uid):
+            self.changed()
 
     def toggle_object(self, uid):
-        obj = self._find(uid)
+        obj = self.spectra.find(uid)
         if obj is None:
             return
+        v = self._views[uid]
         obj.visible = not obj.visible
-        obj.line.visible = obj.visible
-        obj.nav_line.visible = obj.visible
+        v.line.visible = obj.visible
+        v.nav_line.visible = obj.visible
         if self._batch_depth:
             self._batch_changed = True
             return
         if obj.visible:
             self._refresh_object(obj)
         else:
-            obj.markers.visible = False
+            v.markers.visible = False
             self._fit_nav_y()  # re-expand the nav y-fit now this object dropped out
-        if self.on_change:
-            self.on_change(self)
-
-    def rename_object(self, uid, name):
-        """Give an object a new display name (the sidebar, Info tab and session use it)."""
-        obj = self._find(uid)
-        name = str(name).strip()
-        if obj is None or not name or name == obj.name:
-            return
-        obj.name = name
-        if self.on_change:
-            self.on_change(self)
+        self.changed()
 
     def remove_object(self, uid):
-        obj = self._find(uid)
+        """Take an object out of the list and off the plots; its renderers are kept for
+        :meth:`restore_object`."""
+        obj = self.spectra.find(uid)
         if obj is None:
             return
+        v = self._views[uid]
         self.main.renderers = [r for r in self.main.renderers
-                               if r not in (obj.line, obj.markers)]
-        self.nav.renderers = [r for r in self.nav.renderers if r is not obj.nav_line]
+                               if r not in (v.line, v.markers)]
+        self.nav.renderers = [r for r in self.nav.renderers if r is not v.nav_line]
         self._y_fit_renderers = [r for r in self._y_fit_renderers
-                                 if r not in (obj.line, obj.markers)]
+                                 if r not in (v.line, v.markers)]
         self.main.y_range.renderers = list(self._y_fit_renderers)
-        self.objects.remove(obj)
-        if self.selected_uid == uid:
-            self.selected_uid = self.objects[0].uid if self.objects else None
+        self.spectra.remove(obj)
         if self._batch_depth:
             self._batch_changed = True
             return
-        if self.objects:
+        if self.spectra.objects:
             lo, hi = self.display_bounds()
             self.main.x_range.bounds = (lo, hi)
             self.nav.x_range.bounds = (lo, hi)
@@ -430,8 +338,7 @@ class SpectrumCanvas:
             self.main.x_range.start, self.main.x_range.end = (ms, me) if ms < me else (lo, hi)
             self._refresh_main()
             self._refresh_nav()
-        if self.on_change:
-            self.on_change(self)
+        self.changed()
 
     @contextmanager
     def batch_update(self):
@@ -443,7 +350,7 @@ class SpectrumCanvas:
             self._batch_depth -= 1
             if not self._batch_depth and self._batch_changed:
                 self._batch_changed = False
-                if self.objects:
+                if self.spectra.objects:
                     lo, hi = self.display_bounds()
                     self.main.x_range.bounds = (lo, hi)
                     self.nav.x_range.bounds = (lo, hi)
@@ -456,22 +363,18 @@ class SpectrumCanvas:
                         self.main.x_range.end = min(hi, end)
                     self._refresh_main()
                     self._refresh_nav()
-                if self.on_change:
-                    self.on_change(self)
+                self.changed()
 
     def restore_object(self, obj, index, select=False):
         """Put back ``obj``, which :meth:`remove_object` took out, at list position
         ``index`` with its own renderers, data and style (the removal undo)."""
-        if self._find(obj.uid) is not None:
-            raise ValueError(f"Duplicate observation identity: {obj.uid}")
-        first = not self.objects
-        self.main.renderers = [*self.main.renderers, obj.line, obj.markers]
-        self.nav.renderers = [*self.nav.renderers, obj.nav_line]
-        self._y_fit_renderers += [obj.line, obj.markers]
+        first = not self.spectra.objects
+        self.spectra.insert(obj, index, select)
+        v = self._views[obj.uid]
+        self.main.renderers = [*self.main.renderers, v.line, v.markers]
+        self.nav.renderers = [*self.nav.renderers, v.nav_line]
+        self._y_fit_renderers += [v.line, v.markers]
         self.main.y_range.renderers = list(self._y_fit_renderers)
-        self.objects.insert(min(index, len(self.objects)), obj)
-        if select or first:
-            self.selected_uid = obj.uid
         lo, hi = self.display_bounds()
         self.main.x_range.bounds = (lo, hi)
         self.nav.x_range.bounds = (lo, hi)
@@ -480,17 +383,16 @@ class SpectrumCanvas:
             self.main.x_range.start, self.main.x_range.end = self._display_range(obj.spectrum)
         self._refresh_main()
         self._refresh_nav()
-        if self.on_change:
-            self.on_change(self)
+        self.changed()
 
     def display_bounds(self):
-        ranges = [self._display_range(o.spectrum) for o in self.objects]
+        ranges = [self._display_range(o.spectrum) for o in self.spectra]
         return min(r[0] for r in ranges), max(r[1] for r in ranges)
 
     def selected_display_range(self):
         """Data extent (in the canvas xunit) of the active object, or the full
         extent across all objects when none is selected."""
-        obj = self.selected()
+        obj = self.spectra.selected()
         if obj is None:
             return self.display_bounds()
         return self._display_range(obj.spectrum)
@@ -635,14 +537,15 @@ class SpectrumCanvas:
         self.norm_raw_line.visible = uid is not None
         if uid is None:
             self.norm_raw_source.data = dict(x=[], y=[])
-        for o in self.objects:
+        for o in self.spectra:
+            v = self._views[o.uid]
             shown = o.visible if uid is None else (o.uid == uid)
-            o.line.visible = shown
-            o.nav_line.visible = shown
+            v.line.visible = shown
+            v.nav_line.visible = shown
             if not shown:
-                o.markers.visible = False
+                v.markers.visible = False
         if uid is not None:
-            raw = self._find(uid).raw
+            raw = self.spectra.find(uid).raw
             self.main.yaxis.axis_label = (
                 f"Flux [{label_for(raw.yunit, Y_UNITS, str(raw.yunit))}]")
         else:
@@ -908,7 +811,7 @@ class SpectrumCanvas:
 
     def preparation_html(self, uid):
         """One-line statement of :meth:`preparation` for the inspector and measurement forms."""
-        state = self.preparation(self._find(uid))
+        state = self.preparation(self.spectra.find(uid))
         if not state:
             return ""
         return (f'<div class="hint">{state["normalisation"].capitalize()} · '
@@ -923,13 +826,13 @@ class SpectrumCanvas:
     def target_spectrum(self, uid):
         """The spectrum every measurement and fit reads for object ``uid``: its
         :meth:`effective` spectrum, or ``None`` when no such object exists."""
-        obj = self._find(uid)
+        obj = self.spectra.find(uid)
         return None if obj is None else self.effective(obj)
 
     def apply_filter(self, mapping):
         """Show filtered spectra (uid -> filtered Spectrum); originals are kept."""
         for uid, spec in mapping.items():
-            obj = self._find(uid)
+            obj = self.spectra.find(uid)
             if obj is not None:
                 obj.filtered = spec
         self.show_filtered = True
@@ -939,7 +842,7 @@ class SpectrumCanvas:
     def clear_filter(self):
         """Revert to the unfiltered spectra."""
         self.show_filtered = False
-        for obj in self.objects:
+        for obj in self.spectra:
             obj.filtered = None
         self._refresh_main()
         self._refresh_nav()
@@ -956,15 +859,26 @@ class SpectrumCanvas:
         conv = None if raw_mode else obj.conv  # raw view is the un-convolved continuum
         x, y = self._window(spec, self.main.x_range, self.n_main, conv,
                             convert_y=not raw_mode)
-        obj.main_source.data = dict(x=x, y=y)
+        v = self._views[obj.uid]
+        v.main_source.data = dict(x=x, y=y)
         shown = raw_mode or (obj.visible and self.norm_edit_uid is None)
-        obj.markers.visible = shown and len(x) <= self.marker_threshold
+        v.markers.visible = shown and len(x) <= self.marker_threshold
         if raw_mode:  # keep the faint original raw in sync behind the smoothed/selected view
             rx, ry = self._window(obj.raw, self.main.x_range, self.n_main, convert_y=False)
             self.norm_raw_source.data = dict(x=rx, y=ry)
 
     def set_style(self, obj, color=None, width=None, dash=None, alpha=None):
-        for glyph in (obj.line.glyph, obj.nav_line.glyph):
+        """Change an object's line style: recorded on the object, drawn on both plots."""
+        if color is not None:
+            obj.color = color
+        if width is not None:
+            obj.width = width
+        if dash is not None:
+            obj.dash = dash
+        if alpha is not None:
+            obj.alpha = alpha
+        v = self._views[obj.uid]
+        for glyph in (v.line.glyph, v.nav_line.glyph):
             if color is not None:
                 glyph.line_color = color
             if width is not None:
@@ -973,17 +887,14 @@ class SpectrumCanvas:
                 glyph.line_dash = dash
             if alpha is not None:
                 glyph.line_alpha = alpha
-        if dash is not None:
-            obj.dash = dash
-        if self.on_change:
-            self.on_change(self)  # refresh the dash swatch in the list
+        self.changed()  # refresh the dash swatch in the list
 
     def _refresh_object(self, obj):
         self.refresh_object(obj)
         spec, raw_mode = self._display(obj)
         conv = None if raw_mode else obj.conv  # raw view is the un-convolved continuum
         xn, yn = self._window(spec, self.nav.x_range, self.n_nav, conv, convert_y=not raw_mode)
-        obj.nav_source.data = dict(x=xn, y=yn)
+        self._views[obj.uid].nav_source.data = dict(x=xn, y=yn)
         self._fit_nav_y()
 
     def _refresh_main(self):
@@ -994,7 +905,7 @@ class SpectrumCanvas:
 
     def _main_drawn(self):
         """Objects currently drawn on the main figure (visible, or the lone edited one)."""
-        for obj in self.objects:
+        for obj in self.spectra:
             if self.norm_edit_uid is not None:
                 if obj.uid == self.norm_edit_uid:
                     yield obj      # only the edited spectrum, while its continuum is set
@@ -1009,7 +920,7 @@ class SpectrumCanvas:
         this rather than against ``y_range.start/end``: the range already includes whatever
         they drew last time, so measuring against it would walk them upwards on every repaint.
         The data does not move, so this does not either."""
-        ys = [obj.main_source.data["y"] for obj in self._main_drawn()]
+        ys = [self._views[obj.uid].main_source.data["y"] for obj in self._main_drawn()]
         ys = [y for y in ys if len(y)]
         if not ys:
             return None
@@ -1018,7 +929,7 @@ class SpectrumCanvas:
         return (lo, hi) if np.isfinite(lo) and np.isfinite(hi) else None
 
     def _refresh_nav(self):
-        for obj in self.objects:
+        for obj in self.spectra:
             if obj.uid != self.norm_edit_uid and not obj.visible:
                 continue
             if self.norm_edit_uid is not None and obj.uid != self.norm_edit_uid:
@@ -1026,15 +937,15 @@ class SpectrumCanvas:
             spec, raw_mode = self._display(obj)
             conv = None if raw_mode else obj.conv  # raw view is the un-convolved continuum
             x, y = self._window(spec, self.nav.x_range, self.n_nav, conv, convert_y=not raw_mode)
-            obj.nav_source.data = dict(x=x, y=y)
+            self._views[obj.uid].nav_source.data = dict(x=x, y=y)
         self._fit_nav_y()
 
     def _fit_nav_y(self):
         """Autoscale the nav y-axis to the data drawn in the visible window, capping the
         top at NAV_Y_MAX for the normalised view (raw continuum-edit flux, which is far
         above 1, keeps a plain data fit so it isn't clipped)."""
-        ys = [obj.nav_source.data["y"] for obj in self._nav_drawn()
-              if len(obj.nav_source.data["y"])]
+        ys = [y for y in (self._views[obj.uid].nav_source.data["y"] for obj in self._nav_drawn())
+              if len(y)]
         if not ys:
             return
         lo = min(float(np.nanmin(y)) for y in ys)
@@ -1048,9 +959,25 @@ class SpectrumCanvas:
 
     def _nav_drawn(self):
         """Objects currently drawn in the nav (visible, or the lone edited one)."""
-        for obj in self.objects:
+        for obj in self.spectra:
             if self.norm_edit_uid is not None:
                 if obj.uid == self.norm_edit_uid:
                     yield obj
             elif obj.visible:
                 yield obj
+
+
+def settings_form(canvas, on_units=None):
+    """The display-settings form: the x axis unit. The y axis is always the normalised
+    (dimensionless) flux — every spectrum is continuum-normalised on load — so only the x
+    unit is selectable."""
+    def on_change(key, value):
+        if key == "xunit":
+            canvas.set_xunit(value)
+        if on_units:
+            on_units()
+
+    return Form("settings", [
+        Field("xunit", "X axis unit", kind="select",
+              value=canvas.xlabel, options=list(X_UNITS)),
+    ], on_change=on_change)

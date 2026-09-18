@@ -1,5 +1,10 @@
-"""Selectable display units for the axes (label -> astropy unit)."""
+"""Display units: the selectable axis units (label -> astropy unit), the conversions between
+them, and the native unit the line list's wavelengths are converted from."""
 import astropy.units as u
+
+# native unit of the master line list's ``lam0`` column (:mod:`tumult.linelist`), which the
+# line navigator and the line annotations convert to the canvas's display unit
+LAM0_UNIT = u.AA
 
 X_UNITS = {
     "Å": u.AA,

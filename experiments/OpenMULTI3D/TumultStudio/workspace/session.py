@@ -45,7 +45,7 @@ SCHEMA_VERSION = 2
 
 SPECTRUM_KINDS = ("file", "run", "synth")       # path-backed, path-backed, embedded
 # what the single sidebar highlight can rest on: the canvas, the mask list, the atom list
-# or one of the three result lists (ctx.focus_kind values)
+# or one of the three result lists (the workspace focus_kind values)
 FOCUS_KINDS = ("spectrum", "linemask", "atom", "result", "corr", "ionbal")
 RESULT_TOOLS = ("abundance", "abundcorr", "ionbal")   # the result-list sections
 # focus kind -> the result tool whose list carries it

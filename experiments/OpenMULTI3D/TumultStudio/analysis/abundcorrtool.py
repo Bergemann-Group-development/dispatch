@@ -63,7 +63,7 @@ from .diagnostics import empty_points
 from .resultview import ResultView, format_value
 from ..preferences.synthprefs import atmosphere_grid
 from tumult.departures import DepartureRequest
-from ..spectrum.canvas import ACCENT
+from ..ui.style import ACCENT
 from .cogpanel import CogPanel
 from ..ui.controls import Field, Form
 from ..spectrum.ew import FIT_PROFILES, profile_options
@@ -421,7 +421,7 @@ class AbundCorrTool(ResultView):
         kwargs = {"reference_atmosphere": atmosphere_grid(ref_grid),
                   "background_lines": opts.linelist, "profile": opts.profile,
                   "ew_min": opts.ew_min, "limit": opts.limit}
-        name = self.ctx.unique_name(naming.corrections(obj.symbol, request,
+        name = self.ctx.workspace.unique_name(naming.corrections(obj.symbol, request,
                                                        self.setup.active_grid()))
         self.ctx.schedule(lambda: self.jobs.submit_operation(
             name, self.task_kind, request, lambda result: self._on_task_done(result, name),

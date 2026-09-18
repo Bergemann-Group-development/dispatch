@@ -11,8 +11,12 @@ closures, and cross-tool reactions go through its event bus:
   owns its hidden server->client bridges here (they are all collected into the single
   document-root column by ``app.build``).
 * ``ctx.tools``   - the :class:`toolmanager.ToolManager` (mutual exclusion).
-* ``ctx.canvas``  - the shared :class:`canvas.SpectrumCanvas` (set right after it is
-  constructed; tools are built after that).
+* ``ctx.workspace`` - the :class:`~.workspace.objects.WorkspaceObjects`: the live
+  spectra (``workspace.spectra``), the single left-sidebar focus (``focus_kind``,
+  ``focus``), unique names (``unique_name``) and the Edit menu's rename / duplicate.
+* ``ctx.canvas``  - the shared :class:`canvas.SpectrumCanvas` over those spectra (set
+  right after it is constructed; tools are built after that).
+* ``ctx.masks``   - the :class:`~.masks.maskstore.MaskStore` of line mask sets.
 * ``ctx.annot``   - the shared :class:`lineannot.LineAnnotations` overlay (line positions
   drawn over the spectrum); a tool attaches to it while its view is open.
 * ``ctx.strengths`` - the shared :class:`tumult.linestrength.LineStrengths` provider:
@@ -56,6 +60,10 @@ closures, and cross-tool reactions go through its event bus:
   - ``"changed"``       - the workspace changed (an object was added/removed/selected,
                           units flipped, ...). Emitted from ``update_all``; tools keep
                           themselves in sync from it instead of being hand-called.
+  - ``"focus-changed"`` - the left-sidebar focus moved (``kind=str``); emitted by
+                          ``workspace.focus``, and what repaints every sidebar list.
+  - ``"masks-changed"`` - the line mask sets changed; emitted by the mask store and by
+                          a balance that writes its edits back to its set.
   - ``"filter-state"``  - the canvas filter existence/visibility changed
                           (``exists=bool, visible=bool``); emitted by the filter tool.
   - ``"line-picked"``   - one of the line-position indicators was clicked
@@ -75,7 +83,9 @@ class AppContext:
         self.closed = False
         self.bridges = bridges
         self.tools = tools
+        self.workspace = None  # WorkspaceObjects, installed by app.build before the canvas
         self.canvas = None
+        self.masks = None      # MaskStore, installed by app.build with the mask tool
         self.annot = None      # LineAnnotations, installed by main once the canvas exists
         self.strengths = None  # LineStrengths, installed by main alongside it
         self.jobs = JobTable()

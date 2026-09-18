@@ -89,10 +89,9 @@ import numpy as np
 from bokeh.core.properties import value
 from bokeh.models import ColumnDataSource, CustomJS, HoverTool, LabelSet, TapTool
 
-from .canvas import BG, MUTED
 from ..ui.htmlbridge import toggle
-from .linenav import LAM0_UNIT
-from ..ui.units import to_range, to_value
+from ..ui.style import BG, MUTED
+from ..ui.units import LAM0_UNIT, to_range, to_value
 
 # lines of one ion closer together than this are one blend: one feature in the spectrum, one
 # name on the plot, ranked by their summed strength. tumult's plot_line_labels default.
@@ -397,7 +396,7 @@ class LineAnnotations:
         repaint runs on the document thread — ``main.warm_strengths`` does that in the
         background, and the next repaint sees the computed band and rebuilds here.
         """
-        obj = self.canvas.selected()
+        obj = self.canvas.spectra.selected()
         if obj is None:          # an empty canvas: a mask set may exist before any spectrum
             return None
         lo, hi = self._window_aa()

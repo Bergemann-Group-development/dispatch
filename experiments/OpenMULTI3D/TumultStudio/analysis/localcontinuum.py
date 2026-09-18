@@ -10,7 +10,7 @@ checkbox column switches.
 :class:`LocalContinuum` owns the interaction: the two draggable markers and the dashed line
 between them on the main figure, the debounce that measures only once a drag has settled,
 and the delivery of the re-measured line back into the result. Every measurement runs off the
-document thread through :class:`~..execution.latestwork.LatestWork` on a deep copy, so a
+document thread through :class:`~..ui.latestwork.LatestWork` on a deep copy, so a
 failure leaves the displayed result exactly as it was and only the latest request is applied.
 
 The view that owns the result supplies what this cannot know: which spectrum the
@@ -29,8 +29,8 @@ from bokeh.models import ColumnDataSource, PointDrawTool
 
 from tumult import abundance as ab
 
-from ..execution.latestwork import LatestWork
-from ..spectrum.canvas import ACCENT
+from ..ui.latestwork import LatestWork
+from ..ui.style import ACCENT
 from ..ui.debounce import Trailing
 from ..ui.units import to_value
 

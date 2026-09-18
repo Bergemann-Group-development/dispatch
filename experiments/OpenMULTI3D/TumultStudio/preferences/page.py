@@ -58,8 +58,13 @@ class PreferencesPage:
         self.on_grids_change = lambda: None   # the grid registry changed
         self.missing = []        # path prefs currently pointing at non-existent files
 
-        # run-cache listing (settings modal → Cache page)
+        # run-cache listing (settings modal → Cache page), and its delete / clear / refresh
+        # channel: "kind <arg> <nonce>" (space-delimited: kind and nonce have no spaces, so
+        # partition + rsplit recover a path argument even with spaces in it. The
+        # ":"-delimited object-actions bridge cannot carry a filesystem path safely.)
         self.cache_bridge = ctx.bridges.html("synth-cache", name="synth-cache-render")
+        self._cache_actions = ctx.bridges.action("cache-actions")
+        self._cache_actions.on_change("value", self._on_cache_action)
 
         prefs = load_prefs()
         self.pref_forms = {
@@ -237,6 +242,18 @@ class PreferencesPage:
 
     def refresh_cache(self):
         self.cache_bridge.value = self.cache_html()
+
+    def _on_cache_action(self, attr, old, new):
+        if not new:
+            return
+        kind, _, rest = new.partition(" ")
+        arg = rest.rsplit(" ", 1)[0]  # strip the trailing nonce
+        if kind == "del":
+            self.delete_cache(arg)
+        elif kind == "clear":
+            self.clear_cache()
+        elif kind == "refresh":
+            self.refresh_cache()
 
     def delete_cache(self, path):
         synth.delete_cache_entry(load_prefs(), path)

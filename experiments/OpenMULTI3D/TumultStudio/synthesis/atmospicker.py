@@ -19,7 +19,7 @@ from pathlib import Path
 from tumult.synthesis import workflows as synth
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 from ..ui.filepicker import FilePicker
-from ..execution.latestwork import LatestWork
+from ..ui.latestwork import LatestWork
 
 FILE_PLACEHOLDER = "Type a path…"
 NODE_PLACEHOLDER = "Filter models, e.g. 5750 4.5 -1"

@@ -37,7 +37,7 @@ model atoms, and abundance overrides, e.g.
 `Fe abundance · obs.fits · fe-lines · MARCS · LTE` or `Fe corrections · T5750 g4.40 m+0.00 ξ1.00 · MARCS`.
 The Info tab and the result panels hold the full provenance. A name already used by a
 spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suffix
-(`ctx.unique_name`), and a loaded file shares that rule. A calculation does not rename the
+(`workspace.unique_name`), and a loaded file shares that rule. A calculation does not rename the
 object it updates: a result's sidebar row shows its current value on a second line, and
 names in a loaded workspace stay as saved.
 
@@ -573,26 +573,47 @@ line by line.
 
 The GUI is the `TumultStudio/` package; paths below are relative to it.
 
-- `app.py` builds the document: the `AppContext` (`context.py`) with its services, the
-  canvas, the tools, the Processes panel and the Bokeh roots. `main.py` only calls
-  `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks. The document's
-  services have their own owners: `execution/delivery.py` (`DeliveryService`: admission,
-  `load_async`, next-tick delivery and the lifetime guards), `execution/workflows.py`
-  (`WorkflowService`: workflow attachment, recovery and import-once bookkeeping) and
+- `app.py` composes the document: the `AppContext` (`context.py`) with its services, the
+  workspace, the canvas over it, the tools, the Processes panel, the action channels and
+  the Bokeh roots; it holds no behaviour of its own beyond the repaint that follows a
+  change of the objects. `main.py` only calls `app.build()`; `app_hooks.py` holds the
+  Bokeh server lifecycle hooks. The document's services have their own owners:
+  `execution/delivery.py` (`DeliveryService`: admission, `load_async`, next-tick
+  delivery and the lifetime guards), `execution/workflows.py` (`WorkflowService`:
+  workflow attachment, recovery and import-once bookkeeping) and
   `workspace/persistence.py` (`WorkspacePersistence`: snapshot, restore and the Saved
-  workspaces bridge).
+  workspaces bridge, with the saved-reference loaders `load_spectrum` / `load_atom`).
+- `workspace/objects.py` owns the live objects and the single left-sidebar focus:
+  `Spectra` is the document's spectrum list and selection (`SpectrumObject` is data,
+  identity, provenance, processing state and line style), and `WorkspaceObjects`
+  (`ctx.workspace`) reaches the mask sets, atoms and result lists beside it, owns
+  `focus_kind` / `focus` / `focused` / `focus_object`, unique naming across every object
+  and unfinished job, the Edit menu's rename and duplicate of spectra and mask sets, the
+  delivered synthesis (`add_synthetic`) and the Objects list and footer HTML.
+  `SpectrumCanvas` (`spectrum/canvas.py`) draws those spectra and keeps their Bokeh
+  renderers (`ObjectRenderers`), the ranges, units, overlays and the filter and
+  continuum-edit views; `workspace/opening.py` (`SpectrumOpener`) is Open → Spectrum:
+  the file picker, the "Load this run" button and the loads they start.
 - `execution/jobs.py` owns the job table (`Job`, `JobTable`, `ResultJobs`) and the
   workflow references; `execution/processes.py` the Processes panel and its job and
   recovery presentations. `workspace/session.py` is the workspace schema, its validation
   and its headless preparation; `workspace/store.py` the config file (preferences, recent
   files, slots); `workspace/naming.py` the delivered objects' names.
 - `ui/tool.py` and `ui/toolmanager.py` own the sidebar-tool protocol and mutual
-  exclusion; `ui/htmlbridge.py`, `ui/controls.py`, `ui/tableui.py` and
-  `ui/filepicker.py` the client-server bridges, forms, tables and pickers every feature
-  renders with. `RangeTool` (`spectrum/rangetool.py`) is the Select range tool of the
-  toolbar: it owns `RangeSelect` and hosts `EquivalentWidth` (`spectrum/ew.py`) as its
-  sub-panel. `MaskTool` (`masks/masktool.py`) owns the LineMasks view over `MaskStore`
-  (`masks/maskstore.py`) and hands "+ New mask" to the range tool in add mode.
+  exclusion; `ui/htmlbridge.py` (with the footer's `StatusLine`), `ui/controls.py`,
+  `ui/tableui.py` and `ui/filepicker.py` the client-server bridges, forms, tables and
+  pickers every feature renders with; `ui/style.py` the plot palette and `style_dark`,
+  `ui/units.py` the display units, their conversions and the line list's `LAM0_UNIT`;
+  `ui/latestwork.py` and `ui/debounce.py` the latest-value work and timing helpers.
+  `ui/` imports no feature module. `Inspector` (`spectrum/inspector.py`) is the right
+  sidebar's Info, Edit (with the broadening fit) and Style tabs. `RangeTool`
+  (`spectrum/rangetool.py`) is the Select range tool of the toolbar: it owns
+  `RangeSelect` and hosts `EquivalentWidth` (`spectrum/ew.py`) as its sub-panel.
+  `LineStrengthService` (`spectrum/strengths.py`) owns the line-strength provider, the
+  `LineNavigator` panel and the `LineAnnotations` overlay over it, their settings, and
+  the warming of the visible band. `MaskTool` (`masks/masktool.py`) owns the LineMasks
+  view over `MaskStore` (`masks/maskstore.py`) and hands "+ New mask" to the range tool
+  in add mode.
 - `SynthModal` (`synthesis/synthmodal.py`) collects both modal modes from `SynthSetup`
   (`synthesis/synthsetup.py`) with `FitTab` (`synthesis/fittab.py`) as its Fit section;
   there is no departure-solve action in the GUI. The Preferences dialog is
@@ -610,17 +631,19 @@ The GUI is the `TumultStudio/` package; paths below are relative to it.
   their GUI identity references are `analysis/results.py`, the diagnostic panels
   `analysis/diagnostics.py`, and the local-continuum interaction
   `analysis/localcontinuum.py`. `AtomTool` (`atoms/atomtool.py`) owns the atom objects,
-  the atom view and the correction entry point; `AbundanceResult.atom_path` links a
-  correction result to its atom.
+  the atom view, the Open Model Atom picker and the correction entry point;
+  `AbundanceResult.atom_path` links a correction result to its atom.
 - `EditMenu` (`workspace/editmenu.py`) is the toolbar's Edit menu; `app.py` registers one
-  `Target` per focus kind. Its Duplicate actions are `ResultView.duplicate_result`,
-  `MaskStore.duplicate` and `duplicate_spectrum` (`app.py`), and its renames are
-  `ResultView.rename_result`, `MaskStore.rename` and `Canvas.rename_object`;
-  `synthmodal.rerun_record` writes a spectrum's rerun record and `SynthModal.open_rerun`
-  with `SynthSetup.load_request` and `FitTab.load` reads it back.
+  `Target` per focus kind. Its Duplicate actions are `ResultView.duplicate_result` and
+  `WorkspaceObjects.duplicate_set` / `duplicate_spectrum`, and its renames
+  `ResultView.rename_result` and `WorkspaceObjects.rename_set` / `rename_spectrum`
+  (over `MaskStore` and `Spectra`); `synthmodal.rerun_record` writes a spectrum's rerun
+  record and `SynthModal.open_rerun` with `SynthSetup.load_request` and `FitTab.load`
+  reads it back.
 - `Removal` (`workspace/removal.py`, `ctx.removal`) is the remove-button path: its plans,
-  the confirmation (`htmlbridge.confirm_bridge`) and the Undo of the latest removal. The
-  owners' `remove_object`/`restore_object` (`spectrum/canvas.py`),
+  the confirmation (`htmlbridge.confirm_bridge`) and the Undo of the latest removal;
+  `register_workspace` registers the four kinds from the workspace. The owners'
+  `remove_object`/`restore_object` (`spectrum/canvas.py`, over `Spectra`),
   `remove_set`/`insert_set` (`masks/maskstore.py`), `remove_result`/`insert_result`
   (`analysis/resultview.py`) and `remove`/`insert` (`atoms/atomtool.py`) take an object
   out and put it back.

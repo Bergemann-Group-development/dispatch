@@ -27,11 +27,11 @@ from tumult.utils import (R_MAX, R_MIN, apply_brault_filter, apply_brault_popt,
                           brault_filter_H, brault_power_spectrum, brault_prep as _prep,
                           clamp_resolution)
 
-from .canvas import ACCENT, LINE, MUTED, _style
+from ..ui.style import ACCENT, LINE, MUTED, style_dark
 from ..ui.controls import Field, Form
 from ..ui.debounce import Debouncer
 from ..ui.htmlbridge import pulse, toggle
-from ..execution.latestwork import LatestWork
+from ..ui.latestwork import LatestWork
 from tumult.spectrum_io import Spectrum
 from ..ui.tool import Tool, suppress_callbacks
 
@@ -100,7 +100,7 @@ class FilterTool(Tool):
                      y_axis_label="power",
                      tools="xpan,xwheel_zoom,reset", active_scroll="xwheel_zoom",
                      min_border_left=62, min_border_bottom=42)
-        _style(fig)
+        style_dark(fig)
         # let the wheel widen the view past a range bound instead of sticking on the cursor
         for tool in fig.select(WheelZoomTool):
             tool.maintain_focus = False
@@ -146,7 +146,7 @@ class FilterTool(Tool):
 
     # --- activation -------------------------------------------------------
     def activate(self):
-        sel = self.canvas.selected()
+        sel = self.canvas.spectra.selected()
         if sel is None:
             self.notify("Load and select a spectrum before using the filter.")
             return
@@ -175,11 +175,11 @@ class FilterTool(Tool):
         self.push_panel()
 
     def _enter_brault(self):
-        sel = self.canvas.selected()
+        sel = self.canvas.spectra.selected()
         if sel is None:
             return
-        spectra = [(o.uid, o.spectrum, o.uid == self.canvas.selected_uid)
-                   for o in self.canvas.objects]
+        spectra = [(o.uid, o.spectrum, o.uid == self.canvas.spectra.selected_uid)
+                   for o in self.canvas.spectra]
         selected_uid = sel.uid
 
         def compute(token):
@@ -194,8 +194,8 @@ class FilterTool(Tool):
 
         def apply(powers):
             if (not self.active or self.method != Method.BRAULT
-                    or self.canvas.selected_uid != selected_uid
-                    or [o.uid for o in self.canvas.objects] != [row[0] for row in powers]):
+                    or self.canvas.spectra.selected_uid != selected_uid
+                    or [o.uid for o in self.canvas.spectra] != [row[0] for row in powers]):
                 return
             self._show_power_spectra(powers)
             selected = next(row for row in powers if row[0] == selected_uid)
@@ -257,7 +257,7 @@ class FilterTool(Tool):
     def _emit_state(self):
         """Reflect filter existence/visibility in the header switch, and tell the other
         tools (EW, abundance wizard) that the effective spectra changed."""
-        exists = any(o.filtered is not None for o in self.canvas.objects)
+        exists = any(o.filtered is not None for o in self.canvas.spectra)
         visible = self.canvas.show_filtered
         toggle(self._has_bridge, exists)
         toggle(self._check_bridge, visible)
@@ -312,7 +312,7 @@ class FilterTool(Tool):
         self._lowpass_filtered(res)
 
     def _lowpass_filtered(self, res):
-        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.objects]
+        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.spectra]
         uids = [uid for uid, _ in spectra]
 
         def compute(token):
@@ -323,7 +323,7 @@ class FilterTool(Tool):
             return out
 
         def apply(filtered):
-            if [obj.uid for obj in self.canvas.objects] != uids:
+            if [obj.uid for obj in self.canvas.spectra] != uids:
                 return
             self.canvas.apply_filter(filtered)
             self._emit_state()
@@ -363,7 +363,7 @@ class FilterTool(Tool):
         if not self.active:
             return
         xs, ys = self.cross.data["x"], self.cross.data["y"]
-        sel = self.canvas.selected()
+        sel = self.canvas.spectra.selected()
         if not xs or not ys or sel is None:
             return
         fmax = clamp_resolution(xs[0], _prep(sel.spectrum)[3])
@@ -372,7 +372,7 @@ class FilterTool(Tool):
 
     def apply_saved(self, fmax, floor):
         """Re-apply a saved Brault filter (from a session) without opening the view."""
-        if not self.canvas.objects:
+        if not self.canvas.spectra:
             return
         self.method = Method.BRAULT
         self.form.set_values(method=Method.BRAULT.label)
@@ -385,7 +385,7 @@ class FilterTool(Tool):
 
     def apply_saved_lowpass(self, res):
         """Re-apply a saved low-pass filter (from a session) without opening the view."""
-        if not self.canvas.objects:
+        if not self.canvas.spectra:
             return
         self.method = Method.LOWPASS
         self.form.set_values(method=Method.LOWPASS.label, res=float(res))
@@ -398,11 +398,11 @@ class FilterTool(Tool):
         self.fmax, self.floor = fmax, floor
         self.vline.location = fmax
         self.hline.location = float(np.exp(floor))
-        sel = self.canvas.selected()
+        sel = self.canvas.spectra.selected()
         if sel is None:
             return
         selected_uid = sel.uid
-        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.objects]
+        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.spectra]
         uids = [uid for uid, _ in spectra]
 
         def compute(token):
@@ -426,7 +426,7 @@ class FilterTool(Tool):
             return sm, modm, Hm, filtered
 
         def apply(result):
-            if [obj.uid for obj in self.canvas.objects] != uids:
+            if [obj.uid for obj in self.canvas.spectra] != uids:
                 return
             sm, modm, hm, filtered = result
             step = max(1, len(sm) // N_DISPLAY)

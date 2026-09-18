@@ -56,7 +56,7 @@ from tumult.synthesis import workflows as synth
 from .diagnostics import PANEL_AXES, empty_points
 from .localcontinuum import LOCAL_CONTINUUM_HEAD, continuum_cell
 from .resultview import ResultView, format_value, preparation_note, value_label
-from ..spectrum.canvas import ACCENT, MUTED
+from ..ui.style import ACCENT, MUTED
 from ..ui.controls import Field, Form
 from ..spectrum.ew import FIT_PROFILES, profile_options
 from ..ui.htmlbridge import pulse
@@ -596,7 +596,7 @@ class IonBalanceTool(ResultView):
                 .get(ref_uid, str(ref_uid)),
                 profile=str(v1["profile"]), snr=float(v1["snr"]) or None,
                 cont_pct=float(v1["cont_pct"]))
-            res.preparation = self.ctx.canvas.preparation(self.ctx.canvas._find(ref_uid))
+            res.preparation = self.ctx.canvas.preparation(self.ctx.canvas.spectra.find(ref_uid))
             res.preparation["line_list"] = str(self.master_path)
             self._add_result(res, naming.analysis(
                 res.element, "balance", res.ref_name, mset.name, ctx,

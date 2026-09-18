@@ -44,7 +44,6 @@ import logging
 from pathlib import Path
 from urllib.parse import unquote
 
-import astropy.units as u
 import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import Span
@@ -52,9 +51,8 @@ from bokeh.models import Span
 from tumult.linelist import load_master, search_lines
 
 from ..ui.tableui import SortState, sort_headers
-from ..ui.units import to_value, to_range
+from ..ui.units import LAM0_UNIT, to_value, to_range
 
-LAM0_UNIT = u.AA              # native unit of the master line list's lam0
 _MAX_ROWS = 500              # cap rendered rows (sorted, so "top N")
 _FLASH_MS = 1200
 # how close a row's lam0 has to be to the picked one to be that line: only the 4-decimal
@@ -161,7 +159,7 @@ class LineNavigator:
     def render(self):
         if not self.active:
             return
-        if not self.canvas.objects:
+        if not self.canvas.spectra:
             # nothing loaded -> no spectral window to scope the line list to
             self.on_table('<div class="linelist-empty">No spectrum loaded</div>')
             return
@@ -172,7 +170,7 @@ class LineNavigator:
             lo, hi = self._range_aa()
             # allow_compute off: a repaint runs on the document thread, and a band that is
             # not computed yet is being worked on in the background (main.warm_strengths)
-            src = self.strengths.lines_for(self.canvas.selected(), lo, hi,
+            src = self.strengths.lines_for(self.canvas.spectra.selected(), lo, hi,
                                            allow_compute=False)
             if src.lines is None:
                 self.on_table('<div class="linelist-empty">No line list available</div>')

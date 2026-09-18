@@ -15,7 +15,7 @@ from bokeh.models import ColumnDataSource
 from tumult.profile import profile_names
 from tumult import abundance as ab
 from ..ui.controls import num_input
-from ..execution.latestwork import LatestWork
+from ..ui.latestwork import LatestWork
 from ..ui.units import to_range, to_value
 
 ACCENT = "#4a90e2"
@@ -78,9 +78,9 @@ class EquivalentWidth:
     def target(self):
         """The focused spectrum object, or ``None`` when the left-sidebar focus is not a
         spectrum (a line mask or a result is open)."""
-        if getattr(self.ctx, "focus_kind", "spectrum") != "spectrum":
+        if self.ctx.workspace.focus_kind != "spectrum":
             return None
-        return self.canvas.selected()
+        return self.canvas.spectra.selected()
 
     def _unavailable(self):
         """Why nothing can be measured right now ("" when it can)."""

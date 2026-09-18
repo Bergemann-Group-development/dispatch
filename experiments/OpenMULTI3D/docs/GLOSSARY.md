@@ -98,8 +98,13 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 
 **Workspace**
 
-- *saved workspace*: one save slot, the object workspace as `session.py` snapshots it.
-  Loading one replaces the workspace; calculation settings are not part of it.
+- *saved workspace*: one save slot, the object workspace as `session.py` snapshots it
+  (`session.Workspace`). Loading one replaces the workspace; calculation settings are not
+  part of it.
+- *workspace objects*: the live objects of one document and their single left-sidebar
+  *focus* (`workspace/objects.py`, `ctx.workspace`): the spectra, and the mask sets, atoms
+  and results it reaches. The *focus kind* names the list the highlight rests on; each
+  list keeps its own *selected* uid, which the focus reads.
 - *calculation draft*: a modal's edits to a calculation's last-used settings before it is
   submitted (`draft.CalculationDraft`). Submitting commits them, dismissing discards them.
   Preferences pages are not drafts: they save on every change.

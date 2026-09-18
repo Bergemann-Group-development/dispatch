@@ -51,7 +51,7 @@ import numpy as np
 from tumult import abundance as ab
 from ..workspace import store
 from tumult.synthesis import workflows as synth
-from ..spectrum.canvas import ACCENT
+from ..ui.style import ACCENT
 from .cogpanel import Chi2Panel, CogPanel
 from .diagnostics import empty_points
 from .localcontinuum import LOCAL_CONTINUUM_HEAD, continuum_cell
@@ -438,13 +438,13 @@ class AbundanceTool(ResultView):
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
         v = self.form1.values()
-        preparation = self.ctx.canvas.preparation(self.ctx.canvas._find(ref_uid))
+        preparation = self.ctx.canvas.preparation(self.ctx.canvas.spectra.find(ref_uid))
         preparation["line_list"] = str(self.master_path)
         self.draft.commit()
         pulse(self._modal, "close")
         self.notify(f"Measuring {mset.element} windows on the reference…")
         mset, ref_spec = deepcopy(mset), deepcopy(ref_spec)
-        name = self.ctx.unique_name(naming.analysis(
+        name = self.ctx.workspace.unique_name(naming.analysis(
             mset.element, "abundance", dict(self.list_observations()).get(ref_uid, ""), mset.name,
             request, self.setup.active_grid()))
         loader = lambda _res, token, progress: self._measure_lines(

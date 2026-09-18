@@ -26,7 +26,7 @@ from bokeh.plotting import figure
 from tumult.abundance import reduced_ew
 from tumult.utils import pchip_mono
 
-from ..spectrum.canvas import ACCENT, SYNTH_FIT, style_dark
+from ..ui.style import ACCENT, SYNTH_FIT, style_dark
 
 CURVE_POINTS = 80            # samples of the PCHIP interpolant drawn through the rungs
 SOLUTION_COLOR = "#e05c5c"   # the inverted abundance and its ±σ band

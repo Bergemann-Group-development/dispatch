@@ -22,9 +22,11 @@ from pathlib import Path
 
 import numpy as np
 
+from ..ui.filepicker import FilePicker
 from ..ui.htmlbridge import parse_action, pulse, toggle
 from ..ui.tableui import SortState, sort_headers
 from ..ui.tool import Tool
+from ..workspace import store
 
 TABS = ("levels", "trans")
 
@@ -82,7 +84,7 @@ class AtomTool(Tool):
     """The tool behind the atom objects: the list, the two-table view and the panel."""
 
     name = "atom"
-    kind = "atom"                    # ctx.focus_kind while an atom owns the centre view
+    kind = "atom"                    # the workspace focus_kind while an atom owns the centre view
 
     LEVEL_SORT = {"i": True, "label": True, "ion": True, "ecm": True, "g": True, "nbb": False}
     TRANS_SORT = {"kr": True, "lam0": True, "lower": True, "upper": True, "loggf": False,
@@ -115,6 +117,25 @@ class AtomTool(Tool):
     @property
     def models(self):
         return []                        # every bridge is owned through ctx.bridges
+
+    def make_picker(self, load_async):
+        """The Open Model Atom modal's picker, rooted at the configured ``input/atoms``: a
+        pick parses the atom off the document thread (``load_async``; the row spins
+        through the job table meanwhile) and lists it."""
+        atoms_dir = (Path(str(store.get_pref("dispatch_cwd") or ".")).expanduser()
+                     / "input" / "atoms")
+
+        def on_select(filepath):
+            from tumult.atom import AtomClass
+            name = Path(filepath).name
+            load_async(name, lambda token=None: AtomClass(str(filepath)),
+                       lambda atom: self.add(filepath, atom), path=filepath)
+
+        self.picker = FilePicker(on_select, container_id="atom-file-results",
+                                 start_dir=atoms_dir if atoms_dir.is_dir() else Path.home(),
+                                 busy_provider=self.ctx.jobs.paths)
+        self.picker.layout.name = "atom_file_picker"
+        return self.picker
 
     def find(self, uid):
         return next((a for a in self.atoms if a.uid == uid), None)
@@ -186,7 +207,7 @@ class AtomTool(Tool):
         self.render_objects()
 
     def is_focused(self):
-        return getattr(self.ctx, "focus_kind", "spectrum") == self.kind
+        return self.ctx.workspace.focus_kind == self.kind
 
     # --- Tool protocol ------------------------------------------------------------------
     def activate(self):
@@ -199,8 +220,7 @@ class AtomTool(Tool):
         self.set_tab(self.tab)
         self.render_tables()
         pulse(self._view_bridge, "on")
-        self.ctx.focus_kind = self.kind
-        self.ctx.emit("focus-changed", kind=self.kind)
+        self.ctx.workspace.focus(self.kind)
 
     def deactivate(self):
         was = self.active
@@ -208,9 +228,8 @@ class AtomTool(Tool):
         if was:
             pulse(self._view_bridge, "off")
             self.push_mode("off")
-            if self.ctx.focus_kind == self.kind:
-                self.ctx.focus_kind = "spectrum"
-                self.ctx.emit("focus-changed", kind="spectrum")
+            if self.ctx.workspace.focus_kind == self.kind:
+                self.ctx.workspace.focus("spectrum")
 
     def blur(self):
         """Another object took focus: leave the view, keep the selection."""

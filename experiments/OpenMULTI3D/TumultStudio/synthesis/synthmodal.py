@@ -107,7 +107,7 @@ class SynthModal:
         self.fit.set_catalog(load_prefs())
         self.fit.set_relative(bool(self.setup.base_form.value("relative_abundances")))
         self.fit.set_feh(self.setup.run_form.value("feh"))
-        self.fit.targets = [(o.uid, o.name) for o in self.canvas.objects]
+        self.fit.targets = [(o.uid, o.name) for o in self.canvas.spectra]
         self._sync_fit_stellar()   # seed the stellar-fit switches for the current atmosphere
 
     @property
@@ -381,7 +381,7 @@ class SynthModal:
     # --- fit -------------------------------------------------------------
     def refresh_targets(self):
         """Re-populate the Fit section's target dropdown from the current canvas objects."""
-        self.fit.set_targets([(o.uid, o.name) for o in self.canvas.objects])
+        self.fit.set_targets([(o.uid, o.name) for o in self.canvas.spectra])
 
     def run_fit(self):
         """Fit the chosen target as a durable ``synthesis.fit`` workflow.
@@ -398,7 +398,7 @@ class SynthModal:
             self._reject("Set the wavelength window (λ min/max) first.")
             return
         c = self.fit.collect()
-        obj = self.canvas._find(c["target"]) if c["target"] else None
+        obj = self.canvas.spectra.find(c["target"]) if c["target"] else None
         if obj is None:
             self._reject("Select a target spectrum to fit.")
             return
@@ -416,7 +416,7 @@ class SynthModal:
         xmin = min(lo for lo, _hi in request.windows)
         xmax = max(hi for _lo, hi in request.windows)
         kind, mset = self.job or ("range", None)
-        name = self.ctx.unique_name(naming.fit(
+        name = self.ctx.workspace.unique_name(naming.fit(
             obj.name, request, grid, window=mset.name if kind == "masks" else None,
             fitted=c["abund_fits"]))
         rows = self._request_rows(request, grid)
@@ -532,7 +532,7 @@ class SynthModal:
         star = request.star
         mode, abundances, relative, atoms = self._request_terms(request)
         grid = self.setup.active_grid()
-        name = self.ctx.unique_name(naming.synthesis(
+        name = self.ctx.workspace.unique_name(naming.synthesis(
             request, grid, window=mset.name if kind == "masks" else None))
         shown_min = min(lo for lo, _hi in request.windows)
         shown_max = max(hi for _lo, hi in request.windows)
