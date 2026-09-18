@@ -8,6 +8,24 @@ HTML/CSS, no framework, no CSS preprocessor.
 
 ---
 
+## 0. Where it lives in TumultStudio
+
+The style sheets are `TumultStudio/static/css/`, one per owner, inlined into the page by
+`app.page_css` in this cascade order:
+
+| File | Owns |
+|---|---|
+| `base.css` | the `:root` tokens (§2), the reset, and the shared control vocabulary (§6–7): buttons, fields and `<num-input>`, tabs and step tabs, the splitter, menus, modal chrome, the settings rail, file pickers, disclosure sections |
+| `workspace.css` | the shell (§5): header, toolbar, sidebars, canvas and footer; objects and processes; saved workspaces; the spectrum tools' panels; the line list and line masks |
+| `preferences.css` | the Preferences modal and its pages, and the header's warning sign |
+| `synthesis.css` | the synthesise / fit modal, the atmosphere and model-atom selection |
+| `analysis.css` | the abundance, model-atom, correction and ionisation-balance tools |
+
+A later sheet may refine a base rule of equal specificity, so a rule's sheet is also its
+place in the cascade. The markup is `templates/` (`index.html` plus one template per
+owner) and the behaviour `static/js/` (`bridge.js` plus one script per owner), served
+from the application's own static route.
+
 ## 1. Design Principles
 
 1. **Dark, low-contrast surfaces.** A near-black background with a small set of slightly

@@ -1,0 +1,97 @@
+/* TumultStudio preferences — the Preferences modal and its pages (path pickers,
+   atmosphere grids, reference stars, run cache) and the header's warning sign. */
+
+/* preferences (cog + missing-files warning), sitting next to save/load in the header */
+.header-settings { margin-left: 8px; }
+.settings-wrap { display: flex; align-items: center; gap: 6px; }
+#settings-warning { display: none; color: #e05c5c; font-size: 16px; cursor: default; }
+#settings-warning.show { display: inline-flex; align-items: center; }
+/* wide enough for the model table of the Atmosphere grids page */
+#settings-modal { width: min(760px, 92vw); height: min(520px, 88vh); }
+
+/* missing-file warning on a path field */
+.field-warn .field-input { border-color: #c0392b; }
+.field-warn-hint { font-size: 10px; color: #e05c5c; }
+
+/* run-cache page */
+.cache-head { display: flex; align-items: center; justify-content: space-between; }
+.cache-summary { font-size: 10px; color: var(--text-muted); }
+.cache-list { display: flex; flex-direction: column; gap: 4px; }
+.cache-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.cache-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cache-star { font-size: 12px; }
+/* run-kind badge: SPEC (spectrum) vs DEP (departure coefficients) */
+.cache-tag {
+  display: inline-block; margin-right: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.04em; vertical-align: middle;
+  background: var(--border); color: var(--text-muted);
+}
+.cache-tag-dep { background: rgba(74,144,226,0.18); color: var(--accent); }
+.cache-sub { font-size: 10px; color: var(--text-muted); }
+.cache-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.cache-del:hover { border-color: #e05c5c; color: #e05c5c; }
+/* the grid folder picker takes the place of the folder field it is browsing for */
+.grid-folder-row.editing .grid-folder { display: none; }
+.grid-folder-row .inline-picker-auto { flex: 1; min-width: 0; margin-top: 0; }
+
+/* ---- registered atmosphere grids (settings) ------------------------------ */
+.grid-list { display: flex; flex-direction: column; gap: 10px; }
+.grid-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-card-head { display: flex; align-items: center; gap: 6px; }
+.grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
+.grid-card .field-warn-input { border-color: #c0392b; }
+.grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
+.grid-count .field-input { width: 5em; }
+.grid-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-row-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.grid-row-name { font-weight: 600; }
+.grid-row-state { color: var(--text-muted); font-size: 12px; }
+/* a running download replaces the row's buttons by a ring that fills clockwise with the
+   job's percentage (--p, pushed live by the grid-progress bridge) */
+.grid-progress {
+  flex-shrink: 0; display: inline-block; vertical-align: middle;
+  width: 16px; height: 16px; margin: 4px; border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), var(--border) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+/* the model table reuses the sortable line-list table; the name column reads as text */
+.grid-models { max-height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the model name column reads as text; its sortable header aligns with the names */
+.grid-models thead th:first-child { text-align: left; }
+.grid-models td:last-child { white-space: nowrap; }
+
+/* ---- reference stars (settings) ------------------------------------------- */
+.refstars-list { display: flex; flex-direction: column; gap: 4px; }
+.refstar-row {
+  display: grid; grid-template-columns: minmax(8em, 2fr) repeat(4, minmax(4.5em, 1fr)) auto;
+  gap: 6px; align-items: center;
+}
+.refstar-row .field-input { min-width: 0; }
+.refstar-head { color: var(--text-muted); font-size: 12px; padding: 0 4px; }
+.refstar-actions { display: flex; gap: 8px; margin-top: 6px; }
+
+/* Preferences path pickers: the field is the preference; a missing target reddens its
+   label (the input itself sits in Bokeh's shadow DOM) and shows the hint */
+.pref-path .field-warn-hint { display: none; }
+.pref-path.field-warn .field-warn-hint { display: block; }
+.pref-path.field-warn > label { color: #e05c5c; }
+.pref-path.off { display: none; }
+.pref-path .inline-picker-auto { margin-top: 0; }

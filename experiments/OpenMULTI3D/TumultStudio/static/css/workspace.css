@@ -1,0 +1,470 @@
+/* TumultStudio workspace — the application shell (header, toolbar, sidebars, canvas,
+   footer), objects and processes, saved workspaces, the spectrum tools' panels
+   (range, filter, normalise), the line list and line masks. */
+
+/* ---- shell ---------------------------------------------------------------- */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+#header {
+  height: var(--toolbar-h); flex-shrink: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px;
+}
+.app-title { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+
+/* session save/load button, pinned to the right of the app header */
+.header-sessions { margin-left: auto; }
+.session-hint { font-size: 11px; color: var(--text-muted); }
+
+/* game-style save slots in the Sessions modal */
+.session-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+.session-item {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  cursor: pointer;
+}
+.session-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); }
+.session-item > i { color: var(--text-muted); flex-shrink: 0; }
+.session-item:hover > i { color: var(--accent); }
+.session-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.session-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-sub { font-size: 10px; color: var(--text-muted); }
+.session-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.session-del:hover { border-color: #e05c5c; color: #e05c5c; }
+.session-newrow { gap: 8px; }
+.session-newrow .field-input { flex: 1; min-width: 0; }
+
+/* toolbar inside the work surface, above the figures; tools are grouped by kind
+   (view | load/save | adjustment | temporary), separated by a thin divider */
+#canvas-toolbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.toolbar-group { display: flex; align-items: center; gap: 6px; }
+.toolbar-group:not(:first-child)::before {
+  content: ""; align-self: stretch; width: 1px;
+  background: var(--border); margin: 4px 0;
+}
+/* brighter buttons so they stand out on the dark work surface */
+#canvas-toolbar .icon-btn,
+#canvas-toolbar .text-btn {
+  background: var(--border); border-color: #555; color: var(--text);
+}
+#canvas-toolbar .icon-btn:hover,
+#canvas-toolbar .text-btn:hover {
+  background: #4a4a4a; border-color: var(--accent); color: var(--accent);
+}
+
+#workspace { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+aside {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; padding: 10px; flex-shrink: 0;
+}
+.sidebar-left  { width: var(--sidebar-left-w); }
+.sidebar-right { width: var(--sidebar-right-w);
+  border-right: none; border-left: 1px solid var(--border); padding: 0; gap: 0; }
+
+#main {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--canvas-bg);
+  padding: 8px; gap: 6px;
+}
+#canvas-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; }
+
+/* empty state: no spectra loaded -> hide the (blank) toolbar + figures and show an
+   inline copy of the Sessions loader, centred in the canvas area */
+#canvas-empty { display: none; }
+#main.empty #top-panel,
+#main.empty #canvas-wrap { display: none; }
+#main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
+/* nothing loaded -> the inspector has nothing to act on, so hide the right sidebar and let
+   the empty-state card take the full width. Keep it visible when a tool panel that works
+   without objects is open. */
+#main.empty ~ .sidebar-right { display: none; }
+#main.empty ~ .sidebar-right.norm-active,
+#main.empty ~ .sidebar-right.filter-active,
+#main.empty ~ .sidebar-right.linemask-active,
+#main.empty ~ .sidebar-right.corr-active,
+#main.empty ~ .sidebar-right.atom-active { display: flex; }
+.empty-card {
+  width: min(420px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
+  padding: 18px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.empty-card-head { display: flex; align-items: center; gap: 8px; }
+.empty-card-head i { color: var(--text-muted); }
+.empty-session-results { margin-top: 0; max-height: 320px; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.empty-actions .text-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+
+/* filter mode swaps the spectrum figure (and top panel) for the feautrier view */
+#feautrier-wrap { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#main.filter-mode #top-panel,
+#main.filter-mode #canvas-wrap { display: none; }
+#main.filter-mode #feautrier-wrap { display: flex; }
+#filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#mask-btn.active, #line-list-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.feautrier-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+
+#feautrier-fig { flex: 1; min-height: 0; display: flex; }
+#feautrier-fig > * { flex: 1; min-width: 0; min-height: 0; }
+
+/* the nav overview sits above the main figure (fixed height) */
+#top-panel { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+#nav-slot { height: var(--panel-h); display: flex; }
+
+/* line-position indicators (lineannot.py): the Show/Hide button exists only while there are
+   lines to draw — for a view that attached its own selection, or on a deep enough zoom. */
+#annot-btn { display: none; }
+#main.annot-mode #annot-btn { display: inline-flex; align-items: center; }
+
+/* the line list, in the bottom half of the workspace: opened by picking one of those
+   indicators, so it stacks under whichever tool table is already down there rather than
+   fighting it for the same slot (its own --linelist-h, its own splitter) */
+#linelist-bottom { display: none; }
+#main.linelist-mode #linelist-bottom {
+  display: flex; flex: 0 0 var(--linelist-h); min-height: 0; flex-direction: column;
+  border-top: 1px solid var(--border); padding-top: 6px;
+}
+.linelist-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; }
+.linelist-head .section-header { margin-top: 0; flex-shrink: 0; }
+.linelist-head .icon-btn { flex-shrink: 0; }
+/* the search field sits at the right end of the header, next to the close button, with a
+   magnifying glass drawn inside its left edge */
+.linelist-search { position: relative; margin-left: auto; flex-shrink: 0; }
+.linelist-search .ti { position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: var(--text-muted); pointer-events: none; }
+.linelist-search .field-input { width: 200px; padding-left: 24px; }
+/* the panel's settings (reference star, the jump distance) sit inline in
+   its header */
+.linelist-settings { display: flex; align-items: center; gap: 16px; }
+.linelist-settings .field-group { gap: 6px; }
+.linelist-settings .field-group.field-inline > .field-input { width: 72px; }
+/* the star names are words, not a 72px number: let the select size to its longest option */
+.linelist-settings .field-group.field-inline > select.field-input { width: auto; }
+/* each setting hugs its own control instead of spreading across the header */
+.linelist-settings .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+.linelist-settings label { white-space: nowrap; }
+
+/* line list table */
+#linelist-table {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+/* the leading ion column reads as a name, not a number (Species is the table's one
+   non-sortable header, so it identifies that column on its own) */
+.linelist-table thead th:not(.line-sort),
+.linelist-table tbody td.line-ion { text-align: left; }
+/* the row the panel was opened at (or last jumped to) */
+.linelist-table .line-row.jump-target td {
+  background: rgba(74,144,226,0.18); color: var(--accent);
+}
+.linelist-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.linelist-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  text-align: right; padding: 4px 8px; font-weight: 600;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.linelist-table th.line-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.linelist-table th.line-sort:hover { color: var(--text); }
+.linelist-table th.line-sort.active { color: var(--accent); }
+/* a checkbox column: select all/none and show-only-checked, see tableui.check_header */
+.linelist-table th.check-head { white-space: nowrap; }
+/* right-aligned like the checkboxes below it */
+.check-head-row { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.check-head-label { margin-right: 2px; }
+.linelist-table .check-head-btn {
+  flex-shrink: 0; height: 18px; width: 18px;
+  border-color: transparent; background: none; font-size: 13px;
+}
+.linelist-table .check-head-btn.active { color: var(--accent); }
+.linelist-table tbody td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #2c2c2c; }
+.line-row { cursor: pointer; }
+.line-row:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
+.linelist-empty, .linelist-more { padding: 8px; font-size: 11px; color: var(--text-muted); }
+/* which star the strengths are for — the table means something different per star, and the
+   one non-physical source (the proxy) has to look different rather than blend in */
+.linelist-source {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; font-size: 10px; color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.linelist-source.warn { color: #e0a030; }
+
+/* action buttons in the right-sidebar panels (Mask, Normalise, Filter, LineMasks, the
+   inspector's Fit to target, …) are full-width and stacked with one consistent gap; a
+   row that places buttons side by side (.lm-actions) spaces them with its own gap */
+.sidebar-right :is(.text-btn, .primary-btn) { display: block; width: 100%; margin-top: 8px; }
+/* containers that space their children with a flex gap, and rows that place buttons side by
+   side (the Normalise panel's own id-scoped rhythm rule outranks this one by itself) */
+.sidebar-right :is(.lm-actions, .abund-step-panel)
+  > :is(.text-btn, .primary-btn) { margin-top: 0; }
+/* the Mask tool's panel: the drawn range, its actions and the equivalent width */
+.range-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.range-active .tab-bar,
+.sidebar-right.range-active .tab-content { display: none; }
+.sidebar-right.range-active .range-panel { display: flex; }
+.range-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.range-actions { display: flex; flex-direction: column; }
+.range-ew.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ew-value { font-size: 13px; font-variant-numeric: tabular-nums; }
+/* continuum-normalisation panel — same swap behaviour as the EW panel */
+.norm-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.norm-active .tab-bar,
+.sidebar-right.norm-active .tab-content { display: none; }
+.sidebar-right.norm-active .norm-panel { display: flex; }
+.norm-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.norm-panel-actions { display: flex; gap: 4px; }
+/* consistent spacing between the panel's fields, buttons and hint */
+#norm-panel-content > * + * { margin-top: 12px; }
+
+/* Filter inspector panel (method selector + low-pass cutoff) — same pattern as Normalise */
+.filter-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.filter-active .tab-bar,
+.sidebar-right.filter-active .tab-content { display: none; }
+.sidebar-right.filter-active .filter-panel { display: flex; }
+.filter-panel-head { display: flex; align-items: center; justify-content: space-between; }
+#filter-panel-content > * + * { margin-top: 12px; }
+
+/* LineMasks panel (import + list + padding + renorm) — same pattern as Normalise/Filter */
+.linemask-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.linemask-active .tab-bar,
+.sidebar-right.linemask-active .tab-content { display: none; }
+.sidebar-right.linemask-active .linemask-panel { display: flex; }
+.linemask-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.linemask-panel .lm-table { width: 100%; font-size: 11px; }
+.linemask-panel .lm-table td, .linemask-panel .lm-table th { padding: 2px 4px; white-space: nowrap; }
+.linemask-panel .lm-note { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; max-width: 60px; }
+.linemask-panel .lm-row { cursor: pointer; }
+.linemask-panel .lm-row:hover { background: #333; }
+.linemask-panel .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.linemask-panel .lm-actions { display: flex; gap: 8px; margin-top: 8px; }
+.linemask-panel .lm-actions .text-btn { flex: 1; }
+
+/* LineMasks centre view: the mask table below the spectrum (mirrors #abund-bottom) */
+#linemask-bottom { display: none; }
+#main.linemask-mode #top-panel { display: none; }
+#main.linemask-mode #canvas-wrap { display: flex; }
+#main.linemask-mode #linemask-bottom {
+  display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
+  border-top: 1px solid var(--border); padding-top: 6px;
+}
+/* the table scrolls in its own box; the new-mask button stays below it, at the table's
+   end while the rows fit and at the panel's bottom once they scroll */
+#linemask-tables, #linemask-table { flex: 1; min-height: 0; min-width: 0;
+  display: flex; flex-direction: column; }
+.lm-scroll { flex: 0 1 auto; min-height: 0; overflow: auto; }
+/* a switched-off mask: still listed, but plainly not in play */
+.lm-table .lm-row.lm-off td { opacity: 0.4; }
+.lm-flag { display: inline-block; margin: 0 3px 1px 0; padding: 0 4px; border-radius: 3px;
+  background: rgba(224,160,48,0.15); border: 1px solid #e0a030; color: #e0a030;
+  font-size: 9px; }
+.lm-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+/* the headings sit over their values, so they align with them: the shared .linelist-table
+   rule left-aligns every header that is not a sort button, which is all of these */
+.linelist-table.lm-table thead th { position: sticky; top: 0; background: var(--bg);
+  text-align: right; padding: 4px 8px; color: var(--text-muted); font-weight: 600; }
+.lm-table td { padding: 3px 8px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.lm-table .lm-note { color: var(--text-muted); }
+.lm-table .lm-row { cursor: pointer; }
+.lm-table .lm-row:hover { background: #333; }
+.lm-table .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.lm-empty { padding: 16px; color: var(--text-muted); font-size: 12px; }
+/* "+ New mask" row under the table — the table's own append-a-row affordance */
+.lm-add-row { flex: 0 0 auto; padding: 6px 8px; border-top: 1px solid var(--border); }
+.lm-add-row .text-btn { width: 100%; height: 26px; }
+.lm-table-empty { width: 100%; }
+
+/* the open set's name + its edited-since-import flag (right sidebar) */
+.lm-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.lm-title .section-header { margin-top: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.lm-dirty { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 1px 6px;
+  border-radius: 8px; color: #e0a030; border: 1px solid #e0a030;
+  background: rgba(224,160,48,0.12); }
+.lm-name { width: 100%; }
+/* a hint that flags something the user still has to supply */
+/* the New line mask modal reuses the Preferences rail; give it room for the picker */
+#linemask-modal { width: min(600px, 92vw); height: min(520px, 88vh); }
+#linemask-modal .settings-nav { flex: 0 0 150px; }
+#linemask-modal .settings-nav-item { display: flex; align-items: center; }
+#linemask-modal .file-results { max-height: 260px; }
+.lm-dot { flex: 0 0 auto; font-size: 9px; color: #e0a030; }
+#normalise-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* let the embedded Bokeh figures fill their slots */
+#canvas-wrap > * { flex: 1; min-width: 0; min-height: 0; }
+#nav-slot > * { flex: 1; min-width: 0; }
+
+#footer {
+  height: var(--footer-h);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; flex-shrink: 0;
+  font-size: 12px; color: var(--text-muted);
+}
+.footer-spacer { margin-left: auto; }
+
+/* transient footer status message — a semantic pill that pops + glows each time it
+   appears, so it can't be overlooked. Follows the tint-bg + matching-border + brighter
+   text status recipe; the halo borrows the pill's own text colour via currentColor. */
+.status-msg {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: status-pop 0.45s ease-out, status-glow 0.9s ease-out;
+}
+.status-warn    { background: rgba(255,160,0,0.12);  border-color: #e8a020; color: #f0a030; }
+.status-danger  { background: rgba(220,60,60,0.12);  border-color: #e05c5c; color: #f06060; }
+.status-success { background: rgba(80,200,120,0.12); border-color: #50c878; color: #50c878; }
+.status-info    { background: #1e2e3a;               border-color: #2e5070; color: #80c8f0; }
+.status-action {
+  margin-left: 8px; padding: 0 6px;
+  background: transparent; color: inherit; font: inherit;
+  border: 1px solid currentColor; border-radius: 3px; cursor: pointer;
+}
+.status-action:hover { background: rgba(255,255,255,0.08); }
+
+@keyframes status-pop {
+  0%   { opacity: 0; transform: scale(0.94); }
+  55%  { opacity: 1; transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@keyframes status-glow {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  30%  { box-shadow: 0 0 7px 1px currentColor; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* indeterminate progress bar, shown while background loads are in flight */
+#footer-progress { display: none; width: 120px; height: 4px; overflow: hidden;
+  background: var(--border); border-radius: 2px; }
+#footer.loading #footer-progress { display: block; }
+#footer-progress .bar { width: 40%; height: 100%; background: var(--accent);
+  border-radius: 2px; animation: indeterminate 1.1s ease-in-out infinite; }
+@keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+/* Processes panel: background work pinned to the bottom of the left sidebar; its header
+   carries the thread count and the Recover button (see processes.processes_html) */
+.processes-panel { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
+.processes-panel .section-header { margin-bottom: 4px; }
+.processes-header { display: flex; align-items: center; justify-content: space-between; }
+.processes-header .object-btn { cursor: pointer; }
+.processes-tools { display: inline-flex; align-items: center; gap: 6px; }
+.processes-usage { font-size: 10px; color: var(--text-muted); font-weight: normal;
+  text-transform: none; letter-spacing: 0; }
+.object-btn.process-recover { width: 100%; justify-content: flex-start; font-size: 10px;
+  color: var(--accent); padding: 2px 4px; }
+/* the job details modal (processes.workflow_details_html) */
+.job-details { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.job-title { font-weight: 600; }
+.job-section-title { font-size: 10px; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 2px; }
+.job-pairs, .job-runs { font-size: 11px; border-collapse: collapse; width: 100%; }
+.job-pairs th { text-align: left; font-weight: normal; color: var(--text-muted);
+  padding-right: 10px; white-space: nowrap; vertical-align: top; width: 1%; }
+.job-pairs td { word-break: break-all; }
+.job-runs th { text-align: left; font-weight: normal; color: var(--text-muted); }
+.job-log pre { font-size: 10px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+  background: var(--bg); padding: 4px; margin: 2px 0; }
+.job-log summary { font-size: 11px; font-family: monospace; cursor: pointer; }
+.job-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.text-btn.job-action.danger { color: #e05c5c; }
+/* a settled record in the recovery modal: import (finished), details or forget */
+.object-item.process.recoverable { opacity: 1; }
+.object-item.process.recoverable > .ti { color: var(--text-muted); flex-shrink: 0; }
+.object-item.process.recoverable[data-state="interrupted"] > .ti,
+.object-item.process.recoverable[data-state="failed"] > .ti { color: #e05c5c; }
+.object-item.process.recoverable[data-state="finished"] > .ti { color: var(--accent); }
+.object-item.process { opacity: 0.8; cursor: default; }
+.object-item.process:hover { border-color: transparent; }
+.object-item.process .object-name { font-size: 11px; color: var(--text-muted); }
+.process-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* the job's state when it is not simply running: queued, or asked to cancel and still
+   occupying its worker */
+.process-state { font-size: 10px; color: var(--text-muted); font-style: italic; }
+.object-item.process[data-state="queued"] .spinner { opacity: 0.45; animation-duration: 1.6s; }
+/* a failed job stays listed with its error and native log names until dismissed */
+.object-item.process.failed { opacity: 1; }
+.object-item.process.failed > .ti { color: #e05c5c; flex-shrink: 0; }
+.process-error { font-size: 10px; color: #e05c5c;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.process-log { font-size: 10px; color: var(--text-muted); font-family: monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.object-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 3px;
+  border: 1px solid transparent; cursor: pointer;
+  font-size: 12px;
+}
+.object-item:hover { border-color: #555; }
+.object-item.selected { border-color: var(--accent); background: rgba(74,144,226,0.1); }
+.object-item.hidden-object { opacity: 0.45; }
+.object-item i { color: var(--text-muted); }
+.object-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* empty Objects panel: how to add the first spectrum */
+.object-empty { padding: 8px 6px; font-size: 11px; line-height: 1.55; color: var(--text-muted); }
+.object-empty .ti { font-size: 13px; vertical-align: -2px; color: var(--text); }
+/* line-style indicator mirroring each object's dash */
+.dash-swatch {
+  flex-shrink: 0; width: 20px; height: 0;
+  border-top: 2px solid var(--text);
+}
+/* compact hide / remove buttons, ghost-hover to accent */
+.object-btn {
+  flex-shrink: 0; width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid transparent; border-radius: 3px;
+  color: var(--text-muted); cursor: pointer; font-size: 12px;
+}
+.object-btn:hover { border-color: var(--accent); color: var(--accent); }
+.object-btn.danger:hover { border-color: #e05c5c; color: #e05c5c; }
+/* the cancel button stays clickable even though the process row itself is not */
+.object-item.process .object-btn { cursor: pointer; }
+
+/* line-colour palette swatches */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.color-swatch {
+  width: 22px; height: 22px; padding: 0;
+  border-radius: 3px; border: 2px solid transparent; cursor: pointer;
+}
+.color-swatch:hover { border-color: #888; }
+.color-swatch.active { border-color: var(--accent); }
+
+/* contextual: only shown when the picker sits inside a tumult run folder */
+#load-run { display: none; }
+#load-run.ready { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Workspace entry points stay available independently of the active scientific view. */
+#main.empty #canvas-toolbar > :not(.workspace-actions),
+#main.atom-mode #canvas-toolbar > :not(.workspace-actions) { display: none; }
+#linemask-modal .settings-nav { display: none; }
+#linemask-modal .settings-layout { display: block; }
+.preparation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#canvas-toolbar { flex-wrap: wrap; }
+/* the selected row of an Open dialog or workspace list: the same tint-and-outline the
+   Objects list uses for its selected item, so the muted subtitle stays readable */
+.file-item.selected, .session-item.selected {
+  background: rgba(74,144,226,0.18); border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.file-item.selected i, .session-item.selected > i { color: var(--accent); }
+
+.empty-card .session-load { margin-top: 0; }
+.session-item.autosave > i { color: var(--accent); }

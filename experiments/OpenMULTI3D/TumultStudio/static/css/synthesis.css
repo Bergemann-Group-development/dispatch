@@ -1,0 +1,51 @@
+/* TumultStudio synthesis — the synthesise / fit modal and the atmosphere + model-atom
+   selection shared by every calculation setup (synthsetup). */
+
+/* the synthesis modal's fit-only parts (target row, stellar switches, the two extra
+   columns) are shown in fit mode only */
+#synth-modal .synth-fit-only { display: none; }
+#synth-modal.fit-mode .synth-fit-only { display: flex; flex-direction: column; gap: 6px; }
+.synth-context { display: flex; flex-direction: column; gap: 4px; }
+/* λ min / λ max sit side by side at their natural width, not spread over the modal */
+.synth-window { display: flex; gap: 16px; align-items: center; }
+.synth-window .field-group.field-inline { flex: 0 0 auto; gap: 8px; }
+.synth-window .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+/* the modal grows with its columns (four in fit mode), each of which needs a minimal width;
+   a field group in the full-width rows above the columns (window, target) spans at most two */
+#synth-modal { --modal-col: 200px; width: fit-content; min-width: min(560px, 92vw); max-width: 92vw; }
+#synth-modal .modal-col { flex: 1 0 var(--modal-col); min-width: var(--modal-col); }
+#synth-modal .modal-body > :not(.modal-cols) .field-group,
+#synth-modal .synth-window { max-width: calc(2 * var(--modal-col) + 16px); }
+/* a fit row: label, number input, and an inline "fit" switch */
+.field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
+.fit-row label:not(.switch) { flex: 1; min-width: 0; }
+.fit-row num-input.field-input { width: 88px; flex: 0 0 auto; }
+.fit-row .fit-switch { flex: 0 0 auto; }
+.fit-abund-del {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  height: 18px; width: 18px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.fit-abund-del:hover { color: #e05c5c; }
+/* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
+.synth-atoms { display: none; flex-direction: column; gap: 6px; }
+.synth-atoms.on { display: flex; }
+/* generic removable tag/chip: selected model atoms, atmosphere files, … */
+.chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px;
+  max-width: 100%;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+  font-size: 11px;
+}
+.chip-label { min-width: 0; overflow-wrap: anywhere; }  /* wrap long unbroken filenames */
+.chip-del {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  height: 16px; width: 16px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.chip-del:hover { color: #e05c5c; }
+
+/* ---- synth panel: grid selector + source mode ---------------------------- */
+.synth-grid { display: flex; flex-direction: column; gap: 6px; }

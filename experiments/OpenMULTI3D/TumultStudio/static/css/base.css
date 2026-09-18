@@ -1,0 +1,374 @@
+/* TumultStudio base — tokens, reset and the shared control vocabulary (ui/):
+   buttons, fields, forms, tabs, menus, modal chrome, file pickers, object rows.
+   Dark, compact "pro-tool" aesthetic; one blue accent (see STYLE_REFERENCE.md).
+   Loaded first: every feature sheet builds on these rules. */
+
+/* TumultStudio2 shell — derived from STYLE_REFERENCE.md
+   Dark, compact "pro-tool" aesthetic; one blue accent. */
+
+:root {
+  --sidebar-w: 220px;             /* legacy default; per-side vars below are the live ones */
+  --sidebar-left-w: 220px;        /* fixed width */
+  --sidebar-right-w: 240px;       /* fixed width */
+  --bottom-h: 42%;                /* draggable — height of the centre bottom table panel */
+  --linelist-h: 32%;              /* draggable — height of the line-list panel below it */
+  --footer-h: 32px;
+  --toolbar-h: 40px;
+  --panel-h: 100px;   /* height of the nav overview panel above the main figure */
+
+  --bg:         #1e1e1e;
+  --surface:    #2a2a2a;
+  --border:     #3a3a3a;
+  --accent:     #4a90e2;
+  --text:       #e0e0e0;
+  --text-muted: #888;
+  --canvas-bg:  #1a1a1a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font: 13px/1.4 system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* draggable splitter — thin bar that resizes the centre bottom panel (see workspace.js).
+   The sidebars are fixed-width; only the horizontal bottom-panel splitter remains. */
+.splitter { flex-shrink: 0; background: transparent; z-index: 6; transition: background 0.1s; }
+.splitter:hover, body.resizing .splitter { background: var(--accent); }
+.splitter-row { height: 5px; margin: -3px 0; cursor: row-resize; align-self: stretch; }
+/* while dragging, freeze selection and let the document-level handler own every pointer event
+   (so the Bokeh canvas / iframes don't swallow the mousemove) */
+body.resizing { user-select: none; }
+body.resizing * { pointer-events: none !important; }
+
+/* inspector tabs (STYLE_REFERENCE.md §6.5 underline tabs) */
+.tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; min-height: 0; overflow-y: auto; }
+.tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+.tab-panel.active { display: flex; }
+
+/* wizard step switcher: an underline-tab row shared by the Abundance + Correction tools'
+   centre views (see #abund-steps / #corr-steps). The active step is driven entirely by the
+   {abund,corr}-step-N class on #main — no JS — so only the base look lives here. */
+.step-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.step-tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.step-tab:hover { color: var(--text); }
+/* "Filtered" toggle switch (STYLE_REFERENCE.md §6.3) — shown once a filter exists */
+.filter-switch-wrap { display: none; align-items: center; gap: 6px; }
+#main.has-filter .filter-switch-wrap { display: inline-flex; }
+.filter-switch-label { font-size: 11px; color: var(--text-muted); }
+.switch { position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* the off track is a .field-input: same background and border, so a switch reads as
+   part of the same control family; the border also keeps it visible on --bg */
+.switch-track { position: absolute; inset: 0; background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 9px; transition: background 0.15s ease; }
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 1px; top: 1px;
+  /* the knob is the input text colour, not #fff, which was the brightest thing on the page */
+  background: var(--text); border-radius: 50%; transition: transform 0.15s ease;
+}
+/* "on" is a plain brighter grey rather than the accent, which read as a highlight
+   competing with the actual accented controls */
+.switch input:checked + .switch-track { background: var(--text-muted); }
+.switch input:checked + .switch-track::before   { transform: translateX(14px); }
+/* EW mode swaps the inspector tabs for the EW panel */
+.text-btn {
+  height: 24px; padding: 0 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.text-btn:hover { border-color: var(--accent); color: var(--accent); }
+.hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+/* .field-group.field-inline: keep the higher specificity so the later .field-group
+   rule (flex-direction: column) doesn't push an inline switch below its label */
+.field-group.field-inline { flex-direction: row; align-items: center; justify-content: space-between; }
+/* inline number/text/select controls: keep the label flexible and pin the
+   control to a fixed width on the right (the .switch control sizes itself) */
+.field-group.field-inline > label:not(.switch) { flex: 1; min-width: 0; }
+.field-group.field-inline > .field-input { flex: 0 0 auto; width: 96px; }
+.hint-warn { color: #e0a030; }
+
+/* greyed-out look for controls disabled while 'Already normalised' is on */
+.field-input:disabled, .primary-btn:disabled, .text-btn:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+/* two controls side by side (the running-mean window + percentile) */
+.field-row { display: flex; gap: 8px; align-items: stretch; }
+/* bottom-align each group's content so the inputs line up even when one label wraps */
+.field-row .field-group { flex: 1; min-width: 0; justify-content: flex-end; }
+.primary-btn {
+  height: 28px; padding: 0 12px; margin-top: 6px;
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 3px;
+  color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.primary-btn:hover { filter: brightness(1.08); }
+.spinner { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- components ----------------------------------------------------------- */
+.section-header {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.section-header:not(:first-child) { margin-top: 16px; }   /* stacked only: the row list below zeroes it */
+/* a section title with a right-aligned action button (e.g. Objects + open) */
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.section-head-row .icon-btn { flex-shrink: 0; }
+.section-head-row .text-btn { flex-shrink: 0; display: inline-flex; align-items: center; }
+
+/* ---- dropdown menu (Objects "Open File": pick which importer opens) -------- */
+.menu-wrap { position: relative; }
+.menu-btn .ti { font-size: 13px; }
+.menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 168px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+}
+.menu.open { display: block; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 3px;
+  background: none; color: var(--text); font-size: 12px; text-align: left; cursor: pointer;
+}
+.menu-item:hover { background: rgba(74,144,226,0.16); color: var(--accent); }
+.menu-item .ti { color: var(--text-muted); font-size: 14px; }
+.menu-item:hover .ti { color: var(--accent); }
+.menu-item:disabled { color: var(--text-muted); opacity: 0.55; cursor: default; }
+.menu-item:disabled:hover { background: none; }
+.field-group { display: flex; flex-direction: column; gap: 2px; }
+/* space every field-group after the first, even when buttons/other blocks sit between.
+   Only stacked groups, like the section header above: in a row container the neighbour
+   sits beside, not above, so the margin would just push it off the row's baseline. CSS
+   cannot read the parent's flex direction, so the row containers that hold headers or
+   field groups are listed here; add to the list when a new row layout takes one. The
+   child combinator makes these win the cascade wherever the stacked rule is repeated. */
+.field-group:not(:first-child) { margin-top: 12px; }
+:is(.field-row, .synth-window, .linelist-settings, .linelist-head, .section-head-row,
+    .grid-card-head, .empty-card-head, .cache-head, .path-row, .processes-header,
+    .modal-cols, .modal-header, .modal-footer)
+  > :is(.section-header, .field-group) { margin-top: 0; }
+.field-group label { font-size: 10px; color: var(--text-muted); }
+.field-static {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Info-tab FITS header: a scrollable two-column card table */
+.meta-table-wrap {
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--bg);
+}
+.meta-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.meta-table td { padding: 2px 5px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.meta-table tr:last-child td { border-bottom: none; }
+.meta-key { color: var(--text-muted); white-space: nowrap; font-family: monospace; }
+.meta-val { word-break: break-word; }
+
+/* shared style for every controls.Form input/select (and the EW dropdown) */
+.field-input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+}
+.field-input:focus { outline: none; border-color: var(--accent); }
+/* mandatory inputs left empty (or otherwise invalid): flag with a red outline until filled */
+.field-input:required:invalid { border-color: #c0392b; }
+
+/* <num-input> (controls.num_input): the host is the bordered box and keeps every
+   .field-input layout rule; the real <input> sits inside it, borderless, with the
+   native spin buttons suppressed and our own stacked pair pinned to the right edge
+   (so the field's width is unchanged and every browser renders the same control). */
+num-input.field-input {
+  display: inline-flex; align-items: stretch; padding: 0 0 0 5px; overflow: hidden;
+}
+num-input > input {
+  flex: 1; min-width: 0; padding: 3px 0;
+  background: transparent; border: none; outline: none;
+  color: inherit; font: inherit;
+  -moz-appearance: textfield;  /* Firefox: no native spinner */
+}
+num-input > input::-webkit-outer-spin-button,
+num-input > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+num-input.field-input:focus-within { border-color: var(--accent); }
+num-input.field-input:has(> input:required:invalid) { border-color: #c0392b; }
+num-input[disabled] { opacity: 0.45; cursor: not-allowed; }
+.num-spin {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  width: 14px; border-left: 1px solid var(--border);
+}
+.num-spin button {
+  flex: 1 1 0; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: none; color: var(--text-muted);
+  cursor: pointer;
+}
+/* arrows drawn with borders rather than ▴/▾ glyphs, which fall back to different
+   font faces (and so different sizes) from machine to machine */
+.num-spin button::before {
+  content: ""; width: 0; height: 0;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+}
+.num-spin button[data-step="1"]::before { border-bottom: 4px solid currentColor; }
+.num-spin button[data-step="-1"]::before { border-top: 4px solid currentColor; }
+.num-spin button + button { border-top: 1px solid var(--border); }
+.num-spin button:hover { background: var(--border); color: var(--accent); }
+num-input[disabled] .num-spin button { cursor: not-allowed; }
+
+.icon-btn {
+  height: 24px; width: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pill {
+  font-size: 11px; padding: 1px 8px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); white-space: nowrap;
+}
+
+/* ---- settings modal (STYLE_REFERENCE.md §7.1) ----------------------------- */
+.modal {
+  position: fixed; inset: 0; margin: auto;
+  width: min(360px, 92vw);
+  height: min(560px, 88vh);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  padding: 0;
+}
+.modal-lg { width: min(560px, 92vw); }
+/* settings modal: left nav rail + content pane (docs-nav style) */
+.settings-layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.settings-nav {
+  width: 150px; flex-shrink: 0;
+  background: var(--bg); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column;
+}
+.settings-nav-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 14px; background: none; border: none; border-radius: 0;
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-nav-item:hover  { background: var(--border); color: var(--text); }
+.settings-nav-item.active { color: var(--accent); background: rgba(74,144,226,0.1); }
+.settings-pages { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.settings-page { display: none; flex-direction: column; gap: 10px; }
+.settings-page.active { display: flex; }
+
+/* only lay the dialog out when actually open; otherwise the UA's
+   dialog:not([open]){display:none} must win so it stays hidden and closeable */
+.modal[open] { display: flex; flex-direction: column; }
+.modal::backdrop { background: rgba(0,0,0,0.5); }
+
+/* path display + browse button, and an inline (non-nested) file picker in a modal */
+.path-row { display: flex; align-items: center; gap: 6px; }
+.path-row .field-static, .path-row .field-input { flex: 1; min-width: 0; }
+
+.inline-picker { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.inline-picker.open { display: flex; }
+.inline-picker .file-results { max-height: 200px; margin-top: 0; }
+
+/* auto file picker (atmosphere): the query field is always shown while a concrete file is in
+   play (`open`); the result list only drops down while the field is focused (`results-open`). */
+.inline-picker-auto { display: none; flex-direction: column; margin-top: 8px; }
+.inline-picker-auto.open { display: flex; }
+/* the dropdown hangs straight off the field; anything else in the block keeps a gap */
+.inline-picker-auto > * + *:not(.file-results) { margin-top: 8px; }
+.inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
+.inline-picker-auto.open.results-open .file-results { display: block; }
+/* ---- file picker (cmd+P) -------------------------------------------------- */
+.file-results {
+  margin-top: 8px; max-height: 320px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.file-list { list-style: none; }
+.file-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 8px; font-size: 12px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.file-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); color: var(--accent); }
+.file-item i { color: var(--text-muted); }
+.file-item:hover i { color: var(--accent); }
+/* a long path is elided at its head, so the file name and the folders nearest it stay
+   readable (…/Documents/Marcs/model): the RTL direction moves the ellipsis to the start
+   while the LTR text itself still reads left to right */
+.file-item span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  direction: rtl; text-align: left;
+}
+/* a grid model's row leads with its Teff, so it is elided at the tail instead */
+.file-item.model-item span { direction: ltr; }
+/* a picked file spins in place of its icon until its load has landed, so picking several
+   in a row shows which are still coming (the footer bar only says that something is) */
+.file-item.is-busy { color: var(--accent); cursor: progress; }
+.file-item .spinner { width: 11px; height: 11px; overflow: visible; }
+.file-empty { padding: 10px; font-size: 12px; color: var(--text-muted); }
+.modal-header {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 14px; font-weight: 600; }
+.modal-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.modal-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 10px 16px 14px; border-top: 1px solid var(--border);
+}
+/* every modal footer follows one pattern: Cancel and other secondary actions are
+   .text-btn, the confirming action is .primary-btn, and all share the text button's
+   geometry; server-rendered action slots sit inside the footer's own row */
+#synth-modal-actions, #abund-modal-actions { display: contents; }
+.modal-footer :is(.text-btn, .primary-btn) { height: 24px; margin-top: 0; padding: 0 10px; font-size: 11px; }
+/* multi-column modal body: the synthesis and analysis modals */
+.modal-cols { display: flex; gap: 16px; align-items: flex-start; }
+.modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 720px) { .modal-cols { flex-direction: column; } }
+
+.advanced { margin: 8px 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.advanced > summary {
+  cursor: pointer; padding: 5px 0;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.advanced > summary:hover { color: var(--text); }
+:where(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.modal-cols { flex-wrap: wrap; }
+.modal-col { min-width: min(230px, 100%); }
+
+/* a closed section's current values: ordinary text under the header-styled title */
+.advanced-values {
+  display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted);
+  text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.advanced[open] > summary .advanced-values { display: none; }

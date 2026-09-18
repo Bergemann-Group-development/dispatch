@@ -1,0 +1,56 @@
+<!-- Synthesise / fit a spectrum over a window: opened from the Mask tool's range, the
+     LineMasks sidebar (the set's windows) or the empty landing page (synthmodal.SynthModal).
+     The atmosphere + stellar parameters + abundances + RT mode cluster is the setup every
+     run starts from; the Fit column is shown in fit mode only. -->
+<dialog id="synth-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title" id="synth-modal-title">Synthesise spectrum</span>
+    <button id="close-synth" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="synth-context" id="synth-context">{{ synth_context_html|safe }}</div>
+    <div id="fit-target" class="synth-fit-only">{{ fit_html.target|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="synth-grid" class="synth-grid">{{ synth_grid_html|safe }}</div>
+        <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
+             data-results="{{ synth_file_results_name }}">
+          {{ embed(roots.synth_file_picker) }}
+          <div id="synth-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="synth-fields">{{ synth_run_html|safe }}</div>
+        <div id="fit-stellar" class="synth-fit-only">{{ fit_html.stellar|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="synthabund-fields">{{ synth_abund_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
+        <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div class="path-row">
+            <div id="synth-atoms-list" class="chips">{{ synth_atoms_html|safe }}</div>
+            <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
+          </div>
+          <div id="atom-picker" class="inline-picker">
+            {{ embed(roots.atom_picker) }}
+            <div id="atom-results" class="file-results" data-results="{{ atom_results_name }}"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">RV &amp; broadening</div>
+        <div id="fit-post">{{ fit_html.post|safe }}</div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">Fit abundances</div>
+        <div id="fit-abund">{{ fit_html.abund|safe }}</div>
+        <div class="hint">Iterative grid fit of the target spectrum inside the window, starting
+          from the setup on the left.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="synth-modal-actions">{{ synth_actions_html|safe }}</div></div>
+</dialog>

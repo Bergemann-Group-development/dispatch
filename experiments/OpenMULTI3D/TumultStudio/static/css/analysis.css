@@ -1,0 +1,217 @@
+/* TumultStudio analysis — the abundance, model-atom, NLTE-correction and
+   ionisation-balance tools: result objects, panels, centre views and modals. */
+
+/* a result whose inputs changed after it was solved: the panel banner, and the values of
+   that previous solution kept visible but marked */
+.stale-banner { margin: 8px 0; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid #e0a030; background: rgba(224,160,48,0.12); }
+.stale-banner-head { font-weight: 700; color: #e0a030; margin-bottom: 4px; }
+.stale-banner ul { margin: 0 0 6px 16px; padding: 0; }
+.stale-banner .primary-btn, .stale-banner .text-btn { margin: 2px 6px 2px 0; }
+.stale-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  color: #e0a030; border: 1px solid #e0a030; }
+.stale-block { opacity: 0.7; border-left: 3px solid #e0a030; padding-left: 6px; }
+/* the same flag on the left-sidebar object row, compressed to a dot */
+/* ---------------------------------------------------------------------------
+   Abundance tool: toolbar button, right-sidebar control panel, left-sidebar
+   result objects, and the centre abundance view (scatter + per-line table).
+   --------------------------------------------------------------------------- */
+
+/* right-sidebar control panel (mirrors .range-panel) */
+.abund-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.abund-active > .tab-bar,
+.sidebar-right.abund-active > .tab-content { display: none; }
+.sidebar-right.abund-active .abund-panel { display: flex; }
+.abund-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* the right-sidebar step section follows the active step class on #main (no JS) */
+.abund-step-panel { display: none; flex-direction: column; gap: 8px; }
+#main.abund-step-1 ~ .sidebar-right .abund-step-1-panel,
+#main.abund-step-2 ~ .sidebar-right .abund-step-2-panel { display: flex; }
+/* the panel's run buttons fill it; the modal's submit sits in the footer at its own width */
+.abund-panel .abund-run-synth, .abund-panel .abund-run-uncert,
+.abund-panel .abund-settings { display: block; width: 100%; margin-top: 4px; }
+/* sub-tabs (Lines | Setup): the whole panel scrolls, so the tab-content is non-flexing
+   (mirrors the synth panel) and the generic .tab JS drives .active. */
+.abund-panel .tab-bar { margin-bottom: 4px; }
+.abund-panel .tab-content { overflow: visible; flex: 0 0 auto; }
+.abund-panel .tab-panel { padding: 0; }
+
+/* left-sidebar result objects (non-spectral; reuse .object-item layout) */
+.result-section-head { margin-top: 12px; }
+.result-item .result-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 3px; flex: 0 0 auto;
+  background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+}
+.result-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.result-summary { font-size: 10px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.result-summary:empty { display: none; }
+.result-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 1px solid transparent; border-radius: 4px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.result-btn:hover { border-color: #e05c5c; color: #e05c5c; }
+
+/* left-sidebar line-mask objects: one row per set (see masktool.objects_html). The badge
+   carries the element the set diagnoses, so a sidebar of sets reads at a glance. */
+.maskset-item .maskset-badge {
+  background: #b8860b; width: auto; min-width: 16px; padding: 0 3px;
+  font-size: 9px; letter-spacing: 0.02em;
+}
+.maskset-item .maskset-badge-none { background: var(--border); }
+.maskset-item .maskset-badge .ti { font-size: 11px; color: #fff; }
+.maskset-count {
+  flex: 0 0 auto; font-size: 10px; color: var(--text-muted);
+  padding: 0 5px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+}
+
+/* centre abundance view: spectrum (step 1) or the diagnostic panels (step 2) on top, table
+   below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
+#abund-scatter, #abund-bottom, #abund-steps, #abund-cog, #abund-chi2 { display: none; }
+/* the panel belonging to the result's method, one at a time (abundancetool._render_selected) */
+#main.abund-mode.abund-step-1.abund-cog #abund-cog,
+#main.abund-mode.abund-step-1.abund-chi2 #abund-chi2 { display: flex; flex: 0 0 36%; }
+#abund-cog > *, #abund-chi2 > * { flex: 1; min-width: 0; min-height: 0; }
+#main.abund-mode #top-panel { display: none; }
+#main.abund-mode #canvas-wrap { display: flex; }
+#main.abund-mode #abund-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.abund-mode #abund-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+/* step 2 swaps the spectrum for the A(X) scatter */
+#main.abund-mode.abund-step-2 #canvas-wrap { display: none; }
+#main.abund-mode.abund-step-2 #abund-scatter { display: flex; flex: 1; min-height: 0; }
+
+/* the two diagnostic panels a fit is read against, side by side (see diagnostics.PANEL_AXES) */
+.scatter-pane { flex: 1; min-width: 0; display: flex; }
+#abund-table { flex: 1; min-height: 0; overflow: auto; }
+/* The shared line-list rule left-aligns non-sortable headers. In analysis tables the
+   include checkbox and flags are right-aligned columns, so their headers follow suit. */
+.abund-table thead th:first-child,
+.abund-table thead th:last-child { text-align: right; }
+/* "Local continuum" (abund/ionbal; see localcontinuum.LOCAL_CONTINUUM_HEAD) is also a checkbox
+   column - right-align its label so it lines up with the checkboxes below it, regardless of
+   the shared line-list rule's left-align for non-sortable headers or the column's position. */
+/* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
+#main.abund-step-1 .abund-step-btn[data-step="1"],
+#main.abund-step-2 .abund-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.abund-row { cursor: pointer; }
+/* a row is marked either by the pointer or by its point being hovered on a panel
+   (see the table<->scatter link in the page script) */
+.abund-row:hover td, .abund-row.row-hover td,
+.abund-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.abund-row.line-excluded { opacity: 0.4; }
+.abund-flags { color: #e0a05c; }
+.abund-summary { padding: 8px 4px 2px; font-weight: 600; }
+.abund-budget { font-weight: 400; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Model atoms: the atom objects (left sidebar, with their correction results nested
+   under them), the two-table centre view and the panel holding the corrections action.
+   The tool has no toolbar button — Open File → Open Model Atom loads one.
+   --------------------------------------------------------------------------- */
+.atom-item .atom-badge { background: #6a5acd; width: auto; min-width: 16px; padding: 0 3px; font-size: 9px; }
+/* a correction result listed under the atom it was computed from */
+.result-item.result-nested { margin-left: 18px; }
+
+.atom-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.atom-active > .tab-bar,
+.sidebar-right.atom-active > .tab-content { display: none; }
+.sidebar-right.atom-active .atom-panel { display: flex; }
+.atom-panel .atom-corr { display: block; width: 100%; margin-top: 4px; }
+.atom-panel .atom-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* centre atom view: tabs + the open tab's search field on top, one table wrap per tab.
+   Replaces the whole canvas (an atom has no wavelength axis of its own), and stands in for
+   the empty-state card when no spectrum is loaded. */
+#atom-view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#main.atom-mode #top-panel,
+#main.atom-mode #canvas-wrap,
+#main.atom-mode #canvas-empty { display: none; }
+#main.atom-mode #atom-view { display: flex; }
+.atom-head { display: flex; align-items: flex-end; gap: 8px; }
+.atom-head .step-tabs { flex: 1; }
+.atom-head .step-tab { flex: 0 0 auto; }
+.atom-search { display: none; margin-bottom: 4px; }
+#main.atom-tab-levels .atom-search[data-tab="levels"],
+#main.atom-tab-trans .atom-search[data-tab="trans"] { display: block; }
+#main.atom-tab-levels .atom-tab-btn[data-tab="levels"],
+#main.atom-tab-trans .atom-tab-btn[data-tab="trans"] { color: var(--text); border-bottom-color: var(--accent); }
+.atom-table-wrap { display: none; flex: 1; min-height: 0; overflow: auto; }
+#main.atom-tab-levels #atom-levels-table,
+#main.atom-tab-trans #atom-trans-table { display: block; }
+.atom-table .atom-label { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+.atom-row.atom-ground td { font-weight: 600; }
+.atom-count { padding: 6px 4px; font-size: 11px; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Abundance-correction tool: the correction results (nested under their atom in the
+   left sidebar), the right panel, the centre view (reference spectrum or ΔA scatter
+   over the per-line table) and the modal opened from an atom's panel.
+   --------------------------------------------------------------------------- */
+.abundcorr-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.corr-active > .tab-bar,
+.sidebar-right.corr-active > .tab-content { display: none; }
+.sidebar-right.corr-active .abundcorr-panel { display: flex; }
+
+/* centre correction view: reference spectrum with the selected line's CoG inversion
+   beside it (Lines) or the two ΔA diagnostic panels (Scatter) on top, per-line table below,
+   and a step-switcher footer. Reuses #canvas-wrap for the spectrum; the CoG pane lives
+   inside it and only shows in this view's Lines step. */
+#corr-scatter, #corr-bottom, #corr-steps, #corr-cog { display: none; }
+#main.corr-mode.corr-step-1 #corr-cog { display: flex; flex: 0 0 36%; }
+#corr-cog > * { flex: 1; min-width: 0; min-height: 0; }
+#main.corr-mode #top-panel { display: none; }
+#main.corr-mode #canvas-wrap { display: flex; }
+#main.corr-mode #corr-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.corr-mode #corr-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.corr-mode.corr-step-2 #canvas-wrap { display: none; }
+#main.corr-mode.corr-step-2 #corr-scatter { display: flex; flex: 1; min-height: 0; }
+#corr-table { flex: 1; min-height: 0; overflow: auto; }
+#main.corr-step-1 .corr-step-btn[data-step="1"],
+#main.corr-step-2 .corr-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.corr-row { cursor: pointer; }
+.corr-row:hover td, .corr-row.row-hover td,
+.corr-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.corr-row.line-excluded { opacity: 0.4; }
+
+/* ---------------------------------------------------------------------------
+   Ionisation balance: the measurement objects (left sidebar), their centre view
+   (spectrum or A(X) balance scatter over the per-line table) and the fit modal.
+   The tool has no toolbar button — an object is what opens it.
+   --------------------------------------------------------------------------- */
+
+/* right-sidebar panel of the selected measurement */
+.ionbal-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.ionbal-active > .tab-bar,
+.sidebar-right.ionbal-active > .tab-content { display: none; }
+.sidebar-right.ionbal-active .ionbal-panel { display: flex; }
+.ionbal-refit { display: block; width: 100%; margin-top: 4px; }
+
+/* centre view: the balance panels (the primary tab, watched while the fit runs) or the
+   target spectrum (Lines), per-line table + iteration status below, and the two-way view
+   switcher as a footer. */
+#ionbal-scatter, #ionbal-bottom, #ionbal-steps { display: none; }
+#main.ionbal-mode #top-panel { display: none; }
+#main.ionbal-mode #canvas-wrap { display: none; }
+#main.ionbal-mode #ionbal-scatter { display: flex; flex: 1; min-height: 0; }
+#main.ionbal-mode #ionbal-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.ionbal-mode #ionbal-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.ionbal-mode.ionbal-step-2 #ionbal-scatter { display: none; }
+#main.ionbal-mode.ionbal-step-2 #canvas-wrap { display: flex; }
+#ionbal-table { flex: 1; min-height: 0; overflow: auto; }
+#main.ionbal-step-1 .ionbal-step-btn[data-step="1"],
+#main.ionbal-step-2 .ionbal-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.ionbal-row { cursor: pointer; }
+.ionbal-row:hover td, .ionbal-row.row-hover td,
+.ionbal-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.ionbal-row.line-excluded { opacity: 0.4; }
+/* the streaming iteration/convergence line under the table */
+.ionbal-status { border-top: 1px solid var(--border); margin-top: 4px; }
+
+/* the analysis modals launched from the LineMasks view — the balance fit (what is measured /
+   where it starts / how it runs) and the abundance measurement (what is measured / the
+   atmosphere and parameters it is synthesised on) — share one column layout. */
+#ionbal-modal, #abund-modal, #corr-modal { width: min(880px, 94vw); }
+.ionbal-context, .abund-context, .corr-context { display: flex; flex-direction: column; gap: 4px; }
+#abund-modal.reconfigure .abund-measure-fields { display: none; }

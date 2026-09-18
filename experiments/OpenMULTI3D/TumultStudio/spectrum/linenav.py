@@ -84,7 +84,7 @@ class LineNavigator:
         # within _MATCH_AA of each other in a dense list
         self.focus = None
         # how the *next* render's focused row asks the browser to scroll to it (see the
-        # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort —
+        # MutationObserver in static/js/workspace.js). "none" for every ordinary render — a pan, a sort —
         # which leaves the browser's own scroll position alone. A pick that comes from
         # outside the table (a line label on the spectrum) asks for "ifneeded": scroll only
         # far enough to bring the row into view if it is not already there. A click on a row

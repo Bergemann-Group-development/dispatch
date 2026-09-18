@@ -1,7 +1,7 @@
-# TumultStudio2 workflow: ranges, line masks, synthesis and fits
+# TumultStudio workflow: ranges, line masks, synthesis and fits
 
 The canvas tools, the synthesis entry points, the Processes panel and the saved sessions
-as TumultStudio2 implements them: one range gesture, one synthesis modal, one job table,
+as TumultStudio implements them: one range gesture, one synthesis modal, one job table,
 one workspace slot format. Terms follow `GLOSSARY.md`; the code owners are listed at the
 end.
 
@@ -30,7 +30,7 @@ In every table a column of checkboxes (mask and line inclusion, local continuum)
 header buttons. One checks all shown rows, or unchecks them all when every one is checked.
 The other filters the table to the checked rows.
 
-A calculation names the object it will deliver when it is submitted (`naming.py`): the
+A calculation names the object it will deliver when it is submitted (`workspace/naming.py`): the
 kind or target, the window or line mask, the atmosphere file or grid, LTE or NLTE with the
 model atoms, and abundance overrides, e.g.
 `T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · MARCS · LTE`, `obs.fits fit · fe-lines · MARCS · LTE`,
@@ -43,7 +43,7 @@ names in a loaded workspace stay as saved.
 
 ### The Edit menu
 
-The toolbar's **Edit** menu acts on the object focused in the left sidebar (`editmenu.py`):
+The toolbar's **Edit** menu acts on the object focused in the left sidebar (`workspace/editmenu.py`):
 
 - **Rename…** asks for a new name. A spectrum or result name is made unique in the document
   as above, and a mask-set name among the mask sets. Renaming a set does not mark it
@@ -102,7 +102,7 @@ the same way.
 ### Removing an object
 
 Every sidebar remove button (spectra, line mask sets, model atoms and the three result
-lists) and **Edit → Delete** go through one document-level path (`removal.py`). It first works out what the
+lists) and **Edit → Delete** go through one document-level path (`workspace/removal.py`). It first works out what the
 removal would cost:
 
 - results that name the object: a spectrum they measure (`ref_uid`) or, for a balance, the mask set
@@ -253,7 +253,7 @@ finish on its own; it is never claimed stopped.
 ## Saved sessions and preferences
 
 Save slots, preferences and recent files share one JSON config file (`.tumultstudio.json`
-in the server's working directory, or `TUMULT_CONFIG`), written by `store.py`. Every
+in the server's working directory, or `TUMULT_CONFIG`), written by `workspace/store.py`. Every
 writer runs one serialised read-modify-write transaction under a process lock and a
 `flock` on `<config>.lock`, so tabs, threads and other local server processes sharing
 the path allocate distinct slot ids and lose no change; the file is replaced atomically
@@ -270,7 +270,7 @@ fails their write loudly in the server log.
 
 ### What a save slot holds
 
-A slot is the whole object workspace (`TumultStudio2/session.py`, schema version 2):
+A slot is the whole object workspace (`TumultStudio/workspace/session.py`, schema version 2):
 
 - every spectrum by its uid: file and run objects by path (re-read on load), synth
   objects with their data and provenance embedded; colour, dash, width, alpha,
@@ -571,45 +571,71 @@ line by line.
 
 ## Code owners
 
+The GUI is the `TumultStudio/` package; paths below are relative to it.
+
 - `app.py` builds the document: the `AppContext` (`context.py`) with its services, the
-  canvas, the tools, the Processes panel, `load_async`, `submit_operation`, the recovery
-  actions, `snapshot`/`restore_workspace` and the Saved workspaces bridge. `main.py` only calls
-  `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks.
-- `jobs.py` owns the job table (`Job`, `JobTable`), the workflow references and the
-  recovery records; `session.py` the workspace schema, its validation and its headless
-  preparation; `store.py` the config file (preferences, recent files, slots).
-- `tool.py` and `toolmanager.py` own the sidebar-tool protocol and mutual exclusion.
-  `RangeTool` (`rangetool.py`) is the Select range tool of the toolbar: it owns `RangeSelect` and
-  hosts `EquivalentWidth` (`ew.py`) as its sub-panel. `MaskTool` (`masktool.py`) owns the
-  LineMasks view over `MaskStore` (`maskstore.py`) and hands "+ New mask" to the range
-  tool in add mode.
-- `SynthModal` (`synthmodal.py`) collects both modal modes from `SynthSetup`
-  (`synthsetup.py`) with `FitTab` (`fittab.py`) as its Fit section; there is no
-  departure-solve action in the GUI. The Preferences dialog is `PreferencesPage`
-  (`preferences/page.py`): the preference sheets and their pickers, the atmosphere-grid
-  registry (`gridmanager.py`) and the run-cache page. It is built before the calculation
-  dialogs, which share the registry and the model-atom selection it is given rather than
-  owning them; the preference *values* and their `SynthConfig` are `synthprefs.py`.
-- `AbundanceWizard` (`abundwizard.py`) is the base of the abundance, correction and
-  ionisation-balance tools: the step/result/table markup, the delegated analysis binder,
-  the result jobs (`ResultJobs` in `jobs.py`), the shared EW refresh report and the slot
-  envelope, and the out-of-date banner (`stale_reasons`, `stale_banner`, `sync_target`)
-  over the results' own `stale_reasons` (`tumult/measured.py`, `abundance.py`,
-  `measurement.py`). `AtomTool`
-  (`atomtool.py`) owns the atom objects, the atom view and the correction entry point;
-  `AbundanceResult.atom_path` links a correction result to its atom.
-  `EditMenu` (`editmenu.py`) is the toolbar's Edit menu; `app.py` registers one `Target`
-  per focus kind. Its Duplicate actions are `AbundanceWizard.duplicate_result`,
+  canvas, the tools, the Processes panel and the Bokeh roots. `main.py` only calls
+  `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks. The document's
+  services have their own owners: `execution/delivery.py` (`DeliveryService`: admission,
+  `load_async`, next-tick delivery and the lifetime guards), `execution/workflows.py`
+  (`WorkflowService`: workflow attachment, recovery and import-once bookkeeping) and
+  `workspace/persistence.py` (`WorkspacePersistence`: snapshot, restore and the Saved
+  workspaces bridge).
+- `execution/jobs.py` owns the job table (`Job`, `JobTable`, `ResultJobs`) and the
+  workflow references; `execution/processes.py` the Processes panel and its job and
+  recovery presentations. `workspace/session.py` is the workspace schema, its validation
+  and its headless preparation; `workspace/store.py` the config file (preferences, recent
+  files, slots); `workspace/naming.py` the delivered objects' names.
+- `ui/tool.py` and `ui/toolmanager.py` own the sidebar-tool protocol and mutual
+  exclusion; `ui/htmlbridge.py`, `ui/controls.py`, `ui/tableui.py` and
+  `ui/filepicker.py` the client-server bridges, forms, tables and pickers every feature
+  renders with. `RangeTool` (`spectrum/rangetool.py`) is the Select range tool of the
+  toolbar: it owns `RangeSelect` and hosts `EquivalentWidth` (`spectrum/ew.py`) as its
+  sub-panel. `MaskTool` (`masks/masktool.py`) owns the LineMasks view over `MaskStore`
+  (`masks/maskstore.py`) and hands "+ New mask" to the range tool in add mode.
+- `SynthModal` (`synthesis/synthmodal.py`) collects both modal modes from `SynthSetup`
+  (`synthesis/synthsetup.py`) with `FitTab` (`synthesis/fittab.py`) as its Fit section;
+  there is no departure-solve action in the GUI. The Preferences dialog is
+  `PreferencesPage` (`preferences/page.py`): the preference sheets and their pickers, the
+  atmosphere-grid registry (`preferences/gridmanager.py`), the reference-star catalogue
+  (`preferences/refstarspage.py`) and the run-cache page. It is built before the
+  calculation dialogs, which share the registry and the model-atom selection it is given
+  rather than owning them; the preference *values* and their `SynthConfig` are
+  `preferences/synthprefs.py`.
+- `ResultView` (`analysis/resultview.py`) is the base of the abundance, correction and
+  ionisation-balance tools: the step/result/table markup, the delegated analysis binder
+  (`ANALYSIS_SCRIPT`), the shared EW refresh report and the out-of-date banner
+  (`stale_reasons`, `stale_banner`, `sync_target`) over the results' own `stale_reasons`
+  (`tumult/measured.py`, `abundance.py`, `measurement.py`). The result collections and
+  their GUI identity references are `analysis/results.py`, the diagnostic panels
+  `analysis/diagnostics.py`, and the local-continuum interaction
+  `analysis/localcontinuum.py`. `AtomTool` (`atoms/atomtool.py`) owns the atom objects,
+  the atom view and the correction entry point; `AbundanceResult.atom_path` links a
+  correction result to its atom.
+- `EditMenu` (`workspace/editmenu.py`) is the toolbar's Edit menu; `app.py` registers one
+  `Target` per focus kind. Its Duplicate actions are `ResultView.duplicate_result`,
   `MaskStore.duplicate` and `duplicate_spectrum` (`app.py`), and its renames are
-  `AbundanceWizard.rename_result`, `MaskStore.rename` and `Canvas.rename_object`; `synthmodal.rerun_record`
-  writes a spectrum's rerun record and `SynthModal.open_rerun` with
-  `SynthSetup.load_request` and `FitTab.load` reads it back.
-- `Removal` (`removal.py`, `ctx.removal`) is the remove-button path: its plans, the
-  confirmation (`htmlbridge.confirm_bridge`) and the Undo of the latest removal. The
-  owners' `remove_object`/`restore_object` (`canvas.py`), `remove_set`/`insert_set`
-  (`maskstore.py`), `remove_result`/`insert_result` (`abundwizard.py`) and
-  `remove`/`insert` (`atomtool.py`) take an object out and put it back.
+  `ResultView.rename_result`, `MaskStore.rename` and `Canvas.rename_object`;
+  `synthmodal.rerun_record` writes a spectrum's rerun record and `SynthModal.open_rerun`
+  with `SynthSetup.load_request` and `FitTab.load` reads it back.
+- `Removal` (`workspace/removal.py`, `ctx.removal`) is the remove-button path: its plans,
+  the confirmation (`htmlbridge.confirm_bridge`) and the Undo of the latest removal. The
+  owners' `remove_object`/`restore_object` (`spectrum/canvas.py`),
+  `remove_set`/`insert_set` (`masks/maskstore.py`), `remove_result`/`insert_result`
+  (`analysis/resultview.py`) and `remove`/`insert` (`atoms/atomtool.py`) take an object
+  out and put it back.
+- The browser assets follow the same owners. `templates/index.html` is the page skeleton
+  (the includes, the Bokeh embedding and the script loader); `templates/workspace.html`
+  the shell and its Open / Saved workspaces / Processes dialogs; `preferences.html` and
+  `synthesis.html` those modals; `analysis.html` a macro library for the analysis
+  tools' sidebar objects, canvas views, panels and modals. `static/js/bridge.js` holds
+  the bridge access and the shared control behaviour every feature script reads off
+  `window.TumultStudio`; `workspace.js`, `preferences.js`, `synthesis.js` and
+  `analysis.js` bind their feature's delegated handlers, in that order. The style sheets
+  under `static/css/` (`base`, `workspace`, `preferences`, `synthesis`, `analysis`) are
+  inlined by `app.page_css` in that cascade order; small `CustomJS` callbacks and the
+  dynamic row HTML stay with their Python presenters.
 - The headless owners are in `tumult/`: `synthesis` (requests, submission, records,
   runtime), `abundance`, `measurement`, `sparams`, `linediag`, `linestrength`,
   `refstars`, `linemask` and `spectrum_io`. The GUI imports them directly; there are no
-  re-export modules under `TumultStudio2/`.
+  re-export modules under `TumultStudio/`.

@@ -1,0 +1,95 @@
+{#- The Preferences modal: a category rail and one page per settings owner
+    (preferences/page.py, gridmanager.py, refstarspage.py). -#}
+{% macro pref_picker(key, root, hint='', hidden=False) -%}
+        <div id="pref-{{ key }}-block" class="field-group pref-path{{ ' field-warn' if key in pref_missing }}{{ ' off' if hidden }}">
+          <label>{{ pref_labels[key] }}</label>
+          <div id="pref-{{ key }}-picker" class="inline-picker-auto open" data-results="{{ pref_picker_results[key] }}">
+            {{ embed(root) }}
+            <div id="pref-{{ key }}-results" class="file-results"></div>
+          </div>
+          <div class="field-warn-hint">File not found</div>
+          {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+        </div>
+{%- endmacro %}
+<dialog id="settings-modal" class="modal">
+  <div class="modal-header">
+    <span class="modal-title">Preferences</span>
+    <button id="close-settings" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="general">General</button>
+      <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
+      <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
+      <button class="settings-nav-item" data-page="refstars">Reference stars</button>
+      <button class="settings-nav-item" data-page="engine">Engine</button>
+      <button class="settings-nav-item" data-page="cache">Run cache</button>
+    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="general">
+        <div class="hint">Changes saved automatically.</div><div class="section-header">Axis units</div>
+        <div id="settings-fields">{{ settings_html|safe }}</div>
+
+        <!-- the master list names its own lines over the spectrum once it is zoomed in
+             far enough, ranked by strength (lineannot / linestrength) -->
+        <div class="section-header">Line annotations</div>
+        <div class="hint">Line strengths are computed with HOP on a reference atmosphere, so
+          they compare correctly across atoms and molecules. Which star that is — a G dwarf,
+          a red giant, a supergiant — is the <b>Reference star</b> dropdown in the line list
+          header, listing the <b>Reference stars</b> page; on <i>Auto</i> it follows the
+          spectrum's own parameters where it states any, and is solar where it does not.
+          The atmosphere is the nearest model of the registered MARCS grid. Molecular lists
+          are included for views up to 100 Å wide; wider views use atomic lines only.</div>
+      </div>
+
+      <!-- the editable reference-star catalogue (refstarspage.RefStarsPage): named stellar
+           parameters every setup's Preset dropdown, the balance entry point and the
+           line-strength ranking read -->
+      <div class="settings-page" data-page="refstars">
+        <div class="hint">Changes saved automatically. A reference star is a name and its
+          Teff, log g, [Fe/H] and microturbulence: choose one in a calculation's
+          <b>Preset</b> dropdown to fill the stellar parameters, or let the line list rank
+          by the one nearest to a spectrum. Line strengths read the atmosphere off the
+          registered MARCS grid's nearest model.</div>
+        <div id="refstars-list" class="refstars-list">{{ refstars_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="grids">
+        <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
+        <!-- the folder picker of the storage or custom-grid folder being edited; moved
+             into that folder row when its field is focused (one Bokeh picker serves all) -->
+        <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
+          {{ embed(roots.grid_picker) }}
+          <div id="grid-results" class="file-results"></div>
+        </div>
+      </div>
+
+      <div class="settings-page" data-page="synthesis">
+        <div class="hint">Changes saved automatically. Paths are picked below; relative
+          paths resolve against the working directory (Engine).</div>
+        <div class="section-header">Inputs</div>
+        {{ pref_picker('linelist', roots.pref_linelist_picker, 'A file, or a folder of per-species files. Synthesis, navigation and annotation all use this list.') }}
+        {{ pref_picker('abund_file', roots.pref_abund_file_picker) }}
+        {{ pref_picker('absmet', roots.pref_absmet_picker) }}
+        <div class="section-header">Interpolation</div>
+        <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="engine">
+        <div class="hint">Changes saved automatically.</div>
+        <div class="section-header">Paths</div>
+        {{ pref_picker('dispatch_cwd', roots.pref_dispatch_cwd_picker) }}
+        {{ pref_picker('slurm_script', roots.pref_slurm_script_picker, hidden=not pref_show_slurm) }}
+        <div id="synthengine-fields">{{ synth_engine_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="cache">
+        <div class="cache-head">
+          <span class="section-header">Cached synthesis runs</span>
+          <button id="cache-clear" class="text-btn">Clear all</button>
+        </div>
+        <div id="synth-cache" class="cache-list">{{ synth_cache_html|safe }}</div>
+      </div>
+    </div>
+  </div>
+</dialog>

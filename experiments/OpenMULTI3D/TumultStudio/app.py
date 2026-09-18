@@ -65,6 +65,17 @@ from .workspace import store
 
 HERE = Path(__file__).parent          # the TumultStudio package directory
 
+# the page's style sheets, one per owner, inlined into the template in this order: base
+# first (tokens, reset and the shared controls), then the shell, then the dialogs. The
+# order is the cascade, so a feature sheet may refine a base rule of equal specificity.
+CSS_SHEETS = ("base", "workspace", "preferences", "synthesis", "analysis")
+
+
+def page_css() -> str:
+    """The inlined style text: the sheets in cascade order."""
+    return "\n".join((HERE / "static" / "css" / f"{name}.css").read_text()
+                     for name in CSS_SHEETS)
+
 
 # how long the view has to hold still before the visible band's line strengths are computed
 STRENGTH_DELAY_MS = 400
@@ -1066,7 +1077,7 @@ def build():
     active_color = sel.line.glyph.line_color if sel else None
     _auto = masktool.source("auto")     # None while masktool.AUTO_MASKS is off
     doc.template_variables.update(
-        css=(HERE / "static" / "style.css").read_text(),
+        css=page_css(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
         objects_html=objects_panel_html(canvas),
         processes_html=panel.body_html,

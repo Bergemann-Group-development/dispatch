@@ -1,0 +1,358 @@
+{#- The workspace shell: header, the Objects and Processes sidebar, the canvas with its
+    toolbar and bottom panels, the inspector sidebar with the spectrum tools' panels, the
+    footer, and the dialogs that open, save and load its objects. -#}
+{% from "analysis.html" import objects, canvas_insets, views, panels with context %}
+<div id="app">
+
+  <div id="header">
+    <span class="app-title">TUMULT&nbsp;Studio</span>
+    <button id="open-session" class="icon-btn header-sessions" title="Save / load a session"><i class="ti ti-device-floppy"></i></button>
+    <!-- preferences: pinned to the header (with a missing-files warning sign) -->
+    <span class="settings-wrap header-settings">
+      <i id="settings-warning" class="ti ti-alert-triangle{{ ' show' if synth_warning else '' }}"
+         title="Some configured files in Preferences are missing"></i>
+      <button id="open-settings" class="icon-btn" title="Preferences"><i class="ti ti-settings"></i></button>
+    </span>
+  </div>
+
+  <div id="workspace">
+
+    <aside class="sidebar-left">
+      <div class="section-head-row">
+        <div class="section-header">Objects</div>
+
+      </div>
+      <div id="objects">{{ objects_html|safe }}</div>
+      <!-- imported line-mask sets (see masktool.MaskTool.objects_html) -->
+      <div id="linemask-objects">{{ linemask_objects_html|safe }}</div>
+{{ objects() }}
+      <!-- background work: this document's jobs, then the workflow daemon's jobs of
+           other tabs and scripts and dispatch runs started outside any workflow (see
+           processes.processes_html). The header counts the daemon's threads in use over
+           its budget; Recover opens the settled workflow records to import or forget. -->
+      <div class="processes-panel">
+        <div class="section-header processes-header">Processes
+          <span class="processes-tools">
+            <span id="processes-usage" class="processes-usage">{{ processes_usage_html }}</span>
+            <button class="object-btn" data-action="workflow-discover" data-uid="-"
+                    title="Recover: the settled workflow records under the synthesis output root">
+              <i class="ti ti-refresh"></i></button>
+          </span>
+        </div>
+        <div id="processes">{{ processes_html|safe }}</div>
+      </div>
+    </aside>
+
+    <div id="main" class="{{ 'empty' if main_empty else '' }}">
+      <div id="canvas-toolbar">
+        <div class="toolbar-group workspace-actions">
+          <div class="menu-wrap">
+            <button id="open-file" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="open-file-menu">Open ▾</button>
+            <div id="open-file-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-import="spectrum">Spectrum…</button>
+              <button class="menu-item" role="menuitem" data-import="atom">Model atom…</button>
+              <button class="menu-item" role="menuitem" data-import="linemask">Line mask set…</button>
+            </div>
+          </div>
+          <div class="menu-wrap">
+            <button id="new-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="new-object-menu">New ▾</button>
+            <div id="new-object-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-new="mask">Line mask set…</button>
+              <button class="menu-item" role="menuitem" data-new="spectrum">Synthesise spectrum…</button>
+            </div>
+          </div>
+          <!-- acts on the object focused in the left sidebar; items rendered by editmenu.py -->
+          <div class="menu-wrap">
+            <button id="edit-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-object-menu">Edit ▾</button>
+            <div id="edit-object-menu" class="menu" role="menu" tabindex="-1">{{ edit_menu_html|safe }}</div>
+          </div>
+        </div>
+
+        <!-- line-position indicators over the spectrum (see lineannot.LineAnnotations);
+             clicking one opens the line list in #linelist-bottom -->
+        <div class="toolbar-group">
+          <button id="line-list-btn" class="text-btn">Line list</button>
+          <button id="annot-btn" class="text-btn"
+                  title="Mark the line list's transitions on the spectrum">
+            <span id="annot-btn-label">{{ annot_label|safe }}</span>
+          </button>
+        </div>
+        <!-- the Mask tool: drag a wavelength range, then start a line mask, a synthesis, a
+             fit or an equivalent-width measurement from it (see rangetool.RangeTool) -->
+        <div class="toolbar-group">
+          <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Select range</button>
+        </div>
+      </div>
+      <div id="top-panel">
+        <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
+      </div>
+      <div id="canvas-wrap">{{ embed(roots.main_fig) }}
+{{ canvas_insets() }}
+      </div>
+      <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
+           version of the Sessions modal, plus quick ways to get a first spectrum -->
+      <div id="canvas-empty">
+        <div class="empty-card">
+          <div class="empty-card-head">
+            <i class="ti ti-device-floppy"></i>
+            <span class="modal-title">Saved workspaces</span>
+          </div>
+          <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
+          <div class="session-hint">Select a saved workspace, or start fresh:</div>
+          <button class="primary-btn session-load" disabled>Load workspace</button>
+          <div class="empty-actions">
+            <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
+            <button id="empty-synth" class="text-btn">Synthesise spectrum…</button>
+            <button id="empty-atom" class="text-btn" title="Open a model atom (levels, transitions, NLTE corrections)">Open model atom</button>
+          </div>
+        </div>
+      </div>
+      <div id="feautrier-wrap">
+        <div class="feautrier-head">
+          <span class="section-header">Filter — feautrier space (drag the crosshair: x = max resolution, y = noise floor)</span>
+          <button id="filter-clear" class="text-btn">Clear filter</button>
+        </div>
+        <div id="feautrier-fig">{{ embed(roots.feautrier_fig) }}</div>
+      </div>
+      <!-- LineMasks view: the mask table below the spectrum (reuses #canvas-wrap on top),
+           shown while the LineMasks tool owns the sidebar (#main.linemask-mode) -->
+      <!-- LineMasks view: the windows table — the durable artifact, what a save writes -->
+      <div id="linemask-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="linemask-tables">
+          <div id="linemask-table"></div>
+        </div></div>
+{{ views() }}
+      <!-- the line list (linenav.LineNavigator): opened by clicking a line-position
+           indicator on the spectrum, scrolled to that line's row, closed from the × -->
+      <div id="linelist-bottom">
+        <div class="splitter splitter-row" data-resize="linelist" title="Drag to resize"></div>
+        <div class="linelist-head">
+          <span class="section-header">Line list</span>
+          <div id="linesettings-fields" class="linelist-settings">{{ linesettings_html|safe }}</div>
+          <!-- searching the reference list replaces the window's lines by the matches
+               (linenav.set_query); letters name the species, digits the wavelength -->
+          <label class="linelist-search"><i class="ti ti-search"></i>
+            <input id="linelist-search" class="field-input" type="text" spellcheck="false"
+                   placeholder="Search list, e.g. Mg I 5711" title="Species and wavelength, e.g. “Mg I 5711” or “O I 77”; Esc clears"></label>
+          <button id="linelist-close" class="icon-btn" title="Close the line list"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="linelist-table"></div>
+      </div>
+    </div>
+
+    <aside class="sidebar-right">
+      <div class="tab-bar">
+        <button class="tab active" data-panel="edit">Edit</button>
+        <button class="tab" data-panel="style">Style</button>
+        <button class="tab" data-panel="info">Info</button>
+      </div>
+      <div class="tab-content">
+        <div class="tab-panel active" data-panel="edit">
+          <div id="edit-fields">{{ edit_html|safe }}</div>
+<details class="advanced"><summary>Prepare spectrum</summary>        <div class="preparation-actions">
+          <button id="filter-btn" class="text-btn" title="Noise filter (feautrier space)">Filter</button>
+          <span class="filter-switch-wrap" title="Use filtered spectra for display and measurements">
+            <span class="filter-switch-label">Filtering active</span>
+            <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
+          </span>
+          <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
+        </div>
+<div class="hint">Filtering applies to all spectra and affects measurements. Continuum editing temporarily isolates the selected spectrum.</div></details>
+        </div>
+        <div class="tab-panel" data-panel="style">
+          <div class="field-group">
+            <label>Line color</label>
+            <div id="style-swatches" class="swatch-row">{{ swatches_html|safe }}</div>
+          </div>
+          <details class="advanced"><summary>Appearance</summary><div id="style-fields">{{ style_html|safe }}</div></details>
+        </div>
+        <div class="tab-panel" data-panel="info"><div id="inspector">{{ inspector_html|safe }}</div></div>
+      </div>
+      <!-- the Mask tool's panel: the drawn range and what to do with it (rangetool.RangeTool) -->
+      <div class="range-panel">
+        <div class="range-panel-head">
+          <span class="section-header">Select range</span>
+          <button id="range-close" class="icon-btn" title="Done (Esc)"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="range-panel-content"></div>
+        <div class="hint">Esc leaves the tool</div>
+      </div>
+      <div class="norm-panel">
+        <div class="norm-panel-head">
+          <span class="section-header">Edit continuum</span>
+          <span class="norm-panel-actions">
+            <button class="text-btn norm-cancel" title="Restore the continuum as it was on entry (Esc)">Cancel</button>
+            <button class="text-btn norm-close" title="Keep the edited continuum">Done</button>
+          </span>
+        </div>
+        <div id="norm-panel-content"></div>
+      </div>
+      <div class="filter-panel">
+        <div class="filter-panel-head">
+          <span class="section-header">Filter — smooth the spectra</span>
+          <button class="icon-btn filter-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="filter-panel-content"></div>
+      </div>
+      <div class="linemask-panel">
+        <div class="linemask-panel-head">
+          <span class="section-header">Line masks</span>
+          <button class="icon-btn linemask-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="linemask-panel-content"></div>
+        <div class="hint">Import more sets with <b>Open → Line mask set</b>. Click a
+          row to snap the view to its synth window. Local continua are adjusted in
+          abundance and ionisation-balance measurements.</div>
+      </div>
+{{ panels() }}
+    </aside>
+
+  </div>
+
+  <div id="footer">
+    <span id="footer-status" class="status">Ready</span>
+    <div id="footer-progress"><div class="bar"></div></div>
+    <span class="footer-spacer"></span>
+    <span id="footer-info">{{ footer_html|safe }}</span>
+  </div>
+
+</div>
+
+<dialog id="file-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open spectrum</span>
+    <button id="close-file" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="hint">Browse files on the machine running TUMULT Studio.</div>
+    {{ embed(roots.file_picker) }}
+    <div id="file-results" class="file-results" data-results="{{ results_name }}"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="primary-btn picker-open" disabled>Open</button><button id="load-run" class="primary-btn" title="Load this folder as a tumult run">Open run <span id="run-name"></span></button>
+  </div>
+</dialog>
+
+<dialog id="linemask-modal" class="modal modal-lg mask-open">
+  <div class="modal-header">
+    <span class="modal-title">Open line mask set</span>
+    <button id="close-linemask" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <!-- one pane per masksources.MaskSource; the rail switches between them (same markup as
+       the Preferences modal's category rail, wired by bridge.js's wireNav) -->
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="file">
+        <i class="ti ti-file-import"></i>&nbsp;From file</button>
+      <button class="settings-nav-item" data-page="blank">
+        <i class="ti ti-square-plus"></i>&nbsp;Empty set</button>
+{% if linemask_auto %}      <button class="settings-nav-item" data-page="auto">
+        <i class="ti ti-wand"></i>&nbsp;Auto-generate</button>
+{% endif %}    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="file">
+        <div class="section-header">Import from a line-mask table</div>
+        {{ embed(roots.linemask_picker) }}
+        <div id="linemask-results" class="file-results" data-results="{{ linemask_results_name }}"></div><button class="text-btn picker-open" disabled>Open</button>
+        <div class="hint">Reads fit windows from a linemask file (<code>input/linemasks</code>).
+          The element is taken from the file where it says so, else guessed from its name.</div>
+      </div>
+      <div class="settings-page" data-page="blank">
+        <div class="section-header">New line mask set</div>
+        <div class="field-group">
+          <label>Name</label>
+          <input id="linemask-new-name" class="field-input" type="text"
+                 placeholder="New line mask set" maxlength="60">
+        </div>
+        <div class="field-group"><label for="linemask-new-element">Element</label><input id="linemask-new-element" class="field-input" placeholder="e.g. Fe"></div>
+        <button id="linemask-new-set" class="text-btn">Create empty set</button>
+        <div class="hint">Opens an empty set and arms the box gesture, so you can draw the
+          first window straight onto the spectrum.</div>
+      </div>
+      <!-- run the wizards' diagnostic line selection and keep its windows as a set.
+           Switched off for now (masktool.AUTO_MASKS): the set it makes — one window per
+           candidate line, with a diagnostics table of its own — still has to be reconciled
+           with the imported/hand-drawn view. -->
+{% if linemask_auto %}      <div class="settings-page" data-page="auto">
+        <div class="section-header">Diagnostic line selection</div>
+        <div class="field-group">
+          <label>Observed spectrum</label>
+          <div id="linemask-auto-ref">{{ linemask_auto_ref_html|safe }}</div>
+        </div>
+        <div class="field-group">
+          <label>Line list</label>
+          <div class="path-row">
+            <div id="linemask-auto-path" class="field-static">{{ linemask_auto_path }}</div>
+            <button id="linemask-auto-browse" class="icon-btn" title="Choose a line list">
+              <i class="ti ti-folder-open"></i></button>
+          </div>
+        </div>
+        <div id="linemask-auto-picker" class="inline-picker">
+          {{ embed(roots.linemask_auto_picker) }}
+          <div id="linemask-auto-results" class="file-results" data-results="{{ linemask_auto_results_name }}"></div>
+        </div>
+        <div id="linemaskauto-fields">{{ linemask_auto_html|safe }}</div>
+        <button id="linemask-auto-run" class="text-btn">Run diagnostic selection</button>
+        <div class="hint">Measures every line of the element on the chosen spectrum and keeps
+          each fitted window as a mask — no synthesis needed. Screened candidates are kept
+          switched off with their flag, so you can see and override the rejection.</div>
+      </div>
+{% endif %}    </div>
+  </div>
+</dialog>
+
+<dialog id="atom-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open model atom</span>
+    <button id="close-atom" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    {{ embed(roots.atom_file_picker) }}
+    <div id="atom-file-results" class="file-results" data-results="{{ atom_file_results_name }}"></div><button class="text-btn picker-open" disabled>Open</button>
+    <div class="hint">Reads a MULTI-format model atom (<code>input/atoms</code>): its energy levels
+      and bound-bound transitions open as tables, and NLTE corrections are computed from it.</div>
+  </div>
+</dialog>
+
+<dialog id="session-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Saved workspaces</span>
+    <button id="close-session" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="session-results" class="file-results js-session-results">{{ sessions_html|safe }}</div>
+    <div class="session-hint">Select a saved workspace, then load it. External files are re-read; calculation settings are last-used preferences.</div>
+  </div>
+  <div class="modal-footer"><button class="primary-btn session-load" disabled>Load workspace</button></div>
+  <div class="modal-footer session-newrow">
+    <input id="session-name" class="field-input" type="text" placeholder="Name this save…"
+           maxlength="60">
+    <button id="session-save" class="primary-btn">Save workspace</button>
+  </div>
+</dialog>
+
+<!-- a Processes row's details: progress, threads and driver, timing, inputs, runs, log
+     tails and the actions that apply (processes.workflow_details_html and friends) -->
+<dialog id="job-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Job details</span></div>
+  <div class="modal-body job-details" id="job-details"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
+<!-- settled workflow records this document has not imported (processes.recovery_html) -->
+<dialog id="recovery-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Recover workflow records</span></div>
+  <div class="modal-body" id="recovery-list"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
+<dialog id="workspace-load-modal" class="modal">
+  <div class="modal-header"><span class="modal-title">Load saved workspace?</span></div>
+  <div class="modal-body">Your current workspace has unsaved changes. Loading replaces it.</div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button>
+    <button class="text-btn" data-workspace-load="load-discard">Discard and load</button>
+    <button class="primary-btn" data-workspace-load="load-save">Save and load</button>
+  </div>
+</dialog>

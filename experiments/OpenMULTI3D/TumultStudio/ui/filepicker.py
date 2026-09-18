@@ -252,7 +252,7 @@ class FilePicker:
                 f'data-dir="{1 if is_dir else 0}" '
                 f'title="{html.escape(label, quote=True)}">'
                 # the row is laid out right-to-left so a long path is elided at its head
-                # (see style.css); the marks keep leading/trailing punctuation in place
+                # (see static/css/base.css); the marks keep leading/trailing punctuation in place
                 f'{mark}<span>&lrm;{html.escape(label)}&lrm;</span></li>')
 
     # --- which rows are working -------------------------------------------

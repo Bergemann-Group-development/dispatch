@@ -1,0 +1,292 @@
+{#- Analysis tools: abundance measurement, model atoms, NLTE corrections and the
+    ionisation balance. Their markup sits in three slots of the workspace shell (the
+    Objects list, the canvas and the right sidebar) plus their own dialogs, so it is a set
+    of macros: workspace.html calls the shell pieces, index.html the modals. -#}
+{% macro objects() -%}
+      <!-- non-spectral abundance result objects (see abundancetool.AbundanceTool) -->
+      <div id="abund-results">{{ abund_results_html|safe }}</div>
+      <!-- model-atom objects, each with its correction results nested under it
+           (see atomtool.AtomTool / abundcorrtool.AbundCorrTool) -->
+      <div id="atom-objects">{{ atom_objects_html|safe }}</div>
+      <!-- measurement objects: a line-mask set measured on one spectrum, plus the
+           ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
+      <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
+{%- endmacro %}
+
+{% macro canvas_insets() -%}
+        <!-- the correction view's Lines step: the selected line's CoG inversion beside the
+             reference spectrum (#main.corr-mode.corr-step-1) -->
+        <div id="corr-cog">{{ embed(roots.corr_cog) }}</div>
+        <!-- where the abundance view's jumped line got its abundance, beside the target
+             spectrum: the CoG inversion for a curve-of-growth run, the chi-square scan for
+             a profile fit. One or the other, never both (abundancetool._render_selected) -->
+        <div id="abund-cog">{{ embed(roots.abund_cog) }}</div>
+        <div id="abund-chi2">{{ embed(roots.abund_chi2) }}</div>
+{%- endmacro %}
+
+{% macro views() -%}
+      <!-- abundance result view: the observation with every synthesised line drawn on it
+           (Synthesis) or the two A(X) diagnostic panels (Uncertainties), with the per-line
+           table below and a step switcher footer -->
+      <div id="abund-scatter">
+        <div class="scatter-pane">{{ embed(roots.abund_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.abund_fig2) }}</div>
+      </div>
+      <div id="abund-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="abund-table">{{ abund_table_html|safe }}</div></div>
+      <div id="abund-steps">
+        <div class="step-tabs" data-tool="abund" title="Abundance workflow steps">
+          <button class="step-tab abund-step-btn" data-step="1">Lines</button>
+          <button class="step-tab abund-step-btn" data-step="2">Diagnostics</button>
+        </div>
+      </div>
+      <!-- abundance-correction view: reference spectrum + CoG inversion (Lines) or the two
+           ΔA diagnostic panels (Scatter), the per-line table below, and a step switcher
+           footer -->
+      <div id="corr-scatter">
+        <div class="scatter-pane">{{ embed(roots.corr_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.corr_fig2) }}</div>
+      </div>
+      <div id="corr-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="corr-table">{{ corr_table_html|safe }}</div></div>
+      <div id="corr-steps">
+        <div class="step-tabs" data-tool="corr" title="Abundance-correction views">
+          <button class="step-tab corr-step-btn" data-step="1">Lines</button>
+          <button class="step-tab corr-step-btn" data-step="2">Diagnostics</button>
+        </div>
+      </div>
+      <!-- atom view: the energy levels and the bound-bound transitions of the focused model
+           atom as two searchable tables in a tab arrangement, in place of the canvas
+           (#main.atom-mode; the open tab is the atom-tab-<name> class on #main) -->
+      <div id="atom-view">
+        <div class="atom-head">
+          <div class="step-tabs" title="Model atom tables">
+            <button class="step-tab atom-tab-btn" data-tab="levels">Energy levels</button>
+            <button class="step-tab atom-tab-btn" data-tab="trans">Bound-bound transitions</button>
+          </div>
+          <label class="linelist-search atom-search" data-tab="levels"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search levels, e.g. 3d6 4s" title="Label, stage or index; Esc clears"></label>
+          <label class="linelist-search atom-search" data-tab="trans"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search lines, e.g. 5711" title="Wavelength, level labels or index; Esc clears"></label>
+        </div>
+        <div id="atom-levels-table" class="atom-table-wrap"></div>
+        <div id="atom-trans-table" class="atom-table-wrap"></div>
+      </div>
+      <!-- measurement view: the two balance panels (the tab it opens on, so the fit is
+           watched as it runs) or the target spectrum with the synthesised lines drawn on it
+           (Lines), with the per-line table + iteration status below and a view switcher -->
+      <div id="ionbal-scatter">
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig2) }}</div>
+      </div>
+      <div id="ionbal-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
+      <div id="ionbal-steps">
+        <div class="step-tabs" data-tool="ionbal" title="What the top pane shows">
+          <button class="step-tab ionbal-step-btn" data-step="1">Diagnostics</button>
+          <button class="step-tab ionbal-step-btn" data-step="2">Lines</button>
+        </div>
+      </div>
+{%- endmacro %}
+
+{% macro panels() -%}
+      <div class="abund-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Abundances</span>
+          <button class="icon-btn abund-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="hint">The lines come from a line mask — open one in the left sidebar and
+          use its <b>Measure abundances</b> action. These steps act on the abundance object
+          that measurement produced.</div>
+        <div id="abund-stale"></div>
+        <!-- step 1 · the lines: the spectrum, and the synthesis standing on them
+             (configured in the modal, re-runnable after curation) -->
+        <div class="abund-step-panel abund-step-1-panel">
+          <div id="abund-setup-note">{{ abund_setup_note_html|safe }}</div>
+          <button class="text-btn abund-settings">Synthesis settings…</button>
+          <button class="text-btn abund-run-synth">Run synthesis</button>
+          <div class="hint">Synthesises the curve of growth for each included line; the table
+            fills in row by row as results land. It ran once when the windows were measured —
+            run it again after curating the lines or changing the settings.</div>
+        </div>
+        <!-- step 2 · uncertainties -->
+        <div class="abund-step-panel abund-step-2-panel">
+          <button class="text-btn abund-run-uncert">Run uncertainties</button>
+          <div class="hint">Propagates each line's EW uncertainty (from the SNR + continuum-% set
+            when the windows were measured) to its abundance through the REW gradient, and puts
+            the error bars on the two panels — A(X) against excitation energy and against
+            reduced EW, the same pair a balance is read against.</div>
+        </div>
+      </div>
+      <div class="abundcorr-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">NLTE corrections</span>
+          <button class="icon-btn abundcorr-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="hint">Computed from a model atom — open one in the left sidebar and use its
+          <b>NLTE corrections…</b> action. Click a row to jump to the line on the 1D LTE
+          reference and see its curve-of-growth inversion beside it; untick a line to leave
+          it out of the mean.</div>
+        <div class="hint">The Scatter step shows the line-to-line scatter of the corrections
+          against excitation energy and reduced EW, with the mean ΔA and its σ.</div>
+      </div>
+      <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
+      <div class="atom-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Model atom</span>
+          <button class="icon-btn atom-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="atom-panel-content"></div>
+      </div>
+      <!-- the measurement object's panel: what it is, the fit standing on it, and the
+           refit action (the fit's settings all live in the modal) -->
+      <div class="ionbal-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Measurement</span>
+          <button class="icon-btn ionbal-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="ionbal-panel-content"></div>
+      </div>
+{%- endmacro %}
+
+{% macro modals() -%}
+<!-- Measure abundances: opened from the LineMasks sidebar with the set to measure. The
+     measurement is what the abundance object is made of; the synthesis that stands on it is
+     configured in the object's own panel. -->
+<dialog id="abund-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Measure abundances</span>
+    <button id="close-abund" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="abund-context">{{ abund_context_html|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="abund-ref">{{ abund_ref_html|safe }}</div>
+        <div class="abund-measure-fields"><div id="abund1-fields">{{ abund1_html|safe }}</div></div>
+        <div class="hint">Measures every switched-on window's EW + FWHM (and its EW uncertainty
+          from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
+          Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
+          jump and curate, then re-run the synthesis on what is left.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="abund-grid" class="synth-grid">{{ abund_grid_html|safe }}</div>
+        <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
+             data-results="{{ abund_file_results_name }}">
+          {{ embed(roots.abund_file_picker) }}
+          <div id="abund-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
+        <div id="abund-atoms" class="synth-atoms{{ ' on' if abund_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div id="abund-atoms-list" class="chips">{{ abund_atoms_html|safe }}</div>
+          <button id="browse-abund-atom" class="text-btn">Add model atom…</button>
+          <div id="abund-atom-picker" class="inline-picker">
+            {{ embed(roots.abund_atom_picker) }}
+            <div id="abund-atom-results" class="file-results" data-results="{{ abund_atoms_results_name }}"></div>
+          </div>
+        </div>
+        <div class="hint">Each line's curve of growth is synthesised on this atmosphere and
+          inverted to the abundance reproducing its measured EW.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="abund-modal-actions">{{ abund_actions_html|safe }}</div></div>
+</dialog>
+
+<!-- NLTE corrections: opened from a model atom's panel. The atom is fixed; the modal owns the
+     NLTE target atmosphere and the measurement settings, and names the flagged 1D LTE
+     reference grid (Preferences → Synthesis). -->
+<dialog id="corr-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">NLTE corrections</span>
+    <button id="close-corr" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="corr-context" class="corr-context"></div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">NLTE atmosphere</div>
+        <div id="corr-grid" class="synth-grid">{{ corr_grid_html|safe }}</div>
+        <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
+             data-results="{{ corr_file_results_name }}">
+          {{ embed(roots.corr_file_picker) }}
+          <div id="corr-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="corr1-fields">{{ corr1_html|safe }}</div>
+        <div class="hint">The 1D LTE reference is synthesised from the atom, with background transitions when Use line list is enabled, at these
+          parameters and every line's EW measured on it. For each line an NLTE curve of growth
+          is then built on the atmosphere chosen here and inverted to the abundance reproducing
+          that EW: the shift is ΔA. The reference spectrum lands on the canvas as soon as it is
+          ready; the corrections stream into the table line by line.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button><button class="primary-btn corr-run">Compute</button>
+  </div>
+</dialog>
+
+<!-- Fit ionisation balance: opened from the LineMasks sidebar (a new measurement) or
+     from a measurement object's panel (a refit of the one it already holds). The fit owns
+     its synthesis context; registered grids and physical input paths come from Preferences. -->
+<dialog id="ionbal-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Fit ionisation balance</span>
+    <button id="close-ionbal" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="ionbal-context">{{ ionbal_context_html|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="ionbal1-fields">{{ ionbal1_html|safe }}</div>
+        <div class="hint">The windows are measured once, on this spectrum, into a
+          measurement object of their own. A refit reuses them.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Starting parameters</div>
+        <div id="ionbal2-fields">{{ ionbal2_html|safe }}</div>
+        <div class="hint">Choosing a class fills in its parameters (ξ from an approximate
+          Teff/log g relation); typing over them switches to your own numbers. A parameter
+          that is not fitted is held there — its diagnostic is still measured and reported as
+          the residual it is, and holding all four turns the run into a single diagnostic
+          evaluation.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="ionbalsetup-fields">{{ ionbalsetup_html|safe }}</div>
+        <div class="hint">The selected registered grid is always interpolated at every trial
+          point. Individual atmospheres and picked grid files cannot determine atmospheric
+          parameters and are intentionally unavailable here.</div>
+        <details class="advanced"><summary>Solver settings</summary><div id="ionbaladv-fields">{{ ionbaladv_html|safe }}</div></details>
+        <div class="hint">Each iteration inverts every line's EW to A(X) through a curve of
+          growth at the trial parameters, then steps the free parameters along their own
+          diagnostic. Iteration 1 also blend-screens the lines.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button><button id="ionbal-run" class="primary-btn">Measure &amp; fit</button>
+  </div>
+</dialog>
+{%- endmacro %}

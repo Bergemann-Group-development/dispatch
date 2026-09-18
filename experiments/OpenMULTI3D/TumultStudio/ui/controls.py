@@ -3,7 +3,7 @@
 These replace Bokeh's stock form widgets (NumericInput / Select / Spinner) with
 plain HTML ``<input>`` / ``<select>`` rendered into an ``html_bridge`` slot, so
 every control is styled by the single ``.field-group`` / ``.field-input`` rules
-in style.css — no shadow DOM, no per-widget stylesheet.
+in static/css/base.css — no shadow DOM, no per-widget stylesheet.
 
 Usage
 -----

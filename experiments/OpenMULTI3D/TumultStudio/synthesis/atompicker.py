@@ -6,7 +6,7 @@ in ``input/atoms/``, remove via a per-chip button. The selection is persisted in
 
 Mirrors the settings-modal line-list picker (``main.py``: an inline ``FilePicker`` plus a
 ``class_bridge`` open toggle) and the cache-delete chip pattern (``synthmodal.py`` /
-``templates/index.html``: a delegated click on a ``data-path`` button into a dedicated
+``static/js/synthesis.js``: a delegated click on a ``data-path`` button into a dedicated
 ``TextInput`` action channel).
 """
 from __future__ import annotations
