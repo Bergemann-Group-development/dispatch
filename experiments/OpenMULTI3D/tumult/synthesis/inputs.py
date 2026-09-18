@@ -19,6 +19,13 @@ from pathlib import Path
 
 STAR_KEYS = ("teff", "logg", "feh", "vmic")
 CONVENTIONS = ("[X/Fe]", "A(X)")
+# the ``atmos_format`` values the Fortran reader accepts for the ``format`` of an
+# :class:`Atmosphere`, :class:`AtmosphereGrid` or :class:`Snapshot`, in the order a
+# chooser offers them (MARCS, the 1D default, first). The comparison is case-insensitive
+# (see :attr:`Atmosphere.is_marcs`, :data:`tumult.synthesis.workflows.FORMAT_PATTERNS`
+# and :data:`tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`), so these spellings are
+# the canonical ones rather than the only accepted ones.
+ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
 PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
                "abund_file": "abundances", "absmet": "absmet", "R": "resolving_power",

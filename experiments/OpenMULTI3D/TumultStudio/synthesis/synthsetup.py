@@ -41,18 +41,17 @@ from pathlib import Path
 from bokeh.models import TextInput
 
 from tumult import refstars
-from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, DepartureRequest,
-                              Departures, Snapshot, Star, SynthRequest)
+from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
+                              DepartureRequest, Departures, Snapshot, Star, SynthRequest)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 from ..workspace import store
 from tumult.synthesis import workflows as synth
 from .atmospicker import AtmosPicker
 from ..ui.controls import Field, Form
-from ..preferences.gridmanager import ATMOS_FORMATS
 from ..ui.htmlbridge import class_bridge, html_bridge, parse_action, pulse
-from ..preferences.synthprefs import (INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, atmosphere_grid, load_prefs,
-                        missing_prefs, synth_config)
+from ..preferences.synthprefs import (INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, atmosphere_grid,
+                        format_options, load_prefs, missing_prefs, synth_config)
 
 # keys copied when a setup inherits another section's configuration (the four stellar axes
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
@@ -380,10 +379,7 @@ class SynthSetup:
                f'{grid_opts}</select></div>']
 
         if sel == INDIVIDUAL_GRID:
-            fmt = run.get("atmos_individual_format") or ATMOS_FORMATS[0]
-            fmt_opts = "".join(
-                f'<option value="{html.escape(f)}"{" selected" if f == fmt else ""}>'
-                f'{html.escape(f)}</option>' for f in ATMOS_FORMATS)
+            fmt_opts = format_options(run.get("atmos_individual_format") or ATMOS_FORMATS[0])
             out.append('<div class="field-group field-inline"><label>Format</label>'
                        f'<select class="field-input" data-atmos="{p}" data-atmos-key="format">'
                        f'{fmt_opts}</select></div>')

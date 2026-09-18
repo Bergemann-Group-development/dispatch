@@ -25,7 +25,8 @@ from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectru
                   get_NLTE_corrections, normalise_windows, preset)
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
-from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig)
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS, Snapshot,
+                     Star, SynthConfig)
 from .request import ResolvedSynthRequest, SpectrumFit, SynthesisResult, SynthRequest
 from ..departures import DepartureGrid, DepartureRequest, Departures
 from .snapshot import (solve_departures, synthesise_snapshot,
@@ -42,6 +43,7 @@ from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default
 
 __all__ = [
     "SynthRequest", "SynthConfig", "Star", "Abundances", "Atmosphere", "AtmosphereGrid",
+    "ATMOS_FORMATS",
     "Snapshot", "synthesize", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
     "DepartureGrid", "DepartureRequest",
     "PRESETS_DIR", "preset",

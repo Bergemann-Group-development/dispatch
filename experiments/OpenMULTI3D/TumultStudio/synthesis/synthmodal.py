@@ -25,15 +25,16 @@ The atmosphere + stellar-parameter + RT-mode cluster is a composed
 :class:`synthsetup.SynthSetup` (the same component the abundance / correction wizards own)
 parameterised with this modal's historical store split (run state under ``"synth_run"``,
 the grid selection under ``"synthesis"``) and form names (the page slots ``synth-fields`` /
-``synthabund-fields`` / ``synthmode-fields``). The modal also owns the app-global pieces
-that live in Preferences (the Atmosphere grids page, the NLTE model-atom selection,
-the preference sheets and the run-cache listing). See ``docs/GUIWorkflow.md``.
+``synthabund-fields`` / ``synthmode-fields``). The app-global pieces it shows but does not
+own — the grid registry (Preferences → Atmosphere grids) and the NLTE model-atom selection
+every calculation shares — are constructed before this dialog and passed in; the
+preference sheets and the run-cache listing belong to :class:`preferences.page.PreferencesPage`.
+See ``docs/GUIWorkflow.md``.
 """
 from __future__ import annotations
 
 import html
 import json
-import logging
 from pathlib import Path
 
 from ..workspace import store
@@ -41,30 +42,12 @@ from tumult.departures import Departures
 from tumult.linemask import LineMask, LineMaskSet
 from tumult.synthesis import AtmosphereGrid, Snapshot, SynthRequest, check_fit
 from tumult.synthesis import workflows as synth
-from .atompicker import AtomPicker
 from ..ui.controls import Field, Form
 from .fittab import FitTab
-from ..preferences.gridmanager import GridManager
-from ..ui.filepicker import FilePicker
-from ..ui.htmlbridge import pulse, toggle
+from ..ui.htmlbridge import pulse
 from ..workspace import naming
 from .synthsetup import SynthSetup
-from ..preferences.synthprefs import (
-    PATH_PICKERS,
-    PREF_PAGES,
-    REPO_DIR,
-    SELECT_OPTIONS,
-    load_prefs,
-    missing_prefs,
-    synth_config,
-)
-
-
-def _human_size(n):
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
+from ..preferences.synthprefs import load_prefs, synth_config
 
 
 def rerun_record(request, windows, **extra):
@@ -78,15 +61,13 @@ def rerun_record(request, windows, **extra):
 
 
 class SynthModal:
-    def __init__(self, ctx, add, on_warn=None):
+    def __init__(self, ctx, add, grids, atoms):
         self.ctx = ctx
         self.canvas = ctx.canvas
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         ctx.task_importers["synthesis.fit"] = self._import_fit  # a fit another document submitted
-        self.on_inputs_change = lambda: None
-        self.on_grids_change = lambda: None   # the grid registry changed (Preferences)
-        self.on_warn = on_warn   # push True/False when configured files go missing/found
-        self.missing = []        # path prefs currently pointing at non-existent files
+        self.grids = grids       # the app-global registry (Preferences), read-only here
+        self.atoms = atoms       # the shared NLTE model-atom selection, shown in this dialog
         self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
         self.source = None       # the name of the spectrum a rerun was opened from
         self.mode = "synth"      # "synth" | "fit"
@@ -98,8 +79,6 @@ class SynthModal:
         self.context_bridge = ctx.bridges.html("synth-context")
         self.actions_bridge = ctx.bridges.html("synth-modal-actions")
         self.fit_mode_bridge = ctx.bridges.cls("#synth-modal", "fit-mode")
-        # run-cache listing (settings modal → Cache page)
-        self.cache_bridge = ctx.bridges.html("synth-cache", name="synth-cache-render")
 
         # the wavelength window of a range job (Å); seeded from the range that opened the
         # modal, blank from the landing page, and required before a run starts
@@ -109,54 +88,6 @@ class SynthModal:
             Field("xmax", "λ max [Å]", kind="number", value=None, min=0, inline=True,
                   required=True),
         ])
-
-        prefs = load_prefs()
-        self.pref_forms = {
-            name: Form(name, [
-                Field(key, label, kind=kind, value=prefs.get(key, default),
-                      options=SELECT_OPTIONS.get(key))
-                for key, label, kind, default in fields
-            ], on_change=self._save_pref)
-            for name, fields in PREF_PAGES.items()
-        }
-
-        self.pref_forms["synthengine"].groups = [
-            ("Execution", ("synth_output_dir", "workflow_runner", "max_threads")),
-            ("Spectral sampling", ("R", "linelist_skirt_aa")),
-            ("Atmosphere mesh (horizontal columns apply to 3D)", ("nx", "ny", "nz")),
-            ("Fit settings", ("vmic_step", "abund_step", "fit_max_rounds"))]
-        # the path preferences are picked, not typed: each has an inline file picker beside
-        # its page's form (a Bokeh root, so it lives in the template rather than in the
-        # re-rendered form) and its text field is hidden. Folders may be picked where the
-        # preference accepts one.
-        self.pref_pickers, self._pref_results, self._pref_warn = {}, {}, {}
-        root = self._prefs_root(prefs)
-        for key, dirs in PATH_PICKERS.items():
-            form = next(f for f in self.pref_forms.values() if key in f.fields)
-            form.fields[key].hidden = True
-            picker = FilePicker(lambda path, key=key: self._on_pick_pref(key, path),
-                                container_id=f"pref-{key}-results", pick_dirs=dirs,
-                                root=None if key == "dispatch_cwd" else root, start_dir=root)
-            picker.layout.name = f"pref_{key}_picker"
-            picker.preset(str(prefs.get(key) or ""))
-            self.pref_pickers[key] = picker
-            self._pref_results[key] = ctx.bridges.cls(f"#pref-{key}-picker", "results-open")
-            self._pref_warn[key] = ctx.bridges.cls(f"#pref-{key}-block", "field-warn")
-        self._slurm_bridge = ctx.bridges.cls("#pref-slurm_script-block", "off")
-        toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")
-
-        # atmosphere grids (Preferences → Atmosphere grids); the setup's grid selector,
-        # source-mode toggle and direct-file picker read the current selection from it.
-        # Downloads go under <dispatch_cwd>/input/atmos unless a storage folder is set, so
-        # the bundled MARCS grid there is registered from the start.
-        cwd = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
-        self.grids = GridManager(default_pattern=synth.DEFAULT_PATTERN,
-                                 on_change=self._on_grids_changed,
-                                 default_storage=cwd / "input" / "atmos", ctx=ctx)
-
-        # NLTE model-atom selector: opens in <dispatch_cwd>/input/atoms, shown only in NLTE.
-        atoms_dir = cwd / "input" / "atoms"
-        self.atoms = AtomPicker(start_dir=atoms_dir if atoms_dir.is_dir() else cwd)
 
         # the shared atmosphere + stellar-parameter + RT-mode cluster, with this modal's
         # historical store split and page-slot form names.
@@ -171,11 +102,9 @@ class SynthModal:
             grid_section="synthesis",
             form_names={"run": "synth", "base": "synthabund", "mode": "synthmode"})
 
-        self._refresh_warnings(push=False)  # seed field.warn so the initial html() is correct
-
         # the Fit section: target + what varies; the guess is the setup itself
         self.fit = FitTab()
-        self.fit.set_catalog(prefs)
+        self.fit.set_catalog(load_prefs())
         self.fit.set_relative(bool(self.setup.base_form.value("relative_abundances")))
         self.fit.set_feh(self.setup.run_form.value("feh"))
         self.fit.targets = [(o.uid, o.name) for o in self.canvas.objects]
@@ -211,17 +140,7 @@ class SynthModal:
 
     @property
     def models(self):
-        return [*self.setup.models, *self.window_form.models,
-                *self.atoms.models, *self.fit.models, *self.grids.models,
-                *(m for form in self.pref_forms.values() for m in form.models)]
-
-    # --- registered grids ---------------------------------------------------------------
-    def _on_grids_changed(self):
-        """GridManager edited the registry: refresh the selector, the model listing and
-        the file warnings, and tell the app (the line-strength reference grid follows)."""
-        self.setup.refresh_grids()
-        self._refresh_warnings(push=True)
-        self.on_grids_change()
+        return [*self.setup.models, *self.window_form.models, *self.fit.models]
 
     # --- opening ------------------------------------------------------------------------
     def open_range(self, xmin=None, xmax=None, mode="synth"):
@@ -574,71 +493,7 @@ class SynthModal:
             store.update_pref("synth_run", k, v)
         self.fit.set_feh(stellar["feh"])
 
-    # --- run cache --------------------------------------------------------
-    @staticmethod
-    def _abund_text(abund, feh):
-        """Per-run abundance overrides as '[El/Fe] +0.30' chips. Absolute A(X) values
-        (relative_abundances off) are converted to [X/Fe] via the solar table + [Fe/H]."""
-        items = abund.get("items") if abund else None
-        if not items:
-            return ""
-        solar = {} if abund["relative"] else synth.abund_table(load_prefs())
-        parts = []
-        for el, val in items:
-            if abund["relative"]:
-                xfe = val
-            elif el not in solar:
-                continue  # no solar reference -> can't express as [X/Fe]
-            else:
-                xfe = synth.abund_to_xfe(val, el, feh or 0.0, solar)
-            parts.append(f"[{el}/Fe] {xfe:+.2f}")
-        return " · ".join(parts)
-
-    def cache_html(self):
-        entries = synth.list_cache(load_prefs())
-        total = sum(e["size"] for e in entries)
-        head = (f'<div class="cache-summary">{len(entries)} cached run'
-                f'{"" if len(entries) == 1 else "s"} · {_human_size(total)}</div>')
-        if not entries:
-            return head + '<div class="field-static">Cache is empty.</div>'
-        rows = []
-        for e in entries:
-            star = e["star"]
-            is_dep = e["kind"] == "departure"
-            tag = ('<span class="cache-tag cache-tag-dep">DEP</span>' if is_dep
-                   else '<span class="cache-tag">SPEC</span>')
-            title = (f"{star['teff']:.0f} K · log g {star['logg']:.2f} · [Fe/H] {star['feh']:+.2f}"
-                     + (f" · ξ {star['vmic']}" if star and star["vmic"] else "")) if star else e["run"]
-            win = "departures" if is_dep else (
-                f"{e['window'][0]}–{e['window'][1]} Å" if e["window"] else "full range")
-            abund = self._abund_text(e["abund"], star["feh"] if star else 0.0)
-            sub = " · ".join(filter(None, [win, abund, _human_size(e["size"])]))
-            rows.append(
-                f'<div class="cache-item">'
-                f'<div class="cache-meta">'
-                f'<span class="cache-star">{tag}{html.escape(title)}</span>'
-                f'<span class="cache-sub">{html.escape(sub)}</span></div>'
-                f'<button class="cache-del" data-path="{html.escape(e["path"])}" '
-                f'title="Delete this cached run"><i class="ti ti-trash"></i></button>'
-                f'</div>')
-        return head + "".join(rows)
-
-    def refresh_cache(self):
-        self.cache_bridge.value = self.cache_html()
-
-    def delete_cache(self, path):
-        synth.delete_cache_entry(load_prefs(), path)
-        self.refresh_cache()
-
-    def clear_cache(self):
-        synth.clear_cache(load_prefs())
-        self.refresh_cache()
-
-    @property
-    def has_warning(self):
-        return bool(self.missing) or bool(self.grids.missing_folders())
-
-    # --- persistence ------------------------------------------------------
+    # --- keeping the Fit section in step with the setup --------------------
     def _on_base_change(self, key, value):
         """The shared Abundances / relative flag changed (persisted by the setup); keep the
         Fit section's per-element row display in the same convention."""
@@ -655,66 +510,6 @@ class SynthModal:
         switches."""
         if hasattr(self, "fit"):
             self.fit.set_can_fit_stellar(not self.setup.show_file())
-
-    def _save_pref(self, key, value):
-        store.update_pref("synthesis", key, value)
-        prefs = load_prefs()
-        if key == "dispatch_cwd":
-            # the other path pickers browse relative to the working directory
-            root = self._prefs_root(prefs)
-            for other, picker in self.pref_pickers.items():
-                if other != "dispatch_cwd":
-                    picker.set_root(root)
-                    picker.preset(str(prefs.get(other) or ""))
-        if key in ("linelist", "dispatch_cwd"):
-            self.on_inputs_change()
-        if key == "max_threads":
-            self._configure_daemon(prefs)
-        toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")
-        self._refresh_warnings(push=True)
-
-    @staticmethod
-    def _configure_daemon(prefs):
-        """The Engine thread preference is the workflow daemon's budget; tell the daemon
-        through this server's connection (a harness without one has no daemon to tell)."""
-        from tumult.synthesis import daemon
-        connection = daemon.current()
-        if connection is None or connection.role != "server":
-            return
-        try:
-            connection.request("configure", max_threads=int(prefs.get("max_threads") or 0))
-        except (OSError, ValueError, daemon.DaemonError):
-            logging.getLogger(__name__).warning("The daemon budget was not changed",
-                                                exc_info=True)
-
-    @staticmethod
-    def _prefs_root(prefs):
-        return Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
-
-    def _on_pick_pref(self, key, path):
-        """A path preference was picked: show it in its field, persist it, fold the list."""
-        value = str(path)
-        self.pref_pickers[key].query.value = value
-        self._save_pref(key, value)
-        pulse(self._pref_results[key], "off")
-
-    def pref_picker_results(self):
-        """``{key: results-bridge name}`` for the template's inline pickers."""
-        return {key: picker.results_name for key, picker in self.pref_pickers.items()}
-
-    # --- file-existence warnings ------------------------------------------
-    def _refresh_warnings(self, push):
-        """Mark path fields whose file is missing; optionally re-render and notify."""
-        self.missing = missing_prefs(load_prefs())
-        for form in self.pref_forms.values():
-            for key, field in form.fields.items():
-                field.warn = key in self.missing
-            if push:
-                form.render()
-        for key, bridge in self._pref_warn.items():
-            toggle(bridge, key in self.missing)
-        if push and self.on_warn:
-            self.on_warn(self.has_warning)
 
     # --- launch -----------------------------------------------------------
     def synthesize(self):

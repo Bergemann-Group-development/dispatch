@@ -1,22 +1,42 @@
-"""Shared synthesis preferences: the reusable namelist setup and its defaults.
+"""Preference values and their conversion to configuration.
 
-Kept apart from synthmodal.py so the neutral pieces — pref pages, run defaults, path
-checks — are importable by both :class:`synthmodal.SynthModal` and
-:class:`synthsetup.SynthSetup` without either importing the other (so that neither has to
-import them from the other).
+The preference pages (:class:`page.PreferencesPage` renders them), the defaults behind
+them, the path checks over them, and the :class:`~tumult.synthesis.SynthConfig` they
+state. Everything here reads the store and the :mod:`tumult` API only, so the
+preferences page, :class:`synthsetup.SynthSetup` and the analysis tools can all build a
+request from the same values without importing one another.
 """
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from ..workspace import store
-from tumult.synthesis import AtmosphereGrid, SynthConfig
+from tumult.synthesis import ATMOS_FORMATS, AtmosphereGrid, SynthConfig
 from tumult.synthesis import workflows as synth
-from .gridmanager import ATMOS_FORMATS
 
 # pseudo-grid selected in a Grid dropdown: synthesise a single, hand-picked atmosphere
 # file of a chosen format, with no registered grid (and no interpolation).
 INDIVIDUAL_GRID = "__individual__"
+
+# how the atmosphere formats a grid or an Individual atmosphere may declare are shown in a
+# chooser. The values themselves are tumult's (``tumult.synthesis.ATMOS_FORMATS``: what
+# the Fortran reader accepts); only what a dropdown writes beside each of them is the GUI's,
+# and today each format is shown under its own name.
+ATMOS_FORMAT_LABELS = {fmt: fmt for fmt in ATMOS_FORMATS}
+
+
+def format_options(selected):
+    """``<option>`` markup listing the atmosphere formats, marking ``selected``.
+
+    Shared by the Atmosphere grids page (a custom grid's Format) and by a setup's
+    Individual-atmosphere Format; an unknown ``selected`` marks nothing, leaving the
+    browser on the first entry."""
+    return "".join(
+        f'<option value="{html.escape(fmt)}"{" selected" if fmt == selected else ""}>'
+        f'{html.escape(label)}</option>'
+        for fmt, label in ATMOS_FORMAT_LABELS.items())
+
 
 # the dispatch experiment directory (holds dispatch.x and input/); relative file
 # prefs (the Fortran defaults below) are resolved against it for existence checks.

@@ -38,16 +38,15 @@ import time
 from bokeh.models import CustomJS, TextInput
 
 from ..workspace import store
-from tumult.synthesis import grid_catalog
+from tumult.synthesis import ATMOS_FORMATS, grid_catalog
 from tumult.synthesis.cancel import CancelledError
 from tumult.synthesis import workflows as synth
 from tumult.synthesis.snapshot_grid import DEFAULT_SNAPSHOTS, is_snapshot_grid
 from ..ui.filepicker import FilePicker
 from ..ui.htmlbridge import class_bridge, html_bridge, pulse
 from ..ui.tableui import SortState, sort_headers
+from .synthprefs import format_options
 
-# atmosphere formats a custom grid may declare (the Fortran atmos_format values)
-ATMOS_FORMATS = ["Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save"]
 STORAGE = "storage"        # the pseudo grid id of the storage folder's picker row
 
 
@@ -341,11 +340,7 @@ class GridManager:
         gid = html.escape(g["id"])
         folder = g.get("folder") or ""
         warn = bool(folder.strip()) and not Path(folder).expanduser().is_dir()
-        fmt = g.get("format") or ATMOS_FORMATS[0]
-        opts = "".join(
-            f'<option value="{html.escape(f)}"'
-            f'{" selected" if f == fmt else ""}>{html.escape(f)}</option>'
-            for f in ATMOS_FORMATS)
+        opts = format_options(g.get("format") or ATMOS_FORMATS[0])
         folder_cls = "field-input grid-folder" + (" field-warn-input" if warn else "")
         return (
             f'<div class="grid-card" data-grid-id="{gid}">'

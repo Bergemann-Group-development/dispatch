@@ -29,7 +29,10 @@ from tumult import refstars
 from tumult import linestrength
 from tumult.linestrength import LineStrengths
 from .spectrum.rangetool import RangeTool
+from .preferences.page import PreferencesPage
 from .preferences.refstarspage import RefStarsPage
+from .synthesis.atompicker import AtomPicker
+from .synthesis.draft import CalculationDraft
 from .synthesis.synthmodal import SynthModal
 from .synthesis.synthsetup import ATMOS_SCRIPT, SynthSetup
 from .analysis.abundancetool import AbundanceTool
@@ -41,7 +44,7 @@ from .workspace import naming
 from .workspace.removal import Removal, register_workspace as register_removals
 from .workspace.editmenu import EditMenu, Target as EditTarget
 from tumult.synthesis import workflows as synth  # (execution_root of the configured prefs)
-from .preferences.synthprefs import PREF_LABELS, load_prefs, _resolve_path  # (the configured workflow root)
+from .preferences.synthprefs import PREF_LABELS, REPO_DIR, load_prefs, _resolve_path  # (the configured workflow root)
 from .ui.filepicker import FilePicker
 from .ui.toolmanager import ToolManager
 from .workspace.session import FOCUS_TOOL, RESULT_TOOLS
@@ -472,6 +475,14 @@ def build():
     # into tumult.refstars here, before anything lists it; its edits repaint every dropdown
     # that does (on_refstars_change, defined once those exist)
     refstars_page = RefStarsPage(on_change=lambda: on_refstars_change())
+    # Preferences (sheets, pickers, the app-global grid registry, the run cache) and the
+    # shared NLTE model-atom selection are built here, before the calculation dialogs that
+    # consume them; on_inputs_change / on_grids_change bind once their listeners exist.
+    prefs_page = PreferencesPage(ctx, on_warn=synth_on_warn)
+    _cwd = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
+    _synth_atoms_dir = _cwd / "input" / "atoms"     # the synthesis modal's atom selector
+    synth_atoms = AtomPicker(
+        start_dir=_synth_atoms_dir if _synth_atoms_dir.is_dir() else _cwd)
     strengths = LineStrengths(master_path=master, linelist=master,
                               refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
     ctx.strengths = strengths
@@ -612,20 +623,20 @@ def build():
         if conv:
             o.conv = dict(conv)
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
-        synth_modal.refresh_cache()  # the new run is now in the cache listing
+        prefs_page.refresh_cache()  # the new run is now in the cache listing
 
     # This document's attachment to the durable workflows every dispatch calculation is:
     # the service installs ctx.submit_operation and the recovery actions, so every
     # synthesis and every fit built below submits through the context.
     workflows = WorkflowService(ctx, delivery, panel, add_spectrum=add_synth,
                                 workflow_roots=workflow_roots, on_status=update_status)
-    synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
+    synth_modal = SynthModal(ctx, add=add_synth, grids=prefs_page.grids, atoms=synth_atoms)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
     def marcs_for_strengths():
         """Name the registered MARCS grid the line-strength reference atmospheres are read
         from (the first one in registry order), or none."""
-        grid = next((g for g in synth_modal.grids.grids
+        grid = next((g for g in prefs_page.grids.grids
                      if str(g.get("format") or "").lower() == "marcs"
                      and (g.get("folder") or "").strip()), None)
         linestrength.set_marcs_grid(grid["folder"] if grid else None,
@@ -639,13 +650,12 @@ def build():
     # its fields live in the abundance modal, so every edit restates the setup in the object
     # panel, where the Run synthesis button stands
     _abund_note = lambda *_: (abundancetool is not None and abundancetool.push_setup_note())
-    from .synthesis.atompicker import AtomPicker
     abund_atoms = AtomPicker(Path(load_prefs()["dispatch_cwd"]) / "input" / "atoms", ns="abund-atoms", section="abund_run",
         picker_sel="#abund-atom-picker", section_sel="#abund-atoms",
         actions_name="abund-atom-actions", results_id="abund-atom-results",
         layout_name="abund_atom_picker", del_class="abund-atom-del")
     abund_setup = SynthSetup(
-        "abund", "abund_run", synth_modal.grids,
+        "abund", "abund_run", prefs_page.grids,
         atoms_provider=lambda: list(abund_atoms.selected), notify=notify,
         on_run_change=_abund_note, on_base_change=_abund_note,
         on_mode_change=lambda on: (abund_atoms.show(on), _abund_note()), on_atmos_change=_abund_note)
@@ -660,7 +670,7 @@ def build():
     # modal, sharing only the app-global grid registry (one grid flagged as the 1D LTE
     # reference). The model atom is the atom object the modal was opened from.
     corr_setup = SynthSetup(
-        "corr", "abundcorr_run", synth_modal.grids,
+        "corr", "abundcorr_run", prefs_page.grids,
         atoms_provider=lambda: ([abundcorrtool._pending_atom.path]
                                 if abundcorrtool._pending_atom is not None else []),
         notify=notify)
@@ -668,7 +678,7 @@ def build():
     abundcorrtool = AbundCorrTool(
         ctx,
         setup=corr_setup,
-        grids=synth_modal.grids)
+        grids=prefs_page.grids)
 
     # the model-atom objects: Open → Model atom loads one; its view is the two
     # tables, its panel the entry point of the correction modal, and its correction results
@@ -688,20 +698,22 @@ def build():
     # the app-global registered-grid list and synthesis preferences are shared.
     ionbaltool = IonBalanceTool(
         ctx,
-        grids=synth_modal.grids,
+        grids=prefs_page.grids,
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
         get_observation=canvas.target_spectrum,
         master_path=master)
 
     def on_grids_change():
-        """The grid registry changed: every setup re-lists its grid, and the strength
-        ranking follows the MARCS grid."""
+        """The grid registry changed (Preferences → Atmosphere grids): every setup re-lists
+        its grid, and the strength ranking follows the MARCS grid. The page has already
+        refreshed its own file warnings."""
+        synth_modal.setup.refresh_grids()
         abund_setup.refresh_grids()
         corr_setup.refresh_grids()
         marcs_for_strengths()
         warm_strengths()
 
-    synth_modal.on_grids_change = on_grids_change
+    prefs_page.on_grids_change = on_grids_change
 
     def on_refstars_change():
         """The reference-star catalogue was edited: repaint every dropdown listing it, and
@@ -934,11 +946,11 @@ def build():
         kind, _, rest = new.partition(" ")
         arg = rest.rsplit(" ", 1)[0]  # strip the trailing nonce
         if kind == "del":
-            synth_modal.delete_cache(arg)
+            prefs_page.delete_cache(arg)
         elif kind == "clear":
-            synth_modal.clear_cache()
+            prefs_page.clear_cache()
         elif kind == "refresh":
-            synth_modal.refresh_cache()
+            prefs_page.refresh_cache()
 
     cache_actions.on_change("value", on_cache_action)
 
@@ -986,14 +998,13 @@ def build():
         ctx.annot.resync()
         linenav.render()
 
-    synth_modal.on_inputs_change = sync_linelist
+    prefs_page.on_inputs_change = sync_linelist
     if store.get_pref("master_linelist") is not None:
         with store.transaction() as data:
             data["preferences"].pop("master_linelist", None)
         notify("Navigation and analysis now use the synthesis Line list in Preferences.")
 
-    from .synthesis.draft import CalculationDraft
-    synth_modal.draft = CalculationDraft(setup=synth_modal.setup, atoms=synth_modal.atoms,
+    synth_modal.draft = CalculationDraft(setup=synth_modal.setup, atoms=synth_atoms,
         owner=synth_modal.fit, attributes=("vals", "flags", "abund_rows", "target"))
     abundancetool.draft = CalculationDraft(forms=[("abundance", abundancetool.form1)],
         setup=abundancetool.setup, atoms=abund_atoms, owner=abundancetool, attributes=("ref_uid",))
@@ -1013,8 +1024,9 @@ def build():
     # every html control is a hidden model collected under one root: the bridges/actions
     # `B` gathered as they were created, plus each component's own form/bridge models
     bridges = column(*B.models,
-                     *settings.models, *inspector.models, *linenav.models, *abund_atoms.models,
-                     *linejump_form.models, *refstars_page.models,
+                     *settings.models, *inspector.models, *linenav.models,
+                     *synth_atoms.models, *abund_atoms.models,
+                     *linejump_form.models, *refstars_page.models, *prefs_page.models,
                      *synth_modal.models, *range_tool.models, *normtool.models,
                      *filtertool.models, *masktool.models,
                      *abundancetool.models, *abundcorrtool.models,
@@ -1033,9 +1045,9 @@ def build():
                      *abundcorrtool.figs, abundcorrtool.cog.fig,
                      *ionbaltool.figs, picker.layout,
                      *masktool.roots,
-                     synth_modal.atoms.picker.layout, abund_atoms.picker.layout,
-                     *(p.layout for p in synth_modal.pref_pickers.values()),
-                     synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
+                     synth_atoms.picker.layout, abund_atoms.picker.layout,
+                     *(p.layout for p in prefs_page.pref_pickers.values()),
+                     prefs_page.grids.picker.layout, synth_modal.atmos_picker.layout,
                      abundancetool.setup.atmos_picker.layout,
                      abundcorrtool.setup.atmos_picker.layout,
                      atom_picker.layout, bridges):
@@ -1067,23 +1079,23 @@ def build():
         synth_actions_html=synth_modal.actions_html(),
         synth_abund_html=synth_modal.abund_form.html(),
         synth_mode_html=synth_modal.mode_form.html(),
-        synth_prefs_html=synth_modal.pref_forms["synthprefs"].html(),
-        synth_engine_html=synth_modal.pref_forms["synthengine"].html(),
-        pref_picker_results=synth_modal.pref_picker_results(),
+        synth_prefs_html=prefs_page.pref_forms["synthprefs"].html(),
+        synth_engine_html=prefs_page.pref_forms["synthengine"].html(),
+        pref_picker_results=prefs_page.pref_picker_results(),
         pref_labels=PREF_LABELS,
-        pref_missing=set(synth_modal.missing),
+        pref_missing=set(prefs_page.missing),
         pref_show_slurm=load_prefs().get("workflow_runner") == "slurm",
-        grid_list_html=synth_modal.grids.list_html(),
+        grid_list_html=prefs_page.grids.list_html(),
         refstars_html=refstars_page.list_html(),
-        grid_results_name=synth_modal.grids.results_name,
+        grid_results_name=prefs_page.grids.results_name,
         synth_grid_html=synth_modal.grid_ui_html(),
         synth_show_file=synth_modal.setup.show_file(),
         synth_file_results_name=synth_modal.atmos_picker.results_name,
-        synth_cache_html=synth_modal.cache_html(),
-        synth_warning=synth_modal.has_warning,
-        synth_atoms_html=synth_modal.atoms.chips_html(),
+        synth_cache_html=prefs_page.cache_html(),
+        synth_warning=prefs_page.has_warning,
+        synth_atoms_html=synth_atoms.chips_html(),
         synth_is_nlte=synth_modal.is_nlte,
-        atom_results_name=synth_modal.atoms.results_name,
+        atom_results_name=synth_atoms.results_name,
         fit_html=synth_modal.fit.html(),
         annot_label=ctx.annot.button_html(),
         linesettings_html=linejump_form.html(),

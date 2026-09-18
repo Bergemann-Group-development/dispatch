@@ -585,7 +585,11 @@ line by line.
   tool in add mode.
 - `SynthModal` (`synthmodal.py`) collects both modal modes from `SynthSetup`
   (`synthsetup.py`) with `FitTab` (`fittab.py`) as its Fit section; there is no
-  departure-solve action in the GUI.
+  departure-solve action in the GUI. The Preferences dialog is `PreferencesPage`
+  (`preferences/page.py`): the preference sheets and their pickers, the atmosphere-grid
+  registry (`gridmanager.py`) and the run-cache page. It is built before the calculation
+  dialogs, which share the registry and the model-atom selection it is given rather than
+  owning them; the preference *values* and their `SynthConfig` are `synthprefs.py`.
 - `AbundanceWizard` (`abundwizard.py`) is the base of the abundance, correction and
   ionisation-balance tools: the step/result/table markup, the delegated analysis binder,
   the result jobs (`ResultJobs` in `jobs.py`), the shared EW refresh report and the slot
