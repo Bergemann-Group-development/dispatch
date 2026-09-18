@@ -47,6 +47,7 @@ tests/*
 # Review documents are maintained source; benchmark outputs remain ignored.
 !reports/
 reports/*
+!reports/tests.md
 !reports/api_scripting_plan.md
 !reports/api_scripting_implementation.md
 !reports/review/

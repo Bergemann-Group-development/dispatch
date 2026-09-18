@@ -54,10 +54,12 @@ Responsibilities across its three components are still evolving:
   synthesis from hydrodynamic and hydrostatic model atmospheres.
 - `tumult/` provides the Python API for reading and visualising outputs,
   launching jobs and numerical analysis.
-- `TumultStudio2/` provides interactive spectroscopic analysis through Bokeh.
-  Some scientific workflows currently live here. `TumultStudio_old/` is legacy.
+- `TumultStudio/` is the current GUI and provides interactive spectroscopic
+  analysis through Bokeh. Some scientific workflows currently live here.
+  `TumultStudio2/` is its predecessor, kept only for comparison, and
+  `TumultStudio_old/` is legacy. Neither is a target for new work.
 
-`docs/GUIWorkflow.md` describes the target TumultStudio2 tool workflow.
+`docs/GUIWorkflow.md` describes the target TumultStudio tool workflow.
 `docs/GLOSSARY.md` defines the terms these components share, including the ones that mean
 different things in each. Read it before naming anything, and add to it when a name turns
 out to be ambiguous. `docs/PythonNamingConventions.md` covers how Python names are spelled;
@@ -99,7 +101,7 @@ checkout. Check compiler and host settings before building. Consult
 `README_INSTALL.md` and `requirements.txt` for setup, checking that their
 instructions fit the current environment. From this directory, use `make` to
 build, `python -m pytest tests/<relevant_test>.py` for selected tests and
-`bokeh serve --show TumultStudio2` for the GUI. Numerical tests may require
+`bokeh serve --show TumultStudio` for the GUI. Numerical tests may require
 input data and compiled libraries.
 
 Use relative paths or user configuration for machine-dependent locations.
