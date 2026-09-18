@@ -332,6 +332,9 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
     run_values = {'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)}
     resolved = workflows.resolve_request(request, run_values)
+    for section in ('rt_iteration_params', 'rt_output_params'):
+        assert resolved.settings[section]['sample_back_opac'] is True
+        assert resolved.settings[section]['sample_linelist'] is True
     field = snapshot.Departures(
         folder=tmp_path / 'departures', name=Path('synth/dep'),
         atmosphere='cube.atmos', resolution=(20, 20, 64),
@@ -345,3 +348,20 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
     # A user-selected wavelength window still needs the requested sampling.
     windowed = workflows.resolve_request(request.update(windows=[(4552, 4556)]), run_values)
     assert windowed.settings['spectrum_params']['R'] == 1e6
+
+
+def test_snapshot_sampled_opacity_defaults_allow_expert_override(tmp_path):
+    expert = {
+        'rt_iteration_params': {'sample_back_opac': False, 'sample_linelist': False},
+        'rt_output_params': {'sample_back_opac': False, 'sample_linelist': False},
+    }
+    request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
+                       star=(4548, 3.964, 0), expert=expert)
+    settings = workflows.resolve_request(request, {}).settings
+    for section in ('rt_iteration_params', 'rt_output_params'):
+        assert settings[section]['sample_back_opac'] is False
+        assert settings[section]['sample_linelist'] is False
+
+    one_d = workflows.resolve_request(_request(Atmosphere('one.mod'), tmp_path), {}).settings
+    assert 'rt_iteration_params' not in one_d
+    assert 'rt_output_params' not in one_d
