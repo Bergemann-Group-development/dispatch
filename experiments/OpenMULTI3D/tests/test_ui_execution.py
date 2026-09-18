@@ -2654,6 +2654,11 @@ def test_edit_menu_follows_the_focus_and_renames_every_kind(tmp_path, monkeypatc
     document, ctx = _build_document()
     canvas, tools = ctx.canvas, ctx.tools
     items = ctx.edit_menu.html
+    # the first paint carries the items, disabled while nothing is focused: an HTML bridge
+    # pushes on change only, so an empty menu would stay empty until the focus first moves
+    first_paint = document.template_variables["edit_menu_html"]
+    assert first_paint == items() and first_paint.count("disabled") == 3
+
     obs_path = _spectrum_file(tmp_path)
     obs = canvas.add_object(load_file(obs_path), name="obs", source=("file", str(obs_path)))
     other = canvas.add_object(load_file(obs_path), name="other", select=False)
