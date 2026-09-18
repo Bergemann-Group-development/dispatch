@@ -1,0 +1,1780 @@
+{% extends base %}
+
+{% block title %}TUMULT Studio{% endblock %}
+
+{% block preamble %}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <style>{{ css|safe }}</style>
+{% endblock %}
+
+{% block contents %}
+<div id="app">
+
+  <div id="header">
+    <span class="app-title">TUMULT&nbsp;Studio</span>
+    <button id="open-session" class="icon-btn header-sessions" title="Save / load a session"><i class="ti ti-device-floppy"></i></button>
+    <!-- preferences: pinned to the header (with a missing-files warning sign) -->
+    <span class="settings-wrap header-settings">
+      <i id="settings-warning" class="ti ti-alert-triangle{{ ' show' if synth_warning else '' }}"
+         title="Some configured files in Preferences are missing"></i>
+      <button id="open-settings" class="icon-btn" title="Preferences"><i class="ti ti-settings"></i></button>
+    </span>
+  </div>
+
+  <div id="workspace">
+
+    <aside class="sidebar-left">
+      <div class="section-head-row">
+        <div class="section-header">Objects</div>
+
+      </div>
+      <div id="objects">{{ objects_html|safe }}</div>
+      <!-- imported line-mask sets (see masktool.MaskTool.objects_html) -->
+      <div id="linemask-objects">{{ linemask_objects_html|safe }}</div>
+      <!-- non-spectral abundance result objects (see abundancetool.AbundanceTool) -->
+      <div id="abund-results">{{ abund_results_html|safe }}</div>
+      <!-- model-atom objects, each with its correction results nested under it
+           (see atomtool.AtomTool / abundcorrtool.AbundCorrTool) -->
+      <div id="atom-objects">{{ atom_objects_html|safe }}</div>
+      <!-- measurement objects: a line-mask set measured on one spectrum, plus the
+           ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
+      <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
+      <!-- background work: this document's jobs, then the workflow daemon's jobs of
+           other tabs and scripts and dispatch runs started outside any workflow (see
+           processes.processes_html). The header counts the daemon's threads in use over
+           its budget; Recover opens the settled workflow records to import or forget. -->
+      <div class="processes-panel">
+        <div class="section-header processes-header">Processes
+          <span class="processes-tools">
+            <span id="processes-usage" class="processes-usage">{{ processes_usage_html }}</span>
+            <button class="object-btn" data-action="workflow-discover" data-uid="-"
+                    title="Recover: the settled workflow records under the synthesis output root">
+              <i class="ti ti-refresh"></i></button>
+          </span>
+        </div>
+        <div id="processes">{{ processes_html|safe }}</div>
+      </div>
+    </aside>
+
+    <div id="main" class="{{ 'empty' if main_empty else '' }}">
+      <div id="canvas-toolbar">
+        <div class="toolbar-group workspace-actions">
+          <div class="menu-wrap">
+            <button id="open-file" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="open-file-menu">Open ▾</button>
+            <div id="open-file-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-import="spectrum">Spectrum…</button>
+              <button class="menu-item" role="menuitem" data-import="atom">Model atom…</button>
+              <button class="menu-item" role="menuitem" data-import="linemask">Line mask set…</button>
+            </div>
+          </div>
+          <div class="menu-wrap">
+            <button id="new-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="new-object-menu">New ▾</button>
+            <div id="new-object-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-new="mask">Line mask set…</button>
+              <button class="menu-item" role="menuitem" data-new="spectrum">Synthesise spectrum…</button>
+            </div>
+          </div>
+          <!-- acts on the object focused in the left sidebar; items rendered by editmenu.py -->
+          <div class="menu-wrap">
+            <button id="edit-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-object-menu">Edit ▾</button>
+            <div id="edit-object-menu" class="menu" role="menu" tabindex="-1">{{ edit_menu_html|safe }}</div>
+          </div>
+        </div>
+
+        <!-- line-position indicators over the spectrum (see lineannot.LineAnnotations);
+             clicking one opens the line list in #linelist-bottom -->
+        <div class="toolbar-group">
+          <button id="line-list-btn" class="text-btn">Line list</button>
+          <button id="annot-btn" class="text-btn"
+                  title="Mark the line list's transitions on the spectrum">
+            <span id="annot-btn-label">{{ annot_label|safe }}</span>
+          </button>
+        </div>
+        <!-- the Mask tool: drag a wavelength range, then start a line mask, a synthesis, a
+             fit or an equivalent-width measurement from it (see rangetool.RangeTool) -->
+        <div class="toolbar-group">
+          <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Select range</button>
+        </div>
+      </div>
+      <div id="top-panel">
+        <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
+      </div>
+      <div id="canvas-wrap">{{ embed(roots.main_fig) }}
+        <!-- the correction view's Lines step: the selected line's CoG inversion beside the
+             reference spectrum (#main.corr-mode.corr-step-1) -->
+        <div id="corr-cog">{{ embed(roots.corr_cog) }}</div>
+        <!-- where the abundance view's jumped line got its abundance, beside the target
+             spectrum: the CoG inversion for a curve-of-growth run, the chi-square scan for
+             a profile fit. One or the other, never both (abundancetool._render_selected) -->
+        <div id="abund-cog">{{ embed(roots.abund_cog) }}</div>
+        <div id="abund-chi2">{{ embed(roots.abund_chi2) }}</div>
+      </div>
+      <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
+           version of the Sessions modal, plus quick ways to get a first spectrum -->
+      <div id="canvas-empty">
+        <div class="empty-card">
+          <div class="empty-card-head">
+            <i class="ti ti-device-floppy"></i>
+            <span class="modal-title">Saved workspaces</span>
+          </div>
+          <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
+          <div class="session-hint">Select a saved workspace, or start fresh:</div>
+          <button class="primary-btn session-load" disabled>Load workspace</button>
+          <div class="empty-actions">
+            <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
+            <button id="empty-synth" class="text-btn">Synthesise spectrum…</button>
+            <button id="empty-atom" class="text-btn" title="Open a model atom (levels, transitions, NLTE corrections)">Open model atom</button>
+          </div>
+        </div>
+      </div>
+      <div id="feautrier-wrap">
+        <div class="feautrier-head">
+          <span class="section-header">Filter — feautrier space (drag the crosshair: x = max resolution, y = noise floor)</span>
+          <button id="filter-clear" class="text-btn">Clear filter</button>
+        </div>
+        <div id="feautrier-fig">{{ embed(roots.feautrier_fig) }}</div>
+      </div>
+      <!-- LineMasks view: the mask table below the spectrum (reuses #canvas-wrap on top),
+           shown while the LineMasks tool owns the sidebar (#main.linemask-mode) -->
+      <!-- LineMasks view: the windows table — the durable artifact, what a save writes -->
+      <div id="linemask-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="linemask-tables">
+          <div id="linemask-table"></div>
+        </div></div>
+      <!-- abundance result view: the observation with every synthesised line drawn on it
+           (Synthesis) or the two A(X) diagnostic panels (Uncertainties), with the per-line
+           table below and a step switcher footer -->
+      <div id="abund-scatter">
+        <div class="scatter-pane">{{ embed(roots.abund_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.abund_fig2) }}</div>
+      </div>
+      <div id="abund-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="abund-table">{{ abund_table_html|safe }}</div></div>
+      <div id="abund-steps">
+        <div class="step-tabs" data-tool="abund" title="Abundance workflow steps">
+          <button class="step-tab abund-step-btn" data-step="1">Lines</button>
+          <button class="step-tab abund-step-btn" data-step="2">Diagnostics</button>
+        </div>
+      </div>
+      <!-- abundance-correction view: reference spectrum + CoG inversion (Lines) or the two
+           ΔA diagnostic panels (Scatter), the per-line table below, and a step switcher
+           footer -->
+      <div id="corr-scatter">
+        <div class="scatter-pane">{{ embed(roots.corr_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.corr_fig2) }}</div>
+      </div>
+      <div id="corr-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="corr-table">{{ corr_table_html|safe }}</div></div>
+      <div id="corr-steps">
+        <div class="step-tabs" data-tool="corr" title="Abundance-correction views">
+          <button class="step-tab corr-step-btn" data-step="1">Lines</button>
+          <button class="step-tab corr-step-btn" data-step="2">Diagnostics</button>
+        </div>
+      </div>
+      <!-- atom view: the energy levels and the bound-bound transitions of the focused model
+           atom as two searchable tables in a tab arrangement, in place of the canvas
+           (#main.atom-mode; the open tab is the atom-tab-<name> class on #main) -->
+      <div id="atom-view">
+        <div class="atom-head">
+          <div class="step-tabs" title="Model atom tables">
+            <button class="step-tab atom-tab-btn" data-tab="levels">Energy levels</button>
+            <button class="step-tab atom-tab-btn" data-tab="trans">Bound-bound transitions</button>
+          </div>
+          <label class="linelist-search atom-search" data-tab="levels"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search levels, e.g. 3d6 4s" title="Label, stage or index; Esc clears"></label>
+          <label class="linelist-search atom-search" data-tab="trans"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search lines, e.g. 5711" title="Wavelength, level labels or index; Esc clears"></label>
+        </div>
+        <div id="atom-levels-table" class="atom-table-wrap"></div>
+        <div id="atom-trans-table" class="atom-table-wrap"></div>
+      </div>
+      <!-- measurement view: the two balance panels (the tab it opens on, so the fit is
+           watched as it runs) or the target spectrum with the synthesised lines drawn on it
+           (Lines), with the per-line table + iteration status below and a view switcher -->
+      <div id="ionbal-scatter">
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig2) }}</div>
+      </div>
+      <div id="ionbal-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
+      <div id="ionbal-steps">
+        <div class="step-tabs" data-tool="ionbal" title="What the top pane shows">
+          <button class="step-tab ionbal-step-btn" data-step="1">Diagnostics</button>
+          <button class="step-tab ionbal-step-btn" data-step="2">Lines</button>
+        </div>
+      </div>
+      <!-- the line list (linenav.LineNavigator): opened by clicking a line-position
+           indicator on the spectrum, scrolled to that line's row, closed from the × -->
+      <div id="linelist-bottom">
+        <div class="splitter splitter-row" data-resize="linelist" title="Drag to resize"></div>
+        <div class="linelist-head">
+          <span class="section-header">Line list</span>
+          <div id="linesettings-fields" class="linelist-settings">{{ linesettings_html|safe }}</div>
+          <!-- searching the reference list replaces the window's lines by the matches
+               (linenav.set_query); letters name the species, digits the wavelength -->
+          <label class="linelist-search"><i class="ti ti-search"></i>
+            <input id="linelist-search" class="field-input" type="text" spellcheck="false"
+                   placeholder="Search list, e.g. Mg I 5711" title="Species and wavelength, e.g. “Mg I 5711” or “O I 77”; Esc clears"></label>
+          <button id="linelist-close" class="icon-btn" title="Close the line list"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="linelist-table"></div>
+      </div>
+    </div>
+
+    <aside class="sidebar-right">
+      <div class="tab-bar">
+        <button class="tab active" data-panel="edit">Edit</button>
+        <button class="tab" data-panel="style">Style</button>
+        <button class="tab" data-panel="info">Info</button>
+      </div>
+      <div class="tab-content">
+        <div class="tab-panel active" data-panel="edit">
+          <div id="edit-fields">{{ edit_html|safe }}</div>
+<details class="advanced"><summary>Prepare spectrum</summary>        <div class="preparation-actions">
+          <button id="filter-btn" class="text-btn" title="Noise filter (feautrier space)">Filter</button>
+          <span class="filter-switch-wrap" title="Use filtered spectra for display and measurements">
+            <span class="filter-switch-label">Filtering active</span>
+            <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
+          </span>
+          <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
+        </div>
+<div class="hint">Filtering applies to all spectra and affects measurements. Continuum editing temporarily isolates the selected spectrum.</div></details>
+        </div>
+        <div class="tab-panel" data-panel="style">
+          <div class="field-group">
+            <label>Line color</label>
+            <div id="style-swatches" class="swatch-row">{{ swatches_html|safe }}</div>
+          </div>
+          <details class="advanced"><summary>Appearance</summary><div id="style-fields">{{ style_html|safe }}</div></details>
+        </div>
+        <div class="tab-panel" data-panel="info"><div id="inspector">{{ inspector_html|safe }}</div></div>
+      </div>
+      <!-- the Mask tool's panel: the drawn range and what to do with it (rangetool.RangeTool) -->
+      <div class="range-panel">
+        <div class="range-panel-head">
+          <span class="section-header">Select range</span>
+          <button id="range-close" class="icon-btn" title="Done (Esc)"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="range-panel-content"></div>
+        <div class="hint">Esc leaves the tool</div>
+      </div>
+      <div class="norm-panel">
+        <div class="norm-panel-head">
+          <span class="section-header">Edit continuum</span>
+          <span class="norm-panel-actions">
+            <button class="text-btn norm-cancel" title="Restore the continuum as it was on entry (Esc)">Cancel</button>
+            <button class="text-btn norm-close" title="Keep the edited continuum">Done</button>
+          </span>
+        </div>
+        <div id="norm-panel-content"></div>
+      </div>
+      <div class="filter-panel">
+        <div class="filter-panel-head">
+          <span class="section-header">Filter — smooth the spectra</span>
+          <button class="icon-btn filter-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="filter-panel-content"></div>
+      </div>
+      <div class="linemask-panel">
+        <div class="linemask-panel-head">
+          <span class="section-header">Line masks</span>
+          <button class="icon-btn linemask-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="linemask-panel-content"></div>
+        <div class="hint">Import more sets with <b>Open → Line mask set</b>. Click a
+          row to snap the view to its synth window. Local continua are adjusted in
+          abundance and ionisation-balance measurements.</div>
+      </div>
+      <div class="abund-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Abundances</span>
+          <button class="icon-btn abund-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="hint">The lines come from a line mask — open one in the left sidebar and
+          use its <b>Measure abundances</b> action. These steps act on the abundance object
+          that measurement produced.</div>
+        <div id="abund-stale"></div>
+        <!-- step 1 · the lines: the spectrum, and the synthesis standing on them
+             (configured in the modal, re-runnable after curation) -->
+        <div class="abund-step-panel abund-step-1-panel">
+          <div id="abund-setup-note">{{ abund_setup_note_html|safe }}</div>
+          <button class="text-btn abund-settings">Synthesis settings…</button>
+          <button class="text-btn abund-run-synth">Run synthesis</button>
+          <div class="hint">Synthesises the curve of growth for each included line; the table
+            fills in row by row as results land. It ran once when the windows were measured —
+            run it again after curating the lines or changing the settings.</div>
+        </div>
+        <!-- step 2 · uncertainties -->
+        <div class="abund-step-panel abund-step-2-panel">
+          <button class="text-btn abund-run-uncert">Run uncertainties</button>
+          <div class="hint">Propagates each line's EW uncertainty (from the SNR + continuum-% set
+            when the windows were measured) to its abundance through the REW gradient, and puts
+            the error bars on the two panels — A(X) against excitation energy and against
+            reduced EW, the same pair a balance is read against.</div>
+        </div>
+      </div>
+      <div class="abundcorr-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">NLTE corrections</span>
+          <button class="icon-btn abundcorr-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="hint">Computed from a model atom — open one in the left sidebar and use its
+          <b>NLTE corrections…</b> action. Click a row to jump to the line on the 1D LTE
+          reference and see its curve-of-growth inversion beside it; untick a line to leave
+          it out of the mean.</div>
+        <div class="hint">The Scatter step shows the line-to-line scatter of the corrections
+          against excitation energy and reduced EW, with the mean ΔA and its σ.</div>
+      </div>
+      <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
+      <div class="atom-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Model atom</span>
+          <button class="icon-btn atom-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="atom-panel-content"></div>
+      </div>
+      <!-- the measurement object's panel: what it is, the fit standing on it, and the
+           refit action (the fit's settings all live in the modal) -->
+      <div class="ionbal-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Measurement</span>
+          <button class="icon-btn ionbal-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="ionbal-panel-content"></div>
+      </div>
+    </aside>
+
+  </div>
+
+  <div id="footer">
+    <span id="footer-status" class="status">Ready</span>
+    <div id="footer-progress"><div class="bar"></div></div>
+    <span class="footer-spacer"></span>
+    <span id="footer-info">{{ footer_html|safe }}</span>
+  </div>
+
+</div>
+
+<dialog id="settings-modal" class="modal">
+  <div class="modal-header">
+    <span class="modal-title">Preferences</span>
+    <button id="close-settings" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="general">General</button>
+      <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
+      <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
+      <button class="settings-nav-item" data-page="refstars">Reference stars</button>
+      <button class="settings-nav-item" data-page="engine">Engine</button>
+      <button class="settings-nav-item" data-page="cache">Run cache</button>
+    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="general">
+        <div class="hint">Changes saved automatically.</div><div class="section-header">Axis units</div>
+        <div id="settings-fields">{{ settings_html|safe }}</div>
+
+        <!-- the master list names its own lines over the spectrum once it is zoomed in
+             far enough, ranked by strength (lineannot / linestrength) -->
+        <div class="section-header">Line annotations</div>
+        <div class="hint">Line strengths are computed with HOP on a reference atmosphere, so
+          they compare correctly across atoms and molecules. Which star that is — a G dwarf,
+          a red giant, a supergiant — is the <b>Reference star</b> dropdown in the line list
+          header, listing the <b>Reference stars</b> page; on <i>Auto</i> it follows the
+          spectrum's own parameters where it states any, and is solar where it does not.
+          The atmosphere is the nearest model of the registered MARCS grid. Molecular lists
+          are included for views up to 100 Å wide; wider views use atomic lines only.</div>
+      </div>
+
+      <!-- the editable reference-star catalogue (refstarspage.RefStarsPage): named stellar
+           parameters every setup's Preset dropdown, the balance entry point and the
+           line-strength ranking read -->
+      <div class="settings-page" data-page="refstars">
+        <div class="hint">Changes saved automatically. A reference star is a name and its
+          Teff, log g, [Fe/H] and microturbulence: choose one in a calculation's
+          <b>Preset</b> dropdown to fill the stellar parameters, or let the line list rank
+          by the one nearest to a spectrum. Line strengths read the atmosphere off the
+          registered MARCS grid's nearest model.</div>
+        <div id="refstars-list" class="refstars-list">{{ refstars_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="grids">
+        <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
+        <!-- the folder picker of the storage or custom-grid folder being edited; moved
+             into that folder row when its field is focused (one Bokeh picker serves all) -->
+        <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
+          {{ embed(roots.grid_picker) }}
+          <div id="grid-results" class="file-results"></div>
+        </div>
+      </div>
+
+{% macro pref_picker(key, root, hint='', hidden=False) -%}
+        <div id="pref-{{ key }}-block" class="field-group pref-path{{ ' field-warn' if key in pref_missing }}{{ ' off' if hidden }}">
+          <label>{{ pref_labels[key] }}</label>
+          <div id="pref-{{ key }}-picker" class="inline-picker-auto open" data-results="{{ pref_picker_results[key] }}">
+            {{ embed(root) }}
+            <div id="pref-{{ key }}-results" class="file-results"></div>
+          </div>
+          <div class="field-warn-hint">File not found</div>
+          {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+        </div>
+{%- endmacro %}
+      <div class="settings-page" data-page="synthesis">
+        <div class="hint">Changes saved automatically. Paths are picked below; relative
+          paths resolve against the working directory (Engine).</div>
+        <div class="section-header">Inputs</div>
+        {{ pref_picker('linelist', roots.pref_linelist_picker, 'A file, or a folder of per-species files. Synthesis, navigation and annotation all use this list.') }}
+        {{ pref_picker('abund_file', roots.pref_abund_file_picker) }}
+        {{ pref_picker('absmet', roots.pref_absmet_picker) }}
+        <div class="section-header">Interpolation</div>
+        <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="engine">
+        <div class="hint">Changes saved automatically.</div>
+        <div class="section-header">Paths</div>
+        {{ pref_picker('dispatch_cwd', roots.pref_dispatch_cwd_picker) }}
+        {{ pref_picker('slurm_script', roots.pref_slurm_script_picker, hidden=not pref_show_slurm) }}
+        <div id="synthengine-fields">{{ synth_engine_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="cache">
+        <div class="cache-head">
+          <span class="section-header">Cached synthesis runs</span>
+          <button id="cache-clear" class="text-btn">Clear all</button>
+        </div>
+        <div id="synth-cache" class="cache-list">{{ synth_cache_html|safe }}</div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="file-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open spectrum</span>
+    <button id="close-file" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="hint">Browse files on the machine running TUMULT Studio.</div>
+    {{ embed(roots.file_picker) }}
+    <div id="file-results" class="file-results"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="primary-btn picker-open" disabled>Open</button><button id="load-run" class="primary-btn" title="Load this folder as a tumult run">Open run <span id="run-name"></span></button>
+  </div>
+</dialog>
+
+<dialog id="linemask-modal" class="modal modal-lg mask-open">
+  <div class="modal-header">
+    <span class="modal-title">Open line mask set</span>
+    <button id="close-linemask" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <!-- one pane per masksources.MaskSource; the rail switches between them (same markup as
+       the Preferences modal's category rail, wired by the shared wireNav helper below) -->
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="file">
+        <i class="ti ti-file-import"></i>&nbsp;From file</button>
+      <button class="settings-nav-item" data-page="blank">
+        <i class="ti ti-square-plus"></i>&nbsp;Empty set</button>
+{% if linemask_auto %}      <button class="settings-nav-item" data-page="auto">
+        <i class="ti ti-wand"></i>&nbsp;Auto-generate</button>
+{% endif %}    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="file">
+        <div class="section-header">Import from a line-mask table</div>
+        {{ embed(roots.linemask_picker) }}
+        <div id="linemask-results" class="file-results"></div><button class="text-btn picker-open" disabled>Open</button>
+        <div class="hint">Reads fit windows from a linemask file (<code>input/linemasks</code>).
+          The element is taken from the file where it says so, else guessed from its name.</div>
+      </div>
+      <div class="settings-page" data-page="blank">
+        <div class="section-header">New line mask set</div>
+        <div class="field-group">
+          <label>Name</label>
+          <input id="linemask-new-name" class="field-input" type="text"
+                 placeholder="New line mask set" maxlength="60">
+        </div>
+        <div class="field-group"><label for="linemask-new-element">Element</label><input id="linemask-new-element" class="field-input" placeholder="e.g. Fe"></div>
+        <button id="linemask-new-set" class="text-btn">Create empty set</button>
+        <div class="hint">Opens an empty set and arms the box gesture, so you can draw the
+          first window straight onto the spectrum.</div>
+      </div>
+      <!-- run the wizards' diagnostic line selection and keep its windows as a set.
+           Switched off for now (masktool.AUTO_MASKS): the set it makes — one window per
+           candidate line, with a diagnostics table of its own — still has to be reconciled
+           with the imported/hand-drawn view. -->
+{% if linemask_auto %}      <div class="settings-page" data-page="auto">
+        <div class="section-header">Diagnostic line selection</div>
+        <div class="field-group">
+          <label>Observed spectrum</label>
+          <div id="linemask-auto-ref">{{ linemask_auto_ref_html|safe }}</div>
+        </div>
+        <div class="field-group">
+          <label>Line list</label>
+          <div class="path-row">
+            <div id="linemask-auto-path" class="field-static">{{ linemask_auto_path }}</div>
+            <button id="linemask-auto-browse" class="icon-btn" title="Choose a line list">
+              <i class="ti ti-folder-open"></i></button>
+          </div>
+        </div>
+        <div id="linemask-auto-picker" class="inline-picker">
+          {{ embed(roots.linemask_auto_picker) }}
+          <div id="linemask-auto-results" class="file-results"></div>
+        </div>
+        <div id="linemaskauto-fields">{{ linemask_auto_html|safe }}</div>
+        <button id="linemask-auto-run" class="text-btn">Run diagnostic selection</button>
+        <div class="hint">Measures every line of the element on the chosen spectrum and keeps
+          each fitted window as a mask — no synthesis needed. Screened candidates are kept
+          switched off with their flag, so you can see and override the rejection.</div>
+      </div>
+{% endif %}    </div>
+  </div>
+</dialog>
+
+<!-- Measure abundances: opened from the LineMasks sidebar with the set to measure. The
+     measurement is what the abundance object is made of; the synthesis that stands on it is
+     configured in the object's own panel. -->
+<!-- Synthesise / fit a spectrum over a window: opened from the Mask tool's range, the
+     LineMasks sidebar (the set's windows) or the empty landing page (synthmodal.SynthModal).
+     The atmosphere + stellar parameters + abundances + RT mode cluster is the setup every
+     run starts from; the Fit column is shown in fit mode only. -->
+<dialog id="synth-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title" id="synth-modal-title">Synthesise spectrum</span>
+    <button id="close-synth" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="synth-context" id="synth-context">{{ synth_context_html|safe }}</div>
+    <div id="fit-target" class="synth-fit-only">{{ fit_html.target|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="synth-grid" class="synth-grid">{{ synth_grid_html|safe }}</div>
+        <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
+             data-results="{{ synth_file_results_name }}">
+          {{ embed(roots.synth_file_picker) }}
+          <div id="synth-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="synth-fields">{{ synth_run_html|safe }}</div>
+        <div id="fit-stellar" class="synth-fit-only">{{ fit_html.stellar|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="synthabund-fields">{{ synth_abund_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
+        <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div class="path-row">
+            <div id="synth-atoms-list" class="chips">{{ synth_atoms_html|safe }}</div>
+            <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
+          </div>
+          <div id="atom-picker" class="inline-picker">
+            {{ embed(roots.atom_picker) }}
+            <div id="atom-results" class="file-results"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">RV &amp; broadening</div>
+        <div id="fit-post">{{ fit_html.post|safe }}</div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">Fit abundances</div>
+        <div id="fit-abund">{{ fit_html.abund|safe }}</div>
+        <div class="hint">Iterative grid fit of the target spectrum inside the window, starting
+          from the setup on the left.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="synth-modal-actions">{{ synth_actions_html|safe }}</div></div>
+</dialog>
+
+<dialog id="abund-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Measure abundances</span>
+    <button id="close-abund" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="abund-context">{{ abund_context_html|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="abund-ref">{{ abund_ref_html|safe }}</div>
+        <div class="abund-measure-fields"><div id="abund1-fields">{{ abund1_html|safe }}</div></div>
+        <div class="hint">Measures every switched-on window's EW + FWHM (and its EW uncertainty
+          from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
+          Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
+          jump and curate, then re-run the synthesis on what is left.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="abund-grid" class="synth-grid">{{ abund_grid_html|safe }}</div>
+        <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
+             data-results="{{ abund_file_results_name }}">
+          {{ embed(roots.abund_file_picker) }}
+          <div id="abund-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
+        <div id="abund-atoms" class="synth-atoms{{ ' on' if abund_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div id="abund-atoms-list" class="chips">{{ abund_atoms_html|safe }}</div>
+          <button id="browse-abund-atom" class="text-btn">Add model atom…</button>
+          <div id="abund-atom-picker" class="inline-picker">
+            {{ embed(roots.abund_atom_picker) }}
+            <div id="abund-atom-results" class="file-results"></div>
+          </div>
+        </div>
+        <div class="hint">Each line's curve of growth is synthesised on this atmosphere and
+          inverted to the abundance reproducing its measured EW.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="abund-modal-actions">{{ abund_actions_html|safe }}</div></div>
+</dialog>
+
+<dialog id="atom-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open model atom</span>
+    <button id="close-atom" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    {{ embed(roots.atom_file_picker) }}
+    <div id="atom-file-results" class="file-results"></div><button class="text-btn picker-open" disabled>Open</button>
+    <div class="hint">Reads a MULTI-format model atom (<code>input/atoms</code>): its energy levels
+      and bound-bound transitions open as tables, and NLTE corrections are computed from it.</div>
+  </div>
+</dialog>
+
+<!-- NLTE corrections: opened from a model atom's panel. The atom is fixed; the modal owns the
+     NLTE target atmosphere and the measurement settings, and names the flagged 1D LTE
+     reference grid (Preferences → Synthesis). -->
+<dialog id="corr-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">NLTE corrections</span>
+    <button id="close-corr" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="corr-context" class="corr-context"></div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">NLTE atmosphere</div>
+        <div id="corr-grid" class="synth-grid">{{ corr_grid_html|safe }}</div>
+        <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
+             data-results="{{ corr_file_results_name }}">
+          {{ embed(roots.corr_file_picker) }}
+          <div id="corr-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="corr1-fields">{{ corr1_html|safe }}</div>
+        <div class="hint">The 1D LTE reference is synthesised from the atom, with background transitions when Use line list is enabled, at these
+          parameters and every line's EW measured on it. For each line an NLTE curve of growth
+          is then built on the atmosphere chosen here and inverted to the abundance reproducing
+          that EW: the shift is ΔA. The reference spectrum lands on the canvas as soon as it is
+          ready; the corrections stream into the table line by line.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button><button class="primary-btn corr-run">Compute</button>
+  </div>
+</dialog>
+
+<!-- Fit ionisation balance: opened from the LineMasks sidebar (a new measurement) or
+     from a measurement object's panel (a refit of the one it already holds). The fit owns
+     its synthesis context; registered grids and physical input paths come from Preferences. -->
+<dialog id="ionbal-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Fit ionisation balance</span>
+    <button id="close-ionbal" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="ionbal-context">{{ ionbal_context_html|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="ionbal1-fields">{{ ionbal1_html|safe }}</div>
+        <div class="hint">The windows are measured once, on this spectrum, into a
+          measurement object of their own. A refit reuses them.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Starting parameters</div>
+        <div id="ionbal2-fields">{{ ionbal2_html|safe }}</div>
+        <div class="hint">Choosing a class fills in its parameters (ξ from an approximate
+          Teff/log g relation); typing over them switches to your own numbers. A parameter
+          that is not fitted is held there — its diagnostic is still measured and reported as
+          the residual it is, and holding all four turns the run into a single diagnostic
+          evaluation.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="ionbalsetup-fields">{{ ionbalsetup_html|safe }}</div>
+        <div class="hint">The selected registered grid is always interpolated at every trial
+          point. Individual atmospheres and picked grid files cannot determine atmospheric
+          parameters and are intentionally unavailable here.</div>
+        <details class="advanced"><summary>Solver settings</summary><div id="ionbaladv-fields">{{ ionbaladv_html|safe }}</div></details>
+        <div class="hint">Each iteration inverts every line's EW to A(X) through a curve of
+          growth at the trial parameters, then steps the free parameters along their own
+          diagnostic. Iteration 1 also blend-screens the lines.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button><button id="ionbal-run" class="primary-btn">Measure &amp; fit</button>
+  </div>
+</dialog>
+
+<dialog id="session-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Saved workspaces</span>
+    <button id="close-session" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="session-results" class="file-results js-session-results">{{ sessions_html|safe }}</div>
+    <div class="session-hint">Select a saved workspace, then load it. External files are re-read; calculation settings are last-used preferences.</div>
+  </div>
+  <div class="modal-footer"><button class="primary-btn session-load" disabled>Load workspace</button></div>
+  <div class="modal-footer session-newrow">
+    <input id="session-name" class="field-input" type="text" placeholder="Name this save…"
+           maxlength="60">
+    <button id="session-save" class="primary-btn">Save workspace</button>
+  </div>
+</dialog>
+
+<!-- a Processes row's details: progress, threads and driver, timing, inputs, runs, log
+     tails and the actions that apply (processes.workflow_details_html and friends) -->
+<dialog id="job-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Job details</span></div>
+  <div class="modal-body job-details" id="job-details"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
+<!-- settled workflow records this document has not imported (processes.recovery_html) -->
+<dialog id="recovery-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Recover workflow records</span></div>
+  <div class="modal-body" id="recovery-list"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
+<dialog id="workspace-load-modal" class="modal">
+  <div class="modal-header"><span class="modal-title">Load saved workspace?</span></div>
+  <div class="modal-body">Your current workspace has unsaved changes. Loading replaces it.</div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button>
+    <button class="text-btn" data-workspace-load="load-discard">Discard and load</button>
+    <button class="primary-btn" data-workspace-load="load-save">Save and load</button>
+  </div>
+</dialog>
+<div style="display:none">{{ embed(roots.bridges) }}</div>
+
+<script>
+(function () {
+  // wire a <dialog>: `openId` may be null for a modal opened from a menu instead of a
+  // dedicated button — the returned function opens it either way.
+  // a file-picker box holding a path longer than itself shows the path's tail
+  // (…/Marcs/model), which only takes once the box is laid out: on every modal open and
+  // whenever a box is left. The boxes are Bokeh widgets, so the walk descends shadow roots.
+  function tailPaths(root) {
+    root.querySelectorAll('input.grid-folder').forEach(function (i) { i.scrollLeft = i.scrollWidth; });
+    root.querySelectorAll('*').forEach(function (n) {
+      if (!n.shadowRoot) return;
+      n.shadowRoot.querySelectorAll('input.bk-input[type="text"]').forEach(function (i) {
+        i.scrollLeft = i.scrollWidth;
+      });
+      tailPaths(n.shadowRoot);
+    });
+  }
+  document.addEventListener('focusout', function (ev) {
+    var el = ev.composedPath()[0];
+    if (el && el.tagName === 'INPUT'
+        && (el.classList.contains('bk-input') || el.classList.contains('grid-folder'))) {
+      setTimeout(function () { el.scrollLeft = el.scrollWidth; }, 0);
+    }
+  }, true);
+  // a box scrolls once it is laid out, so watch what reveals one: a dialog opening (from
+  // the page or a server bridge alike), an inline picker gaining its open class, a
+  // settings page or tab panel becoming the active one
+  new MutationObserver(function (muts) {
+    muts.forEach(function (m) {
+      var t = m.target;
+      if ((t.tagName === 'DIALOG' && t.open)
+          || t.classList.contains('open') || t.classList.contains('active')) {
+        setTimeout(function () { tailPaths(t); }, 0);
+      }
+    });
+  }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['open', 'class'] });
+
+  document.addEventListener('click', function(ev) {
+    if (ev.target.closest('.modal-cancel')) ev.target.closest('dialog').close();
+  });
+  // collapsed advanced sections (controls.Form groups): a form re-renders on every server
+  // edit, so remember each section's open state and put it back on the rebuilt markup
+  var disclosures = new Map();
+  document.addEventListener('toggle', function(ev) {
+    if (ev.target.matches('details[data-disclosure]')) disclosures.set(ev.target.dataset.disclosure, ev.target.open);
+  }, true);
+  new MutationObserver(function (muts) {
+    muts.forEach(function (m) {
+      m.addedNodes.forEach(function (node) {
+        if (node.nodeType !== 1) return;
+        var found = node.matches('details[data-disclosure]') ? [node]
+                  : Array.from(node.querySelectorAll('details[data-disclosure]'));
+        found.forEach(function (d) { if (disclosures.get(d.dataset.disclosure)) d.open = true; });
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+  var statusObserver = new MutationObserver(function() {
+    var status = document.querySelector('#footer-status');
+    document.querySelectorAll('dialog[open]').forEach(function(dialog) {
+      var slot = dialog.querySelector('.modal-status');
+      if (slot && status) slot.textContent = status.textContent;
+    });
+  });
+  statusObserver.observe(document.getElementById('footer-status'), {childList: true, subtree: true});
+  document.addEventListener('invalid', function(ev) {
+    var section = ev.target.closest('details'); if (section) section.open = true;
+  }, true);
+  function wireModal(openId, closeId, modalId, onOpen) {
+    var m = document.getElementById(modalId);
+    var opener;
+    var status = document.createElement('div'); status.className = 'modal-status hint';
+    status.setAttribute('role', 'status'); m.appendChild(status);
+    m.addEventListener('close', function() {
+      var channel = Bokeh.documents[0].get_model_by_name('dialog-actions');
+      if (channel) channel.value = modalId + ' ' + Date.now();
+      if (opener && opener.isConnected) opener.focus();
+      // a job-launching submit button left busy (see busySubmit) is only ever inside a
+      // static footer that isn't re-rendered on reopen — reset it here, once, whatever
+      // closed the dialog (a successful submit, Cancel, Esc, or the backdrop)
+      resetBusy(m);
+    });
+    function open() { opener = document.activeElement; m.showModal(); if (onOpen) onOpen(); }
+    var o = openId && document.getElementById(openId);
+    if (o) o.addEventListener('click', open);
+    var c = document.getElementById(closeId);
+    if (c) c.addEventListener('click', function () { m.close(); });
+    m.addEventListener('click', function (e) { if (e.target === m) m.close(); });
+    return open;
+  }
+
+  // pre-render a picker's current results into its container: the html bridge's
+  // js_on_change only fires on change, so a freshly-opened modal would start empty
+  function seedResults(bridgeName, containerId) {
+    var rb = Bokeh.documents[0].get_model_by_name(bridgeName);
+    var el = document.getElementById(containerId);
+    if (rb && el) el.innerHTML = rb.value;
+  }
+
+  wireModal(null, null, 'workspace-load-modal');
+  wireModal(null, null, 'job-modal');
+  wireModal(null, null, 'recovery-modal');
+
+  // a Processes row names when its job started (data-since, epoch seconds); after 10 s
+  // the elapsed time follows its state, refreshed here rather than by the server
+  function formatElapsed(seconds) {
+    seconds = Math.floor(seconds);
+    if (seconds < 60) return seconds + ' s';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' min';
+    var minutes = Math.floor(seconds % 3600 / 60);
+    return Math.floor(seconds / 3600) + ' h ' + (minutes < 10 ? '0' : '') + minutes + ' min';
+  }
+  setInterval(function () {
+    var now = Date.now() / 1000;
+    document.querySelectorAll('#processes .process-elapsed[data-since]').forEach(function (el) {
+      var seconds = now - parseFloat(el.dataset.since);
+      el.textContent = seconds >= 10 ? ' · ' + formatElapsed(seconds) : '';
+    });
+  }, 1000);
+  wireModal('open-settings', 'close-settings', 'settings-modal');
+
+  // cache page actions go through the dedicated "cache-actions" channel
+  function cacheAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('cache-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+
+  // a left nav rail switching .settings-page panes inside one container (the Preferences
+  // categories and the New line mask sources both use it)
+  function wireNav(rootSel, onSwitch) {
+    var root = document.querySelector(rootSel);
+    if (!root) return;
+    root.querySelectorAll('.settings-nav-item').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var page = tab.dataset.page;
+        root.querySelectorAll('.settings-nav-item').forEach(function (t) {
+          t.classList.toggle('active', t === tab);
+        });
+        root.querySelectorAll('.settings-page').forEach(function (p) {
+          p.classList.toggle('active', p.dataset.page === page);
+        });
+        if (onSwitch) onSwitch(page);
+      });
+    });
+  }
+  wireNav('#settings-modal', function (page) {
+    if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
+  });
+
+  // clear-all + per-row delete (rows are rendered dynamically into #synth-cache)
+  document.getElementById('cache-clear').addEventListener('click', function () {
+    if (confirm('Delete all cached synthesis runs?')) cacheAction('clear');
+  });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.cache-del');
+    if (del && confirm('Delete this cached run from disk?')) cacheAction('del', del.dataset.path);
+  });
+
+  // atmosphere grids (Preferences → Atmosphere grids)
+  function gridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  // edit a field of the storage settings or a custom grid card -> "grid-fields-input"
+  document.addEventListener('change', function (ev) {
+    var el = ev.target.closest('[data-grid-key]');
+    if (!el) return;
+    var m = Bokeh.documents[0].get_model_by_name('grid-fields-input');
+    if (m) m.setv({ value: el.dataset.gridId + '|' + el.dataset.gridKey + '=' + el.value + ' ' + Date.now() });
+  });
+  // pick the 1D LTE reference grid (for the abundance-correction tool) -> "grid-actions"
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.grid-ref-select')) gridAction('setref', ev.target.value);
+  });
+  // the folder row of a grid card is the folder picker: focusing its field hands the row to
+  // the one shared picker (#grid-picker, moved into the row in place of the plain field),
+  // whose listing drops down under it and leads with a "use this folder" row. Leaving the
+  // picker without choosing gives the row its plain field back. The card list is
+  // re-rendered from the server on every edit, which detaches the picker, so it is put back
+  // after each render (the node survives; Bokeh's view stays bound to it).
+  var gridPicker = document.getElementById('grid-picker'), gridList = document.getElementById('grid-list');
+  function gridPickerInput() {
+    var found = null;
+    (function walk(root) {
+      root.querySelectorAll('*').forEach(function (n) {
+        if (found || !n.shadowRoot) return;
+        found = n.shadowRoot.querySelector('input.bk-input') || null;
+        if (!found) walk(n.shadowRoot);
+      });
+    })(gridPicker);
+    return found;
+  }
+  function placeGridPicker() {
+    var row = gridPicker.dataset.gridId
+      && gridList.querySelector('.grid-folder-row[data-grid-id="' + gridPicker.dataset.gridId + '"]');
+    gridList.querySelectorAll('.grid-folder-row.editing').forEach(function (r) {
+      if (r !== row) r.classList.remove('editing');
+    });
+    if (row) { row.classList.add('editing'); row.appendChild(gridPicker); }
+    else { gridPicker.classList.remove('open'); gridList.after(gridPicker); }
+  }
+  function leaveGridPicker() {
+    gridPicker.dataset.gridId = '';
+    placeGridPicker();
+  }
+  new MutationObserver(function () {
+    if (!gridPicker.isConnected) placeGridPicker();
+    tailPaths(gridList);
+  }).observe(gridList, { childList: true });
+  // the server closes the picker once a folder is adopted
+  new MutationObserver(function () {
+    if (gridPicker.dataset.gridId && !gridPicker.classList.contains('open')) leaveGridPicker();
+  }).observe(gridPicker, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('focusin', function (ev) {
+    var field = ev.target.closest && ev.target.closest('input.grid-folder');
+    if (!field) return;
+    gridPicker.dataset.gridId = field.dataset.gridId;
+    placeGridPicker();
+    gridPicker.classList.add('open');
+    gridAction('browse', field.dataset.gridId);   // the picker lists the row's folder
+    var inp = gridPickerInput();
+    if (inp) inp.focus();
+  });
+  document.addEventListener('focusout', function (ev) {
+    if (!gridPicker.dataset.gridId || !ev.composedPath().includes(gridPicker)) return;
+    // focus moving within the picker (its list keeps focus via mousedown) is not a leave
+    setTimeout(function () {
+      var active = document.activeElement;
+      if (!gridPicker.contains(active)) leaveGridPicker();
+    }, 0);
+  });
+  // the grid rows, model rows and custom cards (rendered dynamically into #grid-list):
+  // "<kind> <grid id> [<model>]"; deleting files asks first
+  document.addEventListener('click', function (ev) {
+    var sortth = ev.target.closest('#grid-list .grid-models .line-sort');
+    if (sortth) { gridAction('sort', sortth.dataset.sortcol); return; }
+    var btn = ev.target.closest('#grid-list button');
+    if (!btn || btn.disabled) return;
+    var gid = btn.dataset.gridId || '', model = btn.dataset.model || '';
+    if (btn.classList.contains('grid-add')) gridAction('add');
+    else if (btn.classList.contains('grid-del')) gridAction('del', gid);
+    else if (btn.classList.contains('grid-back')) gridAction('back');
+    else if (btn.classList.contains('grid-edit')) gridAction('edit', gid);
+    else if (btn.classList.contains('grid-fetch-all')) gridAction('fetch-all', gid);
+    else if (btn.classList.contains('grid-fetch-model')) gridAction('fetch-model', gid + ' ' + model);
+    else if (btn.classList.contains('grid-del-catalog')) {
+      if (confirm('Delete every downloaded file of ' + btn.dataset.name + '?')) gridAction('del-catalog', gid);
+    } else if (btn.classList.contains('grid-del-model')) {
+      if (confirm('Delete the downloaded model ' + btn.dataset.name + '?')) gridAction('del-model', gid + ' ' + model);
+    }
+  });
+
+  // reference stars (Preferences → Reference stars): edits of a row's inputs report
+  // through "refstars-fields-input", the buttons through "refstars-actions"
+  document.addEventListener('change', function (ev) {
+    var el = ev.target.closest('[data-star-key][data-star-field]');
+    if (!el) return;
+    var m = Bokeh.documents[0].get_model_by_name('refstars-fields-input');
+    if (m) m.setv({ value: el.dataset.starKey + '|' + el.dataset.starField + '=' + el.value + ' ' + Date.now() });
+  });
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('#refstars-list button');
+    if (!btn) return;
+    var m = Bokeh.documents[0].get_model_by_name('refstars-actions');
+    if (!m) return;
+    var act = function (kind, arg) { m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() }); };
+    if (btn.classList.contains('refstar-add')) act('add');
+    else if (btn.classList.contains('refstar-del')) act('del', btn.dataset.starKey);
+    else if (btn.classList.contains('refstar-reset')) {
+      if (confirm('Replace the reference stars by the default list?')) act('reset');
+    }
+  });
+
+  // the atmosphere selects of every synthesis setup (synth / abund / corr modals) are
+  // driven by the delegated atmos_script below (select[data-atmos] -> "<prefix>-grid-actions")
+  // inline atmosphere file pickers (synth / abund / corr): the "Type a path…" field is
+  // always shown while a concrete file is in play; its result list drops down while the
+  // field is focused and — crucially — stays open while folders in the list are clicked
+  // (mousedown inside the list is prevented, so the field keeps focus and navigates in
+  // place). Clicking away closes it; picking a file collapses it from the server.
+  document.addEventListener('focusin', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (!pick) return;
+    pick.classList.add('results-open');
+    var el = pick.querySelector('.file-results'), nm = pick.dataset.results;
+    if (el && nm) { var rb = Bokeh.documents[0].get_model_by_name(nm); if (rb) el.innerHTML = rb.value; }
+  });
+  document.addEventListener('focusout', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (pick) pick.classList.remove('results-open');
+  });
+  document.addEventListener('mousedown', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (!pick) return;
+    if (ev.target.closest('.file-results')) ev.preventDefault();  // keep focus → list stays open
+    else pick.classList.add('results-open');                      // clicking the field (re)opens
+  });
+
+  // model-atom selector (NLTE): reveal the inline picker, and delete chips
+  document.getElementById('browse-atom').addEventListener('click', function () {
+    var panel = document.getElementById('atom-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      var rb = Bokeh.documents[0].get_model_by_name('{{ atom_results_name }}');
+      var el = document.getElementById('atom-results');
+      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.atom-del');
+    if (!del) return;
+    var m = Bokeh.documents[0].get_model_by_name('atom-actions');
+    if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
+  });
+
+  // the modal's Fit section: per-row abundance removal goes through the "fit-actions" channel
+  function fitAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('fit-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.fit-abund-del');
+    if (del) fitAction('del', del.dataset.el);
+  });
+
+  document.getElementById('browse-abund-atom').addEventListener('click', function() {
+    document.getElementById('abund-atom-picker').classList.toggle('open');
+    seedResults('{{ abund_atoms_results_name }}', 'abund-atom-results');
+  });
+  document.addEventListener('click', function(ev) {
+    var del = ev.target.closest('.abund-atom-del'); if (!del) return;
+    var m = Bokeh.documents[0].get_model_by_name('abund-atom-actions');
+    if (m) m.value = 'del ' + del.dataset.path + ' ' + Date.now();
+  });
+  // Edit tab: "Fit to target" / "Select full range" (rendered dynamically) ->
+  // "edit-actions"; the Info tab's "Rerun from this…" -> "object-actions"
+  document.addEventListener('click', function (ev) {
+    var rerun = ev.target.closest('.object-rerun');
+    if (rerun) {
+      var o = Bokeh.documents[0].get_model_by_name('object-actions');
+      if (o) o.setv({ value: 'rerun:' + rerun.dataset.uid + ':' + Date.now() });
+      return;
+    }
+    var kind = ev.target.closest('.edit-fit-btn') ? 'fit' :
+               ev.target.closest('.edit-mask-btn') ? 'mask' : null;
+    if (!kind) return;
+    var m = Bokeh.documents[0].get_model_by_name('edit-actions');
+    if (m) m.setv({ value: kind + ' ' + Date.now() });
+  });
+
+  // reveal the file picker inline inside the settings modal (no nested modal)
+
+  // the two import modals; both are opened from the Objects "Open File" menu
+  var openSpectrumModal = wireModal(null, 'close-file', 'file-modal', function () {
+    seedResults('{{ results_name }}', 'file-results');
+  });
+  var openLinemaskModal = wireModal(null, 'close-linemask', 'linemask-modal', function () {
+    seedResults('{{ linemask_results_name }}', 'linemask-results');
+  });
+  var openAtomModal = wireModal(null, 'close-atom', 'atom-modal', function () {
+    seedResults('{{ atom_file_results_name }}', 'atom-file-results');
+  });
+  wireNav('#linemask-modal');
+
+  function openMaskSource(source) {
+    var modal = document.getElementById('linemask-modal');
+    modal.classList.toggle('mask-open', source === 'file');
+    modal.classList.toggle('mask-new', source === 'blank');
+    modal.querySelector('.modal-title').textContent = source === 'file' ? 'Open line mask set' : 'New line mask set';
+    modal.querySelector('[data-page="' + source + '"].settings-nav-item').click();
+    openLinemaskModal();
+  }
+  function wireMenu(buttonId, menuId, action, onOpen) {
+    var button = document.getElementById(buttonId), menu = document.getElementById(menuId);
+    // read on use: a server-rendered menu (Edit) changes its items
+    function enabledItems() {
+      return Array.from(menu.querySelectorAll('[role="menuitem"]:not([disabled])'));
+    }
+    function close(focus) {
+      menu.classList.remove('open'); button.setAttribute('aria-expanded', 'false');
+      if (focus) button.focus();
+    }
+    button.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      var open = !menu.classList.contains('open');
+      document.querySelectorAll('.menu.open').forEach(function(m) { m.classList.remove('open'); });
+      document.querySelectorAll('.menu-btn').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+      menu.classList.toggle('open', open); button.setAttribute('aria-expanded', String(open));
+      if (open && onOpen) onOpen();
+      var items = enabledItems();
+      if (open) (items[0] || menu).focus();
+    });
+    button.addEventListener('keydown', function(ev) { if (ev.key === 'ArrowDown') { ev.preventDefault(); button.click(); } });
+    menu.addEventListener('keydown', function(ev) {
+      var items = enabledItems(), i = items.indexOf(document.activeElement);
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(true); }
+      else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        if (!items.length) return;
+        ev.preventDefault(); items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      } else if (ev.key === 'Tab') close(false);
+    });
+    menu.addEventListener('click', function(ev) {
+      var item = ev.target.closest('.menu-item'); if (!item || item.disabled) return;
+      close(true); action(item);
+    });
+    document.addEventListener('click', function() { close(false); });
+  }
+  wireMenu('open-file', 'open-file-menu', function(item) {
+    if (item.dataset.import === 'linemask') openMaskSource('file');
+    else if (item.dataset.import === 'atom') openAtomModal();
+    else openSpectrumModal();
+  });
+  wireMenu('new-object', 'new-object-menu', function(item) {
+    if (item.dataset.new === 'mask') openMaskSource('blank');
+    else ewAction('synth-new');
+  });
+  // Edit: Rename… / Duplicate / Delete on the focused object; the items carry its kind, uid
+  // and name, and are rendered again as the menu opens (editmenu.py)
+  function editAction(op, item, name) {
+    var m = Bokeh.documents[0].get_model_by_name('edit-menu-actions');
+    if (m) m.setv({ value: [op, item.dataset.kind || '', item.dataset.uid || '', name || '',
+                            Date.now()].join('\u0000') });
+  }
+  wireMenu('edit-object', 'edit-object-menu', function(item) {
+    var op = item.dataset.edit;
+    if (op === 'rename') {
+      var name = window.prompt('Rename “' + item.dataset.name + '” to:', item.dataset.name);
+      if (name !== null) editAction(op, item, name);
+    } else editAction(op, item);
+  }, function() { editAction('refresh', {dataset: {}}); });
+  document.getElementById('line-list-btn').addEventListener('click', function() { ewAction('lineopen'); });
+  // session actions (save/load/delete/refresh) go through the "session-actions"
+  // channel: space-delimited so a save name may contain spaces or colons
+  function sessionAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('session-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+
+  wireModal('open-session', 'close-session', 'session-modal', function () {
+    sessionAction('refresh');  // re-read saves (another tab may have added some)
+  });
+
+  // load the currently-open directory as a tumult run
+  document.getElementById('load-run').addEventListener('click', function () {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: 'loadrun::' + Date.now() });
+  });
+
+  // add a new named save of the current workspace
+  function addSave() {
+    var inp = document.getElementById('session-name');
+    sessionAction('save', (inp.value || '').trim());
+    inp.value = '';
+  }
+  document.getElementById('session-save').addEventListener('click', addSave);
+  document.getElementById('session-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addSave(); }
+  });
+
+  // load / delete an existing save slot — delegated so it works in both the Sessions
+  // modal and the inline empty-state loader shown over the canvas
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.session-del');
+    if (del) { ev.stopPropagation(); if (confirm('Delete this saved workspace?')) sessionAction('delete', del.dataset.sid); return; }
+    var item = ev.target.closest('.session-item');
+    if (item) {
+      var panel = item.closest('.empty-card, dialog');
+      panel.querySelectorAll('.session-item.selected').forEach(function(r) { r.classList.remove('selected'); });
+      item.classList.add('selected'); panel.querySelector('.session-load').disabled = false;
+    }
+    var load = ev.target.closest('.session-load');
+    if (load) {
+      var selected = load.closest('.empty-card, dialog').querySelector('.session-item.selected');
+      if (selected) sessionAction('load', selected.dataset.sid);
+    }
+    var choice = ev.target.closest('[data-workspace-load]');
+    if (choice) sessionAction(choice.dataset.workspaceLoad);
+  });
+
+  // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
+  document.getElementById('empty-open').addEventListener('click', openSpectrumModal);
+  document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-new'); });
+  document.getElementById('empty-atom').addEventListener('click', openAtomModal);
+
+  function pickFile(li) {
+    var m = Bokeh.documents[0].get_model_by_name(li.dataset.picker);
+    if (m) m.value = li.dataset.path + '\u0000' + Date.now();
+  }
+  function isOpenPicker(li) {
+    var dialog = li.closest('dialog');
+    return dialog && ['file-modal', 'atom-modal', 'linemask-modal'].includes(dialog.id);
+  }
+  document.addEventListener('click', function(ev) {
+    var li = ev.target.closest('.file-item');
+    if (li) {
+      if (!isOpenPicker(li) || li.dataset.dir === '1') { pickFile(li); return; }
+      var dialog = li.closest('dialog');
+      dialog.querySelectorAll('.file-item.selected').forEach(function(r) { r.classList.remove('selected'); });
+      li.classList.add('selected');
+      var button = dialog.querySelector('.picker-open'); if (button) button.disabled = false;
+    }
+    var open = ev.target.closest('.picker-open');
+    if (open) {
+      var selected = open.closest('dialog').querySelector('.file-item.selected');
+      if (selected) pickFile(selected);
+    }
+  });
+  document.addEventListener('dblclick', function(ev) {
+    var li = ev.target.closest('.file-item');
+    if (li && isOpenPicker(li) && li.dataset.dir !== '1') pickFile(li);
+  });
+  document.addEventListener('keydown', function(ev) {
+    var li = ev.target.closest('.file-item'); if (!li) return;
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pickFile(li); }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault(); var rows = Array.from(li.parentNode.children), i = rows.indexOf(li);
+      rows[(i + (ev.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
+    }
+  });
+  // where a clicked line-list row sat when it was clicked ({lam0, off} in pixels from the
+  // top of the scroll box), set on the click and consumed by the render it provoked
+  var linelistAnchor = null;
+
+  // delegated clicks on the object list: buttons hide/remove, the row selects
+  document.addEventListener('click', function (ev) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (!m) return;
+    // the abundance tables share the .line-sort header class but report through their own
+    // channels (below), so ignore their headers here
+    var sortth = ev.target.closest('.line-sort');
+    if (sortth && !sortth.closest('.abund-table') && !sortth.closest('.atom-table')
+        && !sortth.closest('.grid-models')) {
+      m.setv({ value: 'linesort:' + sortth.dataset.sortcol + ':' + Date.now() });
+      return;
+    }
+    var row = ev.target.closest('.line-row');
+    if (row) {
+      // the jump re-cuts the table to a narrow window around this line, so remember where
+      // the row sits now: the re-render puts it back there (see linelistAnchor below)
+      var lslot = document.getElementById('linelist-table');
+      linelistAnchor = lslot ? { lam0: row.dataset.lam0, ion: row.dataset.ion,
+                                 off: row.getBoundingClientRect().top
+                                      - lslot.getBoundingClientRect().top } : null;
+      m.setv({ value: 'linejump:' + row.dataset.lam0 + '|'
+                      + encodeURIComponent(row.dataset.ion) + ':' + Date.now() });
+      return;
+    }
+    var swatch = ev.target.closest('.color-swatch');
+    if (swatch) {
+      m.setv({ value: 'color:' + swatch.dataset.color + ':' + Date.now() });
+      return;
+    }
+    var undo = ev.target.closest('[data-undo]');
+    if (undo) {
+      // a removal's Undo in the status message (removal.py)
+      var r = Bokeh.documents[0].get_model_by_name('removal-actions');
+      if (r) r.setv({ value: 'undo ' + undo.dataset.undo + ' ' + Date.now() });
+      return;
+    }
+    var copy = ev.target.closest('.job-copy');
+    if (copy) {
+      if (navigator.clipboard) navigator.clipboard.writeText(copy.dataset.copy);
+      return;
+    }
+    var jobAction = ev.target.closest('.job-action');
+    if (jobAction) {
+      if (jobAction.classList.contains('danger') && !confirm(jobAction.textContent + '?')) return;
+      m.setv({ value: jobAction.dataset.action + ':' + jobAction.dataset.uid + ':' + Date.now() });
+      return;
+    }
+    var btn = ev.target.closest('.object-btn');
+    if (btn) {
+      // losing an in-flight synthesis or fit costs real work, so those rows confirm
+      // (data-confirm); a file load or a line-strength band cancels straight away.
+      // dismiss-job drops a retained (failed) Processes row.
+      if (btn.dataset.action === 'cancel-pending' && btn.dataset.confirm === '1' &&
+          !confirm('Cancel this run?')) return;
+      m.setv({ value: btn.dataset.action + ':' + btn.dataset.uid + ':' + Date.now() });
+      return;
+    }
+    var item = ev.target.closest('.object-item');
+    if (item && item.dataset.uid) {
+      m.setv({ value: 'select:' + item.dataset.uid + ':' + Date.now() });
+    }
+  });
+
+  // generic tab switching, scoped per group (a .tab-bar and its adjacent .tab-content)
+  document.querySelectorAll('.tab-bar').forEach(function (bar) {
+    // a panel may have more than one .tab-content sibling — switch the active panel in
+    // every one of them together
+    var contents = bar.parentElement.querySelectorAll(':scope > .tab-content');
+    bar.querySelectorAll('.tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        bar.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t === tab); });
+        contents.forEach(function (content) {
+          content.querySelectorAll('.tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.dataset.panel === tab.dataset.panel);
+          });
+        });
+      });
+    });
+  });
+
+  // named actions on the "object-actions" channel (tool toggles, panel buttons, …)
+  function ewAction(name) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: name + ':-:' + Date.now() });
+  }
+
+  // a job-launching modal's submit button: the daemon round trip a click starts can take
+  // a moment, so give feedback (disabled + spinner) at once instead of leaving the button
+  // looking inert until the server gets around to closing the dialog. Returns false (and
+  // sends nothing) for a click that arrives while the button is already busy — the
+  // client-side half of the double-submit guard; the synth modal's own `_pending` flag
+  // (synthmodal.py) holds the server-side half for its action. A rejected submit (the
+  // dialog stays open) resets the button through the dialog bridge's "reject" state
+  // (see htmlbridge.dialog_bridge) rather than here, since that is a server decision.
+  function busySubmit(btn) {
+    if (!btn || btn.disabled) return false;
+    btn.disabled = true;
+    btn.dataset.busyLabel = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;' + btn.innerHTML;
+    return true;
+  }
+  function resetBusy(scope) {
+    (scope || document).querySelectorAll('[data-busy-label]').forEach(function (btn) {
+      btn.innerHTML = btn.dataset.busyLabel;
+      delete btn.dataset.busyLabel;
+      btn.disabled = false;
+    });
+  }
+  // the Mask tool: toggle from the toolbar, leave via × or Esc; the panel's actions are
+  // rendered dynamically, so they are delegated
+  document.getElementById('mask-btn').addEventListener('click', function () { ewAction('mask-toggle'); });
+  document.getElementById('range-close').addEventListener('click', function () { ewAction('range-cancel'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.range-new-mask')) ewAction('range-new-mask');
+    else if (ev.target.closest('.range-synth')) ewAction('range-synth');
+    else if (ev.target.closest('.range-fit')) ewAction('range-fit');
+    else if (ev.target.closest('.range-ew')) ewAction('range-ew');
+    else if (ev.target.closest('.range-add')) ewAction('range-add');
+  });
+
+  // the synthesis modal: close via × / backdrop, submit via the footer button
+  wireModal(null, 'close-synth', 'synth-modal');
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('.synth-submit');
+    if (btn && busySubmit(btn)) ewAction('synth-submit');
+  });
+
+  // noise filter: toggle the panel/feautrier view / clear the applied filter
+  // line-position indicators: show/hide whatever the open view attached
+  document.getElementById('annot-btn').addEventListener('click', function () { ewAction('annot-toggle'); });
+  document.getElementById('linelist-close').addEventListener('click', function () { ewAction('lineclose'); });
+
+  // the line-list search: every keystroke is a query (after a short pause, so a word typed
+  // at speed costs one search), Esc empties it and so returns the window's lines
+  (function () {
+    var box = document.getElementById('linelist-search'), timer = null;
+    function send() {
+      timer = null;
+      var m = Bokeh.documents[0].get_model_by_name('linelist-search');
+      if (m) m.setv({ value: box.value + '\u0000' + Date.now() });
+    }
+    box.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, 150);
+    });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { box.value = ''; send(); box.blur(); ev.stopPropagation(); }
+      else if (ev.key === 'Enter') { if (timer) clearTimeout(timer); send(); }
+    });
+  })();
+
+  // the line list is re-rendered wholesale into its slot, so the row to jump to can only be
+  // placed once it is in the DOM: the server marks it .jump-target and this positions it.
+  // What to do is the server's call, carried on the row as data-scroll. "ifneeded" is a pick
+  // made out on the spectrum: scroll only when the row is actually out of view. "keep" is a
+  // click on a row of this table, which narrows the window and so re-cuts the table under
+  // the pointer: put the row back at the height it was clicked at, so the pointer is still
+  // over the same line. Every other render ("none") leaves the scroll alone.
+  // scrollTop is set directly rather than via scrollIntoView, which would also scroll every
+  // ancestor and shift the whole workspace.
+  (function () {
+    var slot = document.getElementById('linelist-table');
+    if (!slot) return;
+    new MutationObserver(function () {
+      var row = slot.querySelector('.line-row.jump-target');
+      if (!row) return;
+      var mode = row.dataset.scroll;
+      var box = slot.getBoundingClientRect(), r = row.getBoundingClientRect();
+      if (mode === 'keep') {
+        // only for the row this anchor was taken from: a jump can be clamped to a window
+        // that does not hold the clicked line at all
+        var anchor = linelistAnchor;
+        linelistAnchor = null;
+        if (!anchor || anchor.lam0 !== row.dataset.lam0
+            || anchor.ion !== row.dataset.ion) return;
+        // clamped by the scroll extent: a row near either end cannot always be put back
+        slot.scrollTop += (r.top - box.top) - anchor.off;
+        return;
+      }
+      if (mode !== 'ifneeded') return;
+      var head = slot.querySelector('.linelist-table thead');
+      // the header is sticky, so a row under it is covered, not visible
+      var top = box.top + (head ? head.getBoundingClientRect().height : 0);
+      if (r.top >= top && r.bottom <= box.bottom) return;
+      slot.scrollTop += (r.top + r.height / 2) - (top + box.bottom) / 2;
+    }).observe(slot, { childList: true, subtree: true });
+  })();
+
+  document.getElementById('filter-btn').addEventListener('click', function () { ewAction('filter'); });
+  document.getElementById('filter-clear').addEventListener('click', function () { ewAction('filter-clear'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.filter-clear-btn')) ewAction('filter-clear');
+    else if (ev.target.closest('.filter-close')) ewAction('filter');
+  });
+  document.getElementById('filter-switch-input').addEventListener('change', function (ev) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: 'filtertoggle:' + (ev.target.checked ? 'on' : 'off') + ':' + Date.now() });
+  });
+  document.addEventListener('change', function (ev) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (!m) return;
+    var sel = ev.target.closest('.ew-method-select');
+    if (sel) { m.setv({ value: 'profile:' + sel.value + ':' + Date.now() }); return; }
+    var snr = ev.target.closest('.ew-snr-input');
+    if (snr) { m.setv({ value: 'ew-snr:' + snr.value + ':' + Date.now() }); return; }
+    var cont = ev.target.closest('.ew-cont-input');
+    if (cont) { m.setv({ value: 'ew-cont:' + cont.value + ':' + Date.now() }); }
+  });
+
+  // continuum normalisation: toggle from the toolbar; init/clear/close from the panel
+  document.getElementById('normalise-btn').addEventListener('click', function () { ewAction('normalise'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.norm-init')) ewAction('norm-init');
+    else if (ev.target.closest('.norm-clear')) ewAction('norm-clear');
+    else if (ev.target.closest('.norm-cancel')) ewAction('norm-cancel');
+    else if (ev.target.closest('.norm-close')) ewAction('normalise');
+  });
+
+  // line masks: toggle the panel from the toolbar; reveal the import picker; per-row actions
+  // (select / delete) + save / clear go through the dedicated "linemask-actions" channel
+  function linemaskAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('linemask-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.linemask-close')) { ewAction('linemask'); return; }
+    // a line-mask object in the left sidebar: open its view, or drop the whole set
+    var msdel = ev.target.closest('[data-maskset-remove]');
+    if (msdel) { ev.stopPropagation(); linemaskAction('set-remove', msdel.dataset.masksetRemove); return; }
+    var msitem = ev.target.closest('.maskset-item');
+    if (msitem) { linemaskAction('set-select', msitem.dataset.maskset); return; }
+    if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
+    if (ev.target.closest('.lm-synthesize')) { linemaskAction('synthesize'); return; }
+    if (ev.target.closest('.lm-fit')) { linemaskAction('fit'); return; }
+    if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
+    if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
+    if (ev.target.closest('.lm-revert')) {
+      if (confirm('Discard every edit and reload this set from its file?')) linemaskAction('revert');
+      return;
+    }
+    if (ev.target.closest('.lm-saveas')) {
+      // the file name rides along as the action arg (space-delimited channel, so a name
+      // with spaces survives — only the trailing nonce is stripped server-side)
+      var nameEl = document.querySelector('.lm-name');
+      linemaskAction('save-as', nameEl ? nameEl.value.trim() : '');
+      return;
+    }
+
+    var check = ev.target.closest('.lm-table .check-head-btn[data-checkcol]');
+    if (check) { linemaskAction('check-' + check.dataset.checkact, check.dataset.checkcol); return; }
+    var del = ev.target.closest('.lm-del');
+    if (del) { ev.stopPropagation(); linemaskAction('del', del.dataset.idx); return; }
+    // both tables' rows carry the same data-idx, so either selects the mask
+    var row = ev.target.closest('.lm-row');
+    if (row && !ev.target.closest('.lm-incl')) {
+      linemaskAction('select', row.dataset.idx);
+    }
+  });
+  // the Empty-set pane: create a blank set instead of importing a file
+  function newMaskSet() {
+    var inp = document.getElementById('linemask-new-name');
+    linemaskAction('new-set', JSON.stringify({name: (inp.value || '').trim(), element: document.getElementById('linemask-new-element').value.trim()}));
+    inp.value = '';
+  }
+  document.getElementById('linemask-new-set').addEventListener('click', newMaskSet);
+  document.getElementById('linemask-new-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); newMaskSet(); }
+  });
+
+  // the Auto-generate pane: line-list picker, spectrum choice, and the run button
+{% if linemask_auto %}  document.getElementById('linemask-auto-browse').addEventListener('click', function () {
+    var panel = document.getElementById('linemask-auto-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      seedResults('{{ linemask_auto_results_name }}', 'linemask-auto-results');
+    }
+  });
+  document.getElementById('linemask-auto-run').addEventListener('click', function () {
+    linemaskAction('auto-run');
+  });
+{% endif %}
+
+  document.addEventListener('change', function (ev) {
+    var inc = ev.target.closest('.lm-incl');
+    if (inc) { linemaskAction('incl', inc.dataset.idx); return; }
+    var ref = ev.target.closest('.lm-auto-ref');
+    if (ref) { linemaskAction('auto-ref', ref.value); }
+  });
+  // Table <-> scatter hover link. A row and a point carry the same line index (the row as
+  // data-line, the point as the source's `idx` column), so the marker source published as
+  // "<prefix>_hover" can be moved onto the hovered row's point without a server round trip.
+  // The other direction is the scatter's own HoverTool callback (see abundwizard.HOVER_JS).
+  function markPoint(prefix, line) {
+    var doc = Bokeh.documents[0];
+    var hov = doc.get_model_by_name(prefix + '_hover');
+    if (!hov) return;
+    var empty = { x_evi: [], x_rew: [], a: [] };
+    var names = [prefix + '_points', prefix + '_points2'];
+    for (var n = 0; n < names.length; n++) {
+      var src = doc.get_model_by_name(names[n]);
+      if (!src || !src.data.idx) continue;
+      var k = Array.prototype.indexOf.call(src.data.idx, line);
+      if (k >= 0) {
+        hov.data = { x_evi: [src.data.x_evi[k]], x_rew: [src.data.x_rew[k]],
+                     a: [src.data.a[k]] };
+        return;
+      }
+    }
+    hov.data = empty;
+  }
+  function clearMarks(prefix) {
+    markPoint(prefix, -1);
+    document.querySelectorAll('.' + prefix + '-row.row-hover')
+            .forEach(function (r) { r.classList.remove('row-hover'); });
+  }
+  ['abund', 'corr', 'ionbal'].forEach(function (prefix) {
+    var table = document.getElementById(prefix + '-table');
+    var pane = document.getElementById(prefix + '-scatter');
+    if (table) {
+      table.addEventListener('mouseover', function (ev) {
+        var row = ev.target.closest('.' + prefix + '-row');
+        if (row) markPoint(prefix, +row.dataset.line);
+      });
+      table.addEventListener('mouseleave', function () { markPoint(prefix, -1); });
+    }
+    // the hover callback fires while the cursor is over the plot; leaving it never reports
+    // an empty hit, so the row mark is dropped here
+    if (pane) pane.addEventListener('mouseleave', function () { clearMarks(prefix); });
+  });
+
+  // The analysis tools' shared interactions (step / select / remove / sort / row jump /
+  // include toggles) are bound once by the delegated analysis_script below, keyed by the
+  // data-tool scope of the markup. What follows is each tool's own run and close wiring,
+  // on the same "<prefix>-actions" channel.
+  function analysisAction(prefix, kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name(prefix + '-actions');
+    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
+  }
+
+  // abundance tool: the panel's run buttons, the settings modal and the reference select
+  wireModal(null, 'close-abund', 'abund-modal');
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.abund-close')) { ewAction('abundance'); return; }
+    if (ev.target.closest('.abund-settings')) { analysisAction('abund', 'settings'); return; }
+    if (ev.target.closest('.abund-run-lines')) { analysisAction('abund', 'run-lines'); return; }
+    if (ev.target.closest('.abund-run-synth')) { analysisAction('abund', 'run-synth'); return; }
+    if (ev.target.closest('.abund-run-uncert')) { analysisAction('abund', 'run-uncert'); }
+  });
+  document.addEventListener('change', function (ev) {
+    var ref = ev.target.closest('.abund-ref-select');
+    if (ref) analysisAction('abund', 'ref', ref.value);
+  });
+
+  // abundance-correction tool: the modal's Compute button
+  wireModal(null, 'close-corr', 'corr-modal');
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.abundcorr-close')) { ewAction('abundcorr'); return; }
+    var run = ev.target.closest('.corr-run');
+    if (run && busySubmit(run)) analysisAction('corr', 'run');
+  });
+
+  // model atoms: the left-sidebar objects (select / remove), the panel's corrections action,
+  // the view's tab switch, header sorts and the per-table search fields. Space-delimited so a
+  // query keeps its spaces; only the trailing nonce is stripped server-side.
+  function atomAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('atomobj-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.atom-close')) { ewAction('atom'); return; }
+    if (ev.target.closest('.atom-corr')) { atomAction('corr'); return; }
+    var rem = ev.target.closest('[data-atom-remove]');
+    if (rem) {
+      ev.stopPropagation();
+      // the server asks first when correction results go with it (removal.py)
+      atomAction('remove', rem.dataset.atomRemove);
+      return;
+    }
+    var aitem = ev.target.closest('.atom-item');
+    if (aitem) { atomAction('select', aitem.dataset.atom); return; }
+    var tab = ev.target.closest('.atom-tab-btn');
+    if (tab) { atomAction('tab', tab.dataset.tab); return; }
+    var asort = ev.target.closest('.atom-table .line-sort');
+    if (asort) {
+      var wrap = asort.closest('.atom-table-wrap');
+      atomAction('sort', (wrap.id === 'atom-trans-table' ? 'trans' : 'levels') + ' ' + asort.dataset.sortcol);
+    }
+  });
+  document.querySelectorAll('.atom-search').forEach(function (label) {
+    var box = label.querySelector('input'), timer = null;
+    function send() { timer = null; atomAction('search', label.dataset.tab + ' ' + box.value); }
+    box.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, 150);
+    });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { box.value = ''; send(); box.blur(); ev.stopPropagation(); }
+      else if (ev.key === 'Enter') { if (timer) clearTimeout(timer); send(); }
+    });
+  });
+
+  // ionisation balance: the modal's run button and the panel's refit. The tool has no
+  // toolbar button — a measurement object in the left sidebar is what opens it.
+  wireModal(null, 'close-ionbal', 'ionbal-modal');
+  document.getElementById('ionbal-run').addEventListener('click', function () {
+    if (busySubmit(this)) analysisAction('ionbal', 'run');
+  });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.ionbal-close')) { ewAction('ionbal'); return; }
+    if (ev.target.closest('.ionbal-refit')) { analysisAction('ionbal', 'refit'); }
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('.session-item')) { ev.preventDefault(); ev.target.click(); }
+    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('escape');
+  });
+
+  // ---- draggable splitter for the centre bottom panel (the sidebars are fixed-width) ----
+  // Layout sizes are pure client-side UI state, kept in localStorage (no server round-trips
+  // per mousemove). During a drag, body.resizing sets pointer-events:none on everything so the
+  // Bokeh canvas can't swallow the mousemove — the document-level handlers below own it.
+  (function () {
+    var LS = 'tumult.layout';
+    var VARS = { 'bottom': '--bottom-h', 'linelist': '--linelist-h' };
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) {}
+    Object.keys(saved).forEach(function (k) {
+      if (VARS[k]) document.documentElement.style.setProperty(VARS[k], saved[k]);
+    });
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function set(kind, value) {
+      document.documentElement.style.setProperty(VARS[kind], value);
+      saved[kind] = value;
+    }
+    var drag = null;
+    document.addEventListener('mousedown', function (e) {
+      var sp = e.target.closest('.splitter');
+      if (!sp) return;
+      e.preventDefault();
+      drag = sp.dataset.resize;
+      document.body.classList.add('resizing');
+    });
+    document.addEventListener('mousemove', function (e) {
+      if (!drag) return;
+      var m = document.getElementById('main').getBoundingClientRect();
+      // both bottom panels are measured from the bottom of the centre column; the line list
+      // is the last child, so it is the one the raw distance describes when both are open
+      if (drag === 'bottom' || drag === 'linelist') {
+        set(drag, clamp((m.bottom - e.clientY) / m.height * 100, 15, 85) + '%');
+      }
+    });
+    document.addEventListener('mouseup', function () {
+      if (!drag) return;
+      drag = null;
+      document.body.classList.remove('resizing');
+      try { localStorage.setItem(LS, JSON.stringify(saved)); } catch (e) {}
+      window.dispatchEvent(new Event('resize'));  // nudge Bokeh figures to reflow to the new size
+    });
+  })();
+})();
+</script>
+
+<!-- one delegated listener drives every controls.Form on the page -->
+<script>{{ form_script|safe }}</script>
+<!-- one for the atmosphere selects of every synthsetup.SynthSetup ... -->
+<script>{{ atmos_script|safe }}</script>
+<!-- ... and one for the shared interactions of the analysis tools (abundwizard) -->
+<script>{{ analysis_script|safe }}</script>
+{% endblock %}

@@ -1,0 +1,1200 @@
+/* TumultStudio2 shell — derived from STYLE_REFERENCE.md
+   Dark, compact "pro-tool" aesthetic; one blue accent. */
+
+:root {
+  --sidebar-w: 220px;             /* legacy default; per-side vars below are the live ones */
+  --sidebar-left-w: 220px;        /* fixed width */
+  --sidebar-right-w: 240px;       /* fixed width */
+  --bottom-h: 42%;                /* draggable — height of the centre bottom table panel */
+  --linelist-h: 32%;              /* draggable — height of the line-list panel below it */
+  --footer-h: 32px;
+  --toolbar-h: 40px;
+  --panel-h: 100px;   /* height of the nav overview panel above the main figure */
+
+  --bg:         #1e1e1e;
+  --surface:    #2a2a2a;
+  --border:     #3a3a3a;
+  --accent:     #4a90e2;
+  --text:       #e0e0e0;
+  --text-muted: #888;
+  --canvas-bg:  #1a1a1a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font: 13px/1.4 system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ---- shell ---------------------------------------------------------------- */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+#header {
+  height: var(--toolbar-h); flex-shrink: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px;
+}
+.app-title { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+
+/* session save/load button, pinned to the right of the app header */
+.header-sessions { margin-left: auto; }
+/* preferences (cog + missing-files warning), sitting next to save/load in the header */
+.header-settings { margin-left: 8px; }
+.session-hint { font-size: 11px; color: var(--text-muted); }
+
+/* game-style save slots in the Sessions modal */
+.session-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+.session-item {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  cursor: pointer;
+}
+.session-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); }
+.session-item > i { color: var(--text-muted); flex-shrink: 0; }
+.session-item:hover > i { color: var(--accent); }
+.session-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.session-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-sub { font-size: 10px; color: var(--text-muted); }
+.session-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.session-del:hover { border-color: #e05c5c; color: #e05c5c; }
+.session-newrow { gap: 8px; }
+.session-newrow .field-input { flex: 1; min-width: 0; }
+
+/* toolbar inside the work surface, above the figures; tools are grouped by kind
+   (view | load/save | adjustment | temporary), separated by a thin divider */
+#canvas-toolbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.toolbar-group { display: flex; align-items: center; gap: 6px; }
+.toolbar-group:not(:first-child)::before {
+  content: ""; align-self: stretch; width: 1px;
+  background: var(--border); margin: 4px 0;
+}
+.toolbar-settings { margin-left: auto; }
+.settings-wrap { display: flex; align-items: center; gap: 6px; }
+#settings-warning { display: none; color: #e05c5c; font-size: 16px; cursor: default; }
+#settings-warning.show { display: inline-flex; align-items: center; }
+/* brighter buttons so they stand out on the dark work surface */
+#canvas-toolbar .icon-btn,
+#canvas-toolbar .text-btn {
+  background: var(--border); border-color: #555; color: var(--text);
+}
+#canvas-toolbar .icon-btn:hover,
+#canvas-toolbar .text-btn:hover {
+  background: #4a4a4a; border-color: var(--accent); color: var(--accent);
+}
+
+#workspace { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+aside {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; padding: 10px; flex-shrink: 0;
+}
+.sidebar-left  { width: var(--sidebar-left-w); }
+.sidebar-right { width: var(--sidebar-right-w);
+  border-right: none; border-left: 1px solid var(--border); padding: 0; gap: 0; }
+
+/* draggable splitter — thin bar that resizes the centre bottom panel (see index.html JS).
+   The sidebars are fixed-width; only the horizontal bottom-panel splitter remains. */
+.splitter { flex-shrink: 0; background: transparent; z-index: 6; transition: background 0.1s; }
+.splitter:hover, body.resizing .splitter { background: var(--accent); }
+.splitter-row { height: 5px; margin: -3px 0; cursor: row-resize; align-self: stretch; }
+/* while dragging, freeze selection and let the document-level handler own every pointer event
+   (so the Bokeh canvas / iframes don't swallow the mousemove) */
+body.resizing { user-select: none; }
+body.resizing * { pointer-events: none !important; }
+
+/* inspector tabs (STYLE_REFERENCE.md §6.5 underline tabs) */
+.tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; min-height: 0; overflow-y: auto; }
+.tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+.tab-panel.active { display: flex; }
+
+/* wizard step switcher: an underline-tab row shared by the Abundance + Correction tools'
+   centre views (see #abund-steps / #corr-steps). The active step is driven entirely by the
+   {abund,corr}-step-N class on #main — no JS — so only the base look lives here. */
+.step-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.step-tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.step-tab:hover { color: var(--text); }
+
+#main {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--canvas-bg);
+  padding: 8px; gap: 6px;
+}
+#canvas-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; }
+
+/* empty state: no spectra loaded -> hide the (blank) toolbar + figures and show an
+   inline copy of the Sessions loader, centred in the canvas area */
+#canvas-empty { display: none; }
+#main.empty #top-panel,
+#main.empty #canvas-wrap { display: none; }
+#main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
+/* nothing loaded -> the inspector has nothing to act on, so hide the right sidebar and let
+   the empty-state card take the full width. Keep it visible when a tool panel that works
+   without objects is open. */
+#main.empty ~ .sidebar-right { display: none; }
+#main.empty ~ .sidebar-right.norm-active,
+#main.empty ~ .sidebar-right.filter-active,
+#main.empty ~ .sidebar-right.linemask-active,
+#main.empty ~ .sidebar-right.corr-active,
+#main.empty ~ .sidebar-right.atom-active { display: flex; }
+.empty-card {
+  width: min(420px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
+  padding: 18px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.empty-card-head { display: flex; align-items: center; gap: 8px; }
+.empty-card-head i { color: var(--text-muted); }
+.empty-session-results { margin-top: 0; max-height: 320px; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.empty-actions .text-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+
+/* filter mode swaps the spectrum figure (and top panel) for the feautrier view */
+#feautrier-wrap { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#main.filter-mode #top-panel,
+#main.filter-mode #canvas-wrap { display: none; }
+#main.filter-mode #feautrier-wrap { display: flex; }
+#filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#mask-btn.active, #line-list-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.feautrier-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+
+/* "Filtered" toggle switch (STYLE_REFERENCE.md §6.3) — shown once a filter exists */
+.filter-switch-wrap { display: none; align-items: center; gap: 6px; }
+#main.has-filter .filter-switch-wrap { display: inline-flex; }
+.filter-switch-label { font-size: 11px; color: var(--text-muted); }
+.switch { position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* the off track is a .field-input: same background and border, so a switch reads as
+   part of the same control family; the border also keeps it visible on --bg */
+.switch-track { position: absolute; inset: 0; background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 9px; transition: background 0.15s ease; }
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 1px; top: 1px;
+  /* the knob is the input text colour, not #fff, which was the brightest thing on the page */
+  background: var(--text); border-radius: 50%; transition: transform 0.15s ease;
+}
+/* "on" is a plain brighter grey rather than the accent, which read as a highlight
+   competing with the actual accented controls */
+.switch input:checked + .switch-track { background: var(--text-muted); }
+.switch input:checked + .switch-track::before   { transform: translateX(14px); }
+#feautrier-fig { flex: 1; min-height: 0; display: flex; }
+#feautrier-fig > * { flex: 1; min-width: 0; min-height: 0; }
+
+/* the nav overview sits above the main figure (fixed height) */
+#top-panel { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+#nav-slot { height: var(--panel-h); display: flex; }
+
+/* line-position indicators (lineannot.py): the Show/Hide button exists only while there are
+   lines to draw — for a view that attached its own selection, or on a deep enough zoom. */
+#annot-btn { display: none; }
+#main.annot-mode #annot-btn { display: inline-flex; align-items: center; }
+
+/* the line list, in the bottom half of the workspace: opened by picking one of those
+   indicators, so it stacks under whichever tool table is already down there rather than
+   fighting it for the same slot (its own --linelist-h, its own splitter) */
+#linelist-bottom { display: none; }
+#main.linelist-mode #linelist-bottom {
+  display: flex; flex: 0 0 var(--linelist-h); min-height: 0; flex-direction: column;
+  border-top: 1px solid var(--border); padding-top: 6px;
+}
+.linelist-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; }
+.linelist-head .section-header { margin-top: 0; flex-shrink: 0; }
+.linelist-head .icon-btn { flex-shrink: 0; }
+/* the search field sits at the right end of the header, next to the close button, with a
+   magnifying glass drawn inside its left edge */
+.linelist-search { position: relative; margin-left: auto; flex-shrink: 0; }
+.linelist-search .ti { position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: var(--text-muted); pointer-events: none; }
+.linelist-search .field-input { width: 200px; padding-left: 24px; }
+/* the panel's settings (reference star, the jump distance) sit inline in
+   its header */
+.linelist-settings { display: flex; align-items: center; gap: 16px; }
+.linelist-settings .field-group { gap: 6px; }
+.linelist-settings .field-group.field-inline > .field-input { width: 72px; }
+/* the star names are words, not a 72px number: let the select size to its longest option */
+.linelist-settings .field-group.field-inline > select.field-input { width: auto; }
+/* each setting hugs its own control instead of spreading across the header */
+.linelist-settings .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+.linelist-settings label { white-space: nowrap; }
+
+/* line list table */
+#linelist-table {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+/* the leading ion column reads as a name, not a number (Species is the table's one
+   non-sortable header, so it identifies that column on its own) */
+.linelist-table thead th:not(.line-sort),
+.linelist-table tbody td.line-ion { text-align: left; }
+/* the row the panel was opened at (or last jumped to) */
+.linelist-table .line-row.jump-target td {
+  background: rgba(74,144,226,0.18); color: var(--accent);
+}
+.linelist-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.linelist-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  text-align: right; padding: 4px 8px; font-weight: 600;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.linelist-table th.line-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.linelist-table th.line-sort:hover { color: var(--text); }
+.linelist-table th.line-sort.active { color: var(--accent); }
+/* a checkbox column: select all/none and show-only-checked, see tableui.check_header */
+.linelist-table th.check-head { white-space: nowrap; }
+/* right-aligned like the checkboxes below it */
+.check-head-row { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.check-head-label { margin-right: 2px; }
+.linelist-table .check-head-btn {
+  flex-shrink: 0; height: 18px; width: 18px;
+  border-color: transparent; background: none; font-size: 13px;
+}
+.linelist-table .check-head-btn.active { color: var(--accent); }
+.linelist-table tbody td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #2c2c2c; }
+.line-row { cursor: pointer; }
+.line-row:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
+.linelist-empty, .linelist-more { padding: 8px; font-size: 11px; color: var(--text-muted); }
+/* which star the strengths are for — the table means something different per star, and the
+   one non-physical source (the proxy) has to look different rather than blend in */
+.linelist-source {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; font-size: 10px; color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.linelist-source.warn { color: #e0a030; }
+
+/* EW mode swaps the inspector tabs for the EW panel */
+.text-btn {
+  height: 24px; padding: 0 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.text-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* action buttons in the right-sidebar panels (Mask, Normalise, Filter, LineMasks, the
+   inspector's Fit to target, …) are full-width and stacked with one consistent gap; a
+   row that places buttons side by side (.lm-actions) spaces them with its own gap */
+.sidebar-right :is(.text-btn, .primary-btn) { display: block; width: 100%; margin-top: 8px; }
+/* containers that space their children with a flex gap, and rows that place buttons side by
+   side (the Normalise panel's own id-scoped rhythm rule outranks this one by itself) */
+.sidebar-right :is(.lm-actions, .abund-step-panel)
+  > :is(.text-btn, .primary-btn) { margin-top: 0; }
+/* the Mask tool's panel: the drawn range, its actions and the equivalent width */
+.range-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.range-active .tab-bar,
+.sidebar-right.range-active .tab-content { display: none; }
+.sidebar-right.range-active .range-panel { display: flex; }
+.range-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.range-actions { display: flex; flex-direction: column; }
+.range-ew.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ew-value { font-size: 13px; font-variant-numeric: tabular-nums; }
+.hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+/* the synthesis modal's fit-only parts (target row, stellar switches, the two extra
+   columns) are shown in fit mode only */
+#synth-modal .synth-fit-only { display: none; }
+#synth-modal.fit-mode .synth-fit-only { display: flex; flex-direction: column; gap: 6px; }
+.synth-context { display: flex; flex-direction: column; gap: 4px; }
+/* λ min / λ max sit side by side at their natural width, not spread over the modal */
+.synth-window { display: flex; gap: 16px; align-items: center; }
+.synth-window .field-group.field-inline { flex: 0 0 auto; gap: 8px; }
+.synth-window .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+/* the modal grows with its columns (four in fit mode), each of which needs a minimal width;
+   a field group in the full-width rows above the columns (window, target) spans at most two */
+#synth-modal { --modal-col: 200px; width: fit-content; min-width: min(560px, 92vw); max-width: 92vw; }
+#synth-modal .modal-col { flex: 1 0 var(--modal-col); min-width: var(--modal-col); }
+#synth-modal .modal-body > :not(.modal-cols) .field-group,
+#synth-modal .synth-window { max-width: calc(2 * var(--modal-col) + 16px); }
+/* a fit row: label, number input, and an inline "fit" switch */
+.field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
+.fit-row label:not(.switch) { flex: 1; min-width: 0; }
+.fit-row num-input.field-input { width: 88px; flex: 0 0 auto; }
+.fit-row .fit-switch { flex: 0 0 auto; }
+.fit-abund-del {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  height: 18px; width: 18px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.fit-abund-del:hover { color: #e05c5c; }
+/* .field-group.field-inline: keep the higher specificity so the later .field-group
+   rule (flex-direction: column) doesn't push an inline switch below its label */
+.field-group.field-inline { flex-direction: row; align-items: center; justify-content: space-between; }
+/* inline number/text/select controls: keep the label flexible and pin the
+   control to a fixed width on the right (the .switch control sizes itself) */
+.field-group.field-inline > label:not(.switch) { flex: 1; min-width: 0; }
+.field-group.field-inline > .field-input { flex: 0 0 auto; width: 96px; }
+/* continuum-normalisation panel — same swap behaviour as the EW panel */
+.norm-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.norm-active .tab-bar,
+.sidebar-right.norm-active .tab-content { display: none; }
+.sidebar-right.norm-active .norm-panel { display: flex; }
+.norm-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.norm-panel-actions { display: flex; gap: 4px; }
+/* consistent spacing between the panel's fields, buttons and hint */
+#norm-panel-content > * + * { margin-top: 12px; }
+
+/* Filter inspector panel (method selector + low-pass cutoff) — same pattern as Normalise */
+.filter-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.filter-active .tab-bar,
+.sidebar-right.filter-active .tab-content { display: none; }
+.sidebar-right.filter-active .filter-panel { display: flex; }
+.filter-panel-head { display: flex; align-items: center; justify-content: space-between; }
+#filter-panel-content > * + * { margin-top: 12px; }
+
+/* LineMasks panel (import + list + padding + renorm) — same pattern as Normalise/Filter */
+.linemask-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.linemask-active .tab-bar,
+.sidebar-right.linemask-active .tab-content { display: none; }
+.sidebar-right.linemask-active .linemask-panel { display: flex; }
+.sidebar-right.linemask-active .lines-panel { display: none; }
+.linemask-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.linemask-panel .lm-table { width: 100%; font-size: 11px; }
+.linemask-panel .lm-table td, .linemask-panel .lm-table th { padding: 2px 4px; white-space: nowrap; }
+.linemask-panel .lm-note { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; max-width: 60px; }
+.linemask-panel .lm-row { cursor: pointer; }
+.linemask-panel .lm-row:hover { background: #333; }
+.linemask-panel .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.linemask-panel .lm-actions { display: flex; gap: 8px; margin-top: 8px; }
+.linemask-panel .lm-actions .text-btn { flex: 1; }
+
+/* LineMasks centre view: the mask table below the spectrum (mirrors #abund-bottom) */
+#linemask-bottom { display: none; }
+#main.linemask-mode #top-panel { display: none; }
+#main.linemask-mode #canvas-wrap { display: flex; }
+#main.linemask-mode #linemask-bottom {
+  display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
+  border-top: 1px solid var(--border); padding-top: 6px;
+}
+/* the table scrolls in its own box; the new-mask button stays below it, at the table's
+   end while the rows fit and at the panel's bottom once they scroll */
+#linemask-tables, #linemask-table { flex: 1; min-height: 0; min-width: 0;
+  display: flex; flex-direction: column; }
+.lm-scroll { flex: 0 1 auto; min-height: 0; overflow: auto; }
+/* a switched-off mask: still listed, but plainly not in play */
+.lm-table .lm-row.lm-off td { opacity: 0.4; }
+.lm-flag { display: inline-block; margin: 0 3px 1px 0; padding: 0 4px; border-radius: 3px;
+  background: rgba(224,160,48,0.15); border: 1px solid #e0a030; color: #e0a030;
+  font-size: 9px; }
+.lm-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+/* the headings sit over their values, so they align with them: the shared .linelist-table
+   rule left-aligns every header that is not a sort button, which is all of these */
+.linelist-table.lm-table thead th { position: sticky; top: 0; background: var(--bg);
+  text-align: right; padding: 4px 8px; color: var(--text-muted); font-weight: 600; }
+.lm-table td { padding: 3px 8px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.lm-table .lm-note { color: var(--text-muted); }
+.lm-table .lm-row { cursor: pointer; }
+.lm-table .lm-row:hover { background: #333; }
+.lm-table .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.lm-empty { padding: 16px; color: var(--text-muted); font-size: 12px; }
+/* "+ New mask" row under the table — the table's own append-a-row affordance */
+.lm-add-row { flex: 0 0 auto; padding: 6px 8px; border-top: 1px solid var(--border); }
+.lm-add-row .text-btn { width: 100%; height: 26px; }
+.lm-table-empty { width: 100%; }
+
+/* the open set's name + its edited-since-import flag (right sidebar) */
+.lm-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.lm-title .section-header { margin-top: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.lm-dirty { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 1px 6px;
+  border-radius: 8px; color: #e0a030; border: 1px solid #e0a030;
+  background: rgba(224,160,48,0.12); }
+.lm-name { width: 100%; }
+/* a hint that flags something the user still has to supply */
+.hint-warn { color: #e0a030; }
+/* the New line mask modal reuses the Preferences rail; give it room for the picker */
+#linemask-modal { width: min(600px, 92vw); height: min(520px, 88vh); }
+#linemask-modal .settings-nav { flex: 0 0 150px; }
+#linemask-modal .settings-nav-item { display: flex; align-items: center; }
+#linemask-modal .file-results { max-height: 260px; }
+/* a result whose inputs changed after it was solved: the panel banner, and the values of
+   that previous solution kept visible but marked */
+.stale-banner { margin: 8px 0; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid #e0a030; background: rgba(224,160,48,0.12); }
+.stale-banner-head { font-weight: 700; color: #e0a030; margin-bottom: 4px; }
+.stale-banner ul { margin: 0 0 6px 16px; padding: 0; }
+.stale-banner .primary-btn, .stale-banner .text-btn { margin: 2px 6px 2px 0; }
+.stale-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  color: #e0a030; border: 1px solid #e0a030; }
+.stale-block { opacity: 0.7; border-left: 3px solid #e0a030; padding-left: 6px; }
+/* the same flag on the left-sidebar object row, compressed to a dot */
+.lm-dot { flex: 0 0 auto; font-size: 9px; color: #e0a030; }
+
+/* greyed-out look for controls disabled while 'Already normalised' is on */
+.field-input:disabled, .primary-btn:disabled, .text-btn:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+/* two controls side by side (the running-mean window + percentile) */
+.field-row { display: flex; gap: 8px; align-items: stretch; }
+/* bottom-align each group's content so the inputs line up even when one label wraps */
+.field-row .field-group { flex: 1; min-width: 0; justify-content: flex-end; }
+#normalise-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.primary-btn {
+  height: 28px; padding: 0 12px; margin-top: 6px;
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 3px;
+  color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.primary-btn:hover { filter: brightness(1.08); }
+/* let the embedded Bokeh figures fill their slots */
+#canvas-wrap > * { flex: 1; min-width: 0; min-height: 0; }
+#nav-slot > * { flex: 1; min-width: 0; }
+
+#footer {
+  height: var(--footer-h);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; flex-shrink: 0;
+  font-size: 12px; color: var(--text-muted);
+}
+.footer-spacer { margin-left: auto; }
+
+/* transient footer status message — a semantic pill that pops + glows each time it
+   appears, so it can't be overlooked. Follows the tint-bg + matching-border + brighter
+   text status recipe; the halo borrows the pill's own text colour via currentColor. */
+.status-msg {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: status-pop 0.45s ease-out, status-glow 0.9s ease-out;
+}
+.status-warn    { background: rgba(255,160,0,0.12);  border-color: #e8a020; color: #f0a030; }
+.status-danger  { background: rgba(220,60,60,0.12);  border-color: #e05c5c; color: #f06060; }
+.status-success { background: rgba(80,200,120,0.12); border-color: #50c878; color: #50c878; }
+.status-info    { background: #1e2e3a;               border-color: #2e5070; color: #80c8f0; }
+.status-action {
+  margin-left: 8px; padding: 0 6px;
+  background: transparent; color: inherit; font: inherit;
+  border: 1px solid currentColor; border-radius: 3px; cursor: pointer;
+}
+.status-action:hover { background: rgba(255,255,255,0.08); }
+
+@keyframes status-pop {
+  0%   { opacity: 0; transform: scale(0.94); }
+  55%  { opacity: 1; transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@keyframes status-glow {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  30%  { box-shadow: 0 0 7px 1px currentColor; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* indeterminate progress bar, shown while background loads are in flight */
+#footer-progress { display: none; width: 120px; height: 4px; overflow: hidden;
+  background: var(--border); border-radius: 2px; }
+#footer.loading #footer-progress { display: block; }
+#footer-progress .bar { width: 40%; height: 100%; background: var(--accent);
+  border-radius: 2px; animation: indeterminate 1.1s ease-in-out infinite; }
+@keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+/* Processes panel: background work pinned to the bottom of the left sidebar; its header
+   carries the thread count and the Recover button (see processes.processes_html) */
+.processes-panel { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
+.processes-panel .section-header { margin-bottom: 4px; }
+.processes-header { display: flex; align-items: center; justify-content: space-between; }
+.processes-header .object-btn { cursor: pointer; }
+.processes-tools { display: inline-flex; align-items: center; gap: 6px; }
+.processes-usage { font-size: 10px; color: var(--text-muted); font-weight: normal;
+  text-transform: none; letter-spacing: 0; }
+.object-btn.process-recover { width: 100%; justify-content: flex-start; font-size: 10px;
+  color: var(--accent); padding: 2px 4px; }
+/* the job details modal (processes.workflow_details_html) */
+.job-details { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.job-title { font-weight: 600; }
+.job-section-title { font-size: 10px; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 2px; }
+.job-pairs, .job-runs { font-size: 11px; border-collapse: collapse; width: 100%; }
+.job-pairs th { text-align: left; font-weight: normal; color: var(--text-muted);
+  padding-right: 10px; white-space: nowrap; vertical-align: top; width: 1%; }
+.job-pairs td { word-break: break-all; }
+.job-runs th { text-align: left; font-weight: normal; color: var(--text-muted); }
+.job-log pre { font-size: 10px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+  background: var(--bg); padding: 4px; margin: 2px 0; }
+.job-log summary { font-size: 11px; font-family: monospace; cursor: pointer; }
+.job-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.text-btn.job-action.danger { color: #e05c5c; }
+/* a settled record in the recovery modal: import (finished), details or forget */
+.object-item.process.recoverable { opacity: 1; }
+.object-item.process.recoverable > .ti { color: var(--text-muted); flex-shrink: 0; }
+.object-item.process.recoverable[data-state="interrupted"] > .ti,
+.object-item.process.recoverable[data-state="failed"] > .ti { color: #e05c5c; }
+.object-item.process.recoverable[data-state="finished"] > .ti { color: var(--accent); }
+.object-item.process { opacity: 0.8; cursor: default; }
+.object-item.process:hover { border-color: transparent; }
+.object-item.process .object-name { font-size: 11px; color: var(--text-muted); }
+.process-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* the job's state when it is not simply running: queued, or asked to cancel and still
+   occupying its worker */
+.process-state { font-size: 10px; color: var(--text-muted); font-style: italic; }
+.object-item.process[data-state="queued"] .spinner { opacity: 0.45; animation-duration: 1.6s; }
+/* a failed job stays listed with its error and native log names until dismissed */
+.object-item.process.failed { opacity: 1; }
+.object-item.process.failed > .ti { color: #e05c5c; flex-shrink: 0; }
+.process-error { font-size: 10px; color: #e05c5c;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.process-log { font-size: 10px; color: var(--text-muted); font-family: monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spinner { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- components ----------------------------------------------------------- */
+.section-header {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.section-header:not(:first-child) { margin-top: 16px; }   /* stacked only: the row list below zeroes it */
+/* a section title with a right-aligned action button (e.g. Objects + open) */
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.section-head-row .icon-btn { flex-shrink: 0; }
+.section-head-row .text-btn { flex-shrink: 0; display: inline-flex; align-items: center; }
+
+/* ---- dropdown menu (Objects "Open File": pick which importer opens) -------- */
+.menu-wrap { position: relative; }
+.menu-btn .ti { font-size: 13px; }
+.menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 168px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+}
+.menu.open { display: block; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 3px;
+  background: none; color: var(--text); font-size: 12px; text-align: left; cursor: pointer;
+}
+.menu-item:hover { background: rgba(74,144,226,0.16); color: var(--accent); }
+.menu-item .ti { color: var(--text-muted); font-size: 14px; }
+.menu-item:hover .ti { color: var(--accent); }
+.menu-item:disabled { color: var(--text-muted); opacity: 0.55; cursor: default; }
+.menu-item:disabled:hover { background: none; }
+
+.object-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 3px;
+  border: 1px solid transparent; cursor: pointer;
+  font-size: 12px;
+}
+.object-item:hover { border-color: #555; }
+.object-item.selected { border-color: var(--accent); background: rgba(74,144,226,0.1); }
+.object-item.hidden-object { opacity: 0.45; }
+.object-item i { color: var(--text-muted); }
+.object-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* empty Objects panel: how to add the first spectrum */
+.object-empty { padding: 8px 6px; font-size: 11px; line-height: 1.55; color: var(--text-muted); }
+.object-empty .ti { font-size: 13px; vertical-align: -2px; color: var(--text); }
+/* line-style indicator mirroring each object's dash */
+.dash-swatch {
+  flex-shrink: 0; width: 20px; height: 0;
+  border-top: 2px solid var(--text);
+}
+/* compact hide / remove buttons, ghost-hover to accent */
+.object-btn {
+  flex-shrink: 0; width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid transparent; border-radius: 3px;
+  color: var(--text-muted); cursor: pointer; font-size: 12px;
+}
+.object-btn:hover { border-color: var(--accent); color: var(--accent); }
+.object-btn.danger:hover { border-color: #e05c5c; color: #e05c5c; }
+/* the cancel button stays clickable even though the process row itself is not */
+.object-item.process .object-btn { cursor: pointer; }
+
+/* line-colour palette swatches */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.color-swatch {
+  width: 22px; height: 22px; padding: 0;
+  border-radius: 3px; border: 2px solid transparent; cursor: pointer;
+}
+.color-swatch:hover { border-color: #888; }
+.color-swatch.active { border-color: var(--accent); }
+
+.field-group { display: flex; flex-direction: column; gap: 2px; }
+/* space every field-group after the first, even when buttons/other blocks sit between.
+   Only stacked groups, like the section header above: in a row container the neighbour
+   sits beside, not above, so the margin would just push it off the row's baseline. CSS
+   cannot read the parent's flex direction, so the row containers that hold headers or
+   field groups are listed here; add to the list when a new row layout takes one. The
+   child combinator makes these win the cascade wherever the stacked rule is repeated. */
+.field-group:not(:first-child) { margin-top: 12px; }
+:is(.field-row, .synth-window, .linelist-settings, .linelist-head, .section-head-row,
+    .grid-card-head, .empty-card-head, .cache-head, .path-row, .processes-header,
+    .modal-cols, .modal-header, .modal-footer)
+  > :is(.section-header, .field-group) { margin-top: 0; }
+.field-group label { font-size: 10px; color: var(--text-muted); }
+.field-static {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Info-tab FITS header: a scrollable two-column card table */
+.meta-table-wrap {
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--bg);
+}
+.meta-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.meta-table td { padding: 2px 5px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.meta-table tr:last-child td { border-bottom: none; }
+.meta-key { color: var(--text-muted); white-space: nowrap; font-family: monospace; }
+.meta-val { word-break: break-word; }
+
+/* shared style for every controls.Form input/select (and the EW dropdown) */
+.field-input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+}
+.field-input:focus { outline: none; border-color: var(--accent); }
+/* mandatory inputs left empty (or otherwise invalid): flag with a red outline until filled */
+.field-input:required:invalid { border-color: #c0392b; }
+
+/* <num-input> (controls.num_input): the host is the bordered box and keeps every
+   .field-input layout rule; the real <input> sits inside it, borderless, with the
+   native spin buttons suppressed and our own stacked pair pinned to the right edge
+   (so the field's width is unchanged and every browser renders the same control). */
+num-input.field-input {
+  display: inline-flex; align-items: stretch; padding: 0 0 0 5px; overflow: hidden;
+}
+num-input > input {
+  flex: 1; min-width: 0; padding: 3px 0;
+  background: transparent; border: none; outline: none;
+  color: inherit; font: inherit;
+  -moz-appearance: textfield;  /* Firefox: no native spinner */
+}
+num-input > input::-webkit-outer-spin-button,
+num-input > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+num-input.field-input:focus-within { border-color: var(--accent); }
+num-input.field-input:has(> input:required:invalid) { border-color: #c0392b; }
+num-input[disabled] { opacity: 0.45; cursor: not-allowed; }
+.num-spin {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  width: 14px; border-left: 1px solid var(--border);
+}
+.num-spin button {
+  flex: 1 1 0; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: none; color: var(--text-muted);
+  cursor: pointer;
+}
+/* arrows drawn with borders rather than ▴/▾ glyphs, which fall back to different
+   font faces (and so different sizes) from machine to machine */
+.num-spin button::before {
+  content: ""; width: 0; height: 0;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+}
+.num-spin button[data-step="1"]::before { border-bottom: 4px solid currentColor; }
+.num-spin button[data-step="-1"]::before { border-top: 4px solid currentColor; }
+.num-spin button + button { border-top: 1px solid var(--border); }
+.num-spin button:hover { background: var(--border); color: var(--accent); }
+num-input[disabled] .num-spin button { cursor: not-allowed; }
+
+.icon-btn {
+  height: 24px; width: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pill {
+  font-size: 11px; padding: 1px 8px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); white-space: nowrap;
+}
+
+/* ---- settings modal (STYLE_REFERENCE.md §7.1) ----------------------------- */
+.modal {
+  position: fixed; inset: 0; margin: auto;
+  width: min(360px, 92vw);
+  height: min(560px, 88vh);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  padding: 0;
+}
+.modal-lg { width: min(560px, 92vw); }
+/* wide enough for the model table of the Atmosphere grids page */
+#settings-modal { width: min(760px, 92vw); height: min(520px, 88vh); }
+
+/* settings modal: left nav rail + content pane (docs-nav style) */
+.settings-layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.settings-nav {
+  width: 150px; flex-shrink: 0;
+  background: var(--bg); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column;
+}
+.settings-nav-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 14px; background: none; border: none; border-radius: 0;
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-nav-item:hover  { background: var(--border); color: var(--text); }
+.settings-nav-item.active { color: var(--accent); background: rgba(74,144,226,0.1); }
+.settings-pages { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.settings-page { display: none; flex-direction: column; gap: 10px; }
+.settings-page.active { display: flex; }
+
+/* missing-file warning on a path field */
+.field-warn .field-input { border-color: #c0392b; }
+.field-warn-hint { font-size: 10px; color: #e05c5c; }
+
+/* run-cache page */
+.cache-head { display: flex; align-items: center; justify-content: space-between; }
+.cache-summary { font-size: 10px; color: var(--text-muted); }
+.cache-list { display: flex; flex-direction: column; gap: 4px; }
+.cache-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.cache-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cache-star { font-size: 12px; }
+/* run-kind badge: SPEC (spectrum) vs DEP (departure coefficients) */
+.cache-tag {
+  display: inline-block; margin-right: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.04em; vertical-align: middle;
+  background: var(--border); color: var(--text-muted);
+}
+.cache-tag-dep { background: rgba(74,144,226,0.18); color: var(--accent); }
+.cache-sub { font-size: 10px; color: var(--text-muted); }
+.cache-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.cache-del:hover { border-color: #e05c5c; color: #e05c5c; }
+/* only lay the dialog out when actually open; otherwise the UA's
+   dialog:not([open]){display:none} must win so it stays hidden and closeable */
+.modal[open] { display: flex; flex-direction: column; }
+.modal::backdrop { background: rgba(0,0,0,0.5); }
+
+/* path display + browse button, and an inline (non-nested) file picker in a modal */
+.path-row { display: flex; align-items: center; gap: 6px; }
+.path-row .field-static, .path-row .field-input { flex: 1; min-width: 0; }
+
+.inline-picker { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.inline-picker.open { display: flex; }
+.inline-picker .file-results { max-height: 200px; margin-top: 0; }
+
+/* auto file picker (atmosphere): the query field is always shown while a concrete file is in
+   play (`open`); the result list only drops down while the field is focused (`results-open`). */
+.inline-picker-auto { display: none; flex-direction: column; margin-top: 8px; }
+.inline-picker-auto.open { display: flex; }
+/* the dropdown hangs straight off the field; anything else in the block keeps a gap */
+.inline-picker-auto > * + *:not(.file-results) { margin-top: 8px; }
+.inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
+.inline-picker-auto.open.results-open .file-results { display: block; }
+/* the grid folder picker takes the place of the folder field it is browsing for */
+.grid-folder-row.editing .grid-folder { display: none; }
+.grid-folder-row .inline-picker-auto { flex: 1; min-width: 0; margin-top: 0; }
+
+/* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
+.synth-atoms { display: none; flex-direction: column; gap: 6px; }
+.synth-atoms.on { display: flex; }
+/* generic removable tag/chip: selected model atoms, atmosphere files, … */
+.chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px;
+  max-width: 100%;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+  font-size: 11px;
+}
+.chip-label { min-width: 0; overflow-wrap: anywhere; }  /* wrap long unbroken filenames */
+.chip-del {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  height: 16px; width: 16px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.chip-del:hover { color: #e05c5c; }
+
+/* ---- registered atmosphere grids (settings) ------------------------------ */
+.grid-list { display: flex; flex-direction: column; gap: 10px; }
+.grid-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-card-head { display: flex; align-items: center; gap: 6px; }
+.grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
+.grid-card .field-warn-input { border-color: #c0392b; }
+.grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
+.grid-count .field-input { width: 5em; }
+.grid-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-row-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.grid-row-name { font-weight: 600; }
+.grid-row-state { color: var(--text-muted); font-size: 12px; }
+/* a running download replaces the row's buttons by a ring that fills clockwise with the
+   job's percentage (--p, pushed live by the grid-progress bridge) */
+.grid-progress {
+  flex-shrink: 0; display: inline-block; vertical-align: middle;
+  width: 16px; height: 16px; margin: 4px; border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), var(--border) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+/* the model table reuses the sortable line-list table; the name column reads as text */
+.grid-models { max-height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the model name column reads as text; its sortable header aligns with the names */
+.grid-models thead th:first-child { text-align: left; }
+.grid-models td:last-child { white-space: nowrap; }
+
+/* ---- reference stars (settings) ------------------------------------------- */
+.refstars-list { display: flex; flex-direction: column; gap: 4px; }
+.refstar-row {
+  display: grid; grid-template-columns: minmax(8em, 2fr) repeat(4, minmax(4.5em, 1fr)) auto;
+  gap: 6px; align-items: center;
+}
+.refstar-row .field-input { min-width: 0; }
+.refstar-head { color: var(--text-muted); font-size: 12px; padding: 0 4px; }
+.refstar-actions { display: flex; gap: 8px; margin-top: 6px; }
+
+/* ---- synth panel: grid selector + source mode ---------------------------- */
+.synth-grid { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- file picker (cmd+P) -------------------------------------------------- */
+.file-results {
+  margin-top: 8px; max-height: 320px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.file-list { list-style: none; }
+.file-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 8px; font-size: 12px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.file-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); color: var(--accent); }
+.file-item i { color: var(--text-muted); }
+.file-item:hover i { color: var(--accent); }
+/* a long path is elided at its head, so the file name and the folders nearest it stay
+   readable (…/Documents/Marcs/model): the RTL direction moves the ellipsis to the start
+   while the LTR text itself still reads left to right */
+.file-item span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  direction: rtl; text-align: left;
+}
+/* a grid model's row leads with its Teff, so it is elided at the tail instead */
+.file-item.model-item span { direction: ltr; }
+/* a picked file spins in place of its icon until its load has landed, so picking several
+   in a row shows which are still coming (the footer bar only says that something is) */
+.file-item.is-busy { color: var(--accent); cursor: progress; }
+.file-item .spinner { width: 11px; height: 11px; overflow: visible; }
+.file-empty { padding: 10px; font-size: 12px; color: var(--text-muted); }
+.modal-header {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 14px; font-weight: 600; }
+.modal-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.modal-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 10px 16px 14px; border-top: 1px solid var(--border);
+}
+/* every modal footer follows one pattern: Cancel and other secondary actions are
+   .text-btn, the confirming action is .primary-btn, and all share the text button's
+   geometry; server-rendered action slots sit inside the footer's own row */
+#synth-modal-actions, #abund-modal-actions { display: contents; }
+.modal-footer :is(.text-btn, .primary-btn) { height: 24px; margin-top: 0; padding: 0 10px; font-size: 11px; }
+/* contextual: only shown when the picker sits inside a tumult run folder */
+#load-run { display: none; }
+#load-run.ready { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------------------------------------------------------------------------
+   Abundance tool: toolbar button, right-sidebar control panel, left-sidebar
+   result objects, and the centre abundance view (scatter + per-line table).
+   --------------------------------------------------------------------------- */
+
+/* right-sidebar control panel (mirrors .range-panel) */
+.abund-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.abund-active > .tab-bar,
+.sidebar-right.abund-active > .tab-content { display: none; }
+.sidebar-right.abund-active .abund-panel { display: flex; }
+.sidebar-right.abund-active .lines-panel { display: none; }
+.abund-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* the right-sidebar step section follows the active step class on #main (no JS) */
+.abund-step-panel { display: none; flex-direction: column; gap: 8px; }
+#main.abund-step-1 ~ .sidebar-right .abund-step-1-panel,
+#main.abund-step-2 ~ .sidebar-right .abund-step-2-panel { display: flex; }
+/* the panel's run buttons fill it; the modal's submit sits in the footer at its own width */
+.abund-panel .abund-run-synth, .abund-panel .abund-run-uncert,
+.abund-panel .abund-settings { display: block; width: 100%; margin-top: 4px; }
+/* sub-tabs (Lines | Setup): the whole panel scrolls, so the tab-content is non-flexing
+   (mirrors the synth panel) and the generic .tab JS drives .active. */
+.abund-panel .tab-bar { margin-bottom: 4px; }
+.abund-panel .tab-content { overflow: visible; flex: 0 0 auto; }
+.abund-panel .tab-panel { padding: 0; }
+.abund-copy-setup { display: block; width: 100%; margin-top: 10px; }
+
+/* left-sidebar result objects (non-spectral; reuse .object-item layout) */
+.result-section-head { margin-top: 12px; }
+.result-item .result-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 3px; flex: 0 0 auto;
+  background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+}
+.result-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.result-summary { font-size: 10px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.result-summary:empty { display: none; }
+.result-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 1px solid transparent; border-radius: 4px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.result-btn:hover { border-color: #e05c5c; color: #e05c5c; }
+
+/* left-sidebar line-mask objects: one row per set (see masktool.objects_html). The badge
+   carries the element the set diagnoses, so a sidebar of sets reads at a glance. */
+.maskset-item .maskset-badge {
+  background: #b8860b; width: auto; min-width: 16px; padding: 0 3px;
+  font-size: 9px; letter-spacing: 0.02em;
+}
+.maskset-item .maskset-badge-none { background: var(--border); }
+.maskset-item .maskset-badge .ti { font-size: 11px; color: #fff; }
+.maskset-count {
+  flex: 0 0 auto; font-size: 10px; color: var(--text-muted);
+  padding: 0 5px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+}
+
+/* centre abundance view: spectrum (step 1) or the diagnostic panels (step 2) on top, table
+   below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
+#abund-scatter, #abund-bottom, #abund-steps, #abund-cog, #abund-chi2 { display: none; }
+/* the panel belonging to the result's method, one at a time (abundancetool._render_selected) */
+#main.abund-mode.abund-step-1.abund-cog #abund-cog,
+#main.abund-mode.abund-step-1.abund-chi2 #abund-chi2 { display: flex; flex: 0 0 36%; }
+#abund-cog > *, #abund-chi2 > * { flex: 1; min-width: 0; min-height: 0; }
+#main.abund-mode #top-panel { display: none; }
+#main.abund-mode #canvas-wrap { display: flex; }
+#main.abund-mode #abund-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.abund-mode #abund-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+/* step 2 swaps the spectrum for the A(X) scatter */
+#main.abund-mode.abund-step-2 #canvas-wrap { display: none; }
+#main.abund-mode.abund-step-2 #abund-scatter { display: flex; flex: 1; min-height: 0; }
+
+/* the two diagnostic panels a fit is read against, side by side (see abundwizard.PANEL_AXES) */
+.scatter-pane { flex: 1; min-width: 0; display: flex; }
+#abund-table { flex: 1; min-height: 0; overflow: auto; }
+/* The shared line-list rule left-aligns non-sortable headers. In analysis tables the
+   include checkbox and flags are right-aligned columns, so their headers follow suit. */
+.abund-table thead th:first-child,
+.abund-table thead th:last-child { text-align: right; }
+/* "Local continuum" (abund/ionbal; see abundwizard.LOCAL_CONTINUUM_HEAD) is also a checkbox
+   column - right-align its label so it lines up with the checkboxes below it, regardless of
+   the shared line-list rule's left-align for non-sortable headers or the column's position. */
+/* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
+#main.abund-step-1 .abund-step-btn[data-step="1"],
+#main.abund-step-2 .abund-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.abund-row { cursor: pointer; }
+/* a row is marked either by the pointer or by its point being hovered on a panel
+   (see the table<->scatter link in the page script) */
+.abund-row:hover td, .abund-row.row-hover td,
+.abund-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.abund-row.line-excluded { opacity: 0.4; }
+.abund-flags { color: #e0a05c; }
+.abund-summary { padding: 8px 4px 2px; font-weight: 600; }
+.abund-budget { font-weight: 400; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Model atoms: the atom objects (left sidebar, with their correction results nested
+   under them), the two-table centre view and the panel holding the corrections action.
+   The tool has no toolbar button — Open File → Open Model Atom loads one.
+   --------------------------------------------------------------------------- */
+.atom-item .atom-badge { background: #6a5acd; width: auto; min-width: 16px; padding: 0 3px; font-size: 9px; }
+/* a correction result listed under the atom it was computed from */
+.result-item.result-nested { margin-left: 18px; }
+
+.atom-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.atom-active > .tab-bar,
+.sidebar-right.atom-active > .tab-content { display: none; }
+.sidebar-right.atom-active .atom-panel { display: flex; }
+.sidebar-right.atom-active .lines-panel { display: none; }
+.atom-panel .atom-corr { display: block; width: 100%; margin-top: 4px; }
+.atom-panel .atom-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* centre atom view: tabs + the open tab's search field on top, one table wrap per tab.
+   Replaces the whole canvas (an atom has no wavelength axis of its own), and stands in for
+   the empty-state card when no spectrum is loaded. */
+#atom-view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#main.atom-mode #top-panel,
+#main.atom-mode #canvas-wrap,
+#main.atom-mode #canvas-empty { display: none; }
+#main.atom-mode #atom-view { display: flex; }
+.atom-head { display: flex; align-items: flex-end; gap: 8px; }
+.atom-head .step-tabs { flex: 1; }
+.atom-head .step-tab { flex: 0 0 auto; }
+.atom-search { display: none; margin-bottom: 4px; }
+#main.atom-tab-levels .atom-search[data-tab="levels"],
+#main.atom-tab-trans .atom-search[data-tab="trans"] { display: block; }
+#main.atom-tab-levels .atom-tab-btn[data-tab="levels"],
+#main.atom-tab-trans .atom-tab-btn[data-tab="trans"] { color: var(--text); border-bottom-color: var(--accent); }
+.atom-table-wrap { display: none; flex: 1; min-height: 0; overflow: auto; }
+#main.atom-tab-levels #atom-levels-table,
+#main.atom-tab-trans #atom-trans-table { display: block; }
+.atom-table .atom-label { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+.atom-row.atom-ground td { font-weight: 600; }
+.atom-count { padding: 6px 4px; font-size: 11px; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Abundance-correction tool: the correction results (nested under their atom in the
+   left sidebar), the right panel, the centre view (reference spectrum or ΔA scatter
+   over the per-line table) and the modal opened from an atom's panel.
+   --------------------------------------------------------------------------- */
+.abundcorr-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.corr-active > .tab-bar,
+.sidebar-right.corr-active > .tab-content { display: none; }
+.sidebar-right.corr-active .abundcorr-panel { display: flex; }
+.sidebar-right.corr-active .lines-panel { display: none; }
+
+/* centre correction view: reference spectrum with the selected line's CoG inversion
+   beside it (Lines) or the two ΔA diagnostic panels (Scatter) on top, per-line table below,
+   and a step-switcher footer. Reuses #canvas-wrap for the spectrum; the CoG pane lives
+   inside it and only shows in this view's Lines step. */
+#corr-scatter, #corr-bottom, #corr-steps, #corr-cog { display: none; }
+#main.corr-mode.corr-step-1 #corr-cog { display: flex; flex: 0 0 36%; }
+#corr-cog > * { flex: 1; min-width: 0; min-height: 0; }
+#main.corr-mode #top-panel { display: none; }
+#main.corr-mode #canvas-wrap { display: flex; }
+#main.corr-mode #corr-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.corr-mode #corr-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.corr-mode.corr-step-2 #canvas-wrap { display: none; }
+#main.corr-mode.corr-step-2 #corr-scatter { display: flex; flex: 1; min-height: 0; }
+#corr-table { flex: 1; min-height: 0; overflow: auto; }
+#main.corr-step-1 .corr-step-btn[data-step="1"],
+#main.corr-step-2 .corr-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.corr-row { cursor: pointer; }
+.corr-row:hover td, .corr-row.row-hover td,
+.corr-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.corr-row.line-excluded { opacity: 0.4; }
+
+/* ---------------------------------------------------------------------------
+   Ionisation balance: the measurement objects (left sidebar), their centre view
+   (spectrum or A(X) balance scatter over the per-line table) and the fit modal.
+   The tool has no toolbar button — an object is what opens it.
+   --------------------------------------------------------------------------- */
+
+/* right-sidebar panel of the selected measurement */
+.ionbal-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.ionbal-active > .tab-bar,
+.sidebar-right.ionbal-active > .tab-content { display: none; }
+.sidebar-right.ionbal-active .ionbal-panel { display: flex; }
+.sidebar-right.ionbal-active .lines-panel { display: none; }
+.ionbal-refit { display: block; width: 100%; margin-top: 4px; }
+
+/* centre view: the balance panels (the primary tab, watched while the fit runs) or the
+   target spectrum (Lines), per-line table + iteration status below, and the two-way view
+   switcher as a footer. */
+#ionbal-scatter, #ionbal-bottom, #ionbal-steps { display: none; }
+#main.ionbal-mode #top-panel { display: none; }
+#main.ionbal-mode #canvas-wrap { display: none; }
+#main.ionbal-mode #ionbal-scatter { display: flex; flex: 1; min-height: 0; }
+#main.ionbal-mode #ionbal-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.ionbal-mode #ionbal-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.ionbal-mode.ionbal-step-2 #ionbal-scatter { display: none; }
+#main.ionbal-mode.ionbal-step-2 #canvas-wrap { display: flex; }
+#ionbal-table { flex: 1; min-height: 0; overflow: auto; }
+#main.ionbal-step-1 .ionbal-step-btn[data-step="1"],
+#main.ionbal-step-2 .ionbal-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.ionbal-row { cursor: pointer; }
+.ionbal-row:hover td, .ionbal-row.row-hover td,
+.ionbal-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
+.ionbal-row.line-excluded { opacity: 0.4; }
+/* the streaming iteration/convergence line under the table */
+.ionbal-status { border-top: 1px solid var(--border); margin-top: 4px; }
+
+/* the analysis modals launched from the LineMasks view — the balance fit (what is measured /
+   where it starts / how it runs) and the abundance measurement (what is measured / the
+   atmosphere and parameters it is synthesised on) — share one column layout. */
+#ionbal-modal, #abund-modal, #corr-modal { width: min(880px, 94vw); }
+.modal-cols { display: flex; gap: 16px; align-items: flex-start; }
+.modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ionbal-context, .abund-context, .corr-context { display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 720px) { .modal-cols { flex-direction: column; } }
+
+/* Workspace entry points stay available independently of the active scientific view. */
+#main.empty #canvas-toolbar > :not(.workspace-actions),
+#main.atom-mode #canvas-toolbar > :not(.workspace-actions) { display: none; }
+#linemask-modal .settings-nav { display: none; }
+#linemask-modal .settings-layout { display: block; }
+.advanced { margin: 8px 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.advanced > summary {
+  cursor: pointer; padding: 5px 0;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.advanced > summary:hover { color: var(--text); }
+:where(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.preparation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#canvas-toolbar { flex-wrap: wrap; }
+.modal-cols { flex-wrap: wrap; }
+.modal-col { min-width: min(230px, 100%); }
+
+/* the selected row of an Open dialog or workspace list: the same tint-and-outline the
+   Objects list uses for its selected item, so the muted subtitle stays readable */
+/* Preferences path pickers: the field is the preference; a missing target reddens its
+   label (the input itself sits in Bokeh's shadow DOM) and shows the hint */
+.pref-path .field-warn-hint { display: none; }
+.pref-path.field-warn .field-warn-hint { display: block; }
+.pref-path.field-warn > label { color: #e05c5c; }
+.pref-path.off { display: none; }
+.pref-path .inline-picker-auto { margin-top: 0; }
+.file-item.selected, .session-item.selected {
+  background: rgba(74,144,226,0.18); border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.file-item.selected i, .session-item.selected > i { color: var(--accent); }
+
+#abund-modal.reconfigure .abund-measure-fields { display: none; }
+
+/* a closed section's current values: ordinary text under the header-styled title */
+.advanced-values {
+  display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted);
+  text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.advanced[open] > summary .advanced-values { display: none; }
+.empty-card .session-load { margin-top: 0; }
+.session-item.autosave > i { color: var(--accent); }
