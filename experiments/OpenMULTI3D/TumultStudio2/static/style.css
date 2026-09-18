@@ -1002,7 +1002,11 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 
 /* centre abundance view: spectrum (step 1) or the diagnostic panels (step 2) on top, table
    below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
-#abund-scatter, #abund-bottom, #abund-steps { display: none; }
+#abund-scatter, #abund-bottom, #abund-steps, #abund-cog, #abund-chi2 { display: none; }
+/* the panel belonging to the result's method, one at a time (abundancetool._render_selected) */
+#main.abund-mode.abund-step-1.abund-cog #abund-cog,
+#main.abund-mode.abund-step-1.abund-chi2 #abund-chi2 { display: flex; flex: 0 0 36%; }
+#abund-cog > *, #abund-chi2 > * { flex: 1; min-width: 0; min-height: 0; }
 #main.abund-mode #top-panel { display: none; }
 #main.abund-mode #canvas-wrap { display: flex; }
 #main.abund-mode #abund-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }

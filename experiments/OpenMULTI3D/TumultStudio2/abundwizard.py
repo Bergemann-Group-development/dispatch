@@ -980,8 +980,15 @@ class AbundanceWizard(Tool):
         self.canvas.release_edit_tool(self.continuum_drag)
 
     def _set_hatch(self, res, ln):
-        """Hatch ``ln``'s measured EW area, through its local continuum when enabled. A line
-        restored from a task or session has no live profile; it is measured again here."""
+        """Hatch the area ``ln``'s measured EW stands for, through its local continuum when
+        enabled. A line restored from a task or session has no live profile; it is measured
+        again here.
+
+        The hatch spans :func:`tumult.abundance.ew_window`, not the fit window: a fitted
+        profile's width counts wings that run past the window it was fitted over, so it is
+        drawn right across the view and follows it (``canvas.set_abund_hatch``). Only a
+        directly integrated width stops at the window, because that is all it integrated.
+        """
         if ln.fit_func is None and np.all(np.isfinite(ln.fit_window)):
             spec = self._result_spec(res)
             if spec is not None:
@@ -989,7 +996,7 @@ class AbundanceWizard(Tool):
                     ln.fit_func = ab.measured_profile_func(ln, spec, res.profile)
                 except (ValueError, RuntimeError):
                     pass
-        self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window,
+        self.canvas.set_abund_hatch(ln.fit_func, ab.ew_window(ln, res.profile),
                                     nodes=ln.continuum if ln.renorm else None)
 
     def _render_continuum(self):

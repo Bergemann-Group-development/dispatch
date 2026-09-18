@@ -137,6 +137,8 @@ class LineResult:
                                 # window, so the fit window can be re-read after the run
     fit_spec: object = None     # best-fit synthetic Spectrum, for the jump overlay
     fit_func: object = None     # fitted profile f(λ_Å)->flux, for the EW-area hatch on jump
+    ssr: float = float("nan")   # profile fit: summed squared flux residuals at the solution
+    n_fit: int = 0              # ... over this many pixels (-> reduced_chi2)
     method: str = "fit"         # "fit" (direct) or "cog"
     flags: tuple = ()
     include: bool = True        # user toggle: count this line in the element mean
@@ -1098,6 +1100,7 @@ def lattice_limit(step, limit):
 
 def _exclude(line, flag):
     line.a, line.sigma_a = float("nan"), float("nan")
+    line.ssr, line.n_fit = float("nan"), 0
     line.flags = tuple(dict.fromkeys(line.flags + (flag,)))
     line.include = False
 
@@ -1163,11 +1166,111 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
     return sorted(rungs), bracketed
 
 
+PROFILE_FIT_PARAMS = 3          # abundance, vshift, vdop — the dof a reduced chi-square loses
+
+
+def _fit_crop(line, observed):
+    """The local-continuum crop arguments the profile fit evaluates its model through, as
+    :meth:`tumult.spectrum.Spectrum.fit` assembles them from what it is handed."""
+    nodes = line.continuum if line.renorm else None
+    if not nodes:
+        return {"continuum": None}
+    return {"continuum": nodes,
+            "continuum_window": (observed.xdata.min(), observed.xdata.max())}
+
+
+def _record_residuals(ln, grid, observed):
+    """Keep the objective the profile fit minimised, at the solution the line now carries.
+
+    The optimiser's own last evaluation sits at unrounded parameters, while ``a``, ``vshift``
+    and ``vdop`` are stored rounded to the precision they are shown at. Re-evaluating the
+    same model there — one more interpolation of rungs already in hand, no synthesis — is
+    what makes the reported residual describe the solution that is stored, drawn on the
+    spectrum and scanned by :func:`chi2_profile`. Sets ``ssr`` and ``n_fit``.
+    """
+    model = grid.crop(newx=observed.xdata, a=ln.a, vshift=ln.vshift, vdop=ln.vdop,
+                      **_fit_crop(ln, observed))
+    residual = observed.values[1] - model.values[1]
+    ln.ssr, ln.n_fit = float(np.sum(residual ** 2)), int(residual.size)
+
+
+def _chi2_scale(n_fit, snr):
+    """What turns a summed squared residual over ``n_fit`` pixels into a reduced chi-square
+    at a continuum noise level of ``1/snr``. NaN when there is no scale to apply."""
+    dof = int(n_fit) - PROFILE_FIT_PARAMS
+    snr = float(snr) if snr else 0.0
+    if dof <= 0 or snr <= 0:
+        return float("nan")
+    return snr ** 2 / dof
+
+
+def reduced_chi2(line, snr):
+    """``line``'s profile fit per degree of freedom, against a noise level of ``1/snr``.
+
+    The fit itself is unweighted (:func:`_record_residuals`), so the SNR enters only here:
+    the same continuum noise that sets the photon EW error. NaN for a line that was not
+    profile-fitted, has no usable SNR, or has no degrees of freedom left.
+    """
+    return (float(getattr(line, "ssr", float("nan")))
+            * _chi2_scale(getattr(line, "n_fit", 0), snr))
+
+
+CHI2_SCAN_POINTS = 61       # samples of the abundance axis in a chi-square scan
+
+
+def chi2_profile(line, target, snr, *, points=CHI2_SCAN_POINTS):
+    """``line``'s fit objective along the abundance axis, as reduced chi-square.
+
+    Evaluates exactly the model the fit did (:func:`_fit_line_profile`): the line's cached
+    rungs interpolated in abundance, shifted and broadened by the fitted ``vshift`` and
+    ``vdop`` and multiplied by its local continuum, compared with ``target`` inside the fit
+    window. Only the abundance moves, so this is the fit's own objective sliced through its
+    solution — which is what makes the reported minimum the one the optimiser stopped at.
+    No synthesis runs: the rungs are the ones already cached on the line.
+
+    Returns ``(abundances, chi2)`` spanning the cached rungs, with the solution itself
+    among the samples; empty when the line carries no profile fit to scan.
+    """
+    from .spectrum_grid import SpectrumGrid
+
+    if len(line.cog_specs) < 2 or not (np.isfinite(line.vshift) and np.isfinite(line.vdop)):
+        return (), ()
+    offsets = sorted(line.cog_specs)
+    grid = SpectrumGrid([line_synthesis(line, line.cog_specs[a]) for a in offsets],
+                        a=list(offsets))
+    observed = target.crop(xmin=line.fit_window[0], xmax=line.fit_window[1])
+    flux = observed.values[1]
+    scale = _chi2_scale(flux.size, snr)
+    crop = {"vshift": float(line.vshift), "vdop": float(line.vdop),
+            **_fit_crop(line, observed)}
+    scan = np.linspace(offsets[0], offsets[-1], points)
+    if np.isfinite(line.a) and offsets[0] <= line.a <= offsets[-1]:
+        scan = np.unique(np.append(scan, float(line.a)))
+    chi2 = [float(np.sum((flux - grid.crop(newx=observed.xdata, a=float(a),
+                                           **crop).values[1]) ** 2) * scale)
+            for a in scan]
+    return tuple(float(a) for a in scan), tuple(chi2)
+
+
+def ew_window(line, profile):
+    """The wavelength span ``line``'s equivalent width covers, or None when it has no end.
+
+    An integrating profile (``"trapz"``, ``"pchip"``) measures the flux inside the fit
+    window and nothing beyond it, so that window is the area. A fitted analytic profile
+    integrates its own wings without limit, and no finite span holds all of that area —
+    a Voigt's damping wings least of all. None says so, and leaves a caller drawing the
+    area to show as much of it as it has room for.
+    """
+    if not get_profile_class(profile).fitted or not np.all(np.isfinite(line.fit_window)):
+        return line.fit_window
+    return None
+
+
 def _fit_line_profile(ln, offsets, specs, target, *, guess):
     """Fit ``ln``'s abundance, ``vshift`` and ``vdop`` to ``target`` inside its fit window,
     interpolating its rungs ``specs`` at ``offsets`` along the abundance axis. A fixed local
-    continuum (``renorm``) multiplies the model. Sets ``a``, ``vshift`` and ``vdop``;
-    returns ``(grid, best)``."""
+    continuum (``renorm``) multiplies the model. Sets ``a``, ``vshift``, ``vdop`` and the
+    fit's own residuals (:func:`_record_residuals`); returns ``(grid, best)``."""
     from .spectrum_grid import SpectrumGrid
 
     grid = SpectrumGrid(specs, a=list(offsets))
@@ -1179,6 +1282,7 @@ def _fit_line_profile(ln, offsets, specs, target, *, guess):
         xtol={"a": 0.01, "vshift": 0.1, "vdop": 0.1})
     ln.a = float(best["a"])
     ln.vshift, ln.vdop = float(best["vshift"]), float(best["vdop"])
+    _record_residuals(ln, grid, observed)
     return grid, best
 
 
@@ -1580,23 +1684,12 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
             ln.flags, ln.include = tuple(dict.fromkeys(ln.flags + ("blended",))), False
 
 
-def _check_cog_request(request):
-    from .departures import DepartureGrid, Departures
-    from .synthesis.inputs import Snapshot
-    if isinstance(request.departures, (Departures, DepartureGrid)):
-        raise ValueError("A curve of growth needs a departure solve per abundance rung; "
-                         "attach departures.request(...) instead of solved departures.")
-    if isinstance(request.atmosphere, Snapshot):
-        raise ValueError("Curve-of-growth fitting runs on 1D atmospheres and grids.")
-
-
 def fit_lines_cog(context, *, limit, max_rounds, profile, report=None):
     """Adaptive curve-of-growth abundances of the included lines of ``context``, in place.
 
     Each line's ``a`` is its [X/Fe]; the rungs are [X/Fe] offsets from the element's
     abundance in the request's composition. Returns whether every line was bracketed.
     """
-    _check_cog_request(context.request)
     lines = [ln for ln in context.lines if ln.include]
     if not lines:
         return True
@@ -1670,7 +1763,8 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     ``background_lines=False`` the rungs synthesise the element's transitions alone; the
     screens always compare against every species. Departures requested on the request
     (``departures.request``) make every rung an NLTE solve of its own; solved departures
-    are read back by the profile fit's rungs and screens.
+    are read back by the rungs and screens of either method, one solve shared by every
+    rung, which is the approximation a 3D or NLTE run on fixed departures accepts.
 
     Returns a completed :class:`AbundanceResult` in [X/Fe] whose ``request`` and ``target``
     record the inputs; ``request.update(abundances=result)`` carries the fitted abundance on.
@@ -1704,8 +1798,6 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     result.vmic = float("nan") if request.star.vmic is None else request.star.vmic
     report(result)
 
-    if method == "cog":
-        _check_cog_request(request)
     context = _LatticeContext(request, result.lines, element,
                               background_lines=background_lines, limit=limit,
                               cancel_token=cancel_token)
@@ -1923,6 +2015,7 @@ def refit_line_profile(line, target, profile):
     grid, best = _fit_line_profile(line, offsets, specs, target, guess=guess)
     if not lo + 1e-3 < line.a < hi - 1e-3:
         line.a = line.sigma_a = line.drewda = float("nan")
+        line.ssr, line.n_fit = float("nan"), 0
         line.fit_spec = None
         line.flags += ("out_of_range",)
         return
@@ -1945,6 +2038,7 @@ def refresh_line_cog(line, profile):
     line.a_grid, line.ew_grid = tuple(offsets), tuple(ews)
     if not line.ew > 0:
         line.a = line.sigma_a = line.drewda = float("nan")
+        line.ssr, line.n_fit = float("nan"), 0
         line.fit_spec = None
         line.flags += ("out_of_range",)
         return

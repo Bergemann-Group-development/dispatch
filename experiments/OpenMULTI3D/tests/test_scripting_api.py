@@ -340,6 +340,109 @@ def test_profile_fit_reads_abundance_and_gradient_off_the_lattice(config, monkey
     assert np.isfinite(ln.sigma_a) and ln.sigma_a > 0
 
 
+def _profile_fit(config, monkeypatch, target):
+    """A profile fit of one line against ``target``, on rungs of the same Gaussian shape."""
+    from tumult.linemask import LineMask, LineMaskSet
+    monkeypatch.setattr(SynthRequest, "check", lambda self: self)
+    lines = [_measured(0.37)]
+    lines[0].fwhm = 0.19
+    monkeypatch.setattr(ab, "measure_lines", lambda mset, spec, **kw: ab.AbundanceResult(
+        element="Mg", symbol="Mg", summary={}, profile="gauss", lines=lines))
+
+    def synthesize(self, values, *, lte=False, rungs=None, probes=()):
+        out = []
+        for value in values:
+            a = float(dict(t.split("=") for t in value["abundances"].split())["Mg"])
+            spec = _line(a) if value.get("exclude_elements") != "Mg" else _line(-9.0)
+            out.append([spec] * len(self.windows))
+        return out
+
+    monkeypatch.setattr(ab._LatticeContext, "synthesize", synthesize)
+    request = SynthRequest(config=config, atmosphere="one.mod", star=STAR)
+    masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
+    return ab.fit(request, target=target, line_mask=masks, method="profile",
+                  profile="gauss", snr=300).lines[0]
+
+
+def test_profile_fit_keeps_its_own_objective(config, monkeypatch):
+    """The fit reports the residuals it actually minimised, over the pixels it saw, and
+    they measure the fit: a shape the rungs cannot reach leaves far more behind than one
+    they can."""
+    target = _line(0.37)
+    matched = _profile_fit(config, monkeypatch, target)
+    inside = ((target.xdata.value >= matched.fit_window[0])
+              & (target.xdata.value <= matched.fit_window[1]))
+    assert matched.n_fit == int(inside.sum()) > 3
+    # the rungs differ from this target only in abundance, which the fit solves for: what
+    # is left is the lattice interpolation and the 0.01 dex / 0.1 km/s convergence
+    depth = 0.25 * 10 ** (0.7 * 0.37)
+    assert np.sqrt(matched.ssr / matched.n_fit) < 0.01 * depth
+
+    # a blended target: no abundance, shift or broadening of a single Gaussian reaches it
+    blended = Spectrum(target.xdata.value,
+                       target.values[1] - 0.15 * np.exp(
+                           -0.5 * ((target.xdata.value - LAM0 - 0.25) / 0.06) ** 2),
+                       xunit=u.angstrom)
+    poor = _profile_fit(config, monkeypatch, blended)
+    assert poor.n_fit == matched.n_fit
+    assert poor.ssr > 20 * matched.ssr
+
+
+def test_chi2_scan_bottoms_out_at_the_reported_fit(config, monkeypatch):
+    """The scan is the fit's own objective, so its minimum is the solution the line carries
+    and the value there is the chi-square the table reports."""
+    target = _line(0.37)
+    ln = _profile_fit(config, monkeypatch, target)
+    a, chi2 = ab.chi2_profile(ln, target, 300)
+    assert len(a) == len(chi2) > 10 and ln.a in a
+    assert chi2[a.index(ln.a)] == pytest.approx(ab.reduced_chi2(ln, 300))
+    assert a[int(np.argmin(chi2))] == pytest.approx(ln.a, abs=1e-9)
+    # nothing to scan without cached rungs
+    ln.cog_specs = {}
+    assert ab.chi2_profile(ln, target, 300) == ((), ())
+
+
+def test_ew_area_follows_how_the_width_was_measured():
+    """A direct integration covers exactly the window it integrated; a fitted profile's
+    width counts wings that never stop, so no window is returned for it."""
+    line = _measured(0.37)
+    assert ab.ew_window(line, "trapz") == line.fit_window
+    assert ab.ew_window(line, "pchip") == line.fit_window
+    assert ab.ew_window(line, "gauss") is None
+    assert ab.ew_window(line, "voigt") is None
+
+
+def test_reduced_chi2_scales_with_the_assumed_noise():
+    """The fit is unweighted; the SNR enters only when the objective is read as a chi2."""
+    line = ab.LineResult(lam0=LAM0, ion="Mg I", e_low=0.0, loggf=0.0, ew=50.0, ew_err=0.1,
+                         mask=ab.LineMask(lam0=LAM0, lmin=LAM0 - 0.6, lmax=LAM0 + 0.6,
+                                          smin=LAM0 - 1.5, smax=LAM0 + 1.5))
+    line.ssr, line.n_fit = 0.02, 53
+    dof = 53 - ab.PROFILE_FIT_PARAMS
+    assert ab.reduced_chi2(line, 100) == pytest.approx(0.02 * 100 ** 2 / dof)
+    assert ab.reduced_chi2(line, 200) == pytest.approx(4 * ab.reduced_chi2(line, 100))
+    for snr in (None, 0, -1):
+        assert np.isnan(ab.reduced_chi2(line, snr))
+    line.n_fit = ab.PROFILE_FIT_PARAMS       # no degrees of freedom left
+    assert np.isnan(ab.reduced_chi2(line, 100))
+
+
+def test_curve_of_growth_accepts_a_snapshot(tmp_path, config, monkeypatch):
+    """A curve of growth runs on whatever atmosphere the request carries: the rungs are the
+    same lattice the profile fit uses, and a 3D snapshot goes through the direct path."""
+    from tumult.linemask import LineMask, LineMaskSet
+    from tumult.synthesis.inputs import Snapshot
+    variants = _stub_fit(monkeypatch, 0.52)
+    request = SynthRequest(config=config, atmosphere=Snapshot("cube.dat", "Stagger", (4, 4, 8)),
+                           star=STAR, abundances={"Mg": 0.3})
+    masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
+    result = ab.fit(request, target=_line(0.52), line_mask=masks, method="cog",
+                    profile="trapz", background_lines=False, snr=300)
+    assert result.method == "cog" and result.termination == "completed"
+    assert result.lines[0].a == pytest.approx(0.52, abs=0.01)
+    assert variants
+
+
 def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, atom,
                                                             monkeypatch):
     from tumult.line_quadrature import PreparedLineQuadrature

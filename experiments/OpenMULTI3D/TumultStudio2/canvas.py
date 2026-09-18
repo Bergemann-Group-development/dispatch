@@ -194,6 +194,7 @@ class SpectrumCanvas:
 
         # the fitted-profile integrated area for the jumped line, hatched exactly like the EW
         # tool so the EW measurement reviewed in step 1 reads the same on both surfaces
+        self._abund_hatch = None     # (func, window or None, nodes) while one is armed
         self.abund_area_source = ColumnDataSource(dict(x=[], y1=[], y2=[]))
         self.main.varea(x="x", y1="y1", y2="y2", source=self.abund_area_source,
                         fill_color=ACCENT, fill_alpha=0.10,
@@ -688,16 +689,37 @@ class SpectrumCanvas:
         self.abund_overlay_line.visible = False
 
     def set_abund_hatch(self, func, window, nodes=None):
-        """Hatch the fitted-profile integrated area for the jumped diagnostic line.
+        """Hatch the integrated area of the jumped diagnostic line's measured EW.
 
-        ``func`` is the fitted profile ``f(λ_Å) -> normalised flux`` (from ``measure_line``);
-        the area between it and its continuum over ``window`` (Å) is filled and hatched.
-        Local ``nodes`` multiply both the profile and its continuum into the prepared
-        target's coordinates. ``func`` None / bad window clears it.
+        ``func`` is the fitted profile ``f(λ_Å) -> normalised flux`` (from ``measure_line``)
+        and the area between it and its continuum is filled and hatched. ``window`` (Å) is
+        the span it covers, or ``None`` for a width whose wings run on without limit
+        (:func:`tumult.abundance.ew_window`) — that is drawn right across the view, and
+        redrawn as the view moves. Local ``nodes`` multiply both the profile and its
+        continuum into the prepared target's coordinates. No ``func`` clears it.
         """
-        if func is None or window is None or not np.isfinite(window[0]):
+        if func is None or (window is not None and not np.isfinite(window[0])):
             return self.clear_abund_hatch()
+        self._abund_hatch = (func, window, nodes)
+        self._paint_abund_hatch()
+
+    def _paint_abund_hatch(self):
+        """Sample the armed hatch over its span, or over the visible range when it has none.
+
+        Panning and zooming therefore reveal more of an unbounded profile's wings rather
+        than moving a box around: the hatch says what area the EW counted, and for a fitted
+        profile that is everything under the model.
+        """
+        armed = self._abund_hatch
+        if armed is None:
+            return
+        func, window, nodes = armed
+        if window is None:
+            window = to_range(self.main.x_range.start, self.main.x_range.end,
+                              self.xunit, u.AA)
         try:
+            if not all(v is not None and np.isfinite(v) for v in window):
+                return self.clear_abund_hatch()
             xg = np.linspace(float(window[0]), float(window[1]), 512)
             cont = (continuum.model_continuum(nodes, xg) if nodes is not None
                     else np.ones_like(xg))
@@ -709,6 +731,7 @@ class SpectrumCanvas:
         self.abund_area_line.visible = True
 
     def clear_abund_hatch(self):
+        self._abund_hatch = None
         self.abund_area_source.data = dict(x=[], y1=[], y2=[])
         self.abund_area_line.visible = False
 
@@ -966,6 +989,7 @@ class SpectrumCanvas:
     def _refresh_main(self):
         for obj in self._main_drawn():
             self.refresh_object(obj)
+        self._paint_abund_hatch()   # an unbounded EW area is drawn to the view's edges
         self._notify_view()
 
     def _main_drawn(self):

@@ -54,17 +54,16 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from bokeh.models import BoxAnnotation, ColumnDataSource, HoverTool, Range1d, Span
-from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource
 
 from tumult import abundance as ab
-from tumult.utils import pchip_mono
 import naming
 import store
 from abundwizard import PROFILES, AbundanceWizard
 from synthprefs import atmosphere_grid
 from tumult.departures import DepartureRequest
-from canvas import ACCENT, SYNTH_FIT, style_dark
+from canvas import ACCENT
+from fitpanel import CogPanel
 from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
@@ -79,7 +78,6 @@ import astropy.units as u
 CORR_PROFILES = ["trapz"] + PROFILES
 DEFAULTS = {"profile": "trapz", "ew_min": 5.0, "limit": 1.0, "line_grid": True,
             "linelist": False}
-COG_CURVE_POINTS = 80        # samples of the PCHIP interpolant drawn through the rungs
 REF_COLOR = "#7f8a99"        # the reference spectrum's own line: muted, so the ACCENT-drawn
                               # fit overlays and windows still read as what the tool is about
 
@@ -132,99 +130,11 @@ class AbundCorrTool(AbundanceWizard):
         # reference EW's fit-covariance error propagates through the CoG slope
         self._build_figs(ColumnDataSource(self.empty_points()))
         self._add_whiskers(self.src, ACCENT)
-        self._build_cog_fig()
-
-    # --- the CoG-inversion panel (Lines step, beside the spectrum) ------------------------
-    def _build_cog_fig(self):
-        """The selected line's curve of growth in the plane the inversion works in,
-        reduced EW against ΔA: the NLTE rungs, the PCHIP interpolant the inversion reads
-        (:func:`tumult.abundance.cog_invert`), the measured reference REW with its ±1σ
-        band and the inverted ΔA with its propagated ±σ band."""
-        fig = figure(sizing_mode="stretch_both", output_backend="webgl",
-                     tools="pan,wheel_zoom,box_zoom,reset", active_scroll="wheel_zoom",
-                     min_border_left=62, min_border_bottom=42,
-                     x_range=Range1d(-1.0, 1.0), y_range=Range1d(0.0, 1.0))
-        style_dark(fig)
-        fig.title.text_color = "#cfd2d6"
-        fig.title.text_font_size = "11px"
-        fig.name = "corr_cog"
-        fig.xaxis.axis_label = "ΔA [dex]"
-        fig.yaxis.axis_label = "Reduced EW  log(W/λ)"
-        self.cog_curve = ColumnDataSource(dict(a=[], rew=[]))
-        self.cog_rungs = ColumnDataSource(dict(a=[], rew=[], ew=[]))
-        fig.line("a", "rew", source=self.cog_curve, line_color=SYNTH_FIT, line_width=1.5)
-        rungs = fig.scatter("a", "rew", source=self.cog_rungs, size=8, fill_color=SYNTH_FIT,
-                            line_color="#fff", line_width=1)
-        fig.add_tools(HoverTool(renderers=[rungs],
-                                tooltips=[("ΔA", "@a{+0.00} dex"), ("REW", "@rew{0.000}"),
-                                          ("EW", "@ew{0.0} mÅ")]))
-        # the measurement (horizontal) and its solution (vertical), each with a ±1σ band
-        self.cog_ew_band = BoxAnnotation(fill_color=ACCENT, fill_alpha=0.12, visible=False)
-        self.cog_ew_line = Span(location=0, dimension="width", line_color=ACCENT,
-                                line_width=1.2, line_dash="dashed", visible=False)
-        self.cog_a_band = BoxAnnotation(fill_color="#e05c5c", fill_alpha=0.12, visible=False)
-        self.cog_a_line = Span(location=0, dimension="height", line_color="#e05c5c",
-                               line_width=1.2, line_dash="dashed", visible=False)
-        for layout in (self.cog_ew_band, self.cog_ew_line, self.cog_a_band,
-                       self.cog_a_line):
-            fig.add_layout(layout)
-        self.cog_fig = fig
-        return fig
-
-    def _render_cog(self, ln):
-        """Draw ``ln``'s curve of growth, or clear the panel when the line has none (the
-        reference stage has not been inverted yet, or the line was dropped before the
-        rungs were measured)."""
-        a_grid = np.asarray(ln.a_grid, dtype=float)
-        ew_grid = np.asarray(ln.ew_grid, dtype=float)
-        if a_grid.size < 2 or a_grid.size != ew_grid.size:
-            self._clear_cog()
-            return
-        if not (np.all(ew_grid > 0) and ln.ew > 0):
-            self._clear_cog()          # a non-positive width has no reduced EW
-            return
-        rew_grid = np.array([reduced_ew(w, ln.lam0) for w in ew_grid])
-        self.cog_rungs.data = dict(a=a_grid.tolist(), rew=rew_grid.tolist(),
-                                   ew=ew_grid.tolist())
-        # the inversion reads A(REW) off a PCHIP interpolant through the rungs sorted by
-        # REW (:func:`tumult.abundance.cog_invert`); the same interpolant is drawn, sampled
-        # in REW, so the curve shows exactly what the solution was read from
-        order = np.argsort(rew_grid)
-        x, a = rew_grid[order], a_grid[order]
-        curve_rew = np.linspace(x[0], x[-1], COG_CURVE_POINTS)
-        curve_a = pchip_mono(x, a)(curve_rew)
-        self.cog_curve.data = dict(a=np.asarray(curve_a).tolist(), rew=curve_rew.tolist())
-        ys = list(rew_grid)
-        # the measured REW and its error, σ_REW = σ_W / (W ln10)
-        rew = reduced_ew(ln.ew, ln.lam0)
-        err = float(ln.ew_err) / (ln.ew * np.log(10.0)) if np.isfinite(ln.ew_err) else 0.0
-        self.cog_ew_line.visible = self.cog_ew_band.visible = True
-        self.cog_ew_line.location = rew
-        self.cog_ew_band.bottom, self.cog_ew_band.top = rew - err, rew + err
-        ys += [rew - err, rew + err]
-        a_ok = np.isfinite(ln.a)
-        self.cog_a_line.visible = self.cog_a_band.visible = bool(a_ok)
-        if a_ok:
-            sig = float(ln.sigma_a) if np.isfinite(ln.sigma_a) else 0.0
-            self.cog_a_line.location = float(ln.a)
-            self.cog_a_band.left, self.cog_a_band.right = ln.a - sig, ln.a + sig
-        title = f"{ln.ion} {ln.lam0:.3f} Å"
-        if a_ok:
-            title += f"   ΔA = {self._fmt(ln.a, ln.sigma_a, plus=True)}"
-        self.cog_fig.title.text = title
-        self._crop_scatter(list(a_grid), ys, self.cog_fig)
-
-    def _clear_cog(self):
-        self.cog_rungs.data = dict(a=[], rew=[], ew=[])
-        self.cog_curve.data = dict(a=[], rew=[])
-        self.cog_fig.title.text = ""
-        for layout in (self.cog_ew_band, self.cog_ew_line, self.cog_a_band,
-                       self.cog_a_line):
-            layout.visible = False
+        self.cog = CogPanel("corr_cog", crop=self._crop_scatter, fmt=self._fmt)
 
     def _clear_line_decor(self):
         super()._clear_line_decor()
-        self._clear_cog()
+        self.cog.clear()
 
     def refresh(self):
         pass
@@ -347,7 +257,7 @@ class AbundCorrTool(AbundanceWizard):
         else:
             self.canvas.clear_abund_hatch()
         self.canvas.highlight_windows([ln.mask], active=0, editable=True)
-        self._render_cog(ln)
+        self.cog.render(ln)
 
     def _on_fit_drag(self, x0, x1):
         """An edge of the accented fit window was dragged (display units): re-read the

@@ -2054,7 +2054,8 @@ def build():
     # root is in place, which is the difference between milliseconds and seconds here.
     with doc.models.freeze():
         for root in (canvas.nav, canvas.main, filtertool.fig,
-                     *abundancetool.figs, *abundcorrtool.figs, abundcorrtool.cog_fig,
+                     *abundancetool.figs, abundancetool.cog.fig, abundancetool.chi2.fig,
+                     *abundcorrtool.figs, abundcorrtool.cog.fig,
                      *ionbaltool.figs, picker.layout,
                      *masktool.roots,
                      synth_modal.atoms.picker.layout, abund_atoms.picker.layout,

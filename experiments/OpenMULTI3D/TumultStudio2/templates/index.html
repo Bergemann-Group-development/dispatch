@@ -104,6 +104,11 @@
         <!-- the correction view's Lines step: the selected line's CoG inversion beside the
              reference spectrum (#main.corr-mode.corr-step-1) -->
         <div id="corr-cog">{{ embed(roots.corr_cog) }}</div>
+        <!-- where the abundance view's jumped line got its abundance, beside the target
+             spectrum: the CoG inversion for a curve-of-growth run, the chi-square scan for
+             a profile fit. One or the other, never both (abundancetool._render_selected) -->
+        <div id="abund-cog">{{ embed(roots.abund_cog) }}</div>
+        <div id="abund-chi2">{{ embed(roots.abund_chi2) }}</div>
       </div>
       <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
            version of the Sessions modal, plus quick ways to get a first spectrum -->
