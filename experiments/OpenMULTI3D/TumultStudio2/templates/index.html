@@ -78,7 +78,7 @@
           <!-- acts on the object focused in the left sidebar; items rendered by editmenu.py -->
           <div class="menu-wrap">
             <button id="edit-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-object-menu">Edit ▾</button>
-            <div id="edit-object-menu" class="menu" role="menu" tabindex="-1"></div>
+            <div id="edit-object-menu" class="menu" role="menu" tabindex="-1">{{ edit_menu_html|safe }}</div>
           </div>
         </div>
 

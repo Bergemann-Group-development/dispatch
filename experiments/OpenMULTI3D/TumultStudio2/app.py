@@ -2083,6 +2083,7 @@ def build():
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),
         edit_html=inspector.edit_html(),
+        edit_menu_html=edit_menu.html(),
         style_html=inspector.style_form.html(),
         settings_html=settings.html(),
         synth_run_html=synth_modal.run_form.html(),
