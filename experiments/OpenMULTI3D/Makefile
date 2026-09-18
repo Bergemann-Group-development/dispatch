@@ -69,17 +69,19 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
 # object into the link automatically (hence the explicit prerequisite above), and its
 # compile order relative to its ancestor needs stating explicitly too.
 rt_solvers_mod.o: rt_patch_mod.o
-# The standalone HOP package (libhop.so for tumult.hop and the hop_prune.x line-list
-# pruner) is built in its own directory with -DHOP_STANDALONE, so its objects never mix
-# with the framework-enabled ones above.  Building it here keeps both executables part
-# of the normal build; the standalone Makefile is gfortran-only, so other compilers
-# skip it (make hop_prune.x still works wherever gfortran is on the PATH).
+# The standalone HOP package is built in its own directory with -DHOP_STANDALONE, so its
+# objects never mix with the framework-enabled ones above.  Its default target builds
+# everything the Python layer loads: libhop.so (tumult.hop), the libhop.h bindings it is
+# read through, and the hop_prune.x line-list pruner.  Building all of it here keeps a
+# plain `make` sufficient for every entry point -- a build that produced only one of them
+# fails at run time in the other.  The standalone Makefile is gfortran-only, so other
+# compilers skip it; `make hop_standalone` works wherever gfortran is on the PATH.
 ifeq ($(COMPILER), gfortran)
-default: hop_prune.x
+default: hop_standalone
 endif
-hop_prune.x:
-	$(MAKE) -C HOP/standalone hop_prune.x
+hop_standalone:
+	$(MAKE) -C HOP/standalone
 clean:: clean_standalone
 clean_standalone:
 	$(MAKE) -C HOP/standalone clean
-.PHONY: hop_prune.x clean_standalone
+.PHONY: hop_standalone clean_standalone
