@@ -3,9 +3,6 @@
    Dark, compact "pro-tool" aesthetic; one blue accent (see STYLE_REFERENCE.md).
    Loaded first: every feature sheet builds on these rules. */
 
-/* TumultStudio2 shell — derived from STYLE_REFERENCE.md
-   Dark, compact "pro-tool" aesthetic; one blue accent. */
-
 :root {
   --sidebar-w: 220px;             /* legacy default; per-side vars below are the live ones */
   --sidebar-left-w: 220px;        /* fixed width */

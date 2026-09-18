@@ -17,15 +17,25 @@ import sys
 # Bokeh runs this hook file as a script, not as a package module, so the package's
 # parent - the project directory, which also holds `tumult` - has to be importable.
 # This and `main.py` are the only path bootstraps in the app.
+#
+# The bootstrap is in effect only while bokeh execs this file: CodeRunner.run saves
+# `sys.path`, execs the source, then restores the saved list (undoing this insert)
+# before the server ever calls the hooks below. The hooks therefore cannot import
+# anything from the project directory themselves. Everything they need is imported
+# here, at module level, so it is in `sys.modules` by the time they run; later
+# submodule imports of `tumult` / `TumultStudio` resolve through the package
+# `__path__`, which is unaffected by the restore. Keep these imports at module level.
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from tumult.synthesis import daemon  # noqa: E402
+from tumult.synthesis.runtime import shutdown  # noqa: E402
+from tumult.synthesis.workflows import output_root  # noqa: E402
+from TumultStudio.preferences.synthprefs import load_prefs  # noqa: E402
+
 
 def on_server_loaded(server_context):
-    from tumult.synthesis import daemon
-    from tumult.synthesis.workflows import output_root
-    from TumultStudio.preferences.synthprefs import load_prefs
     prefs = load_prefs()
     connection = daemon.connect_server(roots=[output_root(prefs)],
                                        max_threads=int(prefs.get("max_threads") or 0))
@@ -35,8 +45,6 @@ def on_server_loaded(server_context):
 
 
 def on_server_unloaded(server_context):
-    from tumult.synthesis import daemon
-    from tumult.synthesis.runtime import shutdown
     daemon.disconnect()
     report = shutdown()
     logging.getLogger(__name__).info(

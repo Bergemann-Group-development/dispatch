@@ -115,7 +115,11 @@ class PreferencesPage:
     # --- doc wiring -------------------------------------------------------
     @property
     def models(self):
-        return [self.cache_bridge, *self.grids.models,
+        """The page's own hidden form models. Its bridges (``cache_bridge``, the cache
+        action channel, the picker classes) are created through ``ctx.bridges``, which
+        already collects them for the document; listing one here too would place the
+        same model twice in the ``bridges`` column (bokeh E-1027)."""
+        return [*self.grids.models,
                 *(m for form in self.pref_forms.values() for m in form.models)]
 
     # --- registered grids -------------------------------------------------
