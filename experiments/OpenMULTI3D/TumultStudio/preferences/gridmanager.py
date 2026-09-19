@@ -138,7 +138,7 @@ class GridManager:
     def _catalog_records(self):
         out = []
         for spec in grid_catalog.CATALOG.values():
-            if grid_catalog.models_on_disk(spec, self.storage):
+            if grid_catalog.has_models_on_disk(spec, self.storage):
                 out.append(grid_catalog.grid_record(
                     spec, grid_catalog.grid_folder(spec, self.storage), self.snapshots))
         return out
@@ -235,7 +235,7 @@ class GridManager:
                     f'title="Models"><i class="ti ti-list"></i></button>' if spec.snapshots
                     else "")
             if jobs:
-                buttons = _ring(spec.id, _percent(jobs))
+                buttons = progress_ring(spec.id, jobs_percent(jobs))
             else:
                 buttons = ""
                 if not self._complete(spec.id, on_disk):
@@ -315,7 +315,7 @@ class GridManager:
             name = html.escape(m.name)
             job = next((j for j in jobs if m.name in j), None)
             if job is not None:
-                buttons = _ring(f"{gid} {m.name}", job.percent(m.name))
+                buttons = progress_ring(f"{gid} {m.name}", job.percent(m.name))
             else:
                 buttons = ""
                 if held[m.name] < self._wanted(m):
@@ -627,7 +627,7 @@ class GridManager:
 
     def _show_progress(self, gid):
         jobs = self._running.get(gid, [])
-        rings = {gid: _percent(jobs)}
+        rings = {gid: jobs_percent(jobs)}
         for job in jobs:
             rings.update(job.rings(gid))
         self.progress_bridge.value = json.dumps(rings)
@@ -644,13 +644,13 @@ class GridManager:
         self.render()
 
 
-def _percent(jobs):
+def jobs_percent(jobs):
     """The percentage of the bytes of ``jobs`` together."""
     total = sum(j.plan.total_bytes for j in jobs)
     return 100 * sum(j.done for j in jobs) / total if total else 0
 
 
-def _ring(key, percent):
+def progress_ring(key, percent):
     """A progress ring in a button's place, filled to ``percent`` by ``--p``."""
     return (f'<span class="grid-progress" data-key="{html.escape(key)}" '
             f'style="--p:{percent:.0f}" title="Downloading, {percent:.0f}%"></span>')

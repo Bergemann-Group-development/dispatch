@@ -309,6 +309,7 @@ def grid_bounds(grid, atmos_file=None):
 FD_STEPS = {"teff": 100.0, "logg": 0.1, "feh": 0.1, "vmic": 0.2}
 LM_LAMBDA = 1e-2
 COUPLED_MAX_ITER = 12
+EXPECTED_ITERATIONS = 4   # iterations a balance is expected to take (progress reports count on it)
 PROBE_HALVINGS = 4
 
 
@@ -530,6 +531,10 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     different nodes. ``free`` maps parameters to whether they are fitted
     (all by default) and ``tols`` overrides the convergence tolerances.
 
+    ``progress(result)`` is called at every step (the measurement, the screens, each
+    solver iteration) with the result as it stands and ``result.progress`` saying where
+    the solve is (:func:`~tumult.measured.report_progress`).
+
     Returns a :class:`~tumult.measurement.BalanceResult` with the diagnostics, uncertainties,
     Jacobian, history, ``converged`` and ``termination``; ``request.update(star=result)``
     continues from the solved parameters.
@@ -537,6 +542,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     from copy import copy, deepcopy
     from . import abundance as ab
     from .departures import DepartureGrid, Departures
+    from .measured import end_progress, expected_total, report_progress
     from .measurement import (BalanceResult, STAGE_MEASURED, STAGE_SOLVED, lines_key,
                               mask_key)
     from .synthesis.api import NodeStore
@@ -575,11 +581,23 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.converged = False
     result.request, result.target = request, target_record
     result.cog_settings = {"background_lines": bool(background_lines), "limit": float(limit)}
+    # the coarse steps a caller watches: the screens (one synthesis), then the solver's
+    # iterations (a lattice fit each), of which a few are expected and ``max_iter`` are
+    # allowed. The measurement is seconds of Python and counts for nothing.
+    steps = ["Screening lines"]
+
+    def stage(name, done):
+        report_progress(result, name, done,
+                        expected_total(done, len(steps) + EXPECTED_ITERATIONS,
+                                       cap=len(steps) + int(max_iter)))
+        report(result)
+
     if mset is not None:
+        stage("Measuring windows", 0)
         measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
                               str(config.resolve(config.linelist)) if config.linelist else None,
                               atmosphere=quadrature_atmosphere(request))
-    report(result)
+    stage(steps[0], 0)
 
     solar = abund_table(config.to_prefs())
     solar_x = solar.get(element)
@@ -597,13 +615,13 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
 
     def context_at(star, lines, probes=()):
         return ab._LatticeContext(request.update(star=star), lines, element,
-                                  background_lines=background_lines, limit=limit,
+                                  background_lines=background_lines,
                                   cancel_token=cancel_token, store=store, probes=probes)
 
     ab.screen_lines(context_at(request.star, result.lines), blend_max=blend_max,
                     weak_frac=weak_frac)
     screened = deepcopy(result.lines)
-    report(result)
+    stage("Iteration 1", len(steps))
 
     def at_probe(lines, probe, found):
         """The diagnostics with every solved line at its probe abundance and error (the
@@ -702,7 +720,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
 
     def on_evaluation(history):
         result.history = [dict(item) for item in history]
-        report(result)
+        stage(f"Iteration {len(history) + 1}", len(steps) + len(history))
 
     try:
         outcome = solve_coupled(
@@ -723,5 +741,6 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.solved_key = lines_key(result.lines)
     result.stage = STAGE_SOLVED
     result.name = result.label()
+    end_progress(result)
     report(result)
     return result

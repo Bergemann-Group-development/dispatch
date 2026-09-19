@@ -284,9 +284,8 @@ class HopEOS:
     @staticmethod
     def _linelist_files(files):
         """The line-list argument as a tuple of file paths: a file, a list of
-        files, or a directory (read in sorted order -- dispatch reads
-        linelist_folder in the order os%get_filenames returns, so ties between
-        identical lines may end up ordered differently)."""
+        files, or a directory (its files in sorted order, as a synthesis run
+        names them)."""
         if isinstance(files, (str, Path)):
             p = Path(files)
             files = sorted(f for f in p.iterdir() if f.is_file()) if p.is_dir() else [p]

@@ -9,6 +9,8 @@ One page of this dialog per owner:
   :class:`~..ui.filepicker.FilePicker` and a warning marker for a file that is not there.
 * **Atmosphere grids** is :class:`gridmanager.GridManager`, the app-global registry every
   calculation setup selects a grid from; this page constructs it and passes it on.
+* **Line lists** is :class:`linelistmanager.LineListManager`, which downloads the
+  published master line lists into the folder the *Line list* preference names.
 * **Reference stars** is :class:`refstarspage.RefStarsPage`, which the document owns
   directly (it installs its catalogue into :mod:`tumult.refstars` before anything lists it).
 * **Cache** lists the runs :mod:`tumult.synthesis.workflows` has cached, with a delete
@@ -31,6 +33,7 @@ from ..ui.filepicker import FilePicker
 from ..ui.htmlbridge import pulse, toggle
 from ..workspace import store
 from .gridmanager import GridManager
+from .linelistmanager import LineListManager
 from .synthprefs import (PATH_PICKERS, PREF_PAGES, REPO_DIR, SELECT_OPTIONS, load_prefs,
                          missing_prefs)
 
@@ -45,7 +48,8 @@ def _human_size(n):
 class PreferencesPage:
     """Owns the preference forms, their file pickers, the grid registry and the cache page.
 
-    ``ctx`` supplies the bridge set, the footer and the IO pool the grid page downloads on.
+    ``ctx`` supplies the bridge set, the footer and the IO pool the grid and line-list
+    pages download on.
     ``on_warn`` is pushed True/False as configured files go missing or are found again.
     ``on_inputs_change`` (set by the document) fires when a preference the rest of the app
     reads from disk changes; ``on_grids_change`` when the registry is edited.
@@ -110,6 +114,10 @@ class PreferencesPage:
                                  on_change=self._on_grids_changed,
                                  default_storage=cwd / "input" / "atmos", ctx=ctx)
 
+        # line lists (Preferences → Line lists): downloads into the configured line-list
+        # folder, after which the master list is re-read
+        self.linelists = LineListManager(on_change=self._on_linelists_changed, ctx=ctx)
+
         self._refresh_warnings(push=False)  # seed field.warn so the initial html() is correct
 
     # --- doc wiring -------------------------------------------------------
@@ -119,7 +127,7 @@ class PreferencesPage:
         action channel, the picker classes) are created through ``ctx.bridges``, which
         already collects them for the document; listing one here too would place the
         same model twice in the ``bridges`` column (bokeh E-1027)."""
-        return [*self.grids.models,
+        return [*self.grids.models, *self.linelists.models,
                 *(m for form in self.pref_forms.values() for m in form.models)]
 
     # --- registered grids -------------------------------------------------
@@ -129,6 +137,14 @@ class PreferencesPage:
         reference grid follows)."""
         self._refresh_warnings(push=True)
         self.on_grids_change()
+
+    def _on_linelists_changed(self, folder):
+        """Files were added to or removed from ``folder``: forget its parsed master list
+        and tell the document, whose readers re-read the configured line list."""
+        from tumult import linelist
+        linelist.forget(folder)
+        self._refresh_warnings(push=True)
+        self.on_inputs_change()
 
     # --- preference values ------------------------------------------------
     def _save_pref(self, key, value):
@@ -143,6 +159,7 @@ class PreferencesPage:
                     picker.preset(str(prefs.get(other) or ""))
         if key in ("linelist", "dispatch_cwd"):
             self.on_inputs_change()
+            self.linelists.render()       # the destination follows these preferences
         if key == "max_threads":
             self._configure_daemon(prefs)
         toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")

@@ -27,6 +27,7 @@ import logging
 from threading import Lock
 import time
 
+from tumult.measured import carry_progress_floor, progress_fraction
 from tumult.synthesis.cancel import CancelToken, CancelledError
 
 QUEUED, RUNNING, CANCELLING = "queued", "running", "cancelling"
@@ -341,8 +342,12 @@ class _Outcome:
 
 def update_kept_name(result, snapshot):
     """Update ``result`` in place from a worker's ``snapshot`` of it, except its name: the
-    document names its objects (:mod:`naming`), a calculation does not rename them."""
+    document names its objects (:mod:`naming`), a calculation does not rename them. The
+    progress shown so far stays the floor of the snapshot's record, so the bar never
+    moves back when the snapshot's total grew or its run fraction starts afresh."""
+    shown = progress_fraction(result.progress) if getattr(result, "progress", None) else 0.0
     result.__dict__.update({k: v for k, v in snapshot.__dict__.items() if k != "name"})
+    carry_progress_floor(result, shown)
 
 
 class ResultJobs:
@@ -351,10 +356,12 @@ class ResultJobs:
     invalidating the submission cancels it through the Processes path
     (:meth:`JobTable.request_cancel`), so its record settles as cancelled."""
 
-    def __init__(self, ctx, find=None, render=None):
+    def __init__(self, ctx, find=None, render=None, render_progress=None):
         # ``find``/``render`` are only consulted for result-bound jobs; a job that
-        # produces a new object (``result=None``) needs neither.
+        # produces a new object (``result=None``) needs neither. ``render_progress``
+        # repaints only a result's progress indication (its ``progress["run"]``).
         self.ctx, self.find, self.render = ctx, find, render
+        self.render_progress = render_progress or render
         self.current = {}
         self.live = {}
 
@@ -498,9 +505,20 @@ class ResultJobs:
             if finished or not valid():
                 return
             if result is not None:
-                apply(snapshot)
+                apply(snapshot)          # a new step: its run fraction starts afresh
             elif on_progress is not None:
                 on_progress(snapshot)
+
+        def native(fraction):            # document thread; how far the running run is
+            if finished or not valid() or result is None or not result.progress:
+                return
+            shown = progress_fraction(result.progress)
+            if fraction is None:
+                result.progress.pop("run", None)
+            else:
+                result.progress["run"] = fraction
+            carry_progress_floor(result, shown)    # a run's estimate can slip; the bar not
+            self.render_progress(result)
 
         def stopped(status):
             nonlocal finished
@@ -511,6 +529,7 @@ class ResultJobs:
             release()
             if result is not None:
                 result.termination = status
+                result.progress = {}          # nothing works on it any more
                 if hasattr(result, "converged"):
                     result.converged = False
                 self.render(result)
@@ -536,7 +555,8 @@ class ResultJobs:
                 on_error(exc)
 
         job = self.ctx.submit_operation(name, operation, request, complete, kwargs=kwargs,
-                                        meta=meta, on_progress=progress, on_error=failed)
+                                        meta=meta, on_progress=progress, on_error=failed,
+                                        on_native=native if result is not None else None)
         if job is None:
             stopped("failed")            # refused at admission; the row keeps the reason
             return None

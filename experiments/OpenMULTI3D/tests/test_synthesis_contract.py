@@ -64,6 +64,24 @@ def test_preparation_cache_tracks_changed_inputs(tmp_path, monkeypatch):
     assert c.folder != a.folder and len(calls) == 2
 
 
+def test_run_settings_name_a_linelist_folders_files_explicitly(tmp_path):
+    """A line-list folder reaches dispatch as its sorted files, never as
+    ``linelist_folder``: dispatch lists a folder through a shell temp file in the shared
+    working directory, and the concurrent runs of one synthesis delete it from under each
+    other (``Cannot open file '.temp_files000'``)."""
+    from tumult.synthesis import workflows
+    folder = tmp_path / 'lists'
+    folder.mkdir()
+    (folder / 'Mg.txt').write_text("'Mg I'\n")
+    (folder / 'Fe.txt').write_text("'Fe I'\n")
+    (folder / '.ignored').write_text('metadata')
+    assert workflows._linelist_settings(folder) == {
+        'linelist_file': [str(folder / 'Fe.txt'), str(folder / 'Mg.txt')]}
+    assert workflows._linelist_settings(folder / 'Fe.txt') == {
+        'linelist_file': [str(folder / 'Fe.txt')]}
+    assert workflows._linelist_settings('') == {}
+
+
 def test_preparation_expands_a_linelist_folder_for_the_standalone_pruner(tmp_path,
                                                                         monkeypatch):
     from tumult import linestrength

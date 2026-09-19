@@ -287,12 +287,76 @@ def test_abundance_fit_owns_measurement_screens_and_result(tmp_path, config, mon
     assert "target" not in request.to_dict()
     # the composition reaches screens and rungs, the element's term moves on top of it
     assert all("Ca=0.1500" in value["abundances"] for value in variants)
-    assert {value.get("exclude_elements") for value in variants} >= {"Mg", None}
+    # without background lines every run is the element alone: no blend screen (which
+    # would need the other species) and no full-composition arm
+    assert {value.get("only_elements") for value in variants} == {"Mg"}
+    assert not any(value.get("exclude_elements") for value in variants)
+    assert all(not np.isfinite(ln.blend_frac) for ln in result.lines)
     rung_offsets = sorted({round(float(dict(t.split("=") for t in v["abundances"].split())
                                        ["Mg"]) - 0.3, 6)
                            for v in variants if v.get("only_elements") == "Mg"})
     assert rung_offsets[:1] == [-1.0] and 0.0 in rung_offsets
     assert dict(result.to_abundances()) == pytest.approx({"Ca": 0.15, "Mg": 0.52}, abs=0.01)
+    # with them, the screens compare the element alone, everything and everything but it
+    variants = _stub_fit(monkeypatch, 0.52)
+    ab.fit(request, target=target, line_mask=masks, method="cog", profile="trapz",
+           background_lines=True, snr=300)
+    assert {value.get("exclude_elements") for value in variants} == {"Mg", None}
+    assert {value.get("only_elements") for value in variants} == {"Mg", None}
+
+
+def test_abundance_fit_measures_into_a_held_result_and_reports_its_progress(
+        config, monkeypatch):
+    """A caller that lists the result before the run (the GUI) hands over its identity
+    without lines and the mask to measure; the fit keeps the identity and reports where
+    it stands at every step, clearing the record with the result."""
+    from tumult.linemask import LineMask, LineMaskSet
+    _stub_fit(monkeypatch, 0.52)
+    request = SynthRequest(config=config, atmosphere="one.mod", star=STAR,
+                           abundances={"Ca": 0.15, "Mg": 0.3})
+    masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
+    held = ab.AbundanceResult(element="Mg", symbol="Mg", lines=[], summary={},
+                              stage="lines", uid="held1234", name="my Mg run")
+    seen = []
+    result = ab.fit(request, target=_line(0.52), line_mask=masks, measured=held,
+                    method="cog", profile="trapz", background_lines=False, snr=300,
+                    progress=lambda r: seen.append((r.progress.get("stage"),
+                                                    r.progress.get("done"),
+                                                    r.progress.get("total"), len(r.lines))))
+    assert result.uid == "held1234" and result.name == "my Mg run" and not held.lines
+    assert result.lines[0].a == pytest.approx(0.52, abs=0.01)
+    assert result.progress == {} and seen[-1] == (None, None, None, 1)
+    stages = [s for s in seen if s[0]]
+    assert stages[0] == ("Measuring windows", 0, 3, 0)     # the measurement counts nothing
+    assert stages[1] == ("Screening lines", 0, 3, 1)
+    assert stages[2][0] == "Curve of growth · round 1" and stages[2][1] == 1
+    assert all(done < total for _stage, done, total, _n in stages)
+    with pytest.raises(ValueError, match="line_mask"):
+        ab.fit(request, target=_line(0.52), measured=held, method="cog")
+
+
+def test_progress_fraction_only_advances_through_its_floor():
+    """The fraction a reader shows for a progress record: steps and the running run's
+    share over the total, but never below the floor the reader carried over
+    (``carry_progress_floor``), so a grown total, a restarted run fraction or a
+    slipping run estimate cannot move a bar back."""
+    from tumult.measured import carry_progress_floor, progress_fraction
+    res = ab.AbundanceResult(element="Mg", symbol="Mg", lines=[], summary={})
+    res.progress = {"stage": "a", "done": 1, "total": 5}
+    assert progress_fraction(res.progress) == pytest.approx(0.2)
+    res.progress["run"] = 0.5
+    assert progress_fraction(res.progress) == pytest.approx(0.3)
+    res.progress["run"] = 1.0                    # a run never completes a step by itself
+    assert progress_fraction(res.progress) == pytest.approx(0.398)
+    shown = progress_fraction(res.progress)
+    res.progress = {"stage": "a", "done": 1, "total": 8}      # the total grew
+    carry_progress_floor(res, shown)
+    assert progress_fraction(res.progress) == pytest.approx(shown)
+    res.progress.update(done=4)
+    assert progress_fraction(res.progress) == pytest.approx(0.5)
+    res.progress = {}
+    carry_progress_floor(res, shown)             # a cleared record stays cleared
+    assert res.progress == {}
 
 
 def test_profile_fit_reads_abundance_and_gradient_off_the_lattice(config, monkeypatch):
@@ -470,11 +534,13 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     request = SynthRequest(config=config, atmosphere="one.mod", star=STAR,
                            abundances={"Mg": 0.2, "Ca": 0.1})
     request = request.update(departures=departures.request(request, atom=atom))
-    result = ab.nlte_corrections(request, method="cog", background_lines=False)
+    result = ab.nlte_corrections(request, method="cog", background_lines=False,
+                                 uid="listed12")
     assert calls["prepare"] == 1
     assert calls["reference"] == (prepared, "Mg=0.2000 Ca=0.1000", "LTE")
     assert calls["rungs"] == (request, True)
     assert result.request is request
+    assert result.uid == "listed12"       # the result the caller listed continues
     with pytest.raises(ValueError, match="departures.request"):
         ab.nlte_corrections(request.update(departures=None))
 

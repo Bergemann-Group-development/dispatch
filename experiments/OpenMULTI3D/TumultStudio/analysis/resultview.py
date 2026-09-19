@@ -26,6 +26,7 @@ Subclasses set the class attributes below (``prefix`` namespaces the DOM/bridge 
 from __future__ import annotations
 
 import html
+import time
 from copy import deepcopy
 from pathlib import Path
 from dataclasses import replace
@@ -35,8 +36,10 @@ import numpy as np
 from bokeh.models import TextInput
 
 from tumult import abundance as ab
+from tumult.measured import progress_fraction
 
 from ..execution.jobs import ResultJobs, update_kept_name
+from ..execution.processes import format_duration
 from ..ui.htmlbridge import pulse, toggle
 from ..ui.tableui import SortState, check_header, sort_header
 from ..ui.tool import Tool
@@ -147,6 +150,40 @@ def preparation_note(res):
     return f'<div class="hint">Measured with: {html.escape(" · ".join(p for p in parts if p))}.</div>'
 
 
+def progress_text(progress, now=None):
+    """The strip's right-hand text: steps done (and the running synthesis' own fraction
+    when one is under way), time elapsed and the time the remaining work is expected
+    to take at the pace of the fraction shown (:func:`tumult.measured.progress_fraction`,
+    which only ever advances; nothing to say about that before anything is done).
+    The page recomputes it every second from the same attributes (analysis.js), so it
+    stays live between snapshots."""
+    fraction = progress_fraction(progress)
+    elapsed = (time.time() if now is None else now) - float(progress.get("started") or 0)
+    text = f"{int(progress.get('done', 0))}/{max(int(progress.get('total', 1)), 1)}"
+    if progress.get("run") is not None:
+        text += f" · synthesis {100 * float(progress['run']):.0f}%"
+    text += f" · {format_duration(elapsed)}"
+    if 0 < fraction < 1:
+        text += f" · ~{format_duration(elapsed * (1 - fraction) / fraction)} left"
+    return text
+
+
+def progress_html(progress):
+    """The strip above a running result's table: the stage under way, a bar of the steps
+    done over those expected, and :func:`progress_text`."""
+    fraction = progress_fraction(progress)
+    pct = 100.0 * fraction
+    run = progress.get("run")
+    return (f'<div class="result-progress" data-started="{float(progress.get("started") or 0):.3f}" '
+            f'data-done="{int(progress.get("done", 0))}" '
+            f'data-total="{max(int(progress.get("total", 1)), 1)}" data-fraction="{fraction:.4f}"'
+            + (f' data-run="{float(run):.2f}"' if run is not None else "") + '>'
+            f'<span class="result-progress-stage">{html.escape(str(progress.get("stage", "")))}</span>'
+            f'<div class="result-progress-bar"><div class="result-progress-fill" '
+            f'style="width: {pct:.1f}%"></div></div>'
+            f'<span class="result-progress-text">{html.escape(progress_text(progress))}</span></div>')
+
+
 class ResultView(Tool):
     # --- subclass configuration --------------------------------------------------------
     prefix = ""            # DOM/bridge namespace: "abund" | "corr" | "ionbal"
@@ -188,6 +225,7 @@ class ResultView(Tool):
                               for i in range(1, self.steps + 1)]
         self._results_bridge = ctx.bridges.html(f"{self.prefix}-results")
         self._table_bridge = ctx.bridges.html(f"{self.prefix}-table")
+        self._progress_bridge = ctx.bridges.html(f"{self.prefix}-progress")
         # another list took (or gave back) the single left-sidebar selection: restyle our rows
         ctx.subscribe("focus-changed", lambda **_: self.push_results())
 
@@ -195,13 +233,14 @@ class ResultView(Tool):
         self.check_filters = set()         # checkbox columns showing only checked lines
         self.results = ResultCollection()
         self.references = ResultReferences(self.canvas, self._result_spec)
-        self.jobs = ResultJobs(ctx, self.find, self._job_progress)
+        self.jobs = ResultJobs(ctx, self.find, self._job_progress, self._job_run_progress)
         if self.task_kind:
             # a record of this kind another document submitted lands here on a reconnect
             ctx.task_importers[self.task_kind] = self.import_task_result
             ctx.task_progress[self.task_kind] = self.import_task_progress
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
         self.jumped = None                 # index of the line whose window is accented
+        self._opened_on_row = False        # the selected result was shown on its first row
 
         # step switch / run buttons / result clicks / line toggles all report through one
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
@@ -474,8 +513,11 @@ class ResultView(Tool):
         """Replace the result list (and repaint the sidebar); ``selected`` must be one of
         them or ``None``. Pending result jobs of the old list are forgotten."""
         self.jobs.current.clear()
+        for res in results:
+            res.progress = {}            # nothing of this document works on it (yet)
         self.results.replace(results, selected)
         self.jumped = None
+        self._opened_on_row = False
         self.push_results()
 
     def select_result(self, uid):
@@ -483,6 +525,7 @@ class ResultView(Tool):
             return
         self.results.selected = uid
         self.ctx.tools.activate(self.name)   # a result click opens the panel (no toolbar needed)
+        self._opened_on_row = False
         self._clear_line_decor()
         self.push_results()
         self._render_selected()
@@ -610,18 +653,58 @@ class ResultView(Tool):
         self.push_results()
         self._stream_row(res)
 
+    def _job_run_progress(self, res):
+        """Doc-thread callback every few seconds while ``res``'s dispatch run advances:
+        only its progress indication is repainted, the table and panels are not."""
+        self.push_results()
+        if self.selected() is res and self.is_focused():
+            self.push_progress(res)
+
     def _stream_row(self, res):
         """Doc-thread callback: repaint everything an incoming line changed — the table, the
         diagnostic panels and the synthetic overlays — so a fit is watched as it runs."""
         if self.selected() is res and self.is_focused():
+            self._ensure_jumped(res)
             self.push_table(self.table_html(res))
             self._render_scatter()
             self._render_overlays(res)
 
+    def _ensure_jumped(self, res):
+        """Show a result on its first row: the view's line panels (the curve of growth,
+        the hatch, the accented window) all belong to the jumped-to line, so a result
+        whose lines have arrived opens on the first row of the table as displayed rather
+        than on nothing. Done once per selection; clearing the decor afterwards (a
+        no-window line, say) leaves no row selected until the next click."""
+        if self.jumped is not None or self._opened_on_row or not res.lines:
+            return
+        self._opened_on_row = True
+        self.jump_line(self._line_order(res)[0])
+
+    def submit(self, res, *args, **kwargs):
+        """Submit ``res``'s calculation (:meth:`ResultJobs.submit_operation`, with
+        ``result=res``) and repaint it as a running result: the sidebar row and the
+        table pane show its progress strip from here on."""
+        job = self.jobs.submit_operation(*args, result=res, **kwargs)
+        self._job_progress(res)
+        return job
+
+    def progress_strip(self, res):
+        """The progress strip for ``res``, or nothing once its record is cleared: by the
+        operation with its result, by the job when it stops, by a session load."""
+        progress = getattr(res, "progress", None) or {}
+        return progress_html(progress) if progress else ""
+
     def push_results(self):
         self._results_bridge.value = self.results_html()
 
+    def push_progress(self, res):
+        """Show the selected result's progress strip over the table, or nothing."""
+        self._progress_bridge.value = self.progress_strip(res) if res is not None else ""
+
     def push_table(self, html_text):
+        """Show ``html_text`` in the bottom pane, with the selected result's progress
+        strip over it while it is being computed."""
+        self.push_progress(self.selected())
         self._table_bridge.value = html_text
 
     # --- shared sortable-table scaffolding ------------------------------------------------
@@ -671,6 +754,7 @@ class ResultView(Tool):
             self._render_scatter()
             self.push_table(f'<div class="linelist-empty">{self.empty_table_msg}</div>')
             return
+        self._ensure_jumped(res)
         self._render_scatter()
         self.push_table(self.table_html(res))
 
@@ -726,6 +810,10 @@ class ResultView(Tool):
         for r in (self.results if results is None else results):
             sel = " selected" if (r.uid == self.results.selected and focused) else ""
             summary = self._result_summary(r)
+            progress = getattr(r, "progress", None) or {}
+            if progress:
+                summary = (f"{progress.get('stage', 'running')} · "
+                           f"{100 * progress_fraction(progress):.0f}%")
             rows.append(
                 f'<div class="object-item result-item{nest}{sel}" '
                 f'data-tool="{self.prefix}" data-result="{r.uid}">'

@@ -1,6 +1,6 @@
 """TumultStudio document construction, callable by Bokeh and local harnesses.
 
-Run with:   bokeh serve --show TumultStudio
+Run with:   bin/tpy -m TumultStudio   (or bokeh serve --show TumultStudio, without the landing page)
 
 :func:`build` composes one document: the :class:`~.context.AppContext` with its services
 (delivery, workflows, persistence), the workspace and the canvas over it, the tools and
@@ -234,6 +234,7 @@ def build():
     # synthesis and every fit built below submits through the context.
     workflows = WorkflowService(ctx, delivery, panel, add_spectrum=add_synth,
                                 workflow_roots=workflow_roots, on_status=update_status)
+    ctx.workflows = workflows          # local harnesses follow jobs through it
     synth_modal = SynthModal(ctx, add=add_synth, grids=prefs_page.grids, atoms=synth_atoms)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
     lines.use_marcs_grid(prefs_page.grids.grids)
@@ -565,6 +566,7 @@ def build():
         pref_missing=set(prefs_page.missing),
         pref_show_slurm=load_prefs().get("workflow_runner") == "slurm",
         grid_list_html=prefs_page.grids.list_html(),
+        linelist_list_html=prefs_page.linelists.list_html(),
         refstars_html=refstars_page.list_html(),
         grid_results_name=prefs_page.grids.results_name,
         synth_grid_html=synth_modal.grid_ui_html(),

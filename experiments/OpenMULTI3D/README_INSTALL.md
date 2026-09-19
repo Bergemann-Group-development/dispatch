@@ -99,6 +99,10 @@ The script is re-runnable: files already present with the right size are
 skipped, and archives are only unpacked once. The downloaded data stays
 git-ignored, so it will not bloat the repository.
 
+The per-species master line lists (about 1 GB of the share) can also be fetched
+one at a time, from TumultStudio's Preferences → Line lists page or with
+`python -m tumult.synthesis.linelist_catalog list` / `fetch DEST --file <name>`.
+
 > **macOS TLS error** (`CERTIFICATE_VERIFY_FAILED: unable to get local issuer
 > certificate`): the python.org framework Python ships without a CA trust store.
 > Fix it once by running the installer's cert step, e.g.
@@ -247,10 +251,13 @@ records both the departure solve and formal-solution settings. See
 From the repository root (the directory containing this file):
 
 ```bash
-bokeh serve --show TumultStudio
+bin/tpy -m TumultStudio
 ```
 
-Run Bokeh from here so the repository package is importable.
+This serves the app behind a landing page at `http://localhost:5006/` and opens it;
+`--port N` changes the port and `--no-show` skips the browser. `bokeh serve --show
+TumultStudio` runs the app alone (no landing page). Run either from here so the
+repository package is importable.
 
 The GUI keeps its preferences, recent files and saved sessions in `.tumultstudio.json`
 in the directory Bokeh was started from (`TUMULT_CONFIG` names another file). The file

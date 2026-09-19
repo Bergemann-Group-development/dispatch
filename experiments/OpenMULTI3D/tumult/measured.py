@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, fields
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
@@ -46,6 +47,8 @@ class MeasuredLines:
     ident_note: str = ""
     request: Any = None
     target: dict = field(default_factory=dict)
+    # where a running calculation stands (see :func:`report_progress`); empty once it ends
+    progress: dict = field(default_factory=dict)
 
     def stale_reasons(self, target=None):
         """Why the solution no longer describes the inputs it would be solved from now.
@@ -135,3 +138,52 @@ class MeasuredLines:
     def load(cls, path):
         """Reopen a result written by :meth:`save`."""
         return cls.from_dict(json.loads(Path(path).read_text()))
+
+
+def report_progress(result, stage, done, total):
+    """Record on ``result`` where its running calculation stands, before it is reported.
+
+    ``stage`` names the work under way, ``done`` the coarse steps behind it and ``total``
+    how many it is expected to take in all; ``total`` is an estimate a caller raises when
+    the work turns out longer, so ``done`` stays below it until :func:`end_progress`. The
+    record keeps the time of the first report, so a reader can turn the elapsed time and
+    the fraction into an estimate of what remains.
+    """
+    now = time.time()
+    started = (result.progress or {}).get("started") or now
+    result.progress = {"stage": str(stage), "done": int(done), "total": max(int(total), 1),
+                       "started": float(started), "at": now}
+
+
+def progress_fraction(progress):
+    """The fraction of a progress record's expected work: the steps done, plus the
+    running dispatch run's share of the step under way (``run``, below one), over the
+    total. Never below the record's ``floor``, the fraction a reader last showed
+    (:func:`carry_progress_floor`): the total can grow, a run fraction restarts with the
+    next run of a step and a run's own estimate can slip, but what is shown only moves
+    forward."""
+    done, total = int(progress.get("done", 0)), max(int(progress.get("total", 1)), 1)
+    run = progress.get("run")
+    if run is not None and done < total:
+        done += max(0.0, min(0.99, float(run)))
+    fraction = max(0.0, min(1.0, done / total))
+    return max(fraction, float(progress.get("floor") or 0.0))
+
+
+def carry_progress_floor(result, shown):
+    """Keep ``shown``, the fraction last displayed for ``result``, as the floor of its
+    current progress record (nothing once the record is cleared)."""
+    if shown and result.progress:
+        result.progress["floor"] = max(float(shown), float(result.progress.get("floor") or 0.0))
+
+
+def end_progress(result):
+    """Drop the progress record: the calculation reached its result."""
+    result.progress = {}
+
+
+def expected_total(done, expected, cap=None):
+    """The step count to report for open-ended work: ``expected`` steps, extended one at
+    a time when ``done`` reaches it, and never beyond ``cap``."""
+    total = max(int(expected), int(done) + 1)
+    return min(total, int(cap)) if cap is not None else total

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import gzip
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -426,17 +427,33 @@ def grid_folder(spec, root):
     return Path(root).expanduser() / spec.folder
 
 
+def _models(spec, folder):
+    """The names of the models held in ``folder``, unsorted, as a lazy scan: the ``.mod``
+    files of a 1D grid, the non-empty snapshot folders of a 3D one. ``os.scandir`` reads
+    the directory incrementally, so a consumer that stops early pays for one read."""
+    with os.scandir(folder) as entries:
+        for entry in entries:
+            if not spec.snapshots:
+                if entry.is_file() and entry.name.endswith(".mod"):
+                    yield entry.name
+            elif entry.is_dir() and any(f.is_file() for f in Path(entry.path).iterdir()):
+                yield entry.name
+
+
 def models_on_disk(spec, root):
     """The model folders (1D: the model files) held under the storage ``root``, by name.
     A catalogue grid counts as available once this is non-empty, whether the files came
     from :func:`fetch` or elsewhere (the bundled MARCS copy has no manifest)."""
     folder = grid_folder(spec, root)
-    if not folder.is_dir():
-        return []
-    if not spec.snapshots:
-        return sorted(p.name for p in folder.glob("*.mod"))
-    return sorted(p.name for p in folder.iterdir()
-                  if p.is_dir() and any(f.is_file() for f in p.iterdir()))
+    return sorted(_models(spec, folder)) if folder.is_dir() else []
+
+
+def has_models_on_disk(spec, root):
+    """Whether any model of ``spec`` is under the storage ``root``. Stops at the first
+    one: the registry reads this on every access, and a 1D grid holds tens of thousands
+    of files."""
+    folder = grid_folder(spec, root)
+    return folder.is_dir() and next(_models(spec, folder), None) is not None
 
 
 def delete_model(spec, root, name):

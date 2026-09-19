@@ -199,12 +199,16 @@ def monitor(folder, log_file=None):
     """Progress of a running dispatch job, as ``(done, total)``, from its own output files.
 
     Two sources, added together. The log's per-iteration convergence errors give the NLTE
-    solve's progress against ``maxiter``, replaced by an extrapolated total once the last
-    few iterations are improving monotonically enough to fit. The dispatcher's queue and
-    dispatch logs give the patch tasks, which for an NLTE run means the atmosphere setup
-    only -- the iteration tasks are not written in a form these files distinguish, so they
-    contribute a fixed count rather than a rate.
-
+    solve's progress against ``rt_iteration_params%maxiter``, replaced by an extrapolated
+    total once the last few iterations are improving monotonically enough to fit. The
+    dispatcher's queue and dispatch logs give the patch tasks: the atmosphere setup, and
+    the output pass's ``rt_patch`` tasks, one per patch and frequency set, listed in the
+    queue when the run starts and logged in the dispatch file each time one ends, so a
+    synthesis reports its RT sweep as it goes. The queue's last two columns (``i_nu``,
+    ``i_mu``) tell the passes apart: the final output ray (``i_mu < 0``) runs once, the
+    output scattering loop (``i_nu < 0``) a fixed ``rt_output_params%maxiter`` times, and
+    the iteration pass (both positive) up to ``rt_iteration_params%maxiter`` times with
+    converged sets skipped, so its tasks are not counted -- the iterations are its rate.
     Everything is optional: a run that has not written its namelist yet, or one launched
     without a log file, reports what it can rather than failing. ``total`` is an estimate
     and ``done`` can exceed it when a solve outruns its own extrapolation, so a caller
@@ -214,43 +218,67 @@ def monitor(folder, log_file=None):
     nml_file = folder / 'params.nml'
     n = 0
     nmax = 0
+    maxiter, convlim, out_maxiter = 0, None, 0
 
-    if nml_file.is_file() and log_file and pathlib.Path(log_file).is_file():
+    if nml_file.is_file():
         nml = NameList.from_file(nml_file)
-        maxiter = nml['rt_iteration_params'].get('maxiter', 0)
-        convlim = nml['nlte_params'].get('convlim', None)
-        if convlim is not None and maxiter > 0:
-            convlim = np.log10(convlim)
-            content = pathlib.Path(log_file).read_text(errors='replace')
-            # the first entry is the LTE iteration's global = 0, whose log is -inf
-            matches = GLOBAL_ERROR.findall(content)[1:]
-            maxerr = convlim - np.log10([abs(float(m)) for m in matches]) if matches \
-                else np.empty(0)
-            latest = maxerr[-5:]
-            nl = len(latest)
-            if len(maxerr) >= 3 and all(np.diff(latest) > 0):
-                p = np.polyfit(latest, np.arange(nl), deg=2)
-                ndone = len(maxerr)
-                nleft = np.ceil(np.polyval(p, 0)) - nl + 1
-                n += ndone
-                nmax += ndone + nleft
-            else:
-                n += len(maxerr)
-                nmax += maxiter
+        # an LTE run writes neither group
+        maxiter = (nml.get('rt_iteration_params') or {}).get('maxiter', 0)
+        convlim = (nml.get('nlte_params') or {}).get('convlim', None)
+        out_maxiter = (nml.get('rt_output_params') or {}).get('maxiter', 0)
+    if convlim is not None and maxiter > 0 and log_file and pathlib.Path(log_file).is_file():
+        convlim = np.log10(convlim)
+        content = pathlib.Path(log_file).read_text(errors='replace')
+        # the first entry is the LTE iteration's global = 0, whose log is -inf
+        matches = GLOBAL_ERROR.findall(content)[1:]
+        maxerr = convlim - np.log10([abs(float(m)) for m in matches]) if matches \
+            else np.empty(0)
+        latest = maxerr[-5:]
+        nl = len(latest)
+        if len(maxerr) >= 3 and all(np.diff(latest) > 0):
+            p = np.polyfit(latest, np.arange(nl), deg=2)
+            ndone = len(maxerr)
+            nleft = np.ceil(np.polyval(p, 0)) - nl + 1
+            n += ndone
+            nmax += ndone + nleft
+        else:
+            n += len(maxerr)
+            nmax += maxiter
+
+    def rt_sweeps(i_nu, i_mu):
+        """How often an output-pass RT task runs; 0 for an iteration-pass task."""
+        if i_mu < 0:
+            return 1
+        if i_nu < 0:
+            return max(1, int(out_maxiter))
+        return 0
 
     # The `-` selects output patches, which carry negative frequency indices (see
     # docs/GLOSSARY.md). An NLTE solve's own nlte_patch lines carry none, so on that run
     # shape these two counts are the eight mhd_patch setup tasks and nothing else.
+    rt_total = 0
     file = folder / 'rank_00000.que'
     if file.is_file():
         lines = file.read_text(errors='replace').splitlines()
         nmax += len([l for l in lines if 'mhd_patch'  in l])
         nmax += len([l for l in lines if 'nlte_patch' in l and '-' in l])
+        for l in lines:
+            if 'rt_patch' in l:
+                cols = l.split()
+                rt_total += rt_sweeps(int(cols[-2]), int(cols[-1]))
+        nmax += rt_total
 
     file = folder / 'rank_00000.disp'
     if file.is_file():
         lines = file.read_text(errors='replace').splitlines()
         n += len([l for l in lines if 'END    mhd_patch' in l])
         n += len([l for l in lines if 'END   nlte_patch' in l and '-' in l])
+        rt_done = 0
+        for l in lines:
+            if 'rt_patch' in l and ('END' in l or 'SKP' in l):
+                cols = l.split()      # ... id ipos i_nu i_mu time
+                if rt_sweeps(int(cols[-3]), int(cols[-2])):
+                    rt_done += 1
+        n += min(rt_done, rt_total)   # the queue bounds a count from an older run shape
 
     return n, nmax

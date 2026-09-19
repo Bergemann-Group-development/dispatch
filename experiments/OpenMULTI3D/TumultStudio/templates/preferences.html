@@ -1,5 +1,5 @@
 {#- The Preferences modal: a category rail and one page per settings owner
-    (preferences/page.py, gridmanager.py, refstarspage.py). -#}
+    (preferences/page.py, gridmanager.py, linelistmanager.py, refstarspage.py). -#}
 {% macro pref_picker(key, root, hint='', hidden=False) -%}
         <div id="pref-{{ key }}-block" class="field-group pref-path{{ ' field-warn' if key in pref_missing }}{{ ' off' if hidden }}">
           <label>{{ pref_labels[key] }}</label>
@@ -21,6 +21,7 @@
       <button class="settings-nav-item active" data-page="general">General</button>
       <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
       <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
+      <button class="settings-nav-item" data-page="linelists">Line lists</button>
       <button class="settings-nav-item" data-page="refstars">Reference stars</button>
       <button class="settings-nav-item" data-page="engine">Engine</button>
       <button class="settings-nav-item" data-page="cache">Run cache</button>
@@ -62,6 +63,12 @@
           {{ embed(roots.grid_picker) }}
           <div id="grid-results" class="file-results"></div>
         </div>
+      </div>
+
+      <!-- the published master line lists (linelistmanager.LineListManager): listed from
+           the share when the page is opened, downloaded per file into the line-list folder -->
+      <div class="settings-page" data-page="linelists">
+        <div id="linelist-list" class="grid-list">{{ linelist_list_html|safe }}</div>
       </div>
 
       <div class="settings-page" data-page="synthesis">

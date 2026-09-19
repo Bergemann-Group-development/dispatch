@@ -76,7 +76,10 @@
 .grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the model name column reads as text; its sortable header aligns with the names */
 .grid-models thead th:first-child { text-align: left; }
+/* the action column: buttons and progress rings line up at the right edge (an icon
+   button is a flex block, which would otherwise sit at the cell's left) */
 .grid-models td:last-child { white-space: nowrap; }
+.grid-models td:last-child .icon-btn { display: inline-flex; vertical-align: middle; }
 
 /* ---- reference stars (settings) ------------------------------------------- */
 .refstars-list { display: flex; flex-direction: column; gap: 4px; }

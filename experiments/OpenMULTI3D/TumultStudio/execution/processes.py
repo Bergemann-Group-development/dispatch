@@ -40,7 +40,8 @@ KIND_LABELS = {
 NAME_PREFIXES = {
     "abund-lines": "Line measurement", "rungs": "Abundance rungs",
     "linemask-auto": "Line mask", "import": "Import", "list": "Grid listing",
-    "download": "Grid download",
+    "download": "Grid download", "list-lines": "Line-list listing",
+    "download-lines": "Line-list download",
 }
 NAME_LABELS = {
     "line-strengths": "Line strengths", "broadening-fit": "Broadening fit",
@@ -73,7 +74,8 @@ def _threads(n):
     return f"{n} thread{'' if n == 1 else 's'}"
 
 
-def _elapsed(seconds):
+def format_duration(seconds):
+    """A duration as the rows state one: ``42 s``, ``3 min``, ``1 h 05 min``."""
     seconds = int(max(0.0, seconds))
     if seconds < 60:
         return f"{seconds} s"
@@ -246,7 +248,7 @@ def _runs_table(runs):
         return ""
     rows = "".join(
         f'<tr><td title="{html.escape(run["output"])}">{html.escape(Path(run["output"]).name)}</td>'
-        f'<td>{html.escape(run["state"])}</td><td>{run["progress"][0]}/{run["progress"][1]}</td></tr>'
+        f'<td>{html.escape(run["state"])}</td><td>{float(run["progress"][0]):g}/{float(run["progress"][1]):g}</td></tr>'
         for run in runs)
     return f'<table class="job-runs"><tr><th>run</th><th>state</th><th>progress</th></tr>{rows}</table>'
 
@@ -289,7 +291,7 @@ def workflow_details_html(handle, summary=None, job=None, recoverable=None):
             _section("Timing", _pairs([
                 ("submitted", _when(record.get("submitted"))), ("started", _when(started)),
                 ("ended", _when(ended)),
-                ("elapsed", _elapsed((ended or now) - started) if started else None)])),
+                ("elapsed", format_duration((ended or now) - started) if started else None)])),
             _section("Inputs", _inputs(record.get("meta"))),
             _section("Runs", _runs_table(diagnostics.get("runs"))),
             _section("Logs", _logs(handle.logs))]

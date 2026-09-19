@@ -60,7 +60,9 @@ def test_prune_namelist_carries_the_runs_settings_and_the_node_overrides(tmp_pat
     base = {'atmos_params': {'atmos_file': 'other.mod', 'dims': 8, 'use_ne': False},
             'composition_params': {'abund_file': 'input/abund/abund_magg', 'abundances': 'Fe=7.0'},
             'opac_table_params': {'opac_table_vmic': 1.5},
-            'linelist_params': {'linelist_folder': 'lists/', 'tolerance': 1e-3, 'dlam': 100.0},
+            # a screen's element-only arm: its switch is that variant's, not the node's
+            'linelist_params': {'linelist_folder': 'lists/', 'tolerance': 1e-3, 'dlam': 100.0,
+                                'only_elements': 'Fe'},
             'spectrum_params': {'R': 1e5, 'aa_blue': 5000.0, 'in_air': False}}
     nml = prune.prune_namelist(tmp_path / 'o.txt', 'a.mod', ['m.txt'], tmp_path / 'w.txt',
                                R=R, dlam=DLAM, vmic=1.0, feh=-0.5, abundances='Fe=+0.4',
@@ -77,6 +79,10 @@ def test_prune_namelist_carries_the_runs_settings_and_the_node_overrides(tmp_pat
                                       'in_air': False}
     assert nml['prune_params'] == {'output_file': str(tmp_path / 'o.txt'),
                                    'sample_count': prune.SAMPLE_COUNT}
+    # a ladder that reads one species alone says so itself
+    nml = prune.prune_namelist(tmp_path / 'o.txt', 'a.mod', ['m.txt'], tmp_path / 'w.txt',
+                               R=R, dlam=DLAM, base=base, only_elements='Fe')
+    assert nml['linelist_params']['only_elements'] == 'Fe'
 
 
 # --- the driver, on a stand-in executable ----------------------------------------------------

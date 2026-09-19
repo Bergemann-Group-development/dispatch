@@ -232,12 +232,12 @@ SUBROUTINE composition_pre_init (self)
 
       if (ll_lam(1) <= ll_lam(2)) then
         do i=1, size(linelist_file)
-          ! Pass the intervals to init_linelist2 so build_linelist selects on the
+          ! Pass the intervals to init_linelist so build_linelist selects on the
           ! union of windows, not a single min/max span.
           if (allocated(ll_intervals) .and. n_intervals > 0) then
-            call composition%init_linelist2(linelist_file(i), dlam, ll_lam, ll_intervals)
+            call composition%init_linelist(linelist_file(i), dlam, ll_lam, ll_intervals)
           else
-            call composition%init_linelist2(linelist_file(i), dlam, ll_lam)
+            call composition%init_linelist(linelist_file(i), dlam, ll_lam)
           end if
         end do
       elseif (any(linelist_file /= '')) then

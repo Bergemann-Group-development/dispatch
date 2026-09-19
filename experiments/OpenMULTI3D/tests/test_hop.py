@@ -58,7 +58,7 @@ def test_opacity_matches_golden():
     Previously REGENERATED 2026-09-09, for the radiative-damping column of
     ``input/linelists/master_line.txt``. That file used to be written in a convention
     where small column-5 values were multiplied by 1e8 at run time; the code no longer
-    does that (``init_linelist2`` reads the column straight into ``lin%ga_in``,
+    does that (``init_linelist`` reads the column straight into ``lin%ga_in``,
     composition_mod.f90:1119,1129), so the file was rewritten to carry the real s^-1
     values -- 1.160e+00 became 1.160e+08 and so on. The old pairing gave those lines a
     radiative damping ~1e8 too small, i.e. cores and wings that were far too narrow.

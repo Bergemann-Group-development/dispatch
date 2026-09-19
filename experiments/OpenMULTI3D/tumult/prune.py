@@ -4,7 +4,14 @@ A synthesis on one atmosphere node reads a few hundred transitions of a master l
 holds hundreds of thousands; which ones is decided by HOP's negligibility test on that
 node's thermodynamic states. ``hop_prune.x`` (``HOP/standalone/hop_prune.f90``) makes that
 selection once per node from the same namelist groups the runs use and writes it as an input
-line list, so every run on the node reads the pruned file as its ``linelist_file``.
+line list, so every run on the node reads the pruned file as its ``linelist_file``. An
+abundance ladder makes that one selection at the composition it is centred on and its rungs
+share it (:func:`tumult.synthesis.api._node_linelists`); hydrogen, whose Stark wings reach
+tens of Angstrom beyond any skirt, bypasses the prune (:func:`hydrogen_lists`). A run that
+reads one species alone (``only_elements``) is not pruned: HOP skips the other species'
+blocks as it reads the master list. Prunes and runs read the masters themselves; HOP
+bisects each block for the windows it was given (``HOP/linelist_reader_mod.f90``), so
+the masters cost their selection rather than their size.
 
 This module assembles the pruning namelist from a run's settings (:func:`prune_namelist`),
 runs one child per uncached node on the shared :class:`tumult.synthesis.runtime`
@@ -53,16 +60,20 @@ def executable(cwd=None):
 
 def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, dlam,
                    vmic=None, feh=None, abundances='', relative_abundances=True,
-                   base=None, sample_count=SAMPLE_COUNT, atmos_format=None, use_abnd=None):
+                   base=None, sample_count=SAMPLE_COUNT, atmos_format=None, use_abnd=None,
+                   only_elements='', exclude_elements=''):
     """The ``hop_prune.x`` input for one atmosphere node.
 
     ``base`` is the runs' own settings; its ``composition_params``, ``opac_table_params``
     and ``linelist_params`` are carried over so the selection sees the same EOS, background
     vmic, rejection tolerance and element filters the runs do. The node-specific values
     replace what the runs would set per node: ``atmos_file``, ``feh``, ``vmic``, and the
-    ``abundances`` override the caller prunes at (the strongest rung of its ladder; a blank
-    string leaves the standard composition). ``linelist_files`` and ``dlam`` replace the
+    ``abundances`` override the caller prunes at (a blank string leaves the standard
+    composition). ``linelist_files`` and ``dlam`` replace the
     base list selection, and ``window_file`` with ``R`` define the wavelength grid.
+    ``only_elements`` restricts the selection to those species and ``exclude_elements``
+    leaves them out, for a selection made for one part of what the runs read; the
+    species switches ``base`` itself carries are one run variant's and are dropped.
     """
     base = base or {}
     nml = NameList()
@@ -87,8 +98,17 @@ def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, d
         nml['opac_table_params'] = dict(base['opac_table_params'])
     linelist = dict(base.get('linelist_params') or {})
     linelist.pop('linelist_folder', None)
+    # the species switches of one run variant (a screen's element-only or element-excluded
+    # arm) must not narrow the list every variant on the node reads; the caller says when
+    # the runs read one species alone
+    linelist.pop('only_elements', None)
+    linelist.pop('exclude_elements', None)
     linelist['linelist_file'] = [str(f) for f in linelist_files]
     linelist['dlam'] = float(dlam)
+    if only_elements:
+        linelist['only_elements'] = str(only_elements)
+    if exclude_elements:
+        linelist['exclude_elements'] = str(exclude_elements)
     nml['linelist_params'] = linelist
     spectrum = {'R': float(R), 'window_file': str(window_file)}
     if 'in_air' in (base.get('spectrum_params') or {}):
@@ -144,6 +164,55 @@ def _last_line(log_file):
     except OSError:
         return ''
     return lines[-1] if lines else ''
+
+
+def hydrogen_lists(files, out_dir):
+    """The hydrogen lines of the master ``files``, as list files a run reads beside its
+    pruned selection: a ``Hlinedata`` file as it is (its layout is keyed to that name),
+    the ``'H I'`` block of any other file copied to ``out_dir``. Hydrogen lines are few,
+    and their Stark wings reach tens of Angstrom, far beyond a prune's skirt, so they
+    are left to the run's own wavelength margin; the prune leaves them out
+    (``exclude_elements``) so none is read twice."""
+    out_dir = Path(out_dir)
+    record = out_dir / 'hydrogen.json'
+    if record.is_file():
+        # the masters are part of the directory's identity; scanning them (a folder of
+        # master lists runs to a gigabyte) is done once per prune directory
+        try:
+            return list(json.loads(record.read_text()))
+        except ValueError:
+            pass
+    lists = []
+    for index, path in enumerate(Path(f) for f in files):
+        if path.name.endswith('Hlinedata'):
+            lists.append(str(path))
+            continue
+        if not path.is_file():
+            continue                      # the prune itself reports a missing master
+        block = _hydrogen_block(path)
+        if block:
+            target = out_dir / f'hydrogen-{index}.txt'
+            if not target.is_file():
+                target.write_text(block)
+            lists.append(str(target))
+    record.write_text(json.dumps(lists))
+    return lists
+
+
+def _hydrogen_block(path):
+    """The ``'H I'`` block of a block-format line list (its header, isotope line and
+    records, up to the next species header), or ``''``."""
+    out, inside = [], False
+    with Path(path).open(errors='replace') as stream:
+        for line in stream:
+            if line.startswith("'"):
+                label = line.strip().strip("'").split("'")[0].strip()
+                if inside and not label.isdigit():
+                    break
+                inside = inside or label == 'H I'
+            if inside:
+                out.append(line)
+    return ''.join(out)
 
 
 def prune_batch(jobs, *, cwd=None, cancel_token=None, runtime=None):

@@ -99,7 +99,7 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     saved atmosphere + precomputed departures ('save' format, maxiter=0). Returns
     ``(jobs, job_keys, job_weights, job_params)``.
 
-    ``node_linelists`` (optional) maps a node key to the line list that node's runs read
+    ``node_linelists`` (optional) maps a node key to the line-list files that node's runs read
     instead of the shared one -- the per-node pruned list from :func:`_node_linelists`. It
     replaces ``linelist_params.linelist_file``, so whatever produced the mapping owns the cache
     identity of these runs (see :func:`_prune_digest`)."""
@@ -114,7 +114,7 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
             extra = {}
         if node_linelists:
             extra = dict(extra,
-                         linelist_params={'linelist_file': [node_linelists[jkey]]})
+                         linelist_params={'linelist_file': list(node_linelists[jkey])})
         nml_i = update_dict(copy.deepcopy(base), {
             'atmos_params': atmos_override,
             'opac_table_params': {'absmet_file': absmet_file},
@@ -138,10 +138,22 @@ def _prune_digest(base, windows, prune):
     first's cache.
     """
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
+    R = (base.get('spectrum_params') or {}).get('R')
     return hashlib.sha1(json.dumps(
         [[str(f) for f in files], [[float(min(w)), float(max(w))] for w in windows], prune,
-         (base.get('spectrum_params') or {}).get('R')],
+         None if R is None else float(R)],     # one identity whether R came as int or float
         sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+
+# composition_patch_mod's default line-list read margin (&linelist_params dlam)
+DEFAULT_DLAM_AA = 100.0
+
+
+def _resolved_masters(files, launch_kwargs):
+    """The configured line-list files as absolute paths, in the order HOP loads them, so
+    a transition listed twice resolves the same way it would for a run."""
+    cwd = Path((launch_kwargs or {}).get('cwd') or '.')
+    return [(cwd / f).resolve() for f in files]
 
 
 def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation=None,
@@ -150,19 +162,30 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
 
     A run's line selection depends on its atmosphere, its windows and its abundances, so a
     ladder of abundance rungs on one node re-reads and re-selects the whole master list at
-    every rung. Pruning once per node -- at the ladder's strongest rung, which covers the
-    weaker ones -- makes the selection a property of the node instead, and leaves the runs
-    independent of each other: no run waits for another's ``linelist_out.txt``.
+    every rung. Pruning once per node, at the composition the ladder is centred on, makes
+    the selection a property of the node instead, and leaves the runs independent of each
+    other: no run waits for another's ``linelist_out.txt``. A rung some way off that
+    composition sees the selection shift slightly with it, which is the approximation one
+    selection per node buys.
 
     The selection is made by one ``hop_prune.x`` child per uncached node
     (:mod:`tumult.prune`), fed the runs' own composition, background and line-list settings
     from ``base`` and scheduled together on the workflow's CPU budget; ``cancel_token``
-    terminates live children and none of them publishes a partial file.
+    terminates live children and none of them publishes a partial file. The children read
+    the master lists themselves: HOP bisects each block for the windows it was given
+    (``HOP/linelist_reader_mod.f90``), so finding the records costs the selection rather
+    than the list.
 
     ``prune`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
     line may still contribute; 0 or absent disables pruning altogether) and the
-    ``abundances`` / ``relative_abundances`` of the strongest rung. Returns ``None`` when
-    pruning does not apply, which leaves every run on the shared list.
+    ``abundances`` / ``relative_abundances`` the selection is made at, which is the
+    composition itself -- a ladder's rungs share their node's selection rather than each
+    getting its own. Hydrogen lines, whose Stark wings reach far beyond the skirt, bypass
+    the prune and are read as the master lists give them. Each node then maps to the list
+    of its files.
+
+    Without pruning there is nothing to select per node: every run reads the shared list
+    and keeps the records its own windows need, and this returns ``None``.
 
     A prune costs a fraction of a second against the several seconds of the runs it feeds,
     and is cached on disk under the digest, so a node recurring in a later iteration or
@@ -172,17 +195,16 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
         mapping = {}
         for jkey, _teff, _logg, _feh, _v, _weight, atmos_path, _absmet in nodes:
             try:
-                mapping[jkey] = preparation.for_reference(atmos_path)
+                mapping[jkey] = [preparation.for_reference(atmos_path)]
             except ValueError as exc:
                 raise ValueError(f'Prepared line list has no entry for {atmos_path}') from exc
         return mapping
+    linelist = base.get('linelist_params') or {}
+    files = [f for f in linelist.get('linelist_file') or [] if f]
+    if not files:
+        return None
     if not prune or not float(prune.get('skirt') or 0.0) > 0.0:
-        return None
-    files = (base.get('linelist_params') or {}).get('linelist_file') or []
-    if len(files) != 1:
-        # a line-list folder, several files, or none: the prune writes one file, and merging
-        # a folder into it would change which duplicate of a line wins
-        return None
+        return None                   # nothing to select per node; every run shares the list
     R = float((base.get('spectrum_params') or {}).get('R') or 0.0)
     if R <= 0:
         return None
@@ -193,9 +215,16 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
     out_dir = (cwd / top / '_linelists' / _prune_digest(base, windows, prune)).resolve()
-    master = (cwd / files[0]).resolve()   # an absolute list path replaces cwd
+    # HOP loads the files in this order for the prune as a run would for itself, so the
+    # written list resolves a transition listed twice the same way; absolute paths
+    # replace cwd
+    masters = _resolved_masters(files, launch_kwargs)
     out_dir.mkdir(parents=True, exist_ok=True)
     window_file = out_dir / 'windows.txt'
+    relative = bool(prune.get('relative_abundances', True))
+    abundances = str(prune.get('abundances') or '')
+    # hydrogen is read unpruned beside the selection, so the selection leaves it out
+    hydrogen = hop_prune.hydrogen_lists(masters, out_dir)
     jobs, mapping = [], {}
     for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, _absmet in nodes:
         if v is None:
@@ -203,17 +232,17 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
             # MARCS preparation references (see workflows.resolve_request) rather than a guess.
             raise ValueError('Line-list pruning on a 3D snapshot grid needs a MARCS '
                              'preparation grid; pass a prepared line list or disable pruning.')
+        atmos = (atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path).resolve()
         path = out_dir / f'{_run_name(teff_i, logg_i, feh_i, v)}.txt'
-        mapping[jkey] = str(path)
+        mapping[jkey] = [*hydrogen, str(path)]
         if path.is_file():
             continue
         if not jobs:
             window_file.write_text(_window_text(padded))
-        atmos = (atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path).resolve()
         jobs.append((path, hop_prune.prune_namelist(
-            path, atmos, [master], window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
-            abundances=prune.get('abundances') or '',
-            relative_abundances=bool(prune.get('relative_abundances', True)), base=base)))
+            path, atmos, masters, window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
+            abundances=abundances, relative_abundances=relative, base=base,
+            exclude_elements='H')))
     hop_prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
     return mapping
 
@@ -1046,7 +1075,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         # the pruning only enters the digest when there is one, so an unpruned batch keeps the
         # cache identity (and the folders) it had before per-node pruning existed
         keys = [base, manifest_text, text]
-        if node_lists:
+        if node_lists:      # a prune or a prepared list: the selection enters the digest
             keys.append(str(preparation.folder) if preparation is not None else
                         _prune_digest(base, merged, prune))
         digest = hashlib.sha1(
@@ -1155,7 +1184,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                                      preparation, cancel_token) \
             if prune_windows else None
         keys = [base, manifest_text]
-        if node_lists:
+        if node_lists:      # a prune or a prepared list: the selection enters the digest
             keys.append(str(preparation.folder) if preparation is not None else
                         _prune_digest(base, prune_windows, prune))
         digest = hashlib.sha1(
@@ -1203,7 +1232,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
             if prune_windows else None
         prep_key = (str(preparation.folder) if preparation is not None else
                     _prune_digest(s, prune_windows, prune))
-        keys = s if node_lists is None else [s, prep_key]
+        keys = ([s, prep_key] if node_lists is not None
+                else s)
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         plans.append(([vi], s, top / f'{label}_{digest}', bool(nlte_v), node_lists))

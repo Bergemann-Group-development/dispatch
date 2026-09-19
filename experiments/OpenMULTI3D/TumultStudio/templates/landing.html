@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- The landing page (served at the site root by `python -m TumultStudio`): paints at
+     once, then navigates to the app route. The browser keeps this page on screen while
+     the server builds the session's document, which is the part of the load that
+     nothing in the app page itself can cover; the app template's own loading overlay
+     takes over for the render. The colours follow static/css/base.css. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TUMULT Studio</title>
+<style>
+  :root { --bg: #1e1e1e; --border: #3a3a3a; --accent: #4a90e2; --text: #e0e0e0; --text-muted: #888; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font: 13px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }
+  body { display: flex; align-items: center; justify-content: center; }
+  .loading { width: 260px; text-align: center; }
+  .loading .title { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; margin-bottom: 18px; }
+  .loading .track { height: 4px; overflow: hidden; background: var(--border); border-radius: 2px; }
+  .loading .bar { width: 40%; height: 100%; background: var(--accent); border-radius: 2px;
+    animation: indeterminate 1.1s ease-in-out infinite; }
+  @keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .loading .status { margin-top: 12px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="loading">
+  <div class="title">TUMULT&nbsp;Studio</div>
+  <div class="track"><div class="bar"></div></div>
+  <div class="status">Preparing the session…</div>
+</div>
+<script>
+  // navigate once this page has painted; the app route is the sibling of this page, so
+  // a server prefix carries over. replace() keeps the landing page out of history.
+  requestAnimationFrame(function () {
+    location.replace(new URL('TumultStudio', location.href));
+  });
+</script>
+</body>
+</html>

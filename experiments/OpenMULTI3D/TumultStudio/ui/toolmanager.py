@@ -34,6 +34,10 @@ class ToolManager:
             self._runners[name] = runner
         return tool
 
+    def get(self, name):
+        """The registered tool ``name`` (``KeyError`` for an unknown one)."""
+        return self._tools[name]
+
     def active_name(self):
         """The name of the tool that currently owns the sidebar, or ``None``."""
         return next((name for name, t in self._tools.items() if getattr(t, "active", False)),

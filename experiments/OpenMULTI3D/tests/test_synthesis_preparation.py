@@ -109,11 +109,10 @@ def test_spectrum_table_preserves_first_intensity_and_units():
 def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     """Per-node line-list pruning must not move the folders of runs that have none.
 
-    The digest only takes the pruning into account when there is one, so what this pins is the
-    condition for that: every way of asking for no pruning returns None, and once there is one,
-    its identity separates it from any other pruning. Without the first, every cached run in
-    every existing output directory becomes unreachable; without the second, two runs on one
-    node with the same namelist and different line lists would share a folder.
+    The digest takes the node lists into account only when they are a *selection*, a prune
+    or a prepared list. Without that, either every cached run in every existing output
+    directory becomes unreachable, or two runs on one node with the same namelist and
+    different selections share a folder.
     """
     from tumult.synthesis import api
 
@@ -123,9 +122,8 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     prune = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
     nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]
 
+    # nothing named, nothing on disk: the readers stay on what the settings say
     assert api._node_linelists('top', base, nodes, windows, None, {}) is None
-    assert api._node_linelists('top', base, nodes, windows, {'skirt': 0.0}, {}) is None
-    # a line-list folder cannot be pruned into one file
     folder = {**base, 'linelist_params': {'linelist_folder': 'lists/'}}
     assert api._node_linelists('top', folder, nodes, windows, prune, {}) is None
 
@@ -134,8 +132,27 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
                         lambda jobs, **kw: written.extend(Path(p) for p, _n in jobs) or written)
     mapping = api._node_linelists(tmp_path, base, nodes, windows, prune, {})
     assert list(mapping) == [('n', 0)]
-    assert written == [Path(mapping[('n', 0)])]
-    assert Path(mapping[('n', 0)]).name == 't5750g45m+00v10.txt'
+    assert written == [Path(f) for f in mapping[('n', 0)]]
+    assert [Path(f).name for f in mapping[('n', 0)]] == ['t5750g45m+00v10.txt']
+    # one selection per node, at the composition the caller names; the prune reads the
+    # master lists themselves, and hydrogen goes beside the selection whole
+    written.clear()
+    named = []
+    monkeypatch.setattr('tumult.prune.prune_namelist',
+                        lambda path, *a, **kw: named.append((Path(path).name, a, kw)) or {})
+    master = tmp_path / 'master.txt'
+    master.write_text("'Fe I'\n'0' 1\n 5000.0 1.0 -1.0\n'H I'\n'0' 1\n 6562.8 10.2 0.7\n"
+                      "'Mg I'\n'0' 1\n 5172.7 2.7 -0.4\n")
+    withh = {**base, 'linelist_params': {'linelist_file': [str(master)]}}
+    mapping = api._node_linelists(tmp_path / 'h', withh, nodes, windows, prune, {})
+    files = [Path(f) for f in mapping[('n', 0)]]
+    assert [f.name for f in files] == ['hydrogen-0.txt', 't5750g45m+00v10.txt']
+    assert files[0].read_text() == "'H I'\n'0' 1\n 6562.8 10.2 0.7\n"
+    assert [(n, kw['abundances'], kw['exclude_elements']) for n, _a, kw in named] == [
+        ('t5750g45m+00v10.txt', 'Fe=+0.40', 'H')]
+    # the prune reads the master itself: HOP bisects it for the windows it is given
+    sources, = [a[1] for _n, a, _kw in named]
+    assert [Path(f) for f in sources] == [master]
     # the skirt, the windows and the rung the pruning was made at all key the pruning
     for changed in ({**prune, 'skirt': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
         assert api._prune_digest(base, windows, changed) != api._prune_digest(base, windows, prune)

@@ -63,6 +63,36 @@
     if (pane) pane.addEventListener('mouseleave', function () { clearMarks(prefix); });
   });
 
+  // a running result's progress strip (resultview.progress_html) names when its
+  // calculation started and the steps done over those expected; the elapsed time and the
+  // estimate of what remains (at the pace of the finished steps) tick here between the
+  // server's snapshots, worded as processes.py words the Processes rows
+  function formatDuration(seconds) {
+    seconds = Math.floor(Math.max(0, seconds));
+    if (seconds < 60) return seconds + ' s';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' min';
+    var minutes = Math.floor(seconds % 3600 / 60);
+    return Math.floor(seconds / 3600) + ' h ' + (minutes < 10 ? '0' : '') + minutes + ' min';
+  }
+  setInterval(function () {
+    var now = Date.now() / 1000;
+    document.querySelectorAll('.result-progress[data-started]').forEach(function (strip) {
+      var started = parseFloat(strip.dataset.started);
+      var fraction = parseFloat(strip.dataset.fraction);   // the server's, monotonic
+      var run = strip.dataset.run === undefined ? null : parseFloat(strip.dataset.run);
+      var text = strip.querySelector('.result-progress-text');
+      if (!text || !(started > 0)) return;
+      var elapsed = now - started;
+      var line = strip.dataset.done + '/' + strip.dataset.total;
+      if (run !== null) line += ' · synthesis ' + Math.round(100 * run) + '%';
+      line += ' · ' + formatDuration(elapsed);
+      if (fraction > 0 && fraction < 1) {
+        line += ' · ~' + formatDuration(elapsed * (1 - fraction) / fraction) + ' left';
+      }
+      text.textContent = line;
+    });
+  }, 1000);
+
   // each tool's own run and close wiring, on the same "<prefix>-actions" channel the
   // shared interactions use
   function analysisAction(prefix, kind, arg) {

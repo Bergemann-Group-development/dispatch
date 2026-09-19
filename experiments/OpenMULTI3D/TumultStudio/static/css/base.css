@@ -19,6 +19,7 @@
   --accent:     #4a90e2;
   --text:       #e0e0e0;
   --text-muted: #888;
+  --link:       #9cc4ff;          /* light enough to read on --bg; the browser default is not */
   --canvas-bg:  #1a1a1a;
 }
 
@@ -31,6 +32,17 @@ html, body {
   color: var(--text);
   background: var(--bg);
 }
+
+/* the loading overlay of the first paint (index.html): the landing page's centred
+   title and indeterminate bar, over the page until BokehJS has rendered every root */
+#loading { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; background: var(--bg); }
+#loading > * { width: 260px; text-align: center; }
+#loading .title { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; margin-bottom: 18px; }
+#loading .track { height: 4px; overflow: hidden; background: var(--border); border-radius: 2px; }
+#loading .bar { width: 40%; height: 100%; background: var(--accent); border-radius: 2px;
+  animation: indeterminate 1.1s ease-in-out infinite; }
+#loading .status { margin-top: 12px; color: var(--text-muted); }
 
 /* draggable splitter — thin bar that resizes the centre bottom panel (see workspace.js).
    The sidebars are fixed-width; only the horizontal bottom-panel splitter remains. */
@@ -95,6 +107,9 @@ body.resizing * { pointer-events: none !important; }
 }
 .text-btn:hover { border-color: var(--accent); color: var(--accent); }
 .hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+/* every link, including those inside hints and dynamically rendered rows */
+a, .hint a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--text); }
 /* .field-group.field-inline: keep the higher specificity so the later .field-group
    rule (flex-direction: column) doesn't push an inline switch below its label */
 .field-group.field-inline { flex-direction: row; align-items: center; justify-content: space-between; }

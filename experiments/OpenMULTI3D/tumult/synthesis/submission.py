@@ -204,6 +204,44 @@ class WorkflowHandle:
                           'progress': monitor(folder, log_path if log_path.is_file() else None)})
         return items
 
+    def native_fraction(self, since=None):
+        """How far the dispatch runs of the step under way are, as the mean over that
+        step's runs of each one's fraction: a run still to start counts 0, a running one
+        its ``done / total`` from :func:`tumult.launch.monitor` (an LTE synthesis counts
+        its RT patch tasks, a departure solve its iterations), a finished one 1. A step's
+        runs are the ones the record names that have not finished before ``since`` (by
+        default the last progress snapshot, else the record's start): the batch executor
+        names every run of a batch before launching any, so the mean only grows within a
+        step. A run finished earlier is a cache hit and costs nothing; a failed or
+        cancelled one is left out. ``None`` while the step has no runs yet. Cheap enough
+        to poll every few seconds: the record is read as written (no driver check), only
+        the launcher record of each run is read, and the queue and dispatch logs are
+        small text files."""
+        from . import jobrecord
+        from tumult.launch import monitor
+        record = _read(self.folder) or {}
+        if since is None:
+            stamp = self.progress_stamp()
+            since = stamp / 1e9 if stamp else float(record.get('started') or 0.0)
+        fractions = []
+        for folder in record.get('runs') or ():
+            folder = Path(folder)
+            launcher = jobrecord.read_launcher(folder)
+            if launcher is None:
+                fractions.append(0.0)                 # named, not launched yet
+                continue
+            state = launcher.get('state')
+            if state == 'finished':
+                if float(launcher.get('ended') or 0.0) >= since:
+                    fractions.append(1.0)
+                continue
+            if state != 'running':
+                continue
+            log = folder.with_suffix('.log')
+            done, total = monitor(folder, log if log.is_file() else None)
+            fractions.append(min(1.0, float(done) / float(total)) if total else 0.0)
+        return sum(fractions) / len(fractions) if fractions else None
+
     @property
     def progress(self):
         record = self._record()

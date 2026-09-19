@@ -67,6 +67,7 @@ foundation; everything else references these.
   --accent:      #4a90e2;   /* the one blue: selection, focus, primary, active */
   --text:        #e0e0e0;   /* primary text (off-white) */
   --text-muted:  #888;      /* secondary text, labels, inactive */
+  --link:        #9cc4ff;   /* hyperlinks; the browser default blue is unreadable on --bg */
   --canvas-bg:   #3c3c3c;   /* the work surface behind content */
 }
 ```
@@ -101,6 +102,7 @@ foundation; everything else references these.
 | Info (blue toast) | `#80c8f0` text on `#1e2e3a` bg, `#2e5070` border | informational banner |
 | Warning banner | `#f0c060` text on `#3a2800` bg, `#7a5000` border | high-contrast attention banner |
 | Inline-edit accent | `#34c9a0` (teal) | text-editing caret/outline only |
+| Link | `--link` `#9cc4ff`, underlined; `--text` on hover | every `<a>`, set once in base.css; never leave a link at the browser default or the accent blue |
 
 Pattern for semantic states: **translucent tint background + matching solid border +
 matching (brighter) text color.** Example:

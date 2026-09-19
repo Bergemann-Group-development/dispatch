@@ -53,7 +53,7 @@ MODULE m3d_patch_mod
     end type key_link_t
 
     ! Detailed line-list increments to (xhat, ehat) at one output patch's own
-    ! points for one set, as add_linelist_opacities2 returns them, plus the
+    ! points for one set, as add_linelist_opacities returns them, plus the
     ! physical chi_scat when line_scattering is on.  Shape (fs:fe,nx,ny,nz).
     type, public :: point_opac_set_t
       real(4), dimension(:,:,:,:), allocatable :: chi, eta, scat

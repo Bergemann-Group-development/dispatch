@@ -41,6 +41,38 @@ spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suf
 object it updates: a result's sidebar row shows its current value on a second line, and
 names in a loaded workspace stay as saved.
 
+An analysis run (abundances, ionisation balance, NLTE corrections) creates its result
+object the moment its modal submits: the object is listed, focused and its view opened
+before the workflow has measured anything, and the measurement, the rounds of the
+synthesis or the solver's iterations stream into it. While the workflow runs, the table
+pane carries a progress strip (`resultview.progress_html`): the stage under way, a bar of
+the coarse steps done over those expected, the elapsed time and an estimate of what
+remains at the pace of the finished steps; the sidebar row shows the stage and the
+percentage. The steps are the ones the operation reports on the result
+(`MeasuredLines.progress`, written by `tumult.measured.report_progress`), each one
+synthesis over the windows: the screens, then each lattice round or solver iteration, of
+which a few are expected (`abundance.EXPECTED_ROUNDS`, `sparams.EXPECTED_ITERATIONS`) and
+the operation's limit are allowed, so the total grows when a run needs more and the bar
+never claims completion before the result lands; the measurement is a stage label at
+zero, since it takes seconds. Within a step, the bar fills with the step's own dispatch
+runs: every two seconds the document reads them (`WorkflowHandle.native_fraction`: the
+batch executor names every run of a step before launching any, so the mean over them of
+not started, running and finished is the step's fraction; a running run's share is
+`tumult.launch.monitor`, which counts the output pass's `rt_patch` tasks the run's
+`rank_00000.que` lists, the final rays once and the scattering loop's rays
+`rt_output_params%maxiter` times, against those its `rank_00000.disp` has ended, while
+the converging iteration pass reports its iterations from the log) and shows the
+fraction as `synthesis 45%`, feeding it into the remaining-time estimate. On the Fe
+balance-test masks against the KPNO atlas on the MARCS grid (LTE, 15 lines, 40 runs in
+three steps) the fraction shown stayed within 0.1 of the elapsed fraction of the 11 min
+run. The fraction shown only
+ever advances (`tumult.measured.progress_fraction`): the document keeps what it last
+showed as the record's `floor`, so a total that grows, a run fraction that restarts with
+the next run of the same step or a run estimate that slips hold the bar until the work
+catches up. A selected result opens on the first row of its table
+as displayed, since the line panels (curve of growth, hatch, accented window) belong to
+the selected row; clicking another row moves the selection.
+
 ### The Edit menu
 
 The toolbar's **Edit** menu acts on the object focused in the left sidebar (`workspace/editmenu.py`):
@@ -462,6 +494,9 @@ Departure-coefficient solves are not started from this modal; their entry point 
 separately. NLTE abundance corrections start from a model atom (see below). Atmosphere
 grids (downloading the published ones, custom folders, the 1D LTE reference) are the
 Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
+Preferences → Line lists downloads the published per-species master line lists
+(`tumult.synthesis.linelist_catalog`, hosted on the Keeper share) one file or all at
+once into the folder the Synthesis line-list preference names, and deletes them again.
 Preferences → Reference stars edits the one catalogue of named stellar parameters
 (`tumult.refstars`): every setup's Preset dropdown, the ionisation balance's entry
 point and the line-strength ranking read it, and the line strengths take the atmosphere
@@ -549,10 +584,11 @@ corrections…**, which opens the correction modal with this atom fixed.
   configured line list together with the atom in both stages; while such a result is shown,
   the canvas annotates the lines of the reference run's `linelist_out.txt`, and a result
   computed without the list shows no line annotations at all.
-- Footer: **Compute**. One `abundance.nlte_corrections` workflow: the 1D LTE reference is
-  synthesised from the atom alone at the setup's composition and its lines measured; the reference spectrum is added to the canvas and the
-  correction object appears under the atom as soon as that stage finishes; the NLTE
-  corrections then stream into the table line by line. Every measurement setting is
+- Footer: **Compute**. One `abundance.nlte_corrections` workflow continuing the correction
+  object listed under the atom at submission (the record carries its uid): the 1D LTE
+  reference is synthesised from the atom alone at the setup's composition and its lines
+  measured; the reference spectrum is added to the canvas as soon as that stage finishes;
+  the NLTE corrections then stream into the table line by line. Every measurement setting is
   captured when Compute is pressed and carried through both stages, so reopening the modal
   and editing it while the reference runs does not alter that calculation. Cancelling from
   Processes stops the running stage and prevents the next one from starting.

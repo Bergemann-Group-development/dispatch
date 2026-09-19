@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import logging
+import time
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -43,7 +44,7 @@ from ._abundance_numerics import (  # noqa: F401 (public re-exports)
     read_solar_abundances,
     xfe_to_abund,
 )
-from .measured import MeasuredLines
+from .measured import MeasuredLines, end_progress, expected_total, report_progress
 from .profile import get_profile_class
 from .utils import auto_crop_core
 
@@ -695,6 +696,7 @@ def finalize_result(result, ref_spec, snr, cont_pct):
 
 CORR_LIMIT = 1.0       # the curve of growth spans +/-CORR_LIMIT dex in [X/Fe] about the reference
 CORR_MAX_ROUNDS = 8    # bracketing rounds before giving up (each round is a batch of NLTE solves)
+EXPECTED_ROUNDS = 2    # rounds a lattice fit is expected to take (progress reports count on it)
 MIN_FIT_POINTS = 7     # a fit region sampled by fewer reference points than this is too sparse
                        # to trust - flag "few_points" and exclude the line by default
 
@@ -1371,9 +1373,10 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     :func:`adaptive_cog`, with the lattice step ``abund_step`` and ``opts.limit``, so each
     line's correction ``A(NLTE) - A(LTE)`` ends bracketed by its nearest computed rungs.
 
-    ``progress(result)`` is called after every round, so a caller can stream the current
-    guesses; it must not raise. Returns ``result`` at stage ``"corr"`` with its summary
-    aggregated and ``termination`` ``"completed"`` or ``"round_limit"``.
+    ``progress(result)`` is called before the first round and after every one, so a
+    caller can stream the current guesses and ``result.progress`` says which round is
+    under way; it must not raise. Returns ``result`` at stage ``"corr"`` with its
+    summary aggregated and ``termination`` ``"completed"`` or ``"round_limit"``.
     """
     from .synthesis import workflows as synth
     from .synthesis.api import NodeStore
@@ -1444,13 +1447,28 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
                                         abundances=[coordinate(a) for a in offsets])
         return [[spec] * len(lines) for spec in specs]
 
+    # the reference is the step behind us; the rounds are what remains
+    rounds = [0]
+
+    def stage():
+        done = 1 + rounds[0]
+        report_progress(result, f"NLTE curve of growth · round {rounds[0] + 1}", done,
+                        expected_total(done, 1 + EXPECTED_ROUNDS, cap=1 + opts.max_rounds))
+        report(result)
+
+    def round_done():
+        rounds[0] += 1
+        stage()
+
+    stage()
     _rungs, bracketed = adaptive_cog(
         lines, synth_offsets, step=step, limit=opts.limit, max_rounds=opts.max_rounds,
-        profile=result.profile, cancel_token=cancel_token, report=lambda: report(result))
+        profile=result.profile, cancel_token=cancel_token, report=round_done)
 
     result.stage = "corr"
     result.termination = "completed" if bracketed else "round_limit"
     result.summary = correction_summary(result.lines)
+    end_progress(result)
     return result
 
 
@@ -1508,9 +1526,9 @@ class _LatticeContext:
 
     ``store`` (a :class:`~tumult.synthesis.api.NodeStore`) holds the rung runs of the
     whole workflow, so contexts at other stars reuse the atmosphere nodes they share; a
-    context gets its own when none is given. The rungs are pruned per node at
-    ``limit`` above the composition's abundance, and the first context on a store fixes
-    that for the workflow.
+    context gets its own when none is given. The rungs read a line list pruned per node
+    at the composition itself (see :func:`tumult.synthesis.api._node_linelists`), or,
+    without background lines, the element's own transitions off the master list.
 
     ``probes`` are further stellar parameters (mappings) at which every ``"fit"`` rung is
     also interpolated, from the same node runs and any further nodes the probes need;
@@ -1518,7 +1536,7 @@ class _LatticeContext:
     what a Jacobian in the stellar parameters is built from.
     """
 
-    def __init__(self, request, lines, element, *, background_lines, limit, cancel_token,
+    def __init__(self, request, lines, element, *, background_lines, cancel_token,
                  store=None, probes=()):
         from .departures import DepartureGrid, Departures
         from .synthesis import workflows as synth
@@ -1547,8 +1565,11 @@ class _LatticeContext:
         self.lines = [ln for ln in lines
                       if np.isfinite(ln.window[0]) and np.isfinite(ln.window[1])]
         self.windows = [padded_window(ln.window) for ln in self.lines]
-        self.prune = {"abundances": self._abundances(self.base_x + float(limit)),
-                      "relative_abundances": self.relative}
+        # the rungs' line list is selected once per node at the composition itself; a
+        # ladder without background lines reads only the element's own transitions
+        # (``only_elements``, which HOP applies as it reads), and needs no selection
+        self.prune = None if not self.background_lines else {
+            "abundances": self.base_abund, "relative_abundances": self.relative}
         self.store = NodeStore() if store is None else store
         self.probes = [dict(probe) for probe in probes]
         self.probe_rungs = {}        # offset -> [probe][window] spectra
@@ -1656,19 +1677,23 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
     """Screen every included line of ``context`` at the request's composition, in place.
 
     The screens use the request's solved departures when it carries them, which costs no
-    solve, and LTE otherwise. They are independent of which transitions the rungs
-    synthesise: a line whose element-only EW is below ``weak_frac`` of the measured EW is
-    flagged ``weak_line``, and one whose EW with the element excluded exceeds ``blend_max``
-    of the EW with every species is flagged ``blended``. Both are excluded.
+    solve, and LTE otherwise. A line whose element-only EW is below ``weak_frac`` of the
+    measured EW is flagged ``weak_line``, and one whose EW with the element excluded
+    exceeds ``blend_max`` of the EW with every species is flagged ``blended``. Both are
+    excluded. A context without background lines synthesises the element alone
+    throughout, so only the weak-line screen runs there: the blend screen needs the
+    other species, which such a run never reads, and ``blend_frac`` stays unknown.
     """
     lines = [ln for ln in context.lines if ln.include]
     if not lines:
         return
     x0 = context.base_x
-    only, full, excluded = context.synthesize([
-        context.variant(x0, species="only"),
-        context.variant(x0, species="all"),
-        context.variant(x0, species="excluded")], lte=not context.solved_departures)
+    variants = [context.variant(x0, species="only")]
+    if context.background_lines:
+        variants += [context.variant(x0, species="all"),
+                     context.variant(x0, species="excluded")]
+    spectra = context.synthesize(variants, lte=not context.solved_departures)
+    only = spectra[0]
     for w, ln in enumerate(context.lines):
         if not ln.include:
             continue
@@ -1677,6 +1702,9 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
         if not np.isfinite(ln.ew_species) or ln.ew_species < weak_frac * ln.ew:
             ln.flags, ln.include = tuple(dict.fromkeys(ln.flags + ("weak_line",))), False
             continue
+        if not context.background_lines:
+            continue
+        full, excluded = spectra[1], spectra[2]
         blend, _, _ = blend_fraction(line_synthesis(ln, full[w]),
                                      line_synthesis(ln, excluded[w]), window=fw, x0=ln.lam0)
         ln.blend_frac = float(blend)
@@ -1751,7 +1779,12 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     configured line list identifies the dominant transition of each window. ``measured``
     instead continues a result of :func:`measure_lines` (or of an earlier fit): its lines,
     as curated, are fitted without measuring the target again, and its identity and
-    annotations are kept.
+    annotations are kept; a result without lines has ``line_mask`` measured into it, so a
+    caller can list the result before the measurement runs.
+
+    ``progress(result)`` is called at every step (the measurement, the screens, each
+    round of the lattice) with the result as it stands and ``result.progress`` saying
+    where the fit is (:func:`~tumult.measured.report_progress`).
 
     Both methods measure each window's EW (``profile``, with ``snr`` and ``cont_pct``
     errors), screen weak and blended lines at the request's composition
@@ -1760,8 +1793,9 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     over every window. ``method="cog"`` inverts adaptive curves of growth
     (:func:`adaptive_cog`); ``method="profile"`` fits abundance, velocity shift and
     broadening to the target on the same rungs (:func:`fit_profiles`). With
-    ``background_lines=False`` the rungs synthesise the element's transitions alone; the
-    screens always compare against every species. Departures requested on the request
+    ``background_lines=False`` every run, the screens' included, synthesises the
+    element's transitions alone, skipping every other species as the master list is read:
+    only the weak-line screen runs, and no line is flagged blended. Departures requested on the request
     (``departures.request``) make every rung an NLTE solve of its own; solved departures
     are read back by the rungs and screens of either method, one solve shared by every
     rung, which is the approximation a 3D or NLTE run on fixed departures accepts.
@@ -1779,36 +1813,59 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     spectrum, target_record = _target_spectrum(target)
     config = request.config
     report = progress or (lambda _result: None)
-    if measured is not None:
-        if not measured.lines:
-            raise ValueError("The measured result has no lines to fit.")
-        result = deepcopy(measured)
-        element = result.element
-    else:
-        if line_mask is None:
-            raise ValueError("Pass the line_mask to measure, or a measured result.")
-        mset = _line_mask_set(line_mask)
-        element = mset.element
-        result = measure_lines(mset, spectrum,
-                               linelist=str(config.resolve(config.linelist)) if config.linelist
-                               else None, profile=profile, snr=snr, cont_pct=cont_pct)
+    if line_mask is None and (measured is None or not measured.lines):
+        raise ValueError("Pass the line_mask to measure, or a measured result with lines.")
+    mset = None if measured is not None and measured.lines else _line_mask_set(line_mask)
+    result = deepcopy(measured) if measured is not None else None
+    # the coarse steps a caller watches, each one synthesis over the windows: the screens,
+    # then the rounds of the lattice, of which a few are expected and ``max_rounds`` are
+    # allowed. The measurement is seconds of Python and counts for nothing.
+    steps = ["Screening lines"]
+    rounds = [0]
+
+    def stage(name, done):
+        report_progress(result, name, done, expected_total(done, len(steps) + EXPECTED_ROUNDS,
+                                                           cap=len(steps) + max_rounds))
+        report(result)
+
+    if mset is not None:
+        if result is not None:
+            # measured into the identity the caller holds (the result is listed already)
+            stage("Measuring windows", 0)
+        measured_now = measure_lines(mset, spectrum,
+                                     linelist=str(config.resolve(config.linelist))
+                                     if config.linelist else None,
+                                     profile=profile, snr=snr, cont_pct=cont_pct)
+        if result is None:
+            result = measured_now
+        else:
+            for name in ("lines", "element", "symbol", "profile", "snr", "cont_pct",
+                         "maskset_uid", "maskset_name", "maskset_key", "stage", "summary"):
+                setattr(result, name, getattr(measured_now, name))
+    element = result.element
     result.request, result.target, result.method = request, target_record, method
     result.cog_settings = {"background_lines": bool(background_lines), "limit": float(limit)}
     result.teff, result.logg, result.feh = request.star.teff, request.star.logg, request.star.feh
     result.vmic = float("nan") if request.star.vmic is None else request.star.vmic
-    report(result)
+    stage(steps[0], 0)
 
     context = _LatticeContext(request, result.lines, element,
-                              background_lines=background_lines, limit=limit,
+                              background_lines=background_lines,
                               cancel_token=cancel_token)
     screen_lines(context, blend_max=blend_max, weak_frac=weak_frac)
-    report(result)
+    label = "Curve of growth" if method == "cog" else "Profile fit"
+
+    def round_done():
+        rounds[0] += 1
+        stage(f"{label} · round {rounds[0] + 1}", len(steps) + rounds[0])
+
+    stage(f"{label} · round 1", len(steps))
     if method == "cog":
         bracketed = fit_lines_cog(context, limit=limit, max_rounds=max_rounds,
-                                  profile=profile, report=lambda: report(result))
+                                  profile=profile, report=round_done)
     else:
         bracketed = fit_lines_profile(context, spectrum, limit=limit, max_rounds=max_rounds,
-                                      profile=profile, report=lambda: report(result))
+                                      profile=profile, report=round_done)
     for ln in result.lines:
         if ln.include and np.isfinite(ln.drewda):
             finalize_line(ln, spectrum, snr, cont_pct, profile=profile)
@@ -1824,6 +1881,7 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
                          if composition is not None else {})
     result.provenance = _provenance(request, context, background_lines)
     result.uid = result.uid or uuid.uuid4().hex[:8]
+    end_progress(result)
     report(result)
     return result
 
@@ -1858,7 +1916,7 @@ def _reference_atmosphere(request, reference_atmosphere):
 
 def nlte_corrections(request, *, method="cog", background_lines=False,
                      reference_atmosphere=None, profile="trapz", ew_min=5.0, limit=CORR_LIMIT,
-                     max_rounds=CORR_MAX_ROUNDS, min_fit_points=MIN_FIT_POINTS,
+                     max_rounds=CORR_MAX_ROUNDS, min_fit_points=MIN_FIT_POINTS, uid=None,
                      progress=None, cancel_token=None):
     """Equilibrium NLTE abundance corrections ``A(NLTE) - A(LTE)`` of a model atom's lines.
 
@@ -1873,6 +1931,10 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
 
     ``background_lines=False`` synthesises the atom's transitions alone; with ``True`` the
     configured line list is added to the reference and every rung.
+
+    ``uid`` names the result a caller listed before the reference ran, so every
+    ``progress(result)`` snapshot (the measured reference first, then every round of the
+    lattice, each with ``result.progress`` saying where the run stands) continues it.
 
     Returns an :class:`AbundanceResult` at stage ``"corr"``; ``termination`` is
     ``"completed"`` when every line was bracketed and ``"round_limit"`` otherwise.
@@ -1897,16 +1959,18 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     request.check()
     lte_request = request.update(atmosphere=reference, departures=None)
     lte_request.check()
-    report = progress or (lambda _result: None)
     opts = CorrectionOpts(profile=profile, ew_min=ew_min, limit=limit, max_rounds=max_rounds,
                           min_fit_points=min_fit_points, line_grid=departures.line_grid,
                           linelist=background_lines)
+    started = time.time()
     quadrature, quadrature_atmosphere = departures.prepare(request)
     atom = request.config.resolve(departures.atom)
     result = measure_reference_lines(lte_request, atom, opts=opts, quadrature=quadrature,
                                      cancel_token=cancel_token)
     result.request, result.method = request, "cog"
-    report(result)
+    if uid:
+        result.uid = str(uid)
+    result.progress = {"started": started}     # the reference counts towards the elapsed time
     if cancel_token is not None:
         cancel_token.check()
     run_nlte_corrections(request, result, atom, opts=opts, progress=progress,
@@ -2172,7 +2236,7 @@ def complete_result_rungs(result, *, target=None, cancel_token=None, progress=No
     settings = result.cog_settings
     context = _LatticeContext(request, result.lines, result.element,
                               background_lines=settings.get("background_lines", True),
-                              limit=settings.get("limit", 1.0), cancel_token=cancel_token)
+                              cancel_token=cancel_token)
     lines = context.lines
     shift = request.star.feh + result.solar_x if balance else 0.0
 

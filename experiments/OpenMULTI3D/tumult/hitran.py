@@ -561,7 +561,7 @@ def build_linelist_streaming(filename, iso=None, tref=4000.0, strength_cut=None,
 
 
 def write_linelist(out, filename, species, comment, iso='0'):
-    """Write one block in the format init_linelist2 / LineList parse."""
+    """Write one block in the format init_linelist / LineList parse."""
     with open(filename, 'w') as fh:
         fh.write(f"'{species}' '{comment}'\n")
         fh.write(f"'{iso}' {len(out)}\n")

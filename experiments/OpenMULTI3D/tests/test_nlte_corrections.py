@@ -96,6 +96,22 @@ def test_correction_recovers_the_injected_offset(stub_synth, offset):
     assert tuple(ln.a_grid) == tuple(computed)
 
 
+def test_correction_rounds_report_their_progress(stub_synth):
+    """Each report carries where the run stands: the reference behind it, the round under
+    way, and a step count that stays open until the result clears it."""
+    fake, _calls = stub_synth
+    fake.offset = 0.2
+    seen = []
+    res = ab.run_nlte_corrections(
+        _request(), _stage1(), "o.atom",
+        progress=lambda r: seen.append((r.progress.get("stage"), r.progress.get("done"),
+                                        r.progress.get("total"))))
+    assert res.progress == {}
+    assert seen[0] == ("NLTE curve of growth · round 1", 1, 1 + ab.EXPECTED_ROUNDS)
+    assert [s[1] for s in seen] == list(range(1, len(seen) + 1))
+    assert all(done < total for _stage, done, total in seen)
+
+
 def test_rungs_are_lattice_points_within_the_limit(stub_synth):
     fake, calls = stub_synth
     fake.offset = 0.27

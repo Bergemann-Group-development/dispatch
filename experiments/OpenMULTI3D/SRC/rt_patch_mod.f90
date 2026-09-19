@@ -1118,7 +1118,7 @@ contains
       ! (b) departure-carrying species in detail, with departures + velocity
       if (associated(departures)) then
         associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
             departures=departures, only_departures=.true., i_set=i_set, &
             window_lam=window_lam)
         end associate
@@ -1150,15 +1150,15 @@ contains
             self%one_m_eps(:,:,:,:,1))
           call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
             self%one_m_eps(:,:,:,:,2))
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
             departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
             beta=self%beta, i_set=i_set, window_lam=window_lam, &
             chi_lines=chi_lines, eta_lines=eta_lines)
         else
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
-                                            departures=departures, i_set=i_set, &
-                                            window_lam=window_lam, &
-                                            chi_lines=chi_lines, eta_lines=eta_lines)
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+                                           departures=departures, i_set=i_set, &
+                                           window_lam=window_lam, &
+                                           chi_lines=chi_lines, eta_lines=eta_lines)
         endif
       end associate
     end subroutine detailed_linelist
@@ -1935,12 +1935,12 @@ contains
       allocate(chi_scat(nnu, ntemp, nne, 1), source=0.)
       call compute_epsilon_stage(1, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,1))
       call compute_epsilon_stage(2, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,2))
-      call comp%add_linelist_opacities2(psp, all_chi, all_eta, dlam, &
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam, &
         one_m_eps=one_m_eps, chi_scat=chi_scat, beta=all_beta)
       allocate(self%ll_opac%scat(nnu, ntemp, nne), source=0.)
       call mem_register(self%ll_opac%scat, label='ll_opac_table')
     else
-      call comp%add_linelist_opacities2(psp, all_chi, all_eta, dlam)
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam)
     endif
 
     ! isolate the pure line xhat delta and normalise by chi500 (undone per cell in
@@ -2274,7 +2274,7 @@ contains
   ! stage population base
   !   lnbase(:,:,:,s) = log(n_s) - log_part_s + dxi*(s-1)*e_kT + log(inv_df)
   ! from the composition particle (element ion stage s, or the molecule itself) --
-  ! the same formalism as the bulk linelist path in add_linelist_opacities2.
+  ! the same formalism as the bulk linelist path in add_linelist_opacities.
   !-------------------------------------------------------------------------------
   SUBROUTINE get_ll_env (comp, atom, trans, adata, e_kT, ne, tothi, stark_pe, &
                          idf3, vb3, lnbase, i_set)

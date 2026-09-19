@@ -10,8 +10,10 @@ its *attachment* to such a workflow, which is what this module is:
 * the subscription that delivers a settled handle's outcome exactly once, through
   :class:`~.delivery.DeliveryService`, and marks the record imported so a later load
   does not offer the same result again;
-* progress following while a workflow runs, decoded off the document thread and stopped
-  by the job, the document or a workspace generation change;
+* progress following while a workflow runs: the record's snapshots, decoded off the
+  document thread, and how far its running dispatch runs are (their RT patch tasks or
+  iterations, read from the run folders every few seconds), both stopped by the job, the
+  document or a workspace generation change;
 * recovery after a reconnect or a workspace load: discovering settled records under the
   configured roots, reattaching to live ones, importing finished ones, and reporting
   those whose record is gone.
@@ -40,6 +42,7 @@ from .jobs import CANCELLED, ExternalRun, FINISHED, QUEUED, RUNNING, Recoverable
 log = logging.getLogger("tumultstudio.jobs")
 
 PROGRESS_POLL_MS = 2000        # Slurm records only; the daemon reports its snapshots
+NATIVE_POLL_MS = 2000          # how often a followed job's running dispatch runs are read
 
 
 class WorkflowService:
@@ -114,28 +117,69 @@ class WorkflowService:
 
         handle.add_done_callback(settled)
 
-    def _follow_progress(self, job, handle, on_progress):
+    def _follow_progress(self, job, handle, on_progress, on_native=None):
         """While ``job`` runs, hand every new progress snapshot of its record to
-        ``on_progress`` on the document thread. The daemon reports each snapshot's stamp
-        (a Slurm record is polled instead); the snapshot is decoded off the document
-        thread, since it can carry a spectrum, one read at a time, and a stamp that
-        arrives during a read is read next. Ends with the job, the document or the
-        workspace generation."""
-        if on_progress is None or not handle.kind.progress:
-            return
+        ``on_progress`` on the document thread, and how far its running dispatch runs
+        are (:meth:`WorkflowHandle.native_fraction`, read every ``NATIVE_POLL_MS`` off
+        the document thread) to ``on_native`` whenever that changes. The daemon reports
+        each snapshot's stamp (a Slurm record is polled instead); the snapshot is decoded
+        off the document thread, since it can carry a spectrum, one read at a time, and a
+        stamp that arrives during a read is read next. Both end with the job, the
+        document or the workspace generation."""
         ctx = self.ctx
-        state = {"stamp": None, "busy": False, "stop": None}
+        state = {"stamp": None, "busy": False, "stops": [], "native": None,
+                 "native_busy": False}
 
         def stop():
-            stopper, state["stop"] = state["stop"], None
-            if stopper is not None:
+            stoppers, state["stops"] = state["stops"], []
+            for stopper in stoppers:
                 try:
                     stopper()
                 except Exception:
                     pass                 # already removed, or the document is gone
 
+        def ended():
+            return job.terminal or ctx.closed or job.generation is not ctx.generation
+
+        if on_native is not None:
+            def tick_native():
+                if ended():
+                    stop()
+                    return
+                if state["native_busy"]:
+                    return
+                state["native_busy"] = True
+
+                def read():              # IO pool
+                    try:
+                        fraction = handle.native_fraction()
+                    except (OSError, ValueError, KeyError):
+                        fraction = None
+
+                    def deliver():
+                        state["native_busy"] = False
+                        if ended():
+                            return
+                        shown = None if fraction is None else round(fraction, 2)
+                        if shown == state["native"]:
+                            return
+                        state["native"] = shown
+                        try:
+                            on_native(shown)
+                        except Exception:
+                            log.exception("%s (job %d): run progress not applied",
+                                          job.name, job.pid)
+                    ctx.schedule(deliver)
+                IO_POOL.submit(read)
+
+            native_callback = ctx.doc.add_periodic_callback(tick_native, NATIVE_POLL_MS)
+            state["stops"].append(lambda: ctx.doc.remove_periodic_callback(native_callback))
+
+        if on_progress is None or not handle.kind.progress:
+            return
+
         def tick():
-            if job.terminal or ctx.closed or job.generation is not ctx.generation:
+            if ended():
                 stop()
                 return
             if state["busy"]:
@@ -169,18 +213,20 @@ class WorkflowService:
 
         if handle.detached == "slurm":
             callback = ctx.doc.add_periodic_callback(tick, PROGRESS_POLL_MS)
-            state["stop"] = lambda: ctx.doc.remove_periodic_callback(callback)
+            state["stops"].append(lambda: ctx.doc.remove_periodic_callback(callback))
         else:
-            state["stop"] = handle.on_progress(lambda stamp: ctx.schedule(tick))
+            state["stops"].append(handle.on_progress(lambda stamp: ctx.schedule(tick)))
             ctx.schedule(tick)           # a snapshot written before this document followed
 
     # --- submission ------------------------------------------------------------------
     def submit_operation(self, name, operation, request, on_done, *, kwargs=None, meta=None,
-                         on_progress=None, on_error=None):
+                         on_progress=None, on_error=None, on_native=None):
         """Queue one public operation (:mod:`tumult.synthesis.tasks`) on ``request`` as a
         durable workflow and deliver its result to ``on_done`` once its handle settles, a
-        failure to ``on_error`` after the row has recorded it, and every progress snapshot
-        of the record to ``on_progress`` while it runs. Submission happens here, once;
+        failure to ``on_error`` after the row has recorded it, every progress snapshot
+        of the record to ``on_progress`` while it runs and, to ``on_native``, how far its
+        running dispatch runs are (a fraction, or ``None`` between runs) as that changes.
+        Submission happens here, once;
         nothing waits on the workflow from another pool thread, and the document thread
         never blocks on the result. The workflow is detached: closing the tab leaves it
         running, and only its Processes row cancels it, through the handle. ``name`` and
@@ -203,7 +249,7 @@ class WorkflowService:
         self._status()
         self.ctx.workspace_changed()
         self._subscribe(job, handle, on_done, on_error)
-        self._follow_progress(job, handle, on_progress)
+        self._follow_progress(job, handle, on_progress, on_native)
         return job
 
     # --- recovery of durable workflows after a reconnect ------------------------------

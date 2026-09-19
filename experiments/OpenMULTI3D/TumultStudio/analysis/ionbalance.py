@@ -40,6 +40,7 @@ the object owns the measurement, the fit is replaceable.
 from __future__ import annotations
 
 import html
+import time
 import logging
 
 import astropy.units as u
@@ -607,6 +608,9 @@ class IonBalanceTool(ResultView):
         res.params0, res.entry, res.free, res.tols = dict(params0), entry, free, tols
         res.stage = ms.STAGE_MEASURED
         res.history, res.diags, res.sigmas, res.converged = [], {}, {}, False
+        # the progress strip shows from the submission on; the record's snapshots take over
+        res.progress = {"stage": "Measuring windows" if refit is None else "Screening lines",
+                        "done": 0, "total": 1 + sp.EXPECTED_ITERATIONS, "started": time.time()}
 
         self.draft.commit()
         pulse(self._modal, "close")
@@ -626,9 +630,8 @@ class IonBalanceTool(ResultView):
         # actual submission - a blocking round trip to the workflow daemon - is deferred one
         # document tick (as synthmodal.SynthModal._begin_submit/_end_submit does), rather than
         # sitting in front of it and leaving the modal looking inert until it answers
-        self.ctx.schedule(lambda: self.jobs.submit_operation(
-            res.name, self.task_kind, ctx, self._on_done,
-            kwargs=kwargs, result=res))
+        self.ctx.schedule(lambda: self.submit(res, res.name, self.task_kind, ctx,
+                                              self._on_done, kwargs=kwargs))
 
     task_kind = "sparams.ionbalance"
     import_task_result = lambda self, result, handle: self._on_done(
@@ -865,7 +868,7 @@ class IonBalanceTool(ResultView):
                 f'{continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         if not res.lines:
-            return f'<div class="linelist-empty">Measuring {el} windows…</div>'
+            return f'<div class="linelist-empty">No {el} lines measured yet.</div>'
         return (f'<table class="linelist-table abund-table ionbal-lines" data-tool="ionbal">'
                 f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body) or self._filtered_out_row(columns)}</tbody></table>{self._status_html(res)}')

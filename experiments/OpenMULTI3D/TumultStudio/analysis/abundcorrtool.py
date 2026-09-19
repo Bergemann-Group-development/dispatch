@@ -7,9 +7,11 @@ settings, and states which registered grid is flagged as the **1D LTE reference*
 Preferences → Atmosphere grids). Its one **Compute** button runs both stages as one durable
 ``abundance.nlte_corrections`` workflow (:mod:`tumult.synthesis.tasks`, through
 ``ResultJobs.submit_operation``) on the setup's request with the atom as requested
-departures and the flagged grid as ``reference_atmosphere``. It outlives the tab: the
-stage-1 result arrives as the record's first progress snapshot, every correction round as
-the next ones.
+departures and the flagged grid as ``reference_atmosphere``. The result object is listed
+under its atom and shown the moment the run is submitted, with a progress strip over its
+empty table; the workflow outlives the tab and continues that object (its uid goes with
+the submission): the stage-1 result arrives as the record's first progress snapshot,
+every correction round as the next ones.
 
 1. **Reference.** :func:`tumult.abundance.measure_reference_lines` interpolates the flagged
    1D LTE grid at the target parameters and composition, synthesises the reference
@@ -20,9 +22,9 @@ the next ones.
    those windows are the line masks, and stage 2 runs on the same grid. Without the line
    list, a window that overlaps a neighbouring atom line's is narrowed to the reference
    flux maxima nearest the centre, so a blended line is integrated over its own profile.
-   The result object appears under its atom in the left sidebar as soon as this stage
-   finishes; the reference spectrum itself is drawn only while this result's correction view
-   is shown (:meth:`_render_reference`), not as a sidebar spectrum of its own.
+   The reference spectrum lands on the canvas as soon as this stage finishes, and is drawn
+   only while this result's correction view is shown (:meth:`_render_reference`), not as
+   a sidebar spectrum of its own.
    With **Use line list** on, the configured synthesis line list is synthesised
    with the atom (reference and every NLTE rung), and the reference run's ``linelist_out.txt``
    is what the canvas annotates while the result is shown; off, the canvas shows no line
@@ -51,6 +53,8 @@ from __future__ import annotations
 
 import html
 import logging
+import time
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -134,6 +138,7 @@ class AbundCorrTool(ResultView):
         self.cog = CogPanel("corr_cog", crop=self.panels.crop, fmt=format_value)
 
     def _clear_line_decor(self):
+        self.jumped = None
         super()._clear_line_decor()
         self.cog.clear()
 
@@ -292,7 +297,6 @@ class AbundCorrTool(ResultView):
     # --- line annotations: the reference run's own dump, or none ------------------------
     def select_result(self, uid):
         super().select_result(uid)
-        self.jumped = None
         self.canvas.on_window_resize = self._on_fit_drag
         self._attach_annotations()
         self._render_reference()
@@ -411,6 +415,17 @@ class AbundCorrTool(ResultView):
             return
         self.draft.commit()
         pulse(self._modal, "close")
+        # the result exists from here: listed under its atom, selected and in view with its
+        # progress strip, and continued by the workflow through its uid
+        res = ab.AbundanceResult(element=obj.symbol, symbol=obj.symbol, lines=[],
+                                 summary=correction_summary([]), stage="lines",
+                                 profile=opts.profile, uid=uuid.uuid4().hex[:8],
+                                 atom_path=str(obj.path))
+        res.progress = {"stage": "Computing the 1D LTE reference", "done": 0,
+                        "total": 1 + ab.EXPECTED_ROUNDS, "started": time.time()}
+        self._add_result(res, naming.corrections(obj.symbol, request, self.setup.active_grid()))
+        self.set_step(1)
+        self.select_result(res.uid)
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
         # one durable record runs both stages; the stage-1 result arrives as its first
         # progress snapshot, every correction round as the next ones. The close patch above
@@ -420,45 +435,34 @@ class AbundCorrTool(ResultView):
         # of it and leaving the modal looking inert for however long that round trip takes.
         kwargs = {"reference_atmosphere": atmosphere_grid(ref_grid),
                   "background_lines": opts.linelist, "profile": opts.profile,
-                  "ew_min": opts.ew_min, "limit": opts.limit}
-        name = self.ctx.workspace.unique_name(naming.corrections(obj.symbol, request,
-                                                       self.setup.active_grid()))
-        self.ctx.schedule(lambda: self.jobs.submit_operation(
-            name, self.task_kind, request, lambda result: self._on_task_done(result, name),
-            kwargs=kwargs, on_progress=lambda snapshot: self._on_task_progress(snapshot, name)))
+                  "ew_min": opts.ew_min, "limit": opts.limit, "uid": res.uid}
+        self.ctx.schedule(lambda: self.submit(res, res.name, self.task_kind, request,
+                                              self._on_corr_done, kwargs=kwargs))
 
     task_kind = "abundance.nlte_corrections"
 
-    def _on_task_progress(self, snapshot, name):
-        """A stage-1 result (the first snapshot of a run) is listed as ``name`` and its
-        reference spectrum shown; a later snapshot updates the listed result in place."""
-        if self.find(snapshot.uid) is None:
-            self._on_reference_ready(snapshot, name)
-        else:
-            self._job_progress(self._adopt(snapshot, name))
+    # a record another document submitted: its snapshots continue the result they name
+    # once listed, and list it (selected, its reference drawn) the first time
+    import_task_progress = lambda self, snapshot, handle: self._job_progress(
+        self._adopt(snapshot, handle.label))
+    import_task_result = lambda self, result, handle: self._on_corr_done(
+        self._adopt(result, handle.label))
 
-    def _on_task_done(self, result, name):
-        if self.find(result.uid) is None:
-            self._on_reference_ready(result, name)  # its stage-1 snapshot never arrived
-        self._on_corr_done(self._adopt(result, name))
-
-    import_task_progress = lambda self, snapshot, handle: self._on_task_progress(
-        snapshot, handle.label)
-    import_task_result = lambda self, result, handle: self._on_task_done(result, handle.label)
-
-    def _on_reference_ready(self, result, name):
-        self._add_result(result, name)
-        self.set_step(1)
-        # draws the reference spectrum too, as this result's view is now selected
-        self.select_result(result.uid)
-        self.notify(f"{result.symbol}: {len(result.lines)} reference lines — computing "
-                    "NLTE corrections…")
+    def _job_progress(self, res):
+        """A snapshot landed on ``res``: the reference spectrum and the annotations of its
+        run are shown as soon as the snapshot carries them (the first one does)."""
+        super()._job_progress(res)
+        if self.selected() is res and self.is_focused():
+            self._attach_annotations()
+            self._render_reference()
 
     def _on_corr_done(self, result):
         s = result.summary
         self.push_results()
         if self.selected() is result:
             self._render_selected()
+            self._attach_annotations()
+            self._render_reference()
             if self.jumped is not None and self.jumped < len(result.lines):
                 self._render_line_decor(result.lines[self.jumped])
         if np.isfinite(s["a_mean"]):
@@ -484,6 +488,9 @@ class AbundCorrTool(ResultView):
         self.panels.set_mean(s.get("a_mean", np.nan), self._summary_sigma(s))
 
     def table_html(self, res):
+        if not res.lines:
+            return (f'<div class="linelist-empty">No {html.escape(res.symbol)} reference '
+                    'lines yet.</div>')
         columns = (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("REW", "rew"), ("ΔA", "a"),

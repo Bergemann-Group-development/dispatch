@@ -215,7 +215,10 @@ the resolved inputs (preparation references, padded windows) before launch.
 prepares a pruned line list before any run. The preparation is HOP's own two-stage
 selection: a read bound of the padded windows widened by the skirt, then HOP's negligibility
 test on the reference atmosphere's structure. Blending transitions of other species inside
-the windows survive because HOP selects over the whole window, not by element. The
+the windows survive because HOP selects over the whole window, not by element. An
+abundance ladder makes one selection per node, at the composition the ladder is centred
+on, which its rungs share; hydrogen lines, whose Stark wings reach far beyond the skirt,
+are read unpruned beside it. A line-list folder is pruned as its files, in sorted order. The
 selection runs in `hop_prune.x` child processes (`HOP/standalone/hop_prune.f90`, driven by
 `tumult.prune`), one per uncached reference on the workflow's CPU budget, from the same
 namelist groups the runs read; each writes `<list>.provenance.nml` beside its output. The
@@ -237,6 +240,19 @@ and is reused whenever the same inputs, windows and settings recur.
 
 To synthesise from the full list, set `linelist_skirt=0`. A pruning request without a
 usable MARCS reference raises an error rather than silently reading the full list.
+
+A run of one species alone (`only_elements`, what an abundance analysis without background
+lines synthesises) is not pruned at all: HOP applies the species switches as it reads the
+master list, skipping the blocks of every other species before they are parsed, and
+hydrogen is left out with the rest.
+
+Prunes and runs read the master lists themselves. A master list is a sequence of
+per-species blocks, each ascending in wavelength and, in practice, written with one record
+width, so HOP addresses a block's records arithmetically and bisects it for the windows it
+was given (`HOP/linelist_reader_mod.f90`): a block of an unwanted species costs its two
+header lines, and a window costs its own records rather than the whole file. Reading a
+gigabyte of masters for a narrow window takes tens of milliseconds, and no reduced copy of
+them is made or cached.
 
 Caveats:
 

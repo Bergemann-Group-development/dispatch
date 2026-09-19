@@ -385,6 +385,27 @@ def is_molecule(species):
         return False
 
 
+# composition_patch_mod allocates this many linelist_file slots
+MAX_LINELIST_FILES = 128
+
+
+def linelist_files(path):
+    """The line-list files a file-or-folder setting names, as resolved paths: the file
+    itself, or a folder's direct files in sorted order (dotfiles left out). A folder is
+    expanded here rather than handed to dispatch as ``linelist_folder``: its listing
+    there goes through a shell temp file in the working directory, which the concurrent
+    runs of a synthesis clobber for each other, and the order is then the shell's."""
+    path = Path(path).expanduser().resolve()
+    if not path.is_dir():
+        return (path,)
+    files = tuple(sorted(item for item in path.iterdir()
+                         if item.is_file() and not item.name.startswith('.')))
+    if len(files) > MAX_LINELIST_FILES:
+        raise ValueError(f"{path} holds {len(files)} line-list files; dispatch reads at "
+                         f"most {MAX_LINELIST_FILES}")
+    return files
+
+
 @lru_cache(maxsize=8)
 def atomic_files(folder):
     """Files in ``folder`` whose first species is atomic.
@@ -460,6 +481,14 @@ def load_master(path=MASTER_PATH):
         m.attrs["strength_is_proxy"] = proxy
         _cache[path] = m
     return _cache[path]
+
+
+def forget(path):
+    """Drop the parsed frame of ``path`` (a file or folder) and the folder
+    classification, so the next :func:`load_master` reads the disk again; for a folder
+    whose files were added or removed."""
+    _cache.pop(str(path), None)
+    atomic_files.cache_clear()
 
 
 # --- searching a line list ---------------------------------------------------------

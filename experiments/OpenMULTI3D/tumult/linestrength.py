@@ -71,7 +71,7 @@ from pathlib import Path
 import numpy as np
 
 from . import refstars
-from .linelist import MASTER_PATH, atomic_files, is_molecule, load_master
+from .linelist import MASTER_PATH, atomic_files, is_molecule, linelist_files, load_master
 from tumult.synthesis.api import PROVENANCE_NAME
 from tumult.synthesis.runtime import HOP_LOCK
 
@@ -175,17 +175,9 @@ def _file_identity(path):
 
 
 def _linelist_files(path):
-    """Expand the file-or-folder preference into files accepted by ``hop_prune.x``.
-
-    Production runs hand a folder to ``composition_patch_mod``, which expands its direct
-    children before loading them.  The standalone pruner deliberately accepts explicit
-    files only, so its caller must perform the equivalent expansion.
-    """
-    path = Path(path).expanduser().resolve()
-    if path.is_dir():
-        return tuple(sorted(item for item in path.iterdir()
-                            if item.is_file() and not item.name.startswith('.')))
-    return (path,)
+    """Expand the file-or-folder preference into files accepted by ``hop_prune.x``
+    (:func:`tumult.linelist.linelist_files`); the pruner accepts explicit files only."""
+    return linelist_files(path)
 
 
 @dataclass(frozen=True)

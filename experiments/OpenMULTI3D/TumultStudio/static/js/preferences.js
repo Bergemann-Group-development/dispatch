@@ -1,6 +1,6 @@
 // TumultStudio preferences: the Preferences modal — its category rail, the run-cache
-// page, the atmosphere-grid cards with their shared folder picker, and the
-// reference-star table. Every row is rendered by the server (preferences/), so the
+// page, the atmosphere-grid cards with their shared folder picker, the line-list
+// downloads and the reference-star table. Every row is rendered by the server (preferences/), so the
 // handlers are delegated. Binds after bridge.js and workspace.js.
 (function () {
   var TS = window.TumultStudio;
@@ -16,6 +16,7 @@
 
   wireNav('#settings-modal', function (page) {
     if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
+    if (page === 'linelists') linelistAction('list');  // list the share once, when opened
   });
 
   // clear-all + per-row delete (rows are rendered dynamically into #synth-cache)
@@ -118,6 +119,29 @@
       if (confirm('Delete every downloaded file of ' + btn.dataset.name + '?')) gridAction('del-catalog', gid);
     } else if (btn.classList.contains('grid-del-model')) {
       if (confirm('Delete the downloaded model ' + btn.dataset.name + '?')) gridAction('del-model', gid + ' ' + model_);
+    }
+  });
+
+  // line lists (Preferences → Line lists): the head row and the file rows (rendered
+  // dynamically into #linelist-list) -> "linelist-actions" as "<kind> [<file>]"; deleting
+  // files asks first
+  function linelistAction(kind, arg) {
+    var m = model('linelist-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('click', function (ev) {
+    var sortth = ev.target.closest('#linelist-list .line-sort');
+    if (sortth) { linelistAction('sort', sortth.dataset.sortcol); return; }
+    var btn = ev.target.closest('#linelist-list button');
+    if (!btn || btn.disabled) return;
+    var name = btn.dataset.name || '';
+    if (btn.classList.contains('linelist-relist')) linelistAction('list');
+    else if (btn.classList.contains('linelist-fetch-all')) linelistAction('fetch-all');
+    else if (btn.classList.contains('linelist-fetch')) linelistAction('fetch', name);
+    else if (btn.classList.contains('linelist-del-all')) {
+      if (confirm('Delete every downloaded master line list?')) linelistAction('del-all');
+    } else if (btn.classList.contains('linelist-del')) {
+      if (confirm('Delete the downloaded line list ' + name + '?')) linelistAction('del', name);
     }
   });
 

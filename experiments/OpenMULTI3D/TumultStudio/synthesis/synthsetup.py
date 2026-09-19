@@ -23,7 +23,8 @@ likewise treated as a global, physics-level choice: instead of spawning a second
 
 A host running a line-mask analysis sets :attr:`SynthSetup.element`; the mode form then
 offers **Include background lines** (:attr:`SynthSetup.background_lines`), whose off state
-the host passes on as ``background_lines=False`` to restrict the syntheses to that element.
+the host passes on as ``background_lines=False`` to restrict every synthesis, the screening
+runs included, to that element (no blend screen then, and the line list pruned to it).
 In NLTE the synthesis modal offers **Use line list** (:attr:`SynthSetup.use_linelist`), off
 meaning the model atoms' transitions alone.
 

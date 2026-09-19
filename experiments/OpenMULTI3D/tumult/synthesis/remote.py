@@ -1,11 +1,12 @@
-"""HTTP access to the archives that publish model-atmosphere grids.
+"""HTTP access to the archives that publish model-atmosphere grids and line lists.
 
 The grids in :mod:`.grid_catalog` come as one large zip per grid (Zenodo), one tar of
-gzipped models (the MARCS server) or a web directory index (the M3DIS server). Every one
-of those hosts honours byte-range requests, so a grid can be fetched in parts: a zip's
-central directory names each member's offset and a member is inflated straight from its
-range, an index is read from the HTML listing, and a plain file resumes from its partial
-copy. Only the standard library is used.
+gzipped models (the MARCS server) or a web directory index (the M3DIS server); the line
+lists of :mod:`.linelist_catalog` are plain files on a Seafile share listed through its
+JSON API. Every one of those hosts honours byte-range requests, so an archive can be
+fetched in parts: a zip's central directory names each member's offset and a member is
+inflated straight from its range, an index is read from the HTML listing, and a plain
+file resumes from its partial copy. Only the standard library is used.
 
 ``progress(done, total)`` callbacks count bytes of the current transfer; ``cancel`` is a
 :class:`~tumult.synthesis.cancel.CancelToken` checked between chunks. Listing a grid
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import html
+import json
 from pathlib import Path
 import re
 import ssl
@@ -70,6 +72,12 @@ def _open(url, headers=None, method=None, quick=False):
             time.sleep(2 * attempt)
     host = urllib.parse.urlsplit(url).hostname or url
     raise Unreachable(f"{host} is not responding ({last})")
+
+
+def read_json(url):
+    """The JSON document at ``url``, with the listing timeout."""
+    with _open(url, headers={"Accept": "application/json"}, quick=True) as resp:
+        return json.loads(resp.read())
 
 
 def content_length(url):

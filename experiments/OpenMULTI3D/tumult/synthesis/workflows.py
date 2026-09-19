@@ -409,13 +409,13 @@ def discover_atmos_grid(folder, pattern=DEFAULT_PATTERN, snapshots=None):
 
 
 def _linelist_settings(path):
-    """A ``linelist_params`` dict for a single shared file-or-folder input."""
+    """A ``linelist_params`` dict for a single shared file-or-folder input: the explicit
+    files either way (:func:`tumult.linelist.linelist_files`), so dispatch never lists
+    the folder itself."""
     if not path:
         return {}
-    p = Path(path).expanduser()
-    if p.is_dir():
-        return {"linelist_folder": str(p)}
-    return {"linelist_file": [str(p)]}
+    from ..linelist import linelist_files
+    return {"linelist_file": [str(f) for f in linelist_files(path)]}
 
 
 def build_settings(prefs, run_vals, atmos_format=None):
@@ -545,10 +545,9 @@ def _prune_spec(prefs, prune):
 
     Splits the decision in two: the skirt is a preference (``linelist_skirt_aa``, 0 to switch
     pruning off), because how far outside a window a line may still matter is a property of
-    the physics and not of any one caller; the abundances are the caller's, because only it
-    knows which rung of its ladder is the strongest (see
-    :func:`tumult.synthesis.api._node_linelists`). A caller passing ``prune=None`` gets no
-    pruning whatever the preference says.
+    the physics and not of any one caller; the composition the selection is made at is the
+    caller's (see :func:`tumult.synthesis.api._node_linelists`). A caller passing
+    ``prune=None`` gets no pruning whatever the preference says.
     """
     if prune is None:
         return None
@@ -722,8 +721,8 @@ def compute_window_batch(request, run_values_list, windows, *, extra_presets=Non
     Falls back to one synthesis per window when the variants cannot fold, so callers can
     use this wherever they would otherwise loop :func:`compute_batch` over windows.
 
-    ``prune`` asks for the per-node line-list pruning: ``{"abundances", "relative_abundances"}``
-    of the strongest rung the caller will ask for on these nodes (see :func:`_prune_spec`).
+    ``prune`` asks for the per-node line-list pruning: the ``{"abundances",
+    "relative_abundances"}`` the selection is made at (see :func:`_prune_spec`).
 
     Unfolded variants are still scheduled together, and a run keyed on one abundance is
     reused by any later ladder that asks for the same lattice rung. ``store`` and

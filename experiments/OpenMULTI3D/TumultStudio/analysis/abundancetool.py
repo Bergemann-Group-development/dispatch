@@ -10,10 +10,12 @@ EW, FWHM and EW error, with the dominant transition identified from the line lis
 line's curve of growth is then synthesised and inverted to the abundance reproducing its EW,
 **streaming into the table** as each lands.
 
-What comes back is an :class:`abundance.AbundanceResult` object in the left sidebar and a
-split view (spectrum on top, per-line table below) in the centre, with the set's windows drawn
-on the spectrum exactly as the LineMasks view draws them. The user curates the lines — clicking
-a row jumps the figure to that line, accents its window and overlays its best-fit synthetic.
+The :class:`abundance.AbundanceResult` object exists from the moment the modal submits: it is
+listed in the left sidebar, selected, and shown in a split view (spectrum on top, per-line
+table below) in the centre with a progress strip over the table, with the set's windows drawn
+on the spectrum exactly as the LineMasks view draws them. The measured lines and then every
+round of the synthesis stream into it. The user curates the lines — clicking a row jumps the
+figure to that line, accents its window and overlays its best-fit synthetic.
 
 The right-sidebar panel then carries the two steps that stand on that measurement:
 
@@ -27,10 +29,10 @@ The right-sidebar panel then carries the two steps that stand on that measuremen
    energy and against reduced EW, the same pair an ionisation balance is read against, so a
    temperature or microturbulence trend left in the abundances is visible here.
 
-The measurement is :func:`tumult.abundance.measure_lines`, run in this document so the lines
-can be curated; the synthesis is the ``abundance.fit`` operation with ``method="profile"``
-continuing that measurement (``measured=``) on the setup's request, as a durable workflow
-whose progress snapshots stream each line into the table as it lands; the uncertainties are
+The measurement and the synthesis are one ``abundance.fit`` operation on the setup's
+request, as a durable workflow continuing the listed object (``measured=``, with the mask
+to measure into it on the first run) whose progress snapshots stream each line into the
+table as it lands; a later synthesis continues the curated lines; the uncertainties are
 :func:`tumult.abundance.finalize_result` with the SNR and continuum uncertainty stored on the
 result when its windows were measured. What is left in this module is this
 tool's own modal, submission and rendering; the result navigation, the per-line table and the
@@ -43,12 +45,15 @@ from copy import deepcopy
 
 import html
 import logging
+import time
+import uuid
 from pathlib import Path
 
 import astropy.units as u
 import numpy as np
 
 from tumult import abundance as ab
+from tumult.measurement import mask_key
 from ..workspace import store
 from tumult.synthesis import workflows as synth
 from ..ui.style import ACCENT
@@ -420,6 +425,10 @@ class AbundanceTool(ResultView):
 
     # --- the modal's run: measure the set's windows on the reference --------------------
     def run_lines(self):
+        """Create the abundance object and submit the run that measures the set's windows
+        into it and synthesises them (:func:`tumult.abundance.fit` with the mask). The
+        object is listed, selected and in view from here, with its progress strip; the
+        measurement and every round of the synthesis stream into it."""
         ref_uid, ref_spec, err = self._ref()
         if err:
             self.notify(err)
@@ -431,8 +440,6 @@ class AbundanceTool(ResultView):
         if not any(m.include for m in mset.masks):
             self.notify(f"Every window in “{mset.name}” is switched off.")
             return
-        # the synthesis runs straight after the measurement, so its setup is checked here —
-        # measuring first and failing afterwards would leave a half-run object behind
         request = self.setup.context()
         if request is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
@@ -442,42 +449,28 @@ class AbundanceTool(ResultView):
         preparation["line_list"] = str(self.master_path)
         self.draft.commit()
         pulse(self._modal, "close")
+        ref_name = dict(self.list_observations()).get(ref_uid, "")
+        snr, cont_pct = float(v["snr"]) or None, float(v["cont_pct"])
+        # the method travels on the result, so re-synthesising it later keeps the method
+        # its abundances were determined by unless the modal is reopened to change it
+        res = ab.AbundanceResult(
+            element=mset.element, symbol=mset.element, lines=[], summary=ab.aggregate([]),
+            stage="lines", profile=str(v["profile"]), uid=uuid.uuid4().hex[:8],
+            snr=snr, cont_pct=cont_pct, ref_uid=ref_uid, ref_name=ref_name,
+            maskset_uid=str(mset.uid), maskset_name=mset.name, maskset_key=mask_key(mset),
+            method=str(v["method"]))
+        res.preparation = preparation
+        self._add_result(res, naming.analysis(mset.element, "abundance", ref_name, mset.name,
+                                              request, self.setup.active_grid()))
+        self.set_step(1)                 # the synthesis is what stands on the measurement
+        self.select_result(res.uid)      # focus it: enters abund-mode, renders the split view
         self.notify(f"Measuring {mset.element} windows on the reference…")
-        mset, ref_spec = deepcopy(mset), deepcopy(ref_spec)
-        name = self.ctx.workspace.unique_name(naming.analysis(
-            mset.element, "abundance", dict(self.list_observations()).get(ref_uid, ""), mset.name,
-            request, self.setup.active_grid()))
-        loader = lambda _res, token, progress: self._measure_lines(
-            ref_uid, ref_spec, mset, str(v["profile"]), float(v["snr"]) or None,
-            float(v["cont_pct"]), str(v["method"]))
-        def done(res):
-            res.preparation = preparation
-            self._on_lines_done(res, name, request, ref_spec)
-        self.jobs.submit(f"abund-lines:{name}", loader, done)
-
-    def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct, method):
-        """Measure the set's switched-on windows (:func:`tumult.abundance.measure_lines`).
-
-        The method travels on the result, so re-synthesising it later keeps the method its
-        abundances were determined by unless the modal is reopened to change it.
-        """
-        res = ab.measure_lines(mset, ref_spec, linelist=self.master_path,
-                               profile=profile, snr=snr, cont_pct=cont_pct)
-        res.method = method
-        res.ref_uid = ref_uid
-        res.ref_name = dict(self.list_observations()).get(ref_uid, "")  # for messages only
-        res.snr, res.cont_pct = snr, cont_pct
-        return res
-
-    def _on_lines_done(self, result, name, request, observation):
-        self._add_result(result, name)
-        self.set_step(1)                 # the synthesis is what stands on the measurement now
-        self.select_result(result.uid)   # focus it: enters abund-mode, renders the split view
-        self.notify(f"{result.element}: {len(result.lines)} lines measured — synthesising…")
-        self.run_synth(request, observation, (result.snr, result.cont_pct))
+        self.run_synth(request, deepcopy(ref_spec), (snr, cont_pct), line_mask=deepcopy(mset))
 
     # --- step 1: per-line synthesis (streamed) -----------------------------------------
-    def run_synth(self, request=None, observation=None, uncertainty=None):
+    def run_synth(self, request=None, observation=None, uncertainty=None, line_mask=None):
+        """Submit the selected result's synthesis; with ``line_mask`` the run measures the
+        mask's windows into the result first (the modal's run)."""
         res = self.selected()
         if res is None:
             self.notify("Select an abundance object first.")
@@ -493,11 +486,15 @@ class AbundanceTool(ResultView):
         # chained from a measurement all re-run what this object already is.
         reconfiguring = self._settings_uid == res.uid
         self._settings_uid = None
-        self.notify(f"Synthesising {res.element} lines…")
         obs = observation if observation is not None else self.get_observation(res.ref_uid)
         if obs is None:
             self.notify("The reference observation is no longer loaded.")
             return
+        if line_mask is None:
+            if not res.lines:
+                self.notify("This object has no measured lines to synthesise.")
+                return
+            self.notify(f"Synthesising {res.element} lines…")
         if request is None:
             self.draft.commit()
             pulse(self._modal, "close")
@@ -509,13 +506,20 @@ class AbundanceTool(ResultView):
         method = (str(self.form1.value("method")) if reconfiguring
                   else (res.method or "profile"))
         res.method = method
+        res.progress = {"stage": "Measuring windows" if line_mask is not None
+                        else "Synthesising", "done": 0,
+                        "total": 1 + ab.EXPECTED_ROUNDS, "started": time.time()}
         self.push_setup_note()
         kwargs = {"target": obs, "measured": res, "method": method,
                   "profile": res.profile,
                   "snr": snr, "cont_pct": cont_pct,
                   "background_lines": self.setup.background_lines}
-        self.jobs.submit_operation(res.name, self.task_kind, ctx,
-                                   self._on_synth_done, kwargs=kwargs, result=res)
+        if line_mask is not None:
+            kwargs["line_mask"] = line_mask
+        # the modal's close patch only reaches the browser once this callback returns, so
+        # the submission (a round trip to the workflow daemon) is deferred one document tick
+        self.ctx.schedule(lambda: self.submit(res, res.name, self.task_kind, ctx,
+                                              self._on_synth_done, kwargs=kwargs))
 
     task_kind = "abundance.fit"
     import_task_result = lambda self, result, handle: self._on_synth_done(
@@ -602,6 +606,9 @@ class AbundanceTool(ResultView):
                 + "".join(rows))
 
     def table_html(self, res):
+        if not res.lines:
+            return (f'<div class="linelist-empty">No {html.escape(res.element)} lines '
+                    'measured yet.</div>')
         # the fit columns are the method's own: a curve of growth has no velocity shift or
         # broadening to report, and only a profile fit leaves a chi-square behind
         cog = res.method == "cog"

@@ -104,6 +104,17 @@
 .abund-flags { color: #e0a05c; }
 .abund-summary { padding: 8px 4px 2px; font-weight: 600; }
 .abund-budget { font-weight: 400; color: var(--text-muted); }
+/* the strip over a running result's table (resultview.progress_html): the stage under way,
+   the steps done over those expected as a bar, and the elapsed and remaining time, which
+   analysis.js keeps ticking between snapshots */
+.result-progress { display: flex; align-items: center; gap: 10px; padding: 6px 8px 4px;
+  font-size: 11px; }
+.result-progress-stage { font-weight: 600; white-space: nowrap; }
+.result-progress-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--border);
+  overflow: hidden; }
+.result-progress-fill { height: 100%; border-radius: 3px; background: var(--accent);
+  transition: width 0.4s ease; }
+.result-progress-text { color: var(--text-muted); white-space: nowrap; }
 
 /* ---------------------------------------------------------------------------
    Model atoms: the atom objects (left sidebar, with their correction results nested

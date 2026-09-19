@@ -656,6 +656,92 @@ def test_monitor_reports_what_it_can_without_a_log(tmp_path):
     assert monitor(run, log_file) == (0, 99)
 
 
+QUEUE = """\
+ print_list
+ F T F F   0   1   0.0000   mhd_patch     128   1
+ F T F F     rt_patch     129   1 -15  -1
+ F T F F     rt_patch     130   1 -14  -1
+ F T F F     rt_patch     131   1 -13  -1
+ F T F F     rt_patch     132   1  -3   1
+ F T F F     rt_patch     133   1   1   1
+"""
+DISPATCH = """\
+       0.18499600  0   3  PRE    mhd_patch      128   1   0   0        0.00000000
+       0.18505000  0   3  END    mhd_patch      128   1   0   0        0.00000000
+       0.20000000  0   3  PRE     rt_patch      129   1 -15  -1        0.50000000
+       0.30000000  0   3  END     rt_patch      129   1 -15  -1        0.50000000
+       0.30000000  0   3  SKP     rt_patch      130   1 -14  -1        0.50000000
+       0.40000000  0   4  PRE     rt_patch      131   1 -13  -1        0.50000000
+       0.40000000  0   5  END     rt_patch      132   1  -3   1        0.50000000
+       0.40000000  0   6  END     rt_patch      133   1   1   1        0.50000000
+       0.50000000  0   6  END     rt_patch      133   1   1   1        1.50000000
+"""
+
+
+def test_monitor_counts_the_output_pass_rt_tasks(tmp_path):
+    """A synthesis's rate is its output pass: the final output rays (``i_mu < 0``) run
+    once, the scattering loop's rays (``i_nu < 0``) ``rt_output_params%maxiter`` times,
+    both listed in the queue at the start and logged in the dispatch file as they end
+    (or are skipped, their result at hand). The iteration pass (both indices positive)
+    sweeps its rays repeatedly until convergence, so those rows are left out and a
+    departure solve's iterations, from the log, are its rate."""
+    from tumult.launch import monitor
+
+    run = tmp_path / 'lte'
+    run.mkdir()
+    (run / 'params.nml').write_text("&rt_output_params maxiter=2 /\n")
+    assert monitor(run) == (0, 0)                                  # nothing listed yet
+    (run / 'rank_00000.que').write_text(QUEUE)
+    assert monitor(run) == (0, 6)                    # setup + 3 final rays + 2 x 1 scattering
+    (run / 'rank_00000.disp').write_text(DISPATCH)
+    assert monitor(run) == (4, 6)                    # setup, 2 final rays, 1 scattering sweep
+
+    solve, log_file = _monitor_run(tmp_path)         # no output group: one sweep of each
+    (solve / 'rank_00000.que').write_text(QUEUE)
+    (solve / 'rank_00000.disp').write_text(DISPATCH)
+    assert monitor(solve, log_file) == (2 + 1 + 3, 99 + 1 + 4)
+
+
+def test_workflow_handle_reports_the_steps_runs_fraction(tmp_path):
+    """A followed workflow's strip fills with the step under way: over the runs the
+    record names for it (every run of a batch is named before any launches), the mean of
+    not started (0), running (its task fraction) and finished since the last snapshot (1);
+    a run finished before that snapshot is a cache hit of an earlier step and does not
+    count, nor does a failed one."""
+    import json
+    import time
+    from tumult.synthesis import submission
+
+    folder = tmp_path / '_workflows' / 'wf'
+    folder.mkdir(parents=True)
+    now = time.time()
+    runs = []
+    for name, state, disp, ended in (('old', 'finished', DISPATCH, now - 100),
+                                     ('done', 'finished', DISPATCH, now + 5),
+                                     ('running', 'running', DISPATCH, None),
+                                     ('failed', 'failed', '', now + 5),
+                                     ('planned', None, '', None)):
+        run = tmp_path / name
+        run.mkdir()
+        (run / 'params.nml').write_text("&io_params verbose=0 /\n")
+        if state is not None:
+            record = {'state': state, 'output': str(run), 'started': now - 10}
+            if ended is not None:
+                record['ended'] = ended
+            (run / 'job.json').write_text(json.dumps(record))
+        (run / 'rank_00000.que').write_text(QUEUE)
+        (run / 'rank_00000.disp').write_text(disp)
+        runs.append(str(run))
+    handle = submission.open_workflow(folder)
+    submission.update_record(folder, state='running', started=now, runs=[])
+    assert handle.native_fraction() is None
+    submission.update_record(folder, runs=runs)
+    # done 1, running 4/5, planned 0; old and failed left out
+    assert handle.native_fraction(since=now) == pytest.approx((1 + 4 / 5 + 0) / 3)
+    assert handle.native_fraction() == pytest.approx((1 + 4 / 5 + 0) / 3)   # since = start
+    assert handle.native_fraction(since=now - 200) == pytest.approx((1 + 1 + 4 / 5 + 0) / 4)
+
+
 def test_progress_watch_reports_a_running_run(tmp_path):
     """The watcher turns the run's own files into a fraction while the work blocks."""
     from tumult.synthesis import progress

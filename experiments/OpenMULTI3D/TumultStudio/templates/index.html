@@ -9,6 +9,14 @@
 {% endblock %}
 
 {% block contents %}
+{# the loading overlay: the page's own markup is on screen well before BokehJS has
+   rendered the figures into it, so the overlay of the landing page (landing.html)
+   continues here until the document is idle (loading.js, at the end of this block) #}
+<div id="loading">
+  <div class="title">TUMULT&nbsp;Studio</div>
+  <div class="track"><div class="bar"></div></div>
+  <div class="status">Rendering…</div>
+</div>
 {% from "analysis.html" import modals as analysis_modals with context %}
 {% include "workspace.html" %}
 {% include "preferences.html" %}
@@ -35,4 +43,21 @@
 <script>{{ atmos_script|safe }}</script>
 <!-- ... and one for the shared interactions of the analysis tools (resultview) -->
 <script>{{ analysis_script|safe }}</script>
+<!-- the loading overlay comes down once BokehJS has rendered every root -->
+<script>
+(function () {
+  var t0 = Date.now();
+  function ready() {
+    var doc = window.Bokeh && Bokeh.documents[0];
+    // the cap uncovers the page when BokehJS never settles (a script error), so the
+    // failure is visible rather than hidden behind the overlay
+    if ((doc && doc.is_idle) || Date.now() - t0 > 20000) {
+      document.getElementById('loading').remove();
+    } else {
+      setTimeout(ready, 50);
+    }
+  }
+  ready();
+})();
+</script>
 {% endblock %}
