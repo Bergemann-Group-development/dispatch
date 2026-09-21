@@ -111,6 +111,7 @@ contains
     class(ion_type), pointer :: ion
     class(massive_type), pointer :: species
     character(len=256), save, dimension(:), allocatable :: atom_file
+    character(len=512), save :: atom_root=''
     real(8), dimension(:), allocatable :: abundance
     real(8), save :: qnorm=10.0
     integer, save :: itimer=0, natom=0, n_in_lines=0
@@ -119,7 +120,7 @@ contains
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
     integer :: i, j, iostat, nlvl
-    namelist /atom_params/ atom_file, qnorm, exclude_trace_cont, level_partf, &
+    namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
       overlapping_bb, detailed_absmet, &
@@ -144,6 +145,12 @@ contains
       call io%namelist_warning ('atom_params', iostat)
 
       natom = count(atom_file /= '')
+      ! atom_root is prepended to every atom_file
+      if (atom_root /= '') then
+        do i = 1, natom
+          atom_file(i) = trim(atom_root)//'/'//trim(atom_file(i))
+        end do
+      endif
       if (natom == 0) then
         print *, 'WARNING: no atom specified'
         call trace%end(itimer)

@@ -76,7 +76,8 @@ contains
     logical :: use_abnd=.false., read_departures_local=.false.
     character(len=512) :: command
     character(len=512) :: save_file
-    namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
+    character(len=512) :: atmos_root=''
+    namelist /atmos_params/ atmos_root, atmos_file, dims, verbose, patches_per_mpi, FeH, &
       save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, pchip_interpolation, &
       log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures, &
       prune_top, prune_tol
@@ -97,6 +98,8 @@ contains
       read (io%input, atmos_params)
     end if
     call io%namelist_warning ('atmos_params', iostat)
+    ! atmos_root is prepended to atmos_file
+    if (atmos_root /= '') atmos_file = trim(atmos_root)//'/'//trim(atmos_file)
 
     if (amr/='') then
       ! making sure that dims is not 1, otherwise amr has no effect
