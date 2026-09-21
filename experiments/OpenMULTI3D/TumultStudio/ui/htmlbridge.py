@@ -11,15 +11,23 @@ _nonce = itertools.count()
 
 def html_bridge(container_id, name=None):
     """Return a hidden TextInput; setting its `.value` replaces the innerHTML of
-    the element with id `container_id`."""
+    the element with id `container_id`. Like every bridge this only fires when the
+    value changes; :func:`push_html` forces a push of unchanged markup."""
     bridge = TextInput(value="", visible=False)
     if name:
         bridge.name = name
     bridge.js_on_change("value", CustomJS(args=dict(cid=container_id), code="""
         const el = document.getElementById(cid);
-        if (el) el.innerHTML = cb_obj.value;
+        if (el) el.innerHTML = cb_obj.value.split('\\0')[0];
     """))
     return bridge
+
+
+def push_html(bridge, markup):
+    """Push ``markup`` through an :func:`html_bridge` even when it equals the last push,
+    replacing whatever the user has since typed into the container's inputs. NUL
+    separates markup and nonce because the markup itself may hold anything else."""
+    bridge.value = f"{markup}\0{next(_nonce)}"
 
 
 def html_bridge_all(selector, name=None):
@@ -53,8 +61,9 @@ def dialog_bridge(dialog_id, name=None):
     ``<dialog>`` with id `dialog_id` — so the server can dismiss a modal once the work it
     was opened for (e.g. importing the picked file) has actually succeeded. A third state,
     "reject…", leaves the dialog open (server-side validation refused the submit) but
-    still resets a submit button a click left disabled and spinning — the page's own
-    ``resetBusy(el)``, called if it exists, so a plain page never has to define it."""
+    still resets a submit button a click left disabled and spinning — the page's
+    ``TumultStudio.resetBusy(el)`` (bridge.js), called if it exists, so a plain page never
+    has to define it."""
     bridge = TextInput(value="", visible=False)
     if name:
         bridge.name = name
@@ -64,7 +73,10 @@ def dialog_bridge(dialog_id, name=None):
         const want = cb_obj.value.split(':')[0];
         if (want === 'open' && !el.open) el.showModal();
         else if (want === 'close' && el.open) el.close();
-        else if (want === 'reject' && typeof resetBusy === 'function') resetBusy(el);
+        else if (want === 'reject') {
+            const ts = window.TumultStudio;
+            if (ts && typeof ts.resetBusy === 'function') ts.resetBusy(el);
+        }
     """))
     return bridge
 

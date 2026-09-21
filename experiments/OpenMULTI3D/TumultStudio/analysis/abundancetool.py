@@ -423,6 +423,12 @@ class AbundanceTool(ResultView):
                                 "continuum-normalised flux.")
         return ref_uid, spec, None
 
+    def _reject(self, message):
+        """Refuse a run: report why and, when the modal's submit button started it, reset
+        that button (the dialog stays open; the panel's buttons are never made busy)."""
+        self.notify(message)
+        pulse(self._modal, "reject")
+
     # --- the modal's run: measure the set's windows on the reference --------------------
     def run_lines(self):
         """Create the abundance object and submit the run that measures the set's windows
@@ -431,18 +437,18 @@ class AbundanceTool(ResultView):
         measurement and every round of the synthesis stream into it."""
         ref_uid, ref_spec, err = self._ref()
         if err:
-            self.notify(err)
+            self._reject(err)
             return
         mset = self._pending_set
         if mset is None:
-            self.notify("Nothing to measure — start from a line mask.")
+            self._reject("Nothing to measure — start from a line mask.")
             return
         if not any(m.include for m in mset.masks):
-            self.notify(f"Every window in “{mset.name}” is switched off.")
+            self._reject(f"Every window in “{mset.name}” is switched off.")
             return
         request = self.setup.context()
         if request is None:
-            self.notify(self.setup.reason or "Configure the synthesis setup first.")
+            self._reject(self.setup.reason or "Configure the synthesis setup first.")
             return
         v = self.form1.values()
         preparation = self.ctx.canvas.preparation(self.ctx.canvas.spectra.find(ref_uid))
@@ -473,12 +479,12 @@ class AbundanceTool(ResultView):
         mask's windows into the result first (the modal's run)."""
         res = self.selected()
         if res is None:
-            self.notify("Select an abundance object first.")
+            self._reject("Select an abundance object first.")
             return
         self.setup.element = res.element
         ctx = request if request is not None else self.setup.context()
         if ctx is None:
-            self.notify(self.setup.reason or "Configure the synthesis setup first.")
+            self._reject(self.setup.reason or "Configure the synthesis setup first.")
             return
         # only the modal's Synthesise again changes the method, because only there is the
         # choice in front of the user. Every other route keeps the method the result's
@@ -488,11 +494,11 @@ class AbundanceTool(ResultView):
         self._settings_uid = None
         obs = observation if observation is not None else self.get_observation(res.ref_uid)
         if obs is None:
-            self.notify("The reference observation is no longer loaded.")
+            self._reject("The reference observation is no longer loaded.")
             return
         if line_mask is None:
             if not res.lines:
-                self.notify("This object has no measured lines to synthesise.")
+                self._reject("This object has no measured lines to synthesise.")
                 return
             self.notify(f"Synthesising {res.element} lines…")
         if request is None:

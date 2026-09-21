@@ -105,7 +105,15 @@
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abund-close')) { ewAction('abundance'); return; }
     if (ev.target.closest('.abund-settings')) { analysisAction('abund', 'settings'); return; }
-    if (ev.target.closest('.abund-run-lines')) { analysisAction('abund', 'run-lines'); return; }
+    // the modal's footer submit goes busy like the other job-launching modals; the
+    // panel's Run synthesis stays plain, since only a dialog close resets a busy button
+    var submit = ev.target.closest('#abund-modal .abund-run-lines, #abund-modal .abund-run-synth');
+    if (submit) {
+      if (busySubmit(submit)) {
+        analysisAction('abund', submit.classList.contains('abund-run-lines') ? 'run-lines' : 'run-synth');
+      }
+      return;
+    }
     if (ev.target.closest('.abund-run-synth')) { analysisAction('abund', 'run-synth'); return; }
     if (ev.target.closest('.abund-run-uncert')) { analysisAction('abund', 'run-uncert'); }
   });

@@ -133,6 +133,14 @@ a:hover { color: var(--text); }
   color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .primary-btn:hover { filter: brightness(1.08); }
+/* a submit button whose click is being handed to the server (bridge.js busySubmit): the
+   disabled fade plus an ellipsis that fills in dot by dot after the label */
+.primary-btn.busy { cursor: progress; }
+.primary-btn.busy::after {
+  content: '...'; display: inline-block; overflow: hidden; vertical-align: bottom;
+  width: 0; animation: ellipsis 1.2s steps(4, jump-none) infinite;
+}
+@keyframes ellipsis { to { width: 3ch; } }
 .spinner { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
   border: 2px solid var(--border); border-top-color: var(--accent);
   animation: spin 0.7s linear infinite; }

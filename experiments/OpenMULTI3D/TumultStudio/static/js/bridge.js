@@ -249,24 +249,23 @@
   }
 
   // a job-launching modal's submit button: the daemon round trip a click starts can take
-  // a moment, so give feedback (disabled + spinner) at once instead of leaving the button
-  // looking inert until the server gets around to closing the dialog. Returns false (and
-  // sends nothing) for a click that arrives while the button is already busy — the
-  // client-side half of the double-submit guard; the synth modal's own `_pending` flag
-  // (synthmodal.py) holds the server-side half for its action. A rejected submit (the
-  // dialog stays open) resets the button through the dialog bridge's "reject" state
-  // (see htmlbridge.dialog_bridge) rather than here, since that is a server decision.
+  // a moment, so give feedback at once (disabled, with an animated ellipsis after the
+  // label — the .busy rule in base.css) instead of leaving the button looking inert until
+  // the server gets around to closing the dialog. Returns false (and sends nothing) for a
+  // click that arrives while the button is already busy — the client-side half of the
+  // double-submit guard; the synth modal's own `_pending` flag (synthmodal.py) holds the
+  // server-side half for its action. A rejected submit (the dialog stays open) resets the
+  // button through the dialog bridge's "reject" state (see htmlbridge.dialog_bridge)
+  // rather than here, since that is a server decision.
   function busySubmit(btn) {
     if (!btn || btn.disabled) return false;
     btn.disabled = true;
-    btn.dataset.busyLabel = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span>&nbsp;' + btn.innerHTML;
+    btn.classList.add('busy');
     return true;
   }
   function resetBusy(scope) {
-    (scope || document).querySelectorAll('[data-busy-label]').forEach(function (btn) {
-      btn.innerHTML = btn.dataset.busyLabel;
-      delete btn.dataset.busyLabel;
+    (scope || document).querySelectorAll('button.busy').forEach(function (btn) {
+      btn.classList.remove('busy');
       btn.disabled = false;
     });
   }

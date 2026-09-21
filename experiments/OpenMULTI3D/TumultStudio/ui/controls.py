@@ -28,7 +28,7 @@ import html
 
 from bokeh.models import TextInput
 
-from .htmlbridge import html_bridge
+from .htmlbridge import html_bridge, push_html
 
 
 def num_input(attrs, value="", min=None, max=None, step=None, placeholder=None):
@@ -190,7 +190,10 @@ class Form:
         return body
 
     def render(self):
-        self.render_bridge.value = self.html()
+        """Repaint the fields from the server-side values, also when the markup did not
+        change: the page may hold edits (or values from an earlier open) that the server
+        has since reset to the same state it last rendered."""
+        push_html(self.render_bridge, self.html())
 
     def set_values(self, **values):
         for key, value in values.items():

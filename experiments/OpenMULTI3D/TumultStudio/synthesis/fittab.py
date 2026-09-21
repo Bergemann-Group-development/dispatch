@@ -23,7 +23,7 @@ from bokeh.models import TextInput
 from ..workspace import store
 from tumult.synthesis import workflows as synth
 from ..ui.controls import num_input
-from ..ui.htmlbridge import html_bridge, parse_action
+from ..ui.htmlbridge import html_bridge, parse_action, push_html
 
 # the stellar axes (key, label), shared with the modal's Stellar parameters section; the
 # post-processing params (key, label, step); 'vmac' is the UI name for the macroturbulence
@@ -184,8 +184,10 @@ class FitTab:
                 "post": self.post_html(), "abund": self.abund_html()}
 
     def render(self):
+        """Repaint every slot from the server-side state, also where the markup is
+        unchanged (a reopened modal may show values the page edited since)."""
         for slot, markup in self.html().items():
-            self.bridges[slot].value = markup
+            push_html(self.bridges[slot], markup)
 
     # --- state persistence ------------------------------------------------
     def _persist(self):
