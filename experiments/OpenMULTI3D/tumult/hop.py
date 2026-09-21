@@ -64,8 +64,8 @@ def find_library():
 def find_header():
     """Locate libhop.h: $HOP_HEADER if set, else HOP/standalone/libhop.h.
 
-    The header is generated from the BIND(C) declarations by the Makefile's ``$(HDR)``
-    rule and committed, so it is the single source of truth for the ABI -- nothing here
+    The header is written from the BIND(C) declarations by the Makefile's ``bindings``
+    target and committed, so it is the single source of truth for the ABI -- nothing here
     hand-writes a signature.
     """
     hdr = os.environ.get('HOP_HEADER', '')

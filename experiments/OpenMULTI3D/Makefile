@@ -71,17 +71,14 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
 rt_solvers_mod.o: rt_patch_mod.o
 # The standalone HOP package is built in its own directory with -DHOP_STANDALONE, so its
 # objects never mix with the framework-enabled ones above.  Its default target builds
-# everything the Python layer loads: libhop.so (tumult.hop), the libhop.h bindings it is
-# read through, and the hop_prune.x line-list pruner.  Building all of it here keeps a
-# plain `make` sufficient for every entry point -- a build that produced only one of them
-# fails at run time in the other.  The standalone Makefile is gfortran-only, so other
-# compilers skip it; `make hop_standalone` works wherever gfortran is on the PATH.
-ifeq ($(COMPILER), gfortran)
+# what the Python layer runs: libhop.so (tumult.hop, through the committed libhop.h) and
+# the hop_prune.x line-list pruner.  Building both here keeps a plain `make` sufficient
+# for every entry point -- a build that produced only one of them fails at run time in
+# the other.  The package takes this build's compiler and option group.
 default: hop_standalone
-endif
 hop_standalone:
-	$(MAKE) -C HOP/standalone
+	@$(MAKE) --no-print-directory -C HOP/standalone COMPILER=$(COMPILER) OPTS=$(OPTS)
 clean:: clean_standalone
 clean_standalone:
-	$(MAKE) -C HOP/standalone clean
+	@$(MAKE) --no-print-directory -C HOP/standalone clean
 .PHONY: hop_standalone clean_standalone

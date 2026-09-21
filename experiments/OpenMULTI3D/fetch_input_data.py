@@ -59,7 +59,7 @@ def make_ssl_context(insecure: bool = False) -> ssl.SSLContext:
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
     try:
-        import certifi  # usually pulled in transitively by numpy/matplotlib/etc.
+        import certifi  # in requirements.txt; absent on a bare interpreter
         return ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         return ssl.create_default_context()

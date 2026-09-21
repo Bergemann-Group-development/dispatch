@@ -1,282 +1,204 @@
-# OpenMULTI3D — Getting Started
+# Installing OpenMULTI3D
 
-You've just cloned the repo. This experiment has two parts, both needed for a
-full setup:
+OpenMULTI3D synthesises stellar spectra from 1D and 3D model atmospheres, in LTE and
+NLTE. A working installation has three parts:
 
-1. **Fortran radiative-transfer code** (`SRC/`, `HOP/`) — compiles into the
-   `dispatch.x` executable that runs the synthesis.
-2. **Python stack** — the `tumult/` synthesis library and the `TumultStudio/`
-   Bokeh GUI built on top of it.
+- **`dispatch.x`**, the native executable built from `SRC/` and `HOP/`. It solves the
+  radiative transfer for one namelist and writes the result to a run folder under
+  `data/`.
+- **`tumult`**, the Python package that prepares and launches runs, reads their output
+  and provides the analysis workflows.
+- **TumultStudio**, the optional browser GUI (Bokeh) built on `tumult`.
 
-Follow the steps below in order. Once set up, [docs/FAQ.md](docs/FAQ.md) answers
-workflow questions (masked synthesis, 3D snapshots, departures, long jobs, abundances).
+This guide ends with a verified installation. [QUICKSTART.md](QUICKSTART.md) then
+introduces the calculations and [docs/GUIWorkflow.md](docs/GUIWorkflow.md) the GUI.
 
----
+## 1. Checkout layout and requirements
 
-## 0. Prerequisites
-
-- **Python 3.11+** (3.11 is the reference version; 3.12+ also works)
-- **A Fortran compiler**: `gfortran` (recommended) or Intel `ifort`
-- **git** (to have gotten this far) and **make**
-
-Install a Fortran compiler if you don't have one:
+OpenMULTI3D is an experiment inside the DISPATCH repository and is built with
+DISPATCH's shared build configuration. Clone the repository and work in the experiment
+directory; every command in this guide runs there:
 
 ```bash
-# macOS (Homebrew)
-brew install gcc          # provides gfortran
-
-# Linux (Debian/Ubuntu)
-sudo apt install gfortran
+git clone https://github.com/Bergemann-Group-development/dispatch.git
+cd dispatch/experiments/OpenMULTI3D
 ```
 
-Check it's on your `PATH`:
+The local [Makefile](Makefile) includes `../../config/Makefile` from the parent
+checkout, so a copy of this directory on its own does not build.
+
+You need:
+
+- macOS or Linux. The commands below were verified on macOS 15 (Apple silicon, Homebrew
+  GCC 15); Linux x86-64 uses the same commands.
+- A Fortran compiler: `gfortran`, `ifort` or `ifx`. On Apple silicon use gfortran: the
+  macOS Intel compilers produce x86-64 code only, which runs slower under Rosetta, and an
+  x86-64 HOP library cannot be loaded by an arm64 Python at all.
+- `make` and `perl` (the build scans module dependencies with a Perl script).
+- Python 3.11 or later (verified with 3.14), with `venv` and `pip`.
 
 ```bash
-gfortran --version
+brew install gcc            # macOS: provides gfortran
+sudo apt install gfortran   # Debian/Ubuntu
+gfortran --version          # check it is on PATH
 ```
 
----
-
-## 1. Set up the Python environment
+## 2. Python environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt        # headless use: the tumult package
+pip install -r requirements-gui.txt    # adds TumultStudio (Bokeh) and notebook support
 ```
 
-This installs the headless `tumult/` stack. For TumultStudio and notebook
-support, install the GUI extras instead:
+`requirements-gui.txt` includes `requirements.txt`, so the second command alone gives the
+full setup.
 
-```bash
-pip install -r requirements-gui.txt
-```
+`tumult` is imported from this checkout rather than installed, so keep the environment
+activated and start Python here: an interactive `python` session, a notebook or a script
+saved in this directory all import `tumult` when started from this directory.
 
----
-
-## 2. Compile the Fortran code
-
-The build uses the top-level DISPATCH `config/Makefile` (two levels up)
-together with the local [`Makefile`](Makefile). The compiler is auto-detected
-(`gfortran` if present, otherwise `ifort`) — no manual configuration needed
-on a standard macOS or Linux machine:
+## 3. Build the native code
 
 ```bash
 make -j
 ```
 
-This produces the executable `dispatch.x` in this directory. To clean and
-rebuild from scratch:
+The compiler is detected (`gfortran`, otherwise `ifort`); `make -j COMPILER=ifort`
+forces one, and everything below is built with it. About two minutes on eight cores.
+The build produces
+
+- `dispatch.x` in this directory;
+- `HOP/standalone/build/libhop.so`, the EOS and opacity library that `tumult.hop` loads
+  through the committed header `HOP/standalone/libhop.h`;
+- `HOP/standalone/build/hop_prune.x`, the line-list pruner the synthesis workflows run.
+
+`make clean && make -j` rebuilds everything from scratch; `make -C HOP/standalone`
+rebuilds the HOP library alone.
+
+## 4. Input data
+
+The repository tracks the inputs the verification below needs: one MARCS solar model,
+four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data
+and the atomic line list `input/linelists/master_line.txt`.
+
+The larger inputs are hosted on MPCDF Keeper,
+<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>, in a layout that mirrors
+`input/`: the standard-composition MARCS grid (`input/atmos/MARCS/`, 142 MB zipped,
+394 MB unpacked), the sampled metal-line background opacity tables
+(`input/absmet_files/`, four files of 182 MB), further model atoms (`input/atoms/public/`)
+and the per-species master line lists (`input/linelists/master_linelists/`, about 1 GB).
+The download is 1.9 GB and occupies about 2.5 GB after unpacking. TumultStudio and the
+synthesis workflows read the MARCS grid, the absmet tables and the line lists; the
+verification below does not need them.
 
 ```bash
-make clean
-make -j
+python fetch_input_data.py            # download, unpack and merge into ./input
+python fetch_input_data.py --dry-run  # list what would be downloaded
 ```
 
-> If you have multiple Fortran compilers installed and want to force a
-> specific one, pass it explicitly, e.g. `make -j COMPILER=ifort`. Compiler
-> profiles live under `../../config/compiler/<name>/`.
+The script uses only the standard library, skips files that are already present with the
+right size and unpacks each archive once, so it can be re-run after an interruption.
+`--clean-zips` deletes the archives after unpacking. Downloaded files are git-ignored.
 
----
+Individual line lists can be fetched later, from TumultStudio's Preferences → Line lists
+page or with `python -m tumult.synthesis.linelist_catalog list` and
+`fetch DEST --file <name>`. The published 3D grids (Stagger, M3DIS) are fetched per model
+and snapshot by `tumult.synthesis.grid_catalog` (module docstring) or from Preferences →
+Atmosphere grids.
 
-## 3. Get the input data
+## 5. Verify the installation
 
-Model atoms, line lists, MARCS atmospheres, and opacity/`absmet` files
-(about 1.9 GB) are too large for git and are hosted on MPCDF Keeper:
-
-<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>
-
-The share mirrors the layout of [`input/`](input/). Download and merge it
-into `input/` with the provided script (stdlib only, no extra packages
-needed — works even before you set up the venv):
-
-```bash
-python fetch_input_data.py            # download + unpack + merge into ./input
-python fetch_input_data.py --dry-run  # preview what would be downloaded
-```
-
-The script is re-runnable: files already present with the right size are
-skipped, and archives are only unpacked once. The downloaded data stays
-git-ignored, so it will not bloat the repository.
-
-The per-species master line lists (about 1 GB of the share) can also be fetched
-one at a time, from TumultStudio's Preferences → Line lists page or with
-`python -m tumult.synthesis.linelist_catalog list` / `fetch DEST --file <name>`.
-
-> **macOS TLS error** (`CERTIFICATE_VERIFY_FAILED: unable to get local issuer
-> certificate`): the python.org framework Python ships without a CA trust store.
-> Fix it once by running the installer's cert step, e.g.
-> `/Applications/Python\ 3.12/Install\ Certificates.command`. The script also
-> uses the `certifi` bundle automatically when it is installed, and offers a
-> `--insecure` last resort that skips certificate verification.
-
----
-
-## 4. Run a test synthesis
-
-From this directory, with the input data in place:
+Run the demo namelist:
 
 ```bash
 OMP_STACKSIZE=256M ./dispatch.x demo.nml
 ```
 
-`demo.nml` (or any of the other `*.nml` namelist files here) configures the
-run. Output is written to `data/<input-path-without-suffix>/`; spectra land
-under `save/` as `out_lam.bin` (the wavelength grid) plus `ie_0NNNNN.bin`
-chunks.
+`demo.nml` synthesises the four Ba II lines of a six-level toy model atom
+(`input/atoms/atom.ba06`: 4554, 4934, 5853 and 6497 Å) in a MARCS solar model, in LTE
+and NLTE, without a background line list. It takes well under a minute (about one second
+on eight cores). `tumult.launch` sets the same `OMP_STACKSIZE` for every run it starts.
+The run succeeded when the last line of the output is
 
-See `demo.ipynb` for an example that runs `dispatch.x` and then loads and
-plots the resulting spectrum with `tumult.read(...)`.
+```
+OpenMULTI3D terminated normally.
+```
 
-### Launching a run from Python
-
-Instead of calling `dispatch.x` directly, `tumult.launch` can build a namelist
-from a default `.nml` file plus overrides, run `dispatch.x` for you, and skips
-the run entirely if a completed output already exists at that path:
+and `data/demo/` holds the run. Then read the result from Python:
 
 ```python
 import tumult
 
-output_folder, ran = tumult.launch(
-    'demo_run',                                  # run name -> data/demo_run/, ./demo_run.nml
-    default='demo.nml',                           # base namelist to start from
-    nml_settings={'atom_params': {'convlim': 1e-3}},  # overrides on top of the default
-)
-
-run = tumult.read(output_folder)
-run.get_spectrum(imu=0, LTE=True).plot()
+run = tumult.read("data/demo")
+for lte in (True, False):
+    core = run.crop(x0=4554.033, dx=1.0, LTE=lte).ydata.min()
+    print("LTE " if lte else "NLTE", f"Ba II 4554 core flux {core:.3f}")
+print(tumult.HopEOS(feh=0.0).load_state([5777.0], rho=[2.5e-7]).ne)
 ```
 
-`launch()` returns `(output_folder, ran)`, where `ran` is `False` if it served
-a cached completed run instead of re-running `dispatch.x`. See
-`tumult/launch.py` for the full set of options (`threads`, `run_async`,
-`slurm_script`, etc.).
+Expected output (the first import compiles numerical kernels and takes a few seconds):
 
-### Scripting a synthesis
-
-A `SynthRequest` states a calculation in physical terms and is immutable, so later GUI or
-script edits cannot alter a submitted calculation. The same request runs blocking or as a
-durable workflow in the per-user daemon:
-
-```python
-from tumult import departures, synthesis
-from tumult.synthesis import (AtmosphereGrid, Star, SynthConfig, SynthRequest,
-                              open_workflow, submit_operation)
-
-config = SynthConfig(root=".", cache="synth", resolving_power=300_000,
-                     linelist="input/linelists/sun_3000-9000.txt",
-                     abundances="input/abund/abund_magg22", linelist_skirt=2.0)
-request = SynthRequest(config=config, atmosphere=AtmosphereGrid("input/atmos/MARCS"),
-                       star=Star(5777, 4.44, 0.0, 1.0), windows=(5166.5, 5168.5))
-request = request.update(departures=departures.request(request, atom="input/atoms/atom.mg86g"))
-
-request.to_json("synthesis-request.json")          # SynthRequest.from_json reopens it
-result = synthesis.synthesize(request)             # blocking
-job = submit_operation("synthesis.synthesize", request)
-result = open_workflow(job.folder).result()        # also works after reconnecting
-result.spectrum.plot()
+```
+LTE  Ba II 4554 core flux 0.082
+NLTE Ba II 4554 core flux 0.030
+[2.02578179e+13]
 ```
 
-### Published grids
+The first two lines are the normalised flux in the line core; the NLTE core is deeper
+than the LTE one for this atom. The last line is the electron density from the standalone
+HOP library and shows that `libhop.so` loads. Your installation is verified when all
+three lines print with these values.
 
-`tumult.synthesis.grid_catalog` fetches the published grids OpenMULTI3D reads and returns
-the record that registers each: the standard-composition MARCS grid
-(`marcs`, marcs.astro.uu.se), the Stagger 2.0 dwarfs and giants (`stagger-dwarfs`,
-`stagger-giants`, Zenodo) and the M3DIS PLATO grid (`m3dis-plato`, gemini-web.mpia.de).
-The 3D grids are fetched in parts, out of their archives, so a stellar parameter box and a
-snapshot count per model keep a download small (one snapshot is 33 MB for Stagger and
-100 to 200 MB for M3DIS; a whole grid at one snapshot per model is a few GB for Stagger and
-about 30 GB for M3DIS):
+## 6. Next steps
 
-```bash
-bin/tpy -m tumult.synthesis.grid_catalog list
-bin/tpy -m tumult.synthesis.grid_catalog models m3dis-plato
-bin/tpy -m tumult.synthesis.grid_catalog plan  m3dis-plato input/atmos/M3DIS_PLATO \
-    --snapshots 2 --teff 5000:6500 --logg 4:5
-bin/tpy -m tumult.synthesis.grid_catalog fetch m3dis-plato input/atmos/M3DIS_PLATO \
-    --model PLATO_t57.77g44.40m0.000_v1.0 --snapshots 2
-```
+- [QUICKSTART.md](QUICKSTART.md) continues from this calculation: it plots the spectrum,
+  compares LTE with NLTE, changes an input and opens the result in the GUI, with optional
+  examples of the Python workflow interface and a 3D snapshot. [docs/FAQ.md](docs/FAQ.md)
+  answers further workflow questions (departures, long jobs, abundances).
+- TumultStudio, the GUI:
 
-`models` lists a grid; `plan` shows which models and snapshots a fetch would take without
-transferring anything; `fetch` is resumable and records what it fetched in the folder's
-`grid_manifest.json`. Running it again with a larger count only adds snapshots: a count
-selects the leading entries of a fixed scrambled Halton ordering of each model's snapshots
-(`tumult.synthesis.snapshot_grid.halton_order`), nested and spread over the time series,
-and the run-time policy `"snapshots": "k"` selects the same entries. Grids fetched under
-`input/atmos/` register themselves in TumultStudio. Its Preferences → Atmosphere grids
-page sets one storage folder and one snapshot count for every grid, lists the supported
-grids with what is on disk (download all, models, delete), and per grid the models with a
-download or delete button each; custom grid folders register there too.
+  ```bash
+  python -m TumultStudio
+  ```
 
-### Grid records
+  This serves the app behind a landing page at `http://localhost:5006/` and opens it in
+  the browser; `--port N` changes the port and `--no-show` skips the browser.
+  `bokeh serve --show TumultStudio` runs the app without the landing page. The GUI keeps
+  its preferences, recent files and saved workspaces in `.tumultstudio.json` in the
+  directory it was started from (`TUMULT_CONFIG` names another file); the file is
+  git-ignored. [docs/GUIWorkflow.md](docs/GUIWorkflow.md) describes the tools.
 
-A grid of 3D models registers like a MARCS grid and interpolates between its nodes the same
-way. Grid patterns match each file's path relative to the grid folder, listed recursively,
-so a directory-per-node layout binds its parameters from the directory name;
-`tumult.synthesis.STAGGER_PATTERN` covers the post-processed Stagger naming (`t50g47m00`,
-`t5777g44m30`, `_new` models, `atm3d.*` snapshots) and `M3DIS_PATTERN` the M3DIS server
-layout (`PLATO_t57.77g44.40m0.000_v1.0/m3dis_318.atmos`). A pattern reads like the Python
-format that wrote the name, `atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}`,
-with head and tail implicitly wild and `p`/`m` accepted as signs; `compile_pattern`
-documents the details (`|` alternatives, `{snap}`). A snapshot grid's record also
-names the snapshots representing each node and, optionally, the mesh the cubes are
-sampled onto:
+## 7. Troubleshooting
 
-```python
-from tumult.synthesis import STAGGER_PATTERN, AtmosphereGrid
+**`make: *** No Fortran compiler found`**: neither `gfortran` nor `ifort` is on `PATH`.
+Install one (section 1) or pass `COMPILER=<name>`; compiler profiles live in
+`../../config/compiler/`.
 
-stagger = AtmosphereGrid("~/Atmospheres/Stagger/dwarfs", format="Stagger2",
-                         pattern=STAGGER_PATTERN,
-                         snapshots="3",             # three per node in Halton order; "all"; or "8,31"
-                         resolution=(80, 80, 240),  # None: the nx/ny/nz preferences
-                         preparation=AtmosphereGrid("input/atmos/MARCS"))
-```
+**`make: *** No rule to make target '/Makefile.dep'`**: the parent DISPATCH checkout
+is missing, so `../../config/Makefile` was not found. Build inside
+`dispatch/experiments/OpenMULTI3D` of a full clone (section 1).
 
-Every selected snapshot becomes one 3D run; a node's spectrum is the mean over its snapshots
-and the nodes combine with the usual interpolation weights. When several subfolders map to
-one node, the lexically last wins (`t45g40m00_new` over `t45g40m00`). HOP line-list
-preparation still needs 1D structures, hence the MARCS `preparation` grid. Snapshot nodes
-carry no vmic.
+**`CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`** from
+`fetch_input_data.py` on macOS: the python.org framework Python ships without a CA trust
+store. Run the installer's certificate step once, for example
+`/Applications/Python\ 3.12/Install\ Certificates.command`, or run the script with the
+virtual environment active: `requirements.txt` installs the `certifi` bundle and the
+script uses it whenever it is importable. `--insecure` skips certificate verification as
+a last resort.
 
-For a single 3D calculation use `Snapshot(path, format, resolution)` in a `SynthRequest`.
-`tumult.departures.solve(request, atom=...)` creates `Departures`, which reopen with
-`departures.load` and are attached with `request.update(departures=...)`. The result
-records both the departure solve and formal-solution settings. See
-[docs/FAQ.md](docs/FAQ.md), "Scripting the workflows".
+**`ModuleNotFoundError: No module named 'numba'`** (or another installed package) when
+running a script: a conda environment prefixed onto `PATH` shadows `.venv` with an
+interpreter that carries none of the dependencies. Run `.venv/bin/python` explicitly, or
+deactivate conda before activating `.venv`.
 
----
+**`ModuleNotFoundError: No module named 'tumult'`**: the checkout is not importable from
+where Python was started. Start it from this directory (section 2).
 
-## 5. Launch TumultStudio (optional GUI)
+**`libhop.so not found at HOP/standalone/build/libhop.so`**: the standalone library was
+not built, or was built into another directory. Run `make -C HOP/standalone`, or point
+`HOP_LIB` at an existing library.
 
-From the repository root (the directory containing this file):
-
-```bash
-bin/tpy -m TumultStudio
-```
-
-This serves the app behind a landing page at `http://localhost:5006/` and opens it;
-`--port N` changes the port and `--no-show` skips the browser. `bokeh serve --show
-TumultStudio` runs the app alone (no landing page). Run either from here so the
-repository package is importable.
-
-The GUI keeps its preferences, recent files and saved sessions in `.tumultstudio.json`
-in the directory Bokeh was started from (`TUMULT_CONFIG` names another file). The file
-is created on first use; keep it out of version control.
-
-## 6. Tests
-
-```bash
-pip install -r requirements-test.txt
-python -m pytest                    # headless gate: science, I/O and workflows
-python -m pytest tests/studio       # GUI components; needs requirements-gui.txt
-python -m pytest tests/browser      # browser journeys through TumultStudio
-```
-
-Run these from this directory. `pytest.ini` selects the headless directories by default;
-every other suite is given by path. The browser suite needs `node` and the `playwright`
-npm package with its Chromium: `npx playwright install chromium` populates the `npx`
-cache (`~/.npm/_npx/*/node_modules`), and `TUMULT_NODE_PATH` names another location. No
-Python Playwright package is required.
-
-[tests/README.md](tests/README.md) describes the suites, their prerequisites and the
-policy for admitting a test or a reference dataset.
+**`OSError: ... Address already in use`** when starting TumultStudio: another server
+holds port 5006. Start with `--port N`.

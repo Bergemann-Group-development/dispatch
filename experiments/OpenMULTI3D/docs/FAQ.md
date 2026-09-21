@@ -99,10 +99,10 @@ same requests and submit the same operations.
 
 ```bash
 OMP_STACKSIZE=256M ./dispatch.x demo.nml     # 1D MARCS Sun, toy Ba atom, LTE + NLTE
-./dispatch.x demo3d.nml                      # 3D snapshot; download it first, see demo.ipynb
+./dispatch.x demo3d.nml                      # 3D snapshot; download it first, see QUICKSTART.md
 ```
 
-`demo.ipynb` walks through the same run and the plotting below. Namelist sections and their
+[QUICKSTART.md](../QUICKSTART.md) walks through the same run and the plotting below. Namelist sections and their
 defaults are documented in the Fortran sources under `SRC/` and in the presets in
 `tumult/presets/` (`base.nml`, `nlte.nml`, `departures.nml`), which the Python layer stacks
 under a user's settings.

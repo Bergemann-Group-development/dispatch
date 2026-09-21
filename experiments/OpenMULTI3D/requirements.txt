@@ -24,3 +24,5 @@ cffi>=1.16           # tumult/hop.py binds libhop.so against the generated HOP/s
 
 # --- Utilities ---
 tqdm>=4.66           # progress bars
+certifi              # CA bundle for the grid and line-list downloads (tumult/synthesis/remote.py);
+                     # python.org macOS builds ship without a trust store

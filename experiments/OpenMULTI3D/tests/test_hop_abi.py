@@ -1,14 +1,16 @@
 """Keep the generated libhop ABI in sync with the library and the Python wrapper.
 
-``HOP/standalone/libhop.h`` is generated from the ``BIND(c, name=...)`` declarations in
-``hop_c_api.f90`` (gfortran ``-fc-prototypes``) and committed, so it can go stale; these
-tests regenerate it and fail on a diff.  The header is also what ``tumult.hop`` hands to
-``ffi.cdef``, so every name and signature the wrapper calls comes from here.
+``HOP/standalone/libhop.h`` is written by ``HOP/standalone/gen_bindings.py`` from the
+``BIND(c, name=...)`` declarations in ``hop_c_api.f90`` and committed (``make -C
+HOP/standalone bindings`` rewrites it after an interface change); the build does not
+regenerate it, so these tests do, and fail on a diff.
+The header is also what ``tumult.hop`` hands to ``ffi.cdef``, so every name and signature
+the wrapper calls comes from here; the calls the other HOP tests make through cffi are
+what checks the generator's type mapping.
 """
+import importlib.util
 import re
-import shutil
 import subprocess
-import tempfile
 
 import pytest
 
@@ -29,28 +31,15 @@ def _header_names(text):
 
 
 def _regenerate_header():
-    """Re-run gfortran -fc-prototypes exactly as the Makefile's $(HDR) rule does.
-
-    -fsyntax-only still writes hop_c_api.mod, and gfortran searches the compilation
-    directory for modules ahead of -I, so without -J into a scratch directory this run
-    would leave a module file in HOP/standalone that shadows the built one and breaks
-    every later compile there.
-    """
-    with tempfile.TemporaryDirectory() as moddir:
-        flags = ["-x", "f95-cpp-input", "-DHOP_STANDALONE", "-ffree-line-length-0", "-w",
-                 "-fno-range-check", "-fallow-argument-mismatch", "-fPIC",
-                 f"-I{STANDALONE / 'build'}", f"-J{moddir}",
-                 "-fsyntax-only", "-fc-prototypes"]
-        proc = subprocess.run(["gfortran", *flags, str(SHIM_F90)], cwd=STANDALONE,
-                              capture_output=True, text=True)
-    keep = re.compile(r"^[a-z].*\bhop_[a-z0-9_]+ *\(")
-    return "".join(l + "\n" for l in proc.stdout.splitlines()
-                   if keep.match(l) and not l.startswith("typedef"))
+    """Run gen_bindings.py on the shim, as the Makefile's bindings target does."""
+    spec = importlib.util.spec_from_file_location("gen_bindings", STANDALONE / "gen_bindings.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.prototypes(SHIM_F90.read_text())
 
 
-@pytest.mark.skipif(not shutil.which("gfortran"), reason="gfortran not on PATH")
 def test_header_matches_the_fortran():
-    """The committed header is what -fc-prototypes emits today."""
+    """The committed header is what the generator writes today."""
     assert HEADER.read_text() == _regenerate_header(), (
         "HOP/standalone/libhop.h is stale - regenerate with "
         "'make -C HOP/standalone bindings' and commit it")

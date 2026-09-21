@@ -12,6 +12,9 @@ The downloaded layout is what the spec's ``pattern`` scans: a flat folder of ``.
 files for MARCS, one folder per model holding its snapshots for the 3D grids. Only the
 files the Fortran readers open are fetched (``atm3d``/``mesh`` pairs for Stagger,
 ``.atmos``/``.mesh`` pairs for M3DIS); a grid's EOS and opacity-binning tables are not.
+One snapshot is 33 MB for Stagger and 100 to 200 MB for M3DIS, so a whole grid at one
+snapshot per model is a few GB for Stagger and about 30 GB for M3DIS; a stellar
+parameter box and a snapshot count keep a download small.
 
 Command line::
 

@@ -2,6 +2,7 @@
 # source and its reviewed fixtures visible without exposing generated artifacts.
 !.gitignore
 !AGENTS.md
+!QUICKSTART.md
 !CLAUDE.md
 !SUBAGENTS.md
 !docs/
