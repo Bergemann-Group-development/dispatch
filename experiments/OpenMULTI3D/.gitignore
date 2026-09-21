@@ -38,7 +38,7 @@ tests/**/__pycache__/
 tests/**/.pytest_cache/
 tests/**/*.pyc
 
-# Nothing is needed here for tumult/, HOP/, SRC/, TumultStudio/ or TumultStudio2/:
+# Nothing is needed here for tumult/, HOP/, SRC/ or TumultStudio/:
 # the parent repository negates those directories wholesale, so new files in them
 # are visible.
 
@@ -47,32 +47,14 @@ tests/**/*.pyc
 !requirements-test.txt
 !pytest.ini
 
-# Review documents are maintained source; benchmark outputs remain ignored.
-!reports/
-reports/*
-!reports/tests.md
-!reports/test-requirements.md
-!reports/api_scripting_plan.md
-!reports/api_scripting_implementation.md
-!reports/review/
-reports/review/*
-!reports/review/*.md
+# Local reports, helper scripts and the retired GUI are not repository source.
+reports/
+TumultStudio2/
 
 # Helper scripts are source; everything else that lands in bin/ is not.
 !bin/
 bin/*
 !bin/tpy
-
-# The ionisation-balance harness and its comparison script are the reproduction path the
-# review reports promise. Their outputs under reports/bench/ stay ignored by reports/*.
-!reports/bench_ionbalance.py
-!reports/bench_table.py
-
-# The same for the 3D departure-resolution harness, its comparison script, and the
-# end-to-end check of the snapshot two-phase API against real dispatch.x runs.
-!reports/bench_departures.py
-!reports/depfield_table.py
-!reports/verify_departure_api.py
 
 # Reusable, input-agnostic API benchmark drivers. Native outputs stay under data/.
 !benchmarks/

@@ -3,7 +3,7 @@
 The reference is a synthetic 1D LTE spectrum; the NLTE arm is the same line displaced by a
 known offset. Inverting the curve of growth at the reference EW must recover that offset,
 so these drive :func:`tumult.abundance.run_nlte_corrections` against a stubbed synthesis
-layer — no dispatch runs, and nothing imported from ``TumultStudio2``.
+layer without dispatch runs.
 
 What is load-bearing and therefore asserted: every rung is its own NLTE solve
 (``fold=False``), synthesised over the atom's whole range (no window) on the atom's own

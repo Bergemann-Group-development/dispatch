@@ -56,8 +56,7 @@ Responsibilities across its three components are still evolving:
   launching jobs and numerical analysis.
 - `TumultStudio/` is the current GUI and provides interactive spectroscopic
   analysis through Bokeh. Some scientific workflows currently live here.
-  `TumultStudio2/` is its predecessor, kept only for comparison, and
-  `TumultStudio_old/` is legacy. Neither is a target for new work.
+  `TumultStudio_old/` is legacy and is not a target for new work.
 
 `docs/GUIWorkflow.md` describes the target TumultStudio tool workflow.
 `docs/GLOSSARY.md` defines the terms these components share, including the ones that mean

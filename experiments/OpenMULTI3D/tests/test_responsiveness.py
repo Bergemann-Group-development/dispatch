@@ -1,30 +1,5 @@
-"""Regression tests for bounded interactive background work."""
+"""Regression tests for batched scientific updates."""
 from types import SimpleNamespace
-
-
-def test_latest_work_keeps_one_running_and_replaces_the_pending_request():
-    from latestwork import LatestWork
-
-    submitted = []
-    applied = []
-
-    def submit(name, work, done):
-        submitted.append((work, done))
-        return object()
-
-    latest = LatestWork(submit, "interactive calculation")
-    latest.request(lambda token: "first", applied.append)
-    latest.request(lambda token: "superseded", applied.append)
-    latest.request(lambda token: "latest", applied.append)
-
-    assert len(submitted) == 1 and latest.busy
-    work, done = submitted.pop(0)
-    done(work(SimpleNamespace(check=lambda: None)))
-    assert not applied and len(submitted) == 1
-
-    work, done = submitted.pop(0)
-    done(work(SimpleNamespace(check=lambda: None)))
-    assert applied == ["latest"] and not latest.busy
 
 
 def test_local_continuum_batch_aggregates_once(monkeypatch):

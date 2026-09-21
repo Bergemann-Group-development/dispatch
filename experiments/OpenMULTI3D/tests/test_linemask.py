@@ -1,5 +1,4 @@
-"""Parser + round-trip tests for the LineMask model (``tumult/linemask.py``) and the
-GUI's ``MaskStore`` (``TumultStudio2/maskstore.py``) that edits its sets.
+"""Parser and round-trip tests for the LineMask model (``tumult/linemask.py``).
 
 Every file under ``input/linemasks/`` must parse into sane, ascending-bound masks with
 wavelengths normalised to Å, and the canonical writer must round-trip them.
@@ -117,50 +116,6 @@ def test_renorm_knots_are_colinear_and_span_window():
     ys = np.array([k[1] for k in knots])
     slope = (ys[1] - ys[0]) / (xs[1] - xs[0])
     assert np.allclose(ys, ys[0] + slope * (xs - xs[0]), atol=1e-9)
-
-
-class _StubCtx:
-    """Minimal context: just the event bus MaskStore needs."""
-    def __init__(self):
-        self.events = []
-
-    def emit(self, event, **data):
-        self.events.append(event)
-
-
-def test_maskstore_load_edit_and_broadcast():
-    from maskstore import MaskStore
-    ctx = _StubCtx()
-    store = MaskStore(ctx)
-    store.load_file(LMASK_DIR / "Fe" / "fe-lmask.txt")
-    assert store.masks and store.active == 0
-    assert "masks-changed" in ctx.events
-    # resize the active fit window; synth window follows the pad
-    store.set_pad(0.3)
-    store.set_fit(0, 5000.0, 5000.6)
-    m = store.active_mask()
-    assert m.lmin == pytest.approx(5000.0) and m.lmax == pytest.approx(5000.6)
-    assert m.smin == pytest.approx(5000.0 - 0.3) and m.smax == pytest.approx(5000.6 + 0.3)
-    # add / remove keep the active index valid
-    n = len(store.masks)
-    idx = store.add(4000.0, 4000.5, note="test")
-    assert idx == n and store.active == n
-    store.remove(idx)
-    assert len(store.masks) == n and store.active <= n - 1
-
-
-def test_maskstore_snapshot_round_trip():
-    from maskstore import MaskStore
-    store = MaskStore(_StubCtx())
-    store.load_file(LMASK_DIR / "Ni" / "ni-lmask.txt")
-    store.set_renorm(0, True)
-    snap = store.snapshot()
-    store2 = MaskStore(_StubCtx())
-    from tumult.linemask import LineMaskSet
-    store2.restore([LineMaskSet.from_dict(d) for d in snap["sets"]],
-                   snap["current"], snap["active"])
-    assert len(store2.masks) == len(store.masks)
-    assert store2.masks[0].renorm and store2.active == store.active
 
 
 class _Raw:

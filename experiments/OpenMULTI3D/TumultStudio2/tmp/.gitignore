@@ -1,3 +1,0 @@
-# debug artifacts (pyinstrument profiles, etc.) — keep the folder, ignore contents
-*
-!.gitignore
