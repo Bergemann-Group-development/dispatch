@@ -185,13 +185,7 @@
 .dep-fig { flex: 1; min-height: 0; display: flex; }
 .dep-fig > * { flex: 1; min-width: 0; min-height: 0; }
 .dep-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
-.dep-head-actions { flex: 0 0 auto; display: flex; gap: 6px; }
-.dep-legend { flex: 1; display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; }
-/* the strip over the plot: which row is drawn, then one short key per curve. The full
-   description of a curve belongs to its hover, not here */
-.dep-row { font-weight: 600; color: var(--text); }
-.dep-key { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); }
-.dep-swatch { display: inline-block; width: 18px; height: 0; }
+.dep-head-actions { margin-left: auto; display: flex; gap: 6px; }
 .dep-search { display: none; margin-bottom: 4px; }
 #main.dep-tab-levels .dep-search[data-tab="levels"],
 #main.dep-tab-trans .dep-search[data-tab="trans"] { display: block; }

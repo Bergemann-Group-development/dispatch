@@ -207,6 +207,8 @@ def test_the_selected_level_and_transition_are_what_is_drawn(
     labels = list(tool.src.data["label"])
     assert len(labels) == 2 and labels[0].startswith("b — ")
     assert labels[1].startswith("b / b(ground Ba ")
+    ground = tool._ground_of(tool.atom_of(obj), 3)
+    assert list(tool.src.data["key"]) == ["b₄", f"b₄ / b{'₁₂₃₄₅₆₇₈₉'[ground]}"]
     assert list(tool.src.data["ys"][0]) == [0.25, 0.5, 1.0]
     assert list(tool.src.data["xs"][0]) == [-2.0, 0.0, 2.0]
     # the ground state of that stage is in LTE here, so the ratio is the level's own b
@@ -227,28 +229,41 @@ def test_the_selected_level_and_transition_are_what_is_drawn(
     assert np.allclose(tool.src.data["ys"][2],
                        profile.b[upper] / profile.b[lower])
 
-    # the strip over the plot holds short keys; the full text is what the hover shows
-    assert list(tool.src.data["key"]) == ["b_l", "b_u", "b_u / b_l"]
-    assert all(len(key) <= 12 for key in tool.src.data["key"])
+    # the legend names each curve by level number as the tables count them; the full
+    # text is what the hover shows
+    from TumultStudio.atoms.departuretool import b_of
+    b_l, b_u = b_of(lower), b_of(upper)
+    assert b_of(11) == "b₁₂"
+    keys = [b_l, b_u, f"{b_u} / {b_l}"]
+    assert list(tool.src.data["key"]) == keys
+    assert [item.label.value for item in tool.legend.items] == keys
 
-    # a pin keeps its curves while another row is selected, on renderers of their own, and
-    # is named once inside the plot rather than in the strip
+    # a pin of the selected row adds nothing: the curves are drawn once
     tool.pin()
+    assert len(tool.legend.items) == 3
+    # once another row is selected the pin keeps its curves, each with its key in the
+    # legend after the selection's own, in a run colour of its own
     tool.pick_row("0")                                  # another transition of the same atom
-    assert list(tool.src.data["key"]) == ["b_l", "b_u", "b_u / b_l"]
-    assert "pinned" not in tool._legend.value
-    assert tool.legend.visible and len(tool.legend.items) == 1
-    [item] = tool.legend.items
-    assert item.label.value.endswith("Å")               # the pinned transition
-    assert len(item.renderers) == 3 and all(r.visible for r in item.renderers)
-    # a pinned curve says what it is on hover, like every other one
+    assert tool.legend.visible and len(tool.legend.items) == 6
+    assert [item.label.value for item in tool.legend.items[3:]] == keys
+    assert not any("pinned" in item.label.value for item in tool.legend.items)
+    # the selection's curves are drawn first, each on a renderer of its own with the dash
+    # that tells the quantities apart; the pinned ones follow, in another colour, and say
+    # so on hover
+    drawn = [r for _s, r in tool._lines[:6]]
+    assert drawn[0].glyph.line_color != drawn[3].glyph.line_color
+    assert all(r.visible for r in drawn) and not any(r.visible for _s, r in tool._lines[6:])
+    solid, dashed, dotted = [], [6], [2, 4]                  # Bokeh's named patterns
+    assert [r.glyph.line_dash for r in drawn[:3]] == [solid, dashed, dotted]
+    assert [r.glyph.line_dash for r in drawn[3:]] == [solid, dashed, dotted]
     assert all(source.data["label"][0].startswith("pinned · ")
-               for source, _r in tool._pinned[:3])
+               for source, _r in tool._lines[3:6])
 
     # clearing the pins takes the entry and its curves away
     tool.actions.value = "unpin::1700000000000"
-    assert tool.legend.items == [] and not tool.legend.visible
-    assert not any(r.visible for _s, r in tool._pinned)
+    assert len(tool.legend.items) == 3
+    assert all(not isinstance(k, tuple) for k in tool._colors)   # the pin's colour is freed
+    assert not any(r.visible for _s, r in tool._lines[3:])
 
 
 def test_the_table_below_the_plot_is_the_atom_s_own(studio, atom, tmp_path, profile):

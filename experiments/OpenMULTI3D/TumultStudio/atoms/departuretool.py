@@ -30,16 +30,19 @@ displayed, so it shows a curve rather than an empty plot:
 * a **transition** gives b_l and b_u of its two levels and their ratio b_u/b_l, which is
   the line source function in units of the Planck function.
 
-Each curve carries a short key for the strip over the plot and the full description the
-hover shows. **Pin** keeps the current selection's curves drawn while another row is looked
-at: those go on renderers of their own so the figure's inset legend can name each pinned
-row once, instead of crowding the strip. The panel's overlay checkboxes draw the same
+Each curve carries a short key, its quantity by level number as the tables count them
+(b₄, b₄ / b₁), which the figure's inset legend shows, and the full description the hover
+shows. **Pin** keeps the current selection's curves drawn while another row is looked at,
+so two rows of one solve can be compared. The panel's overlay checkboxes draw the same
 selection from another solve of the same atom (its keys tagged with that solve's
 parameters), which is how two atmospheres or two quadratures are compared.
 
 Curves follow the spectrum convention: each solve is drawn in a run colour of its own,
 kept for the session, and the quantities of one selection differ by dash (b solid, the
-ratios dashed and dotted). Pinned curves are the same, dimmed.
+ratios dashed and dotted). A pinned row is another set of curves of the same solve, so it
+takes a run colour of its own while it stays pinned, slightly dimmed to mark it as the
+reference; its curves keep their keys in the legend, tagged with the solve when it is not
+the selected one. A pin of the row currently selected is not drawn twice.
 """
 from __future__ import annotations
 
@@ -59,7 +62,7 @@ from tumult.synthesis import AtmosphereGrid
 
 from ..ui.controls import Field, Form
 from ..ui.htmlbridge import pulse, toggle
-from ..ui.style import BG, BORDER, DASHES, DASH_CSS, MUTED, RUN_COLORS, style_dark
+from ..ui.style import BG, BORDER, DASHES, MUTED, RUN_COLORS, style_dark
 from ..ui.tableui import SortState
 from ..ui.tool import Tool
 from ..workspace import naming, store
@@ -71,9 +74,14 @@ log = logging.getLogger("tumultstudio.departures")
 TABS = ("levels", "trans")
 STEPS = {"1": "levels", "2": "trans"}
 DEFAULTS = {"line_grid": True}
-# the curve colours: the selection in the accent, what it is referred to in the second
-# colour, and their ratio in the third. Overlays and pins reuse them at lower alpha.
-PIN_ALPHA = 0.45
+# pinned curves are drawn in a run colour of their own, this much dimmed
+PIN_ALPHA = 0.7
+SUBSCRIPT = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+
+
+def b_of(index):
+    """The key of level ``index``'s departure coefficient, numbered as the tables count."""
+    return "b" + str(index + 1).translate(SUBSCRIPT)
 
 
 @dataclass
@@ -140,7 +148,7 @@ class DepartureTool(Tool):
         self.overlays = set()              # uids of other solves drawn with the selection
         self._profiles = {}                # uid -> DepartureProfile
         self._loading = set()              # uids whose populations are being read
-        self._colors = {}                  # uid -> run colour the solve is drawn in
+        self._colors = {}                  # uid or pin -> run colour it is drawn in
         self._atoms = {}                   # atom path -> AtomClass
         self._live = {}                    # uid -> the job solving it
         self._pending_atom = None          # the AtomObject the open modal solves for
@@ -156,7 +164,6 @@ class DepartureTool(Tool):
         self._view_bridge = ctx.bridges.cls("#main", "dep-mode")
         self._tab_bridges = {t: ctx.bridges.cls("#main", f"dep-tab-{t}") for t in TABS}
         self._tables = {t: ctx.bridges.html(f"dep-{t}-table") for t in TABS}
-        self._legend = ctx.bridges.html("dep-legend")
         self._modal = ctx.bridges.dialog("dep-modal", name="dep-modal-bridge")
         self._context_bridge = ctx.bridges.html("dep-context")
         self.actions = ctx.bridges.action("dep-actions")
@@ -168,28 +175,27 @@ class DepartureTool(Tool):
                           x_axis_label="log τ₅₀₀", y_axis_label="b = n / n_LTE",
                           y_axis_type="log", name="dep_fig")
         style_dark(self.fig)
+        # the drawn curves, one row each, in the order they are drawn
         self.src = ColumnDataSource(dict(xs=[], ys=[], color=[], dash=[], width=[],
-                                         alpha=[], label=[]))
-        self.lines = self.fig.multi_line(xs="xs", ys="ys", line_color="color",
-                                         line_dash="dash", line_width="width",
-                                         line_alpha="alpha", source=self.src)
+                                         alpha=[], key=[], label=[]))
         # the hover names a curve in full, which is why the legend keys can stay short
-        self.hover = HoverTool(renderers=[self.lines], line_policy="nearest",
+        self.hover = HoverTool(renderers=[], line_policy="nearest",
                                tooltips=[("", "@label")])
         self.fig.add_tools(self.hover)
         unity = Span(location=1.0, dimension="width", line_color=MUTED, line_width=1,
                      line_dash="dotted")
         self.fig.add_layout(unity)
-        # pinned selections are drawn on renderers of their own so the figure's own legend
-        # can name them inside the plot, one entry per pinned row, instead of crowding the
-        # strip above it with the selection's keys
-        self._pinned = []                  # [(ColumnDataSource, renderer)], grown as needed
-        # top right: departures grow towards the surface, so the left half of the
+        # every curve, selected or pinned, is drawn on a line renderer of its own with
+        # scalar style properties, as the spectrum canvas does: the WebGL backend draws a
+        # multi_line with a per-curve dash column solid, and the figure's own legend can
+        # only name a pinned row by its renderers
+        self._lines = []                   # [(ColumnDataSource, renderer)], grown as needed
+        # bottom right: departures grow towards the surface, so the left half of the
         # plot is where the curves are
-        self.legend = Legend(items=[], location="top_right", visible=False,
+        self.legend = Legend(items=[], location="bottom_right", visible=False,
                              background_fill_color=BG, background_fill_alpha=0.75,
                              border_line_color=BORDER, label_text_color=MUTED,
-                             label_text_font_size="10px", padding=6, spacing=2,
+                             label_text_font_size="20px", padding=6, spacing=2,
                              margin=6, glyph_height=10, glyph_width=18)
         self.fig.add_layout(self.legend)
 
@@ -626,26 +632,30 @@ class DepartureTool(Tool):
             return f"T{float(star['teff']):.0f} g{float(star['logg']):.2f}"
         return Path(obj.atmosphere).name or obj.species or obj.name
 
-    def color_of(self, obj):
-        """The run colour a solve is drawn in: the first palette colour no other solve
-        holds, assigned when the solve is first drawn and kept while the tool lives."""
-        color = self._colors.get(obj.uid)
+    def color_of(self, key):
+        """The run colour ``key`` (a solve's uid or a pin) is drawn in: the first palette
+        colour no solve or live pin holds, assigned when first drawn. A solve keeps its
+        colour while the tool lives; a pin frees its colour when it is removed."""
+        live = {uid for uid in self._colors if not isinstance(uid, tuple)} | set(self.pins)
+        self._colors = {k: c for k, c in self._colors.items() if k in live}
+        color = self._colors.get(key)
         if color is None:
             taken = set(self._colors.values())
             color = next((c for c in RUN_COLORS if c not in taken),
                          RUN_COLORS[len(self._colors) % len(RUN_COLORS)])
-            self._colors[obj.uid] = color
+            self._colors[key] = color
         return color
 
-    def curves(self, obj, tab, index, *, alpha=1.0, tag=""):
+    def curves(self, obj, tab, index, *, alpha=1.0, tag="", color=None):
         """The curves one selected row stands for, as source rows.
 
         A level gives b and b/b(ground of its stage); a transition gives the two levels'
         b and their ratio, the line source function in units of the Planck function.
 
-        Each row carries both a short ``key``, which is what the legend strip shows, and
-        the full ``label`` the hover names it by: the keys have to stay readable side by
-        side, while a hovered curve can say everything about itself.
+        Each row carries both a short ``key``, the quantity by level number as the tables
+        count them, which is what the legend shows, and the full ``label`` the hover names
+        it by: the keys have to stay short in the legend, while a hovered curve can say
+        everything about itself.
         """
         profile = self._profiles.get(obj.uid)
         atom = self.atom_of(obj)
@@ -654,7 +664,7 @@ class DepartureTool(Tool):
         nk = min(profile.nk, int(atom.nk))
         ltau = list(map(float, profile.ltau))
         lead = f"{tag} · " if tag else ""
-        color = self.color_of(obj)
+        color = color or self.color_of(obj.uid)
         solid, dashed, dotted = DASHES[:3]
 
         def row(values, key, label, line_dash, width=1.8):
@@ -668,11 +678,13 @@ class DepartureTool(Tool):
             level = atom.level[index]
             ground = self._ground_of(atom, index)
             stage = f"{obj.species or atom.id} {roman(level.ion)}"
-            rows = [row(profile.b[index], "b", f"b — {term(level)}", solid)]
+            key = b_of(index)
+            rows = [row(profile.b[index], key, f"b — {term(level)}", solid)]
             if ground != index:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     relative = profile.b[index] / profile.b[ground]
-                rows.append(row(relative, "b / b(gs)", f"b / b(ground {stage})", dashed))
+                rows.append(row(relative, f"{key} / {b_of(ground)}",
+                                f"b / b(ground {stage})", dashed))
             return rows
         transitions = atom.trans[:atom.nline]
         if not 0 <= index < len(transitions):
@@ -683,13 +695,14 @@ class DepartureTool(Tool):
             return []
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = profile.b[upper] / profile.b[lower]
-        return [row(profile.b[lower], "b_l", f"b lower — {term(tr.lower)}", solid),
-                row(profile.b[upper], "b_u", f"b upper — {term(tr.upper)}", dashed),
-                row(ratio, "b_u / b_l", f"b_u / b_l — {tr.lam0:.3f} Å", dotted)]
+        b_l, b_u = b_of(lower), b_of(upper)
+        return [row(profile.b[lower], b_l, f"b lower — {term(tr.lower)}", solid),
+                row(profile.b[upper], b_u, f"b upper — {term(tr.upper)}", dashed),
+                row(ratio, f"{b_u} / {b_l}", f"b_u / b_l — {tr.lam0:.3f} Å", dotted)]
 
     def render_curves(self):
-        """Repaint the figure: the selection and the solves overlaid on it, with the pinned
-        selections behind them in the plot's own legend."""
+        """Repaint the figure: the selection and the solves overlaid on it, then the pinned
+        rows, one legend entry per curve."""
         obj = self.selected()
         index = self.row[self.tab]
         rows = []
@@ -702,77 +715,57 @@ class DepartureTool(Tool):
         self.src.data = {key: [r[key] for r in rows]
                          for key in ("xs", "ys", "color", "dash", "width", "alpha",
                                      "key", "label")}
-        self._legend.value = self.legend_html(rows)
-        self._render_pins()
-
-    def _render_pins(self):
-        """Draw the pinned selections on their own renderers and name them in the figure's
-        inset legend: one entry per pinned row, whatever the row draws."""
-        used, items = 0, []
-        for uid, tab, index in self.pins:
-            pinned = self.find(uid)
-            if pinned is None:
-                continue
-            curves = self.curves(pinned, tab, index, alpha=PIN_ALPHA)
-            if not curves:
-                continue
-            renderers = []
-            for curve in curves:
-                source, renderer = self._pin_renderer(used)
-                used += 1
-                source.data = dict(x=curve["xs"], y=curve["ys"],
-                                   label=[f"pinned · {curve['label']}"] * len(curve["xs"]))
-                renderer.glyph.line_color = curve["color"]
-                renderer.glyph.line_dash = curve["dash"]
-                renderer.visible = True
-                renderers.append(renderer)
-            title = self.row_title(pinned, tab, index)
-            tag = self.tag(pinned)
-            label = f"{tag} · {title}" if pinned is not self.selected() else title
-            items.append(LegendItem(label=label or tag, renderers=renderers))
-        for source, renderer in self._pinned[used:]:
+        items, used = [], 0
+        for curve in rows:
+            renderer = self._draw(used, curve, curve["label"])
+            items.append(LegendItem(label=curve["key"], renderers=[renderer]))
+            used += 1
+        used = self._render_pins(items, used)
+        for source, renderer in self._lines[used:]:
             renderer.visible = False
             source.data = dict(x=[], y=[], label=[])
         self.legend.items = items
         self.legend.visible = bool(items)
 
-    def _pin_renderer(self, index):
-        """The ``index``-th pinned-curve renderer, created the first time it is needed.
+    def _draw(self, index, curve, label):
+        """Draw ``curve`` on the ``index``-th line renderer and return the renderer."""
+        source, renderer = self._line_renderer(index)
+        source.data = dict(x=curve["xs"], y=curve["ys"], label=[label] * len(curve["xs"]))
+        renderer.glyph.update(line_color=curve["color"], line_dash=curve["dash"],
+                              line_width=curve["width"], line_alpha=curve["alpha"])
+        renderer.visible = True
+        return renderer
 
-        Each pinned curve needs a renderer of its own for the legend to name it, and its
-        own hover entry so it says what it is like every other curve.
-        """
-        while len(self._pinned) <= index:
+    def _render_pins(self, items, used):
+        """Draw the pinned rows on the renderers from ``used`` on, each pin in a run colour
+        of its own, and add one legend entry per curve to ``items``. A pin of the row that
+        is selected is already drawn and is skipped. Returns the number of renderers in use
+        afterwards."""
+        obj = self.selected()
+        current = (obj.uid, self.tab, self.row[self.tab]) if obj is not None else None
+        for pin in self.pins:
+            uid, tab, index = pin
+            pinned = self.find(uid)
+            if pinned is None or pin == current:
+                continue
+            tag = self.tag(pinned) if pinned is not obj else ""
+            for curve in self.curves(pinned, tab, index, alpha=PIN_ALPHA, tag=tag,
+                                     color=self.color_of(pin)):
+                renderer = self._draw(used, curve, f"pinned · {curve['label']}")
+                items.append(LegendItem(label=curve["key"], renderers=[renderer]))
+                used += 1
+        return used
+
+    def _line_renderer(self, index):
+        """The ``index``-th curve renderer, created the first time it is needed, with a
+        hover entry of its own so every curve says what it is."""
+        while len(self._lines) <= index:
             source = ColumnDataSource(dict(x=[], y=[], label=[]))
             renderer = self.fig.line("x", "y", source=source, line_color=MUTED,
-                                     line_width=1.4,
-                                     line_alpha=PIN_ALPHA, visible=False)
-            self._pinned.append((source, renderer))
-            self.hover.renderers = [self.lines] + [r for _s, r in self._pinned]
-        return self._pinned[index]
-
-    def legend_html(self, rows):
-        if not rows:
-            obj = self.selected()
-            if obj is not None and obj.uid in self._loading:
-                return '<span class="hint">Reading the saved populations…</span>'
-            if obj is not None and not obj.solved:
-                return '<span class="hint">No saved populations to show.</span>'
-            noun = "level" if self.tab == "levels" else "transition"
-            return f'<span class="hint">Select a {noun} below to plot its departures.</span>'
-        title = ""
-        obj = self.selected()
-        if obj is not None:
-            row = self.row_title(obj, self.tab, self.row[self.tab])
-            if row:
-                title = f'<span class="dep-row">{html.escape(row)}</span>'
-        swatches = []
-        for r in rows:
-            style = (f"border-bottom:2px {DASH_CSS[r['dash']]} {r['color']};"
-                     f"opacity:{r['alpha']:.2f}")
-            swatches.append(f'<span class="dep-key"><span class="dep-swatch" style="{style}">'
-                            f'</span>{html.escape(str(r["key"]))}</span>')
-        return title + "".join(swatches)
+                                     line_width=1.4, visible=False)
+            self._lines.append((source, renderer))
+            self.hover.renderers = [r for _s, r in self._lines]
+        return self._lines[index]
 
     # --- rendering ----------------------------------------------------------------------
     def result_rows(self, objects, nested=False):
