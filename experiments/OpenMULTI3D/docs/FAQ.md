@@ -289,10 +289,10 @@ A snapshot is routed directly: no stellar-grid interpolation, no microturbulence
 NLTE mode the departures are solved once for the cube, then each window is a formal solution
 against the saved field (see the next section). In LTE mode each window is one run.
 
-**In the GUI**, choose *Individual atmosphere* in the synthesis modal, pick the cube file
+**In the GUI**, choose *Individual file* in the synthesis modal, pick the cube file
 and a snapshot format (the geometry follows from the format), and set `nx`/`ny`/`nz` in
-Preferences → Engine. The stellar fields are used
-for the preparation reference only.
+Preferences → Engine. Teff and log g are fixed by the file (a non-MARCS format takes the
+nearest MARCS preparation node); [Fe/H] and vmic remain inputs.
 
 Caveat: the users assess the effect of `resolution` on their result; the code does not
 choose or validate a mesh.

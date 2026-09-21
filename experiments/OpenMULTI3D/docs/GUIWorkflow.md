@@ -164,7 +164,7 @@ pairs, the line-mask name, **Use line list** and, for a fit, the target and the 
 axes). Its Info tab offers **Rerun from this…**, which opens the synthesis modal in the
 same mode with those values as a draft: the window (a free range, or the recorded windows
 under the mask's name), the atmosphere (the registered grid, the grid holding a picked
-file, or the Individual atmosphere with its format), stellar parameters, abundance
+file, or the Individual file with its format), stellar parameters, abundance
 overrides, RT mode, model atoms and saved departures, and for a fit its target and switches.
 Paths and numerical settings come from the current Preferences. Submitting adds a new
 spectrum and makes those values the last-used setup; Cancel restores the previous one.
@@ -471,8 +471,8 @@ fitted spectrum's **Rerun from this…** (its recorded request, see "Duplicate a
   3D grid) as `5750 K · log g 4.50 · [Fe/H] +0.00 · ξ 1`, filtered by every fragment
   typed into its box. The grid is read away from the document, and the picker is the model
   picker while that runs (it says so instead of listing files); a picked model then shows
-  by its row label rather than its path; picking one fills the stellar parameters. The Individual atmosphere
-  browses a folder instead. Stellar parameters lead with a **Preset** dropdown listing the
+  by its row label rather than its path; picking one fills the stellar parameters. The Individual file
+  browses a folder instead; it fixes Teff and log g, so only [Fe/H] and vmic are shown. Stellar parameters lead with a **Preset** dropdown listing the
   Preferences → Reference stars catalogue: choosing an entry fills the four fields,
   editing any field puts the dropdown back on *Custom*, and values written back by a fit
   or a picked model select the entry they match. Values are a draft of the

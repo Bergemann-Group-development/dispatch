@@ -19,7 +19,7 @@ from tumult.synthesis import workflows as synth
 # file of a chosen format, with no registered grid (and no interpolation).
 INDIVIDUAL_GRID = "__individual__"
 
-# how the atmosphere formats a grid or an Individual atmosphere may declare are shown in a
+# how the atmosphere formats a grid or an Individual file may declare are shown in a
 # chooser. The values themselves are tumult's (``tumult.synthesis.ATMOS_FORMATS``: what
 # the Fortran reader accepts); only what a dropdown writes beside each of them is the GUI's,
 # and today each format is shown under its own name.

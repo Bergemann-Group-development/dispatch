@@ -196,7 +196,9 @@ class DepartureTool(Tool):
     # --- objects -------------------------------------------------------------------------
     @property
     def models(self):
-        return [*self.form.models]
+        # the setup's models carry its grid-action channel, html/class bridges and forms;
+        # without them the modal's atmosphere selects never reach the server
+        return [*self.form.models, *self.setup.models]
 
     @property
     def figs(self):

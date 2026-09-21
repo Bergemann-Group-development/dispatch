@@ -5,7 +5,7 @@ It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid 
 Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
 the Preset dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. The
 picker (:class:`atmospicker.AtmosPicker`) lists a registered grid's parsed models and
-browses a folder for the Individual atmosphere. The Preset dropdown lists the reference
+browses a folder for the Individual file. The Preset dropdown lists the reference
 stars (:mod:`tumult.refstars`): it fills the four parameter fields from an entry and shows
 *Custom* whenever the fields hold anything else, so the two stay in step in both
 directions.
@@ -206,10 +206,20 @@ class SynthSetup:
 
     def render(self):
         """Push every server-rendered surface (forms + grid) to the client."""
-        self.run_form.render()
+        self._sync_run_fields()
         self.base_form.render()
         self._sync_mode_fields()
         self.render_grid_ui()
+
+    def _sync_run_fields(self):
+        """Show the stellar fields the atmosphere source leaves free, and repaint. An
+        Individual file fixes Teff and log g (they only choose the MARCS preparation node of a
+        non-MARCS format), so those and the Preset are hidden; [Fe/H] and vmic stay, since the
+        run scales the abundance table by [Fe/H] and overrides the model's vmic."""
+        fields = self.run_form.fields
+        for key in ("refstar", "teff", "logg"):
+            fields[key].hidden = self.is_individual
+        self.run_form.render()
 
     def _sync_mode_fields(self):
         """Show the mode form's conditional fields for the current mode and job, and repaint."""
@@ -221,6 +231,7 @@ class SynthSetup:
 
     def render_grid_ui(self):
         self.grid_bridge.value = self.grid_ui_html()
+        self._sync_run_fields()   # the grid decides which stellar fields are free
         # reveal the always-on path field exactly when a concrete file is in play
         pulse(self.file_open_bridge, "on" if self.show_file() else "off")
         # every atmosphere-source change (grid/mode/file) routes through here; let listeners
@@ -229,7 +240,7 @@ class SynthSetup:
             self.on_atmos_change()
 
     def show_file(self):
-        """True when a concrete atmosphere *file* is in play — Individual, or a registered
+        """True when a concrete atmosphere *file* is in play — an Individual file, or a registered
         grid in 'Pick model' mode — i.e. when the inline picker field should be shown."""
         if self.is_snapshot or self.is_individual or not self.allow_interpolation:
             return True
@@ -237,7 +248,7 @@ class SynthSetup:
 
     def _seed_atmos_query(self):
         """Show the currently-chosen file in the path field (empty when none / not picking):
-        its model label on a grid, its path for an Individual atmosphere."""
+        its model label on a grid, its path for an Individual file."""
         picked = (self._sections[self.section].get("atmos_file") or "").strip()
         if not self.show_file():
             picked = ""
@@ -369,7 +380,7 @@ class SynthSetup:
 
     # --- atmosphere UI rendering ------------------------------------------------------
     def grid_ui_html(self):
-        """Grid selector (registered grids + 'Individual atmosphere'); then a Source toggle
+        """Grid selector (registered grids + 'Individual file'); then a Source toggle
         (Interpolate / Pick model) for a registered grid, or a Format selector for Individual.
         The chosen model itself lives in the always-on picker field below this block (revealed
         by :meth:`show_file`), so no chip/browse button is rendered here. Each select carries
@@ -384,7 +395,7 @@ class SynthSetup:
             f'{html.escape(name)}</option>' for gid, name in self.grids.names)
         grid_opts += (f'<option value="{INDIVIDUAL_GRID}"'
                       f'{" selected" if sel == INDIVIDUAL_GRID else ""}>'
-                      'Individual atmosphere</option>')
+                      'Individual file</option>')
         out = ['<div class="field-group"><label>Grid</label>'
                f'<select class="field-input" data-atmos="{p}" data-atmos-key="grid">'
                f'{grid_opts}</select></div>']
@@ -605,7 +616,7 @@ class SynthSetup:
 
     def _load_atmosphere(self, atmosphere, config):
         """Select the registered grid ``atmosphere`` names (interpolated), the grid holding
-        its file (picked), or the Individual atmosphere with its format."""
+        its file (picked), or the Individual file with its format."""
         sect = self._sections[self.section]
         grids = [(gid, self.grids._find(gid) or {}) for gid, _ in self.grids.names]
         if isinstance(atmosphere, AtmosphereGrid):
@@ -650,7 +661,7 @@ class SynthSetup:
         grid = self.active_grid()
         if grid is None:
             self.reason = ("No atmosphere grid — download or register one in Preferences → Atmosphere grids, "
-                           "or choose 'Individual atmosphere'.")
+                           "or choose 'Individual file'.")
             return None
         stellar = self.stellar_values()
         atoms = list(self.atoms_provider())

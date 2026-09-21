@@ -86,7 +86,7 @@ class FitTab:
         self.elements = synth.abund_elements(prefs)
 
     def set_can_fit_stellar(self, ok):
-        """Enable/disable fitting the stellar params. Off for an Individual atmosphere or a
+        """Enable/disable fitting the stellar params. Off for an Individual file or a
         picked grid file, where the params are fixed by the file (no grid to interpolate); the
         stellar switches are then hidden and their flags ignored by ``collect``."""
         ok = bool(ok)

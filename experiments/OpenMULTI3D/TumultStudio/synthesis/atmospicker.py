@@ -8,7 +8,7 @@ filter over that text: every space-separated fragment has to occur, so ``5750 4.
 ``-2.00 giant`` narrows a fifteen-thousand-model MARCS grid to a handful. The chosen row's
 label then shows in the box, as a picked path does in file mode.
 
-``set_root`` puts the picker back in file mode (the Individual atmosphere), listing a
+``set_root`` puts the picker back in file mode (the Individual file), listing a
 directory as :class:`FilePicker` does. A grid is scanned away from the document, and the
 picker is in node mode from the moment the scan starts, so the box says what it is for
 while a large grid is read.
@@ -75,7 +75,7 @@ class AtmosPicker(FilePicker):
 
     # --- modes ----------------------------------------------------------------
     def set_root(self, root):
-        """File mode: list ``root`` (the Individual atmosphere folder)."""
+        """File mode: list ``root`` (the Individual file folder)."""
         if hasattr(self, "_grid_work"):
             self._grid_work.invalidate()
         self._nodes, self._problem, self._by_path = None, None, {}
