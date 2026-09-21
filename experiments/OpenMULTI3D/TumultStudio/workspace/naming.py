@@ -118,3 +118,9 @@ def corrections(element, request, grid=None):
     """NLTE corrections of ``element`` at the request's star."""
     return join(f"{element} corrections", star(*request.star.tuple()),
                 atmosphere(request, grid))
+
+
+def departures(element, request, grid=None):
+    """A departure solve of ``element`` on the request's atmosphere."""
+    return join(f"{element} departures", star(*request.star.tuple()),
+                atmosphere(request, grid))

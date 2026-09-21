@@ -9,7 +9,9 @@ filter over that text: every space-separated fragment has to occur, so ``5750 4.
 label then shows in the box, as a picked path does in file mode.
 
 ``set_root`` puts the picker back in file mode (the Individual atmosphere), listing a
-directory as :class:`FilePicker` does.
+directory as :class:`FilePicker` does. A grid is scanned away from the document, and the
+picker is in node mode from the moment the scan starts, so the box says what it is for
+while a large grid is read.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from ..ui.latestwork import LatestWork
 
 FILE_PLACEHOLDER = "Type a path…"
 NODE_PLACEHOLDER = "Filter models, e.g. 5750 4.5 -1"
+SCANNING = "Listing the grid's models…"
 
 
 def node_label(teff, logg, feh, vmic=None, snap=None):
@@ -90,9 +93,18 @@ class AtmosPicker(FilePicker):
         self.query.value = ""
         self._scan("")
 
-    def set_grid(self, grid, root=None):
-        """Discover a grid away from the document and install only its latest result."""
+    def set_grid(self, grid, root=None, on_ready=None):
+        """Discover a grid away from the document and install only its latest result.
+
+        The picker is put in node mode at once, listing nothing but saying the scan is
+        under way, so a visible picker never shows the file browser of another mode while
+        a grid is being read. ``on_ready`` is called on the document thread once the models
+        are installed (the caller's chance to show the picked one by its label, which only
+        exists once they are listed).
+        """
         marker = (dict(grid), root)
+        if not self.node_mode:
+            self.set_nodes([], SCANNING)
 
         def compute(token):
             try:
@@ -103,6 +115,8 @@ class AtmosPicker(FilePicker):
         def apply(result):
             rows, problem = result
             self.set_nodes(rows, problem)
+            if on_ready is not None:
+                on_ready()
 
         self._grid_work.request(compute, apply)
 

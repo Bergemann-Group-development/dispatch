@@ -44,9 +44,9 @@ import numpy as np
 SCHEMA_VERSION = 2
 
 SPECTRUM_KINDS = ("file", "run", "synth")       # path-backed, path-backed, embedded
-# what the single sidebar highlight can rest on: the canvas, the mask list, the atom list
-# or one of the three result lists (the workspace focus_kind values)
-FOCUS_KINDS = ("spectrum", "linemask", "atom", "result", "corr", "ionbal")
+# what the single sidebar highlight can rest on: the canvas, the mask list, the atom list,
+# a departure solve or one of the three result lists (the workspace focus_kind values)
+FOCUS_KINDS = ("spectrum", "linemask", "atom", "departures", "result", "corr", "ionbal")
 RESULT_TOOLS = ("abundance", "abundcorr", "ionbal")   # the result-list sections
 # focus kind -> the result tool whose list carries it
 FOCUS_TOOL = {"result": "abundance", "corr": "abundcorr", "ionbal": "ionbal"}
@@ -214,6 +214,26 @@ class AtomSnap:
 
 
 @dataclass
+class DepartureSnap:
+    """One departure solve: its identity, its name and the run folder it is read back from.
+    The populations themselves stay in the run (:class:`tumult.departures.Departures`)."""
+    uid: str
+    name: str
+    atom_path: str
+    folder: str
+    species: str = ""
+
+    @classmethod
+    def from_dict(cls, d, where):
+        d = _mapping(d, where)
+        uid = _uid(d, "uid", where)
+        return cls(uid=uid, name=_typed(d, "name", str, where, default=""),
+                   atom_path=_typed(d, "atom_path", str, where, default=""),
+                   folder=_uid(d, "folder", f"{where}[{uid}]"),
+                   species=_typed(d, "species", str, where, default=""))
+
+
+@dataclass
 class ResultsSnap:
     """One tool's result list: the serialised results and the selected uid."""
     results: list = field(default_factory=list)
@@ -326,6 +346,8 @@ class Workspace:
     masks: MaskSnap = field(default_factory=MaskSnap)
     atoms: list = field(default_factory=list)         # list[AtomSnap]
     atom_selected: Optional[str] = None
+    departures: list = field(default_factory=list)    # list[DepartureSnap]
+    departure_selected: Optional[str] = None
     results: dict = field(default_factory=dict)       # tool name -> ResultsSnap
     view: ViewSnap = field(default_factory=ViewSnap)
     filter: FilterSnap = field(default_factory=FilterSnap)
@@ -348,6 +370,10 @@ class Workspace:
                  for i, a in enumerate(_typed(d, "atoms", list, "workspace", default=[]))]
         _unique([a.uid for a in atoms], "atoms", "atom uid")
         _unique([a.path for a in atoms], "atoms", "atom path")
+        departures = [DepartureSnap.from_dict(v, f"departures[{i}]")
+                      for i, v in enumerate(_typed(d, "departures", list, "workspace",
+                                                   default=[]))]
+        _unique([v.uid for v in departures], "departures", "departures uid")
         results_d = _typed(d, "results", dict, "workspace", default={})
         unknown = set(results_d) - set(RESULT_TOOLS)
         _check(not unknown, "results", f"unknown section {sorted(unknown)}")
@@ -359,6 +385,8 @@ class Workspace:
             masks=MaskSnap.from_dict(_section(d, "masks"), "masks"),
             atoms=atoms,
             atom_selected=_typed(d, "atom_selected", str, "workspace"),
+            departures=departures,
+            departure_selected=_typed(d, "departure_selected", str, "workspace"),
             results=results,
             view=ViewSnap.from_dict(_section(d, "view"), "view"),
             filter=FilterSnap.from_dict(_section(d, "filter"), "filter"),
@@ -369,6 +397,10 @@ class Workspace:
                "spectrum_selected", f"{ws.spectrum_selected!r} is not a saved spectrum")
         _check(ws.atom_selected is None or ws.atom_selected in ws.atom_uids,
                "atom_selected", f"{ws.atom_selected!r} is not a saved atom")
+        _check(ws.departure_selected is None
+               or ws.departure_selected in ws.departure_uids,
+               "departure_selected",
+               f"{ws.departure_selected!r} is not a saved departure solve")
         _check(ws.focus.uid is None or ws.focus.uid in ws.uids_of(ws.focus.kind),
                "focus", f"{ws.focus.kind} {ws.focus.uid!r} is not a saved object")
         return ws
@@ -383,6 +415,10 @@ class Workspace:
         return [a.uid for a in self.atoms]
 
     @property
+    def departure_uids(self):
+        return [d.uid for d in self.departures]
+
+    @property
     def maskset_uids(self):
         return [s["uid"] for s in self.masks.sets]
 
@@ -394,6 +430,8 @@ class Workspace:
             return self.maskset_uids
         if kind == "atom":
             return self.atom_uids
+        if kind == "departures":
+            return self.departure_uids
         return self.results[FOCUS_TOOL[kind]].uids
 
     def to_dict(self):
@@ -419,6 +457,7 @@ def summary(snapshot):
                     for t in RESULT_TOOLS if isinstance(results.get(t), dict))
     parts = [plural(length(snapshot.get("spectra")), "spectrum", "spectra")]
     for n, noun in ((n_masks, "line mask"), (length(snapshot.get("atoms")), "atom"),
+                    (length(snapshot.get("departures")), "departure solve"),
                     (n_results, "result")):
         if n:
             parts.append(plural(n, noun))
@@ -435,6 +474,7 @@ def is_blank(snapshot):
     sets = masks.get("sets") if isinstance(masks.get("sets"), list) else []
     results = snapshot.get("results") if isinstance(snapshot.get("results"), dict) else {}
     return not (snapshot.get("spectra") or snapshot.get("atoms")
+                or snapshot.get("departures")
                 or any(isinstance(s, dict) and (s.get("label") or s.get("masks")) for s in sets)
                 or any((results.get(t) or {}).get("results") for t in RESULT_TOOLS
                        if isinstance(results.get(t), dict)))
@@ -447,7 +487,7 @@ def plural(n, noun, plural=None):
 # --- preparation: live objects, off the live workspace ------------------------------
 @dataclass
 class Skipped:
-    kind: str          # "spectrum" | "atom" | "workflow"
+    kind: str          # "spectrum" | "atom" | "departures" | "workflow"
     uid: str
     name: str
     path: str
@@ -471,6 +511,12 @@ class PreparedAtom:
 
 
 @dataclass
+class PreparedDepartures:
+    snap: DepartureSnap
+    departures: object               # tumult.departures.Departures
+
+
+@dataclass
 class PreparedWorkspace:
     """Everything a commit needs, already built. Also what a rollback re-applies, so the
     live workspace is captured into one of these before a load replaces it."""
@@ -481,6 +527,8 @@ class PreparedWorkspace:
     mask_active: Optional[int] = None
     atoms: list = field(default_factory=list)            # list[PreparedAtom]
     atom_selected: Optional[str] = None
+    departures: list = field(default_factory=list)       # list[PreparedDepartures]
+    departure_selected: Optional[str] = None
     results: dict = field(default_factory=dict)          # tool -> (list[result], selected)
     view: ViewSnap = field(default_factory=ViewSnap)
     filter: FilterSnap = field(default_factory=FilterSnap)
@@ -494,16 +542,16 @@ class PreparedWorkspace:
         listed in the sidebar (the store's empty scratch set does not)."""
         return {"spectra": len(self.spectra),
                 "masks": sum(1 for s in self.mask_sets if s.label or s.masks),
-                "atoms": len(self.atoms),
+                "atoms": len(self.atoms), "departures": len(self.departures),
                 "results": sum(len(r) for r, _ in self.results.values())}
 
 
-def prepare(ws, *, load_spectrum, load_atom, deserialise, relink):
+def prepare(ws, *, load_spectrum, load_atom, load_departures, deserialise, relink):
     """Build the live objects of validated ``ws`` without touching the workspace.
 
-    ``load_spectrum(snap) -> Spectrum`` and ``load_atom(path) -> AtomClass`` read the
-    external files; a failure there skips that object (the partial-load policy) and is
-    recorded with its reason. ``deserialise(name, records) -> list`` builds one result
+    ``load_spectrum(snap) -> Spectrum``, ``load_atom(path) -> AtomClass`` and
+    ``load_departures(folder) -> Departures`` read the external files; a failure there skips
+    that object (the partial-load policy) and is recorded with its reason. ``deserialise(name, records) -> list`` builds one result
     section's objects and ``relink(name, results, spectrum_uids, maskset_uids, atom_paths)
     -> list[str]`` clears the references that point at objects this load does not restore;
     both are plain functions of the saved records, so a slot is interpreted without
@@ -541,6 +589,15 @@ def prepare(ws, *, load_spectrum, load_atom, deserialise, relink):
                                             f"{type(exc).__name__}: {exc}"))
             continue
         prepared.atoms.append(PreparedAtom(snap, atom))
+    for snap in ws.departures:
+        try:
+            departures = load_departures(snap.folder)
+        except Exception as exc:
+            log.warning("Skipping the departure solve %s: %s", snap.folder, exc)
+            prepared.skipped.append(Skipped("departures", snap.uid, snap.name, snap.folder,
+                                            f"{type(exc).__name__}: {exc}"))
+            continue
+        prepared.departures.append(PreparedDepartures(snap, departures))
 
     spectrum_uids = {p.snap.uid for p in prepared.spectra}
     maskset_uids = {s.uid for s in prepared.mask_sets}
@@ -563,9 +620,13 @@ def prepare(ws, *, load_spectrum, load_atom, deserialise, relink):
     prepared.spectrum_selected = (ws.spectrum_selected
                                   if ws.spectrum_selected in spectrum_uids else None)
     prepared.atom_selected = ws.atom_selected if ws.atom_selected in atom_uids else None
+    departure_uids = {p.snap.uid for p in prepared.departures}
+    prepared.departure_selected = (ws.departure_selected
+                                   if ws.departure_selected in departure_uids else None)
     focus = FocusSnap(ws.focus.kind, ws.focus.uid)
     if (focus.kind == "spectrum" and focus.uid not in spectrum_uids) or (
-            focus.kind == "atom" and focus.uid not in atom_uids):
+            focus.kind == "atom" and focus.uid not in atom_uids) or (
+            focus.kind == "departures" and focus.uid not in departure_uids):
         focus = FocusSnap("spectrum", None)
     prepared.focus = focus
     return prepared
@@ -592,7 +653,8 @@ class LoadReport:
     def message(self):
         c = self.counts
         parts = [plural(c["spectra"], "spectrum", "spectra"), plural(c["masks"], "line mask"),
-                 plural(c["atoms"], "atom"), plural(c["results"], "result")]
+                 plural(c["atoms"], "atom"), plural(c["departures"], "departure solve"),
+                 plural(c["results"], "result")]
         text = f"Loaded “{self.name}”: " + ", ".join(parts)
         if self.skipped:
             text += "; skipped " + "; ".join(str(s) for s in self.skipped)

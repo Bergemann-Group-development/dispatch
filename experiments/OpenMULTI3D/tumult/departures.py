@@ -36,6 +36,8 @@ import json
 from pathlib import Path
 import time
 
+import numpy as np
+
 MANIFEST = "departures.json"
 
 
@@ -89,6 +91,69 @@ class Departures:
         files = atom.get("atom_file") or []
         files = [files] if isinstance(files, str) else list(files)
         return [str(f) for f in files], atom.get("line_grid_file")
+
+    def profile(self, species=None):
+        """The :class:`DepartureProfile` of ``species`` (default: this solve's only atom).
+
+        The populations are read from the run's saved patches, so the run folder must still
+        hold them (:attr:`saved`).
+        """
+        from .run import Run
+
+        species = str(species or (self.species[0] if self.species else
+                                  (atom_ids(self.folder) or [""])[0]))
+        if not species:
+            raise ValueError(f"{self.folder} holds no saved populations")
+        run = Run.read(self.folder)
+        mem = np.asarray(run.read_patch_save(f"pop_{species}", zdim=2))
+        if mem.ndim == 6:                       # a set axis the departure solve does not use
+            mem = mem[..., 0]
+        lte, dep = np.asarray(mem[..., 0], float), np.asarray(mem[..., 1], float)
+        ltau = np.asarray(run.atmos.ltau, float)
+        nz, nk = lte.shape[-2:]
+        lte, dep = lte.reshape(-1, nz, nk), dep.reshape(-1, nz, nk)
+        ltau = ltau.reshape(-1, nz)
+        if len(ltau) == 1:
+            order = np.argsort(ltau[0])
+            return DepartureProfile(species, ltau[0][order], dep[0][order].T, 1)
+        grid = np.sort(ltau.mean(axis=0))
+        nlte_sum, lte_sum = np.zeros((nk, len(grid))), np.zeros((nk, len(grid)))
+        for column in range(len(ltau)):
+            order = np.argsort(ltau[column])
+            depth = ltau[column][order]
+            for level in range(nk):
+                n_lte = lte[column, order, level]
+                lte_sum[level] += np.interp(grid, depth, n_lte)
+                nlte_sum[level] += np.interp(grid, depth, n_lte * dep[column, order, level])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            b = np.where(lte_sum > 0, nlte_sum / lte_sum, np.nan)
+        return DepartureProfile(species, grid, b, len(ltau))
+
+    def convergence_levels(self):
+        """The final relative population correction per level, largest over the run's
+        ranks, from its ``convergence_report_*.txt``; an empty array when it wrote none.
+
+        The solver stops when every level is converged, so these are what it ended at:
+        a level whose value is far above the others is where to look first when a
+        departure profile is not believable.
+        """
+        levels = {}
+        for report in sorted(Path(self.folder).glob("convergence_report_*.txt")):
+            for line in report.read_text().splitlines()[1:]:
+                fields = line.split()
+                if len(fields) != 2:
+                    continue
+                try:
+                    level, value = int(fields[0]), abs(float(fields[1]))
+                except ValueError:
+                    continue
+                levels[level] = max(levels.get(level, 0.0), value)
+        if not levels:
+            return np.zeros(0)
+        out = np.zeros(max(levels))
+        for level, value in levels.items():
+            out[level - 1] = value
+        return out
 
     def to_dict(self):
         return {"version": 2, "folder": str(self.folder), "name": str(self.name),
@@ -144,6 +209,30 @@ class Departures:
         if not found.saved:
             raise ValueError(f"{folder} contains no native saved departures")
         return found
+
+
+@dataclass(frozen=True)
+class DepartureProfile:
+    """The departure coefficients of one solved atom against optical depth.
+
+    ``b`` is ``n/n_LTE`` per level and depth point, ``(nk, nz)`` in the model atom's own
+    level order, against ``ltau`` (log tau_500) in ascending order, so index 0 is the
+    outermost point of the atmosphere and the last index the deepest.
+
+    ``columns`` is how many atmospheric columns it stands for: 1 for a 1D model, and for a
+    cube the number of columns averaged. A cube is reduced by interpolating each column's
+    populations onto the mean depth scale and dividing the averaged NLTE populations by the
+    averaged LTE ones, so ``b`` is the ratio the mean spectrum sees rather than the mean of
+    a ratio, which a few hot columns would dominate.
+    """
+    species: str
+    ltau: np.ndarray
+    b: np.ndarray
+    columns: int = 1
+
+    @property
+    def nk(self):
+        return int(self.b.shape[0])
 
 
 def atom_ids(folder):

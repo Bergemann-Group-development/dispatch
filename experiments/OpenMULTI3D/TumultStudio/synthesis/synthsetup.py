@@ -111,6 +111,9 @@ class SynthSetup:
     grid_section : str | None
         Store section holding the grid *selection* (``atmos_grid_id``). Defaults to
         ``section``; the synthesis modal historically keeps it under ``"synthesis"``.
+    allow_interpolation : bool
+        False restricts the atmosphere to one concrete model: the Source toggle is fixed at
+        *Pick model*, so a registered grid is picked from rather than interpolated.
     form_names : dict | None
         Overrides for the three form names (keys ``"run"``/``"base"``/``"mode"``), for
         hosts whose page slots predate the ``{prefix}params``… convention.
@@ -118,7 +121,13 @@ class SynthSetup:
 
     def __init__(self, prefix, section, grids, *, atoms_provider=None, notify=None,
                  on_mode_change=None, on_base_change=None, on_atmos_change=None,
-                 on_run_change=None, grid_section=None, form_names=None):
+                 on_run_change=None, grid_section=None, form_names=None,
+                 allow_interpolation=True):
+        # a host whose calculation is of one atmosphere (a departure solve) sets
+        # ``allow_interpolation=False``: the Source is then always the picked model, and a
+        # registered grid is a list of models to choose from rather than something to
+        # interpolate between
+        self.allow_interpolation = allow_interpolation
         self.allow_departures = prefix == "synth"
         self.allow_atom_only = prefix == "synth"
         # the element a line-mask analysis diagnoses; while set, the mode form offers to
@@ -184,6 +193,7 @@ class SynthSetup:
         # list the selected grid's models (or the Individual folder) and seed the single
         # field with the persisted selection so it shows the current file
         self._nodes_stale = False
+        self._enforce_source()
         self._reset_atmos_picker()
         self._seed_atmos_query()
 
@@ -221,7 +231,7 @@ class SynthSetup:
     def show_file(self):
         """True when a concrete atmosphere *file* is in play — Individual, or a registered
         grid in 'Pick model' mode — i.e. when the inline picker field should be shown."""
-        if self.is_snapshot or self.is_individual:
+        if self.is_snapshot or self.is_individual or not self.allow_interpolation:
             return True
         return self._sections[self.section].get("atmos_mode", "interp") == "pick"
 
@@ -353,7 +363,9 @@ class SynthSetup:
             self.atmos_picker.set_nodes([], "No atmosphere grid registered")
             return
         root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
-        self.atmos_picker.set_grid(grid, root)
+        # the models arrive later; the picked one can only be shown by its label once
+        # they do, and installing them clears the box
+        self.atmos_picker.set_grid(grid, root, on_ready=self._seed_atmos_query)
 
     # --- atmosphere UI rendering ------------------------------------------------------
     def grid_ui_html(self):
@@ -387,6 +399,9 @@ class SynthSetup:
             if model_is_3d(selected.get("format")) and not is_snapshot_grid(selected):
                 out.append('<div class="field-group field-inline"><label>Source</label>'
                            '<div class="field-static">Snapshot file</div></div>')
+            elif not self.allow_interpolation:
+                out.append('<div class="field-group field-inline"><label>Source</label>'
+                           '<div class="field-static">Pick model</div></div>')
             else:
                 mode_opts = "".join(
                     f'<option value="{v}"{" selected" if v == mode else ""}>{lbl}</option>'
@@ -408,6 +423,8 @@ class SynthSetup:
             self._seed_atmos_query()
             self.render_grid_ui()
         elif kind == "mode":
+            if not self.allow_interpolation:
+                return
             self._update(self.section, "atmos_mode", arg)
             self._seed_atmos_query()   # entering 'pick' shows the stored file (if any)
             self.render_grid_ui()
@@ -543,8 +560,15 @@ class SynthSetup:
         self._seed_atmos_query()
         self.render_grid_ui()
 
+    def _enforce_source(self):
+        """Hold a setup that cannot interpolate on a picked model, whatever an inherited or
+        stored section says."""
+        if not self.allow_interpolation:
+            self._update(self.section, "atmos_mode", "pick")
+
     def reload(self):
         """Re-seed the forms + atmosphere UI from the (possibly just-changed) store section."""
+        self._enforce_source()
         vals = {**RUN_DEFAULTS, **self._sections[self.section]}
         self.run_form.set_values(**{k: vals[k] for k, _, _, _ in synth.STELLAR_PARAMS})
         self._sync_refstar()
@@ -635,10 +659,11 @@ class SynthSetup:
             return None
         sect = self._sections[self.section]
         atmos_file = None
-        if self.is_snapshot or self.is_individual or sect.get("atmos_mode", "interp") == "pick":
+        if self.show_file():
             atmos_file = (sect.get("atmos_file") or "").strip() or None
             if atmos_file is None:
-                self.reason = "Choose a grid to interpolate, or pick an atmosphere file."
+                self.reason = ("Pick an atmosphere file." if not self.allow_interpolation
+                               else "Choose a grid to interpolate, or pick an atmosphere file.")
                 return None
         saved = str((self.mode_form.value("departures") if not self.mode_form.fields["departures"].hidden else "") or "").strip()
         try:

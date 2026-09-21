@@ -78,6 +78,36 @@
         <div id="atom-levels-table" class="atom-table-wrap"></div>
         <div id="atom-trans-table" class="atom-table-wrap"></div>
       </div>
+      <!-- departure view: the departure coefficients of the selected level or transition
+           against log tau_500 on top, the solved atom's levels / bound-bound transitions
+           below (#main.dep-mode; the open table is the dep-tab-<name> class on #main) -->
+      <div id="dep-plot">
+        <div class="dep-head">
+          <div id="dep-legend" class="dep-legend"></div>
+          <div class="dep-head-actions">
+            <button class="text-btn" data-dep-pin="1" title="Keep these curves drawn while another row is selected">Pin</button>
+            <button class="text-btn" data-dep-unpin="1" title="Remove every pinned curve">Clear pins</button>
+          </div>
+        </div>
+        <div class="dep-fig">{{ embed(roots.dep_fig) }}</div>
+      </div>
+      <div id="dep-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div class="atom-head">
+          <div class="step-tabs" data-tool="dep" title="What the curves are selected from">
+            <button class="step-tab dep-step-btn" data-step="1">Energy levels</button>
+            <button class="step-tab dep-step-btn" data-step="2">Bound-bound transitions</button>
+          </div>
+          <label class="linelist-search dep-search" data-tab="levels"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search levels, e.g. 3d6 4s" title="Label, stage or index; Esc clears"></label>
+          <label class="linelist-search dep-search" data-tab="trans"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search lines, e.g. 5711" title="Wavelength, level labels or index; Esc clears"></label>
+        </div>
+        <div id="dep-levels-table" class="dep-table-wrap" data-tool="dep"></div>
+        <div id="dep-trans-table" class="dep-table-wrap" data-tool="dep"></div>
+      </div>
       <!-- measurement view: the two balance panels (the tab it opens on, so the fit is
            watched as it runs) or the target spectrum with the synthesised lines drawn on it
            (Lines), with the per-line table + iteration status below and a view switcher -->
@@ -145,6 +175,15 @@
           <button class="icon-btn atom-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
         <div id="atom-panel-content"></div>
+      </div>
+      <!-- the departure object's panel: what was solved, its convergence, the hand-over to
+           the synthesis modal and the other solves of the same atom to compare it with -->
+      <div class="dep-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Departure coefficients</span>
+          <button class="icon-btn dep-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="dep-panel-content"></div>
       </div>
       <!-- the measurement object's panel: what it is, the fit standing on it, and the
            refit action (the fit's settings all live in the modal) -->
@@ -246,6 +285,53 @@
   </div>
   <div class="modal-footer">
     <button class="text-btn modal-cancel">Cancel</button><button class="primary-btn corr-run">Compute</button>
+  </div>
+</dialog>
+
+<!-- Departure coefficients: opened from a model atom's panel. The atom is fixed; the modal
+     owns the atmosphere the populations are solved on. One atmosphere only — an interpolated
+     grid would be a departure grid, which is a different object. -->
+<dialog id="dep-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Departure coefficients</span>
+    <button id="close-dep" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="dep-context" class="corr-context"></div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="dep-grid" class="synth-grid">{{ dep_grid_html|safe }}</div>
+        <div id="dep-file-picker" class="inline-picker-auto{{ ' open' if dep_show_file }}"
+             data-results="{{ dep_file_results_name }}">
+          {{ embed(roots.dep_file_picker) }}
+          <div id="dep-file-results" class="file-results"></div>
+        </div>
+        <div class="hint">One model: a file of a registered grid, or an individual
+          atmosphere. A grid is picked from rather than interpolated here — interpolating one
+          would solve a departure grid, one solve per node. The populations belong to the
+          model picked and to the parameters below.</div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="depparams-fields">{{ dep_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="depbase-fields">{{ dep_base_html|safe }}</div>
+        <div class="section-header">Quadrature</div>
+        <div id="dep1-fields">{{ dep1_html|safe }}</div>
+        <div class="hint">With the line grid on, the atom's bound-bound wavelength sampling is
+          generated from its line opacities on the MARCS model nearest these parameters
+          (cached under <code>synth/_preparation/</code>); off, the atom's own
+          <code>nq qmax q0</code> sample every line. A synthesis reusing these populations
+          must be given the same atom, which the <b>Saved departures</b> field does.</div>
+        <div class="hint">Neither windows nor the line list enter a departure solve: the
+          populations are solved once and every later synthesis adds only its formal
+          solution.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button><button class="primary-btn dep-run">Solve</button>
   </div>
 </dialog>
 

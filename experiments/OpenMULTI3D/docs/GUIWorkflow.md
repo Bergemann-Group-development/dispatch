@@ -34,7 +34,8 @@ A calculation names the object it will deliver when it is submitted (`workspace/
 kind or target, the window or line mask, the atmosphere file or grid, LTE or NLTE with the
 model atoms, and abundance overrides, e.g.
 `T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · MARCS · LTE`, `obs.fits fit · fe-lines · MARCS · LTE`,
-`Fe abundance · obs.fits · fe-lines · MARCS · LTE` or `Fe corrections · T5750 g4.40 m+0.00 ξ1.00 · MARCS`.
+`Fe abundance · obs.fits · fe-lines · MARCS · LTE`, `Fe corrections · T5750 g4.40 m+0.00 ξ1.00 · MARCS`
+or `Mg departures · T5750 g4.40 m+0.00 ξ1.00 · marcs.mod`.
 The Info tab and the result panels hold the full provenance. A name already used by a
 spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suffix
 (`workspace.unique_name`), and a loaded file shares that rule. A calculation does not rename the
@@ -310,6 +311,8 @@ A slot is the whole object workspace (`TumultStudio/workspace/session.py`, schem
 - every line-mask set by its integer uid, with its baseline, so an edited set comes
   back marked modified and can still be reverted; the current set and the active mask;
 - every model atom by uid and path (re-read on load);
+- every departure solve by uid, name and run folder (reopened on load; the populations
+  stay in the run and are read again when its view is opened), with the selected one;
 - the abundance, correction and ionisation-balance result lists with their selected
   result; results refer to their observation, mask set and atom by identity only;
 - the display units, the explicit main and navigation ranges (x and y), the filter
@@ -321,11 +324,12 @@ workspace, and only then commits: the workspace generation advances, the documen
 non-detached jobs are cancelled (a late outcome adds nothing), and every collection is
 replaced, empty ones included, so an atom-only, mask-only, result-only or empty slot is a
 valid replacement. A slot with an unsupported version, a wrong shape or a broken embedded
-object is refused with the field named and changes nothing. A spectrum or atom file that
+object is refused with the field named and changes nothing. A spectrum, atom file or departure run that
 can no longer be read is the one partial case: that object is skipped, the footer and the
 log name its identity, path and reason, the references pointing at it are cleared (a
-result's reference observation, a balance's mask set; a correction whose atom is missing
-is listed under Corrections), and a selection or focus that named it is cleared rather
+result's reference observation, a balance's mask set; a correction or departure solve whose
+atom is missing is listed under its own trailing section), and a selection or focus that
+named it is cleared rather
 than moved to another object. If applying the prepared workspace fails part-way, the
 previous workspace is put back. The Saved workspaces list describes each slot's contents,
 or says that its format is unsupported. Loading is explicit: a row is selected first and
@@ -465,7 +469,9 @@ fitted spectrum's **Rerun from this…** (its recorded request, see "Duplicate a
   and the **Saved departures** field). A registered grid is picked from by parsed model:
   the picker lists what the grid's pattern matched, one row per model (per snapshot on a
   3D grid) as `5750 K · log g 4.50 · [Fe/H] +0.00 · ξ 1`, filtered by every fragment
-  typed into its box; picking one fills the stellar parameters. The Individual atmosphere
+  typed into its box. The grid is read away from the document, and the picker is the model
+  picker while that runs (it says so instead of listing files); a picked model then shows
+  by its row label rather than its path; picking one fills the stellar parameters. The Individual atmosphere
   browses a folder instead. Stellar parameters lead with a **Preset** dropdown listing the
   Preferences → Reference stars catalogue: choosing an entry fills the four fields,
   editing any field puts the dropdown back on *Custom*, and values written back by a fit
@@ -490,8 +496,9 @@ fitted spectrum's **Rerun from this…** (its recorded request, see "Duplicate a
   atoms, an unreadable abundance override) is refused in the footer with the reason, the
   dialog left open and nothing submitted.
 
-Departure-coefficient solves are not started from this modal; their entry point is decided
-separately. NLTE abundance corrections start from a model atom (see below). Atmosphere
+Departure-coefficient solves are not started from this modal: their entry point is a model
+atom's **Departure coefficients…**, and a finished solve fills the **Saved departures**
+field from its own panel (see below). NLTE abundance corrections start from a model atom too. Atmosphere
 grids (downloading the published ones, custom folders, the 1D LTE reference) are the
 Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
 Preferences → Line lists downloads the published per-species master line lists
@@ -525,7 +532,7 @@ The same component in fit mode.
   the fitted spectrum is added as a synth object with the request's provenance and the
   broadening is applied as the live convolution in the Edit tab.
 
-## Model atoms and NLTE corrections
+## Model atoms, departures and NLTE corrections
 
 **Open → Model atom** reads a MULTI-format atom (`input/atoms`) into a model-atom
 object in the left sidebar: element badge, file name, and a level·line count. The object is
@@ -549,8 +556,71 @@ search is how the rest is reached. Selecting a row does nothing to the spectrum 
 
 ### Right sidebar
 
-Element, file, counts, A(X) and mass from the file header, and one action, **NLTE
-corrections…**, which opens the correction modal with this atom fixed.
+Element, file, counts, A(X) and mass from the file header, and two actions:
+**Departure coefficients…**, which opens the departure modal, and **NLTE corrections…**,
+which opens the correction modal — both with this atom fixed. The panel says how many
+departure solves and correction results are listed under the atom.
+
+### Departure coefficients
+
+**Departure coefficients…** on the atom's panel opens the departure modal with that atom
+fixed. The modal holds the atmosphere cluster (grid, pick a model, or an individual file),
+the stellar parameters and abundances, and **Line grid from opacity profiles**; there are
+no windows and no line list, because neither enters a departure solve. The atmosphere is
+one model, so the cluster has no *Interpolate* source: a registered grid is picked from
+(its Source row says *Pick model*, and the picker is open from the start, listing the
+grid's parsed models as the synthesis and correction modals do) and an individual file is
+browsed, as everywhere else. Interpolating a grid would solve a
+departure grid (`tumult.departures.DepartureGrid`), one solve per node, which is a
+different object; a request that names a grid anyway is refused in the footer. **Solve** submits one durable `departures.solve` workflow on the
+setup's request with the atom as its argument; the object is listed under the atom and
+selected at once, its sidebar row showing the stage and how far the running dispatch run
+is, and the workflow outlives the tab like any other.
+
+The solve is path-backed: what is kept is the run folder (`departures.json` beside the
+saved populations), and a session reopens it with `tumult.departures.Departures.load`. A
+run that has been deleted or cleared from the cache is skipped on load with its reason;
+the object itself carries no populations.
+
+#### Departure view
+
+Focusing a departure solve replaces the canvas with the coefficients above and the atom's
+own tables below — the same **Energy levels** and **Bound-bound transitions** tables as the
+atom view, searched and sorted the same way. The selected row is what is drawn, against
+log τ₅₀₀ on a logarithmic b axis with a hairline at b = 1. A view opens on the first row of
+the table as displayed — in its current sort order and through its current search — so it
+shows a curve rather than an empty plot, and a search that takes the selected row off the
+table moves the selection to the first row that is shown:
+
+- a **level** gives its b and its b relative to the ground state of its own ionisation
+  stage. The ratio separates overionisation of the whole stage, which is a common factor
+  and flat in it, from level-to-level redistribution. A ground state has no ratio of its
+  own and shows one curve.
+- a **transition** gives b of its lower and upper level and the ratio b_u/b_l, which is the
+  line source function in units of the Planck function and is what sets the line.
+
+Over the plot stands the selected row and one short key per curve it draws (`b`,
+`b / b(gs)`, or `b_l`, `b_u`, `b_u / b_l`); a hovered curve names itself in full, with its
+level term or wavelength, so the keys stay readable side by side.
+
+**Pin** keeps the current curves drawn, dotted, while another row is selected, and **Clear
+pins** removes them. A pinned row is named inside the plot, in the figure's own legend at
+the top right, one entry per pinned row rather than per curve. The panel lists the other
+solves of the same atom: ticking one draws the same level or transition from that solve,
+dashed, and its keys carry the solve's parameters (`T5750 g4.50 · b`), which is how two
+atmospheres, two sets of parameters or two quadratures are compared.
+
+The populations are read once per object, off the document thread, and kept while it is
+listed (`Departures.profile`). A cube is reduced to one profile through its populations —
+the averaged NLTE populations over the averaged LTE ones on the mean depth scale, not the
+average of the per-column coefficient — and the panel says how many columns that was.
+
+The panel states what was solved (atmosphere, star, model atom, quadrature), the largest
+final population correction of the run's convergence report and the level it stands on,
+and the run folder. **Use in synthesis…** fills the synthesis modal's **Saved departures**
+with that folder, so the next synthesis reads these populations back and runs only the
+formal solution, for any window. Removing the atom removes its departure solves with it,
+after confirmation, and Undo restores both; the saved populations stay on disk either way.
 
 ### Correction modal
 
@@ -651,8 +721,10 @@ The GUI is the `TumultStudio/` package; paths below are relative to it.
   view over `MaskStore` (`masks/maskstore.py`) and hands "+ New mask" to the range tool
   in add mode.
 - `SynthModal` (`synthesis/synthmodal.py`) collects both modal modes from `SynthSetup`
-  (`synthesis/synthsetup.py`) with `FitTab` (`synthesis/fittab.py`) as its Fit section;
-  there is no departure-solve action in the GUI. The Preferences dialog is
+  (`synthesis/synthsetup.py`) with `FitTab` (`synthesis/fittab.py`) as its Fit section.
+  `DepartureTool` (`atoms/departuretool.py`) owns the departure objects, their modal (its
+  own `SynthSetup` cluster), the centre view over the atom's tables and the hand-over of a
+  solved run to that modal's Saved departures field. The Preferences dialog is
   `PreferencesPage` (`preferences/page.py`): the preference sheets and their pickers, the
   atmosphere-grid registry (`preferences/gridmanager.py`), the reference-star catalogue
   (`preferences/refstarspage.py`) and the run-cache page. It is built before the
@@ -667,7 +739,9 @@ The GUI is the `TumultStudio/` package; paths below are relative to it.
   their GUI identity references are `analysis/results.py`, the diagnostic panels
   `analysis/diagnostics.py`, and the local-continuum interaction
   `analysis/localcontinuum.py`. `AtomTool` (`atoms/atomtool.py`) owns the atom objects,
-  the atom view, the Open Model Atom picker and the correction entry point;
+  the atom view, the Open Model Atom picker and the departure and correction entry points;
+  its two tables are rendered by `levels_table` / `trans_table`, which the departure view
+  shares;
   `AbundanceResult.atom_path` links a correction result to its atom.
 - `EditMenu` (`workspace/editmenu.py`) is the toolbar's Edit menu; `app.py` registers one
   `Target` per focus kind. Its Duplicate actions are `ResultView.duplicate_result` and

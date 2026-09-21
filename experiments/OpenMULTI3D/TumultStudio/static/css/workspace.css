@@ -453,7 +453,8 @@ aside {
 
 /* Workspace entry points stay available independently of the active scientific view. */
 #main.empty #canvas-toolbar > :not(.workspace-actions),
-#main.atom-mode #canvas-toolbar > :not(.workspace-actions) { display: none; }
+#main.atom-mode #canvas-toolbar > :not(.workspace-actions),
+#main.dep-mode #canvas-toolbar > :not(.workspace-actions) { display: none; }
 #linemask-modal .settings-nav { display: none; }
 #linemask-modal .settings-layout { display: block; }
 .preparation-actions { display: flex; flex-wrap: wrap; gap: 8px; }

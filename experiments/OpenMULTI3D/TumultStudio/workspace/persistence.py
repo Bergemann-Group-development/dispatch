@@ -35,9 +35,9 @@ from ..ui.debounce import Trailing
 from ..ui.htmlbridge import pulse
 from . import session, store
 from .objects import FOCUS_TOOLS
-from .session import (AtomSnap, FilterSnap, FocusSnap, MaskSnap, PreparedAtom,
-                      PreparedSpectrum, PreparedWorkspace, ResultsSnap, SpectrumSnap,
-                      ToolsSnap, ViewSnap, Workspace)
+from .session import (AtomSnap, DepartureSnap, FilterSnap, FocusSnap, MaskSnap,
+                      PreparedAtom, PreparedDepartures, PreparedSpectrum, PreparedWorkspace,
+                      ResultsSnap, SpectrumSnap, ToolsSnap, ViewSnap, Workspace)
 
 log = logging.getLogger("tumultstudio.jobs")
 
@@ -56,6 +56,13 @@ def load_atom(path):
     whole atomic-data stack, which a document that opens none never needs)."""
     from tumult.atom import AtomClass
     return AtomClass(str(path))
+
+
+def load_departures(folder):
+    """A saved workspace's departure solve, reopened from its run folder. The populations
+    stay on disk; only the record is read here."""
+    from tumult.departures import Departures
+    return Departures.load(str(folder))
 
 
 def _range(r):
@@ -113,7 +120,8 @@ class WorkspacePersistence:
 
     def __init__(self, ctx, workspace, delivery, workflows, *, filter, settings, refresh,
                  deserialise_results, relink_results,
-                 load_spectrum=load_spectrum, load_atom=load_atom):
+                 load_spectrum=load_spectrum, load_atom=load_atom,
+                 load_departures=load_departures):
         self.ctx = ctx
         self.workspace = workspace
         self.delivery = delivery
@@ -123,6 +131,7 @@ class WorkspacePersistence:
         self.refresh = refresh
         self._load_spectrum = load_spectrum
         self._load_atom = load_atom
+        self._load_departures = load_departures
         self._deserialise_results = deserialise_results
         self._relink_results = relink_results
 
@@ -166,7 +175,7 @@ class WorkspacePersistence:
         """The live workspace as a :class:`session.Workspace` dict."""
         ws, filtertool = self.workspace, self.filter
         canvas = ws.canvas
-        spectra, atomtool = ws.spectra, ws.atoms
+        spectra, atomtool, deptool = ws.spectra, ws.atoms, ws.departures
         specs = []
         for o in spectra:
             kind, path = o.source if o.source else (None, None)
@@ -194,6 +203,7 @@ class WorkspacePersistence:
         # only persist a low-pass cutoff when a low-pass filter actually exists
         has_lowpass = (filtertool.method == "lowpass"
                        and any(o.filtered is not None for o in spectra))
+        departures_snap = deptool.snapshot()
         focus_kind, focus_uid = ws.focused()
         if focus_kind == "spectrum":
             focus_uid = spectrum_selected
@@ -203,6 +213,8 @@ class WorkspacePersistence:
             masks=MaskSnap(**ws.masks.snapshot()),
             atoms=[AtomSnap(uid=a.uid, path=a.path) for a in atomtool.atoms],
             atom_selected=atomtool.selected_uid,
+            departures=[DepartureSnap(**d) for d in departures_snap["departures"]],
+            departure_selected=departures_snap["selected"],
             results={name: ResultsSnap(**w.snapshot()) for name, w in wizards.items()},
             view=ViewSnap(xunit=canvas.xlabel, yunit=canvas.ylabel,
                           main_x=_range(canvas.main.x_range), main_y=_range(canvas.main.y_range),
@@ -225,6 +237,7 @@ class WorkspacePersistence:
         ws = Workspace.from_dict(snap)
         return session.prepare(ws, load_spectrum=self._load_spectrum,
                                load_atom=self._load_atom,
+                               load_departures=self._load_departures,
                                deserialise=self._deserialise_results,
                                relink=self._relink_results)
 
@@ -243,6 +256,9 @@ class WorkspacePersistence:
             atoms=[PreparedAtom(AtomSnap(uid=a.uid, path=a.path), a.atom)
                    for a in ws.atoms.atoms],
             atom_selected=ws.atoms.selected_uid,
+            departures=[PreparedDepartures(snap, ws.departures.find(snap.uid).departures)
+                        for snap in saved.departures],
+            departure_selected=saved.departure_selected,
             results={name: (list(w.results), w.results.selected)
                      for name, w in ws.results.items()},
             view=saved.view, filter=saved.filter, focus=saved.focus, tools=saved.tools)
@@ -286,6 +302,7 @@ class WorkspacePersistence:
         spectra.selected_uid = p.spectrum_selected     # None when none was, or it is gone
         ws.masks.restore(p.mask_sets, p.mask_current, p.mask_active)
         ws.atoms.restore(p.atoms, p.atom_selected, p.tools.atom_tab)
+        ws.departures.restore(p.departures, p.departure_selected)
         for name, w in wizards.items():
             results, selected = p.results[name]
             w.restore(results, selected)

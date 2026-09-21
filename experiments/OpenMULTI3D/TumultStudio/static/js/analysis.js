@@ -131,6 +131,7 @@
   }
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.atom-close')) { ewAction('atom'); return; }
+    if (ev.target.closest('.atom-departures')) { atomAction('departures'); return; }
     if (ev.target.closest('.atom-corr')) { atomAction('corr'); return; }
     var rem = ev.target.closest('[data-atom-remove]');
     if (rem) {
@@ -152,6 +153,35 @@
   document.querySelectorAll('.atom-search').forEach(function (label) {
     var box = label.querySelector('input'), timer = null;
     function send() { timer = null; atomAction('search', label.dataset.tab + ' ' + box.value); }
+    box.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, 150);
+    });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { box.value = ''; send(); box.blur(); ev.stopPropagation(); }
+      else if (ev.key === 'Enter') { if (timer) clearTimeout(timer); send(); }
+    });
+  });
+
+  // departure coefficients: the modal's Solve button, the panel's actions and the view's
+  // own gestures (pins, the overlay checkboxes and the two search fields). Selecting a row,
+  // switching table and sorting are the shared binder's, through the data-tool="dep" scope.
+  wireModal(null, 'close-dep', 'dep-modal');
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.dep-close')) { ewAction('departures'); return; }
+    var run = ev.target.closest('.dep-run');
+    if (run) { if (busySubmit(run)) analysisAction('dep', 'run'); return; }
+    if (ev.target.closest('[data-dep-pin]')) { analysisAction('dep', 'pin'); return; }
+    if (ev.target.closest('[data-dep-unpin]')) { analysisAction('dep', 'unpin'); return; }
+    if (ev.target.closest('[data-dep-use]')) { analysisAction('dep', 'use'); }
+  });
+  document.addEventListener('change', function (ev) {
+    var overlay = ev.target.closest('[data-dep-overlay]');
+    if (overlay) analysisAction('dep', 'overlay', overlay.dataset.depOverlay);
+  });
+  document.querySelectorAll('.dep-search').forEach(function (label) {
+    var box = label.querySelector('input'), timer = null;
+    function send() { timer = null; analysisAction('dep', 'search', label.dataset.tab + ' ' + box.value); }
     box.addEventListener('input', function () {
       if (timer) clearTimeout(timer);
       timer = setTimeout(send, 150);

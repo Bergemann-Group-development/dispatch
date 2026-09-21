@@ -231,16 +231,31 @@ def register_workspace(removal, workspace):
             label="result", find=wizard.find, detach=detach_result,
             running=lambda res, wizard=wizard: [res.name] if wizard.is_computing(res) else []))
 
-    corr = atomtool.corr
+    corr, departures = atomtool.corr, workspace.departures
 
     def detach_atom(atom):
         placed = atomtool.remove(atom.uid)
         return lambda: atomtool.insert(**placed)
 
+    def of_atom(atom):
+        """What was computed from ``atom`` and is removed with it."""
+        return list(departures.results_for(atom.path)) + list(corr.results_for(atom.path))
+
     removal.register("atom", Kind(
         label="model atom", find=atomtool.find, detach=detach_atom,
-        dependents=lambda atom: [r.name for r in corr.results_for(atom.path)],
-        dependents_note="These correction results were computed from it and are removed "
-                        "with it:",
+        dependents=lambda atom: [r.name for r in of_atom(atom)],
+        dependents_note="These departure solves and correction results were computed from "
+                        "it and are removed with it:",
         running=lambda atom: [r.name for r in corr.results_for(atom.path)
-                              if corr.is_computing(r)]))
+                              if corr.is_computing(r)]
+                             + [d.name for d in departures.results_for(atom.path)
+                                if departures.is_computing(d)]))
+
+    def detach_departures(obj):
+        placed = departures.remove(obj.uid)
+        return lambda: departures.insert(**placed)
+
+    removal.register("departures", Kind(
+        label="departure solve", find=departures.find, detach=detach_departures,
+        # the saved populations stay on disk: only the workspace object goes
+        running=lambda obj: [obj.name] if departures.is_computing(obj) else []))

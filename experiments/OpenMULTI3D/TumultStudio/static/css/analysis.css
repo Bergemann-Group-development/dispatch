@@ -129,7 +129,8 @@
 .sidebar-right.atom-active > .tab-bar,
 .sidebar-right.atom-active > .tab-content { display: none; }
 .sidebar-right.atom-active .atom-panel { display: flex; }
-.atom-panel .atom-corr { display: block; width: 100%; margin-top: 4px; }
+.atom-panel .atom-corr,
+.atom-panel .atom-departures { display: block; width: 100%; margin-top: 4px; }
 .atom-panel .atom-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* centre atom view: tabs + the open tab's search field on top, one table wrap per tab.
@@ -154,6 +155,55 @@
 .atom-table .atom-label { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
 .atom-row.atom-ground td { font-weight: 600; }
 .atom-count { padding: 6px 4px; font-size: 11px; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Departure coefficients: the solves listed under their atom (left sidebar), the
+   centre view (the curves of the selected level or transition over the atom's own
+   tables) and the panel holding the hand-over to the synthesis modal.
+   The tool has no toolbar button — a model atom's panel action is what opens it.
+   --------------------------------------------------------------------------- */
+.result-item .dep-badge { background: #2f7d6d; }
+
+.dep-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.dep-active > .tab-bar,
+.sidebar-right.dep-active > .tab-content { display: none; }
+.sidebar-right.dep-active .dep-panel { display: flex; }
+.dep-panel .text-btn { display: block; width: 100%; margin-top: 4px; }
+.dep-panel .folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep-overlay { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.dep-overlay .text-btn { display: inline; width: auto; margin: 0; }
+
+/* centre departure view: the curves on top (with the legend and the pin actions over
+   them), the atom's level / transition table below, one tab at a time. Replaces the whole
+   canvas: departures have no wavelength axis. */
+#dep-plot, #dep-bottom { display: none; }
+#main.dep-mode #top-panel,
+#main.dep-mode #canvas-wrap,
+#main.dep-mode #canvas-empty { display: none; }
+#main.dep-mode #dep-plot { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 4px; }
+#main.dep-mode #dep-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+.dep-fig { flex: 1; min-height: 0; display: flex; }
+.dep-fig > * { flex: 1; min-width: 0; min-height: 0; }
+.dep-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
+.dep-head-actions { flex: 0 0 auto; display: flex; gap: 6px; }
+.dep-legend { flex: 1; display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; }
+/* the strip over the plot: which row is drawn, then one short key per curve. The full
+   description of a curve belongs to its hover, not here */
+.dep-row { font-weight: 600; color: var(--text); }
+.dep-key { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); }
+.dep-swatch { display: inline-block; width: 18px; height: 0; }
+.dep-search { display: none; margin-bottom: 4px; }
+#main.dep-tab-levels .dep-search[data-tab="levels"],
+#main.dep-tab-trans .dep-search[data-tab="trans"] { display: block; }
+#main.dep-tab-levels .dep-step-btn[data-step="1"],
+#main.dep-tab-trans .dep-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.dep-table-wrap { display: none; flex: 1; min-height: 0; overflow: auto; }
+#main.dep-tab-levels #dep-levels-table,
+#main.dep-tab-trans #dep-trans-table { display: block; }
+/* the selected row is what the curves belong to; the shared binder marks it client-side */
+.dep-table-wrap .atom-row { cursor: pointer; }
+.dep-table-wrap .atom-row:hover td,
+.dep-table-wrap .atom-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 
 /* ---------------------------------------------------------------------------
    Abundance-correction tool: the correction results (nested under their atom in the

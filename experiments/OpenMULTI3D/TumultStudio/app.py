@@ -24,6 +24,7 @@ from .analysis.abundcorrtool import AbundCorrTool
 from .analysis.ionbalance import IonBalanceTool
 from .analysis.resultview import ANALYSIS_SCRIPT
 from .atoms.atomtool import AtomTool
+from .atoms.departuretool import DepartureTool
 from .context import AppContext
 from .execution.delivery import DeliveryService
 from .execution.processes import ProcessesPanel
@@ -275,12 +276,30 @@ def build():
         setup=corr_setup,
         grids=prefs_page.grids)
 
+    # the departure-coefficient tool: its own atmosphere setup in its modal, the model atom
+    # fixed by the object the modal was opened from. A solved run is handed to the synthesis
+    # modal's Saved departures field, which is what makes the populations reusable.
+    def use_saved_departures(folder):
+        synth_modal.setup.use_departures(folder)
+        notify(f"Synthesis modal set to reuse the departures in {Path(folder).name}")
+
+    dep_setup = SynthSetup(
+        "dep", "dep_run", prefs_page.grids,
+        atoms_provider=lambda: ([departuretool._pending_atom.path]
+                                if departuretool._pending_atom is not None else []),
+        notify=notify, allow_interpolation=False)
+    departuretool = DepartureTool(ctx, setup=dep_setup, load_async=load_async,
+                                  use_departures=use_saved_departures)
+
     # the model-atom objects: Open → Model atom loads one; its view is the two
-    # tables, its panel the entry point of the correction modal, and its correction results
-    # are listed under it
-    atomtool = AtomTool(ctx, corr=abundcorrtool)
+    # tables, its panel the entry point of the departure and correction modals, and both
+    # kinds of result are listed under it
+    atomtool = AtomTool(ctx, corr=abundcorrtool, dep=departuretool)
     abundcorrtool.on_results = atomtool.render_objects
     abundcorrtool._known_atom_paths = lambda: [a.path for a in atomtool.atoms]
+    departuretool.on_results = atomtool.render_objects
+    departuretool._known_atom_paths = lambda: [a.path for a in atomtool.atoms]
+    departuretool.atom_object = atomtool.by_path
 
     # The ionisation-balance modal owns its grid selection and always interpolates it.  Only
     # the app-global registered-grid list and synthesis preferences are shared.
@@ -298,6 +317,7 @@ def build():
         synth_modal.setup.refresh_grids()
         abund_setup.refresh_grids()
         corr_setup.refresh_grids()
+        dep_setup.refresh_grids()
         lines.use_marcs_grid(prefs_page.grids.grids)
         lines.warm()
 
@@ -305,7 +325,7 @@ def build():
 
     def on_refstars_change():
         """The reference-star catalogue was edited: repaint every dropdown listing it."""
-        for setup in (synth_modal.setup, abund_setup, corr_setup):
+        for setup in (synth_modal.setup, abund_setup, corr_setup, dep_setup):
             setup.refresh_refstars()
         ionbaltool.refresh_refstars()
         lines.refresh_refstars()
@@ -328,12 +348,13 @@ def build():
     tools.register("abundcorr", abundcorrtool)
     tools.register("ionbal", ionbaltool)
     tools.register("atom", atomtool)
+    tools.register("departures", departuretool)
 
     # --- naming, removal and the Edit menu, across every object list ------
     # the three result lists, by the name of their tool (the session's result sections)
     wizards = {"abundance": abundancetool, "abundcorr": abundcorrtool, "ionbal": ionbaltool}
     workspace.bind(canvas, masks=mask_store, mask_view=masktool, atoms=atomtool,
-                   results=wizards)
+                   results=wizards, departures=departuretool)
 
     # every sidebar remove button goes through this: it asks when the removal would cost
     # something and offers Undo in the status message (removal.py)
@@ -356,6 +377,10 @@ def build():
     edit_menu.register("atom", EditTarget(
         find=atomtool.find, removal="atom",
         fixed_note="A model atom is identified by its file"))
+    edit_menu.register("departures", EditTarget(
+        find=departuretool.find, removal="departures",
+        rename=lambda obj, name: departuretool.rename(obj.uid, name),
+        fixed_note="A departure solve is its run on disk"))
     edit_menu.render()
 
     # --- session save / restore -------------------------------------------
@@ -450,6 +475,7 @@ def build():
         "abundance":    lambda v: tools.toggle("abundance"),
         "abundcorr":    lambda v: tools.toggle("abundcorr"),
         "atom":         lambda v: tools.toggle("atom"),
+        "departures":   lambda v: tools.toggle("departures"),
         "ionbal":       lambda v: tools.toggle("ionbal"),
     }
 
@@ -491,10 +517,13 @@ def build():
         setup=abundancetool.setup, atoms=abund_atoms, owner=abundancetool, attributes=("ref_uid",))
     abundcorrtool.draft = CalculationDraft(forms=[("abundcorr", abundcorrtool.form1)],
         setup=abundcorrtool.setup)
+    departuretool.draft = CalculationDraft(forms=[("departures", departuretool.form)],
+        setup=dep_setup)
     ionbaltool.draft = CalculationDraft(forms=[("ionbal", form) for form in
         (ionbaltool.form1, ionbaltool.form2, ionbaltool.formadv, ionbaltool.setup.form)])
     drafts = {"synth-modal": synth_modal.draft, "abund-modal": abundancetool.draft,
-              "corr-modal": abundcorrtool.draft, "ionbal-modal": ionbaltool.draft}
+              "corr-modal": abundcorrtool.draft, "dep-modal": departuretool.draft,
+              "ionbal-modal": ionbaltool.draft}
     dialog_actions = B.action("dialog-actions")
     def close_draft(attr, old, new):
         draft = drafts.get(new.split(" ")[0])
@@ -511,7 +540,7 @@ def build():
                      *synth_modal.models, *range_tool.models, *normtool.models,
                      *filtertool.models, *masktool.models,
                      *abundancetool.models, *abundcorrtool.models,
-                     *ionbaltool.models)
+                     *departuretool.models, *ionbaltool.models)
     bridges.name = "bridges"
 
     doc = curdoc()
@@ -523,7 +552,7 @@ def build():
     with doc.models.freeze():
         for root in (canvas.nav, canvas.main, filtertool.fig,
                      *abundancetool.figs, abundancetool.cog.fig, abundancetool.chi2.fig,
-                     *abundcorrtool.figs, abundcorrtool.cog.fig,
+                     *abundcorrtool.figs, abundcorrtool.cog.fig, *departuretool.figs,
                      *ionbaltool.figs, opener.picker.layout,
                      *masktool.roots,
                      synth_atoms.picker.layout, abund_atoms.picker.layout,
@@ -531,6 +560,7 @@ def build():
                      prefs_page.grids.picker.layout, synth_modal.atmos_picker.layout,
                      abundancetool.setup.atmos_picker.layout,
                      abundcorrtool.setup.atmos_picker.layout,
+                     dep_setup.atmos_picker.layout,
                      atom_picker.layout, bridges):
             doc.add_root(root)
 
@@ -614,6 +644,12 @@ def build():
         corr_grid_html=corr_setup.grid_ui_html(),
         corr_show_file=corr_setup.show_file(),
         corr_file_results_name=corr_setup.atmos_picker.results_name,
+        dep1_html=departuretool.form.html(),
+        dep_params_html=dep_setup.run_form.html(),
+        dep_base_html=dep_setup.base_form.html(),
+        dep_grid_html=dep_setup.grid_ui_html(),
+        dep_show_file=dep_setup.show_file(),
+        dep_file_results_name=dep_setup.atmos_picker.results_name,
         ionbal_results_html=ionbaltool.results_html(),
         ionbal_table_html="",
         ionbal_context_html="",

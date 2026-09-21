@@ -68,7 +68,10 @@ What the request means:
   screens, curve-of-growth rungs and departure solves.
 - `departures` selects the calculation: none is LTE, `Departures`/`DepartureGrid` are frozen
   NLTE populations and `departures.request(...)` solves departures for each effective
-  request. There is no separate mode setting.
+  request. There is no separate mode setting. A solved `Departures` reads its own
+  populations back with `.profile()` — `b[level, depth]` against `log tau_500`, a cube
+  reduced to one profile through its populations — and `.convergence_levels()` gives the
+  final population correction per level.
 - `request.update(...)` returns a new request and validates it; the original is unchanged.
   A balance result passed as `star` and an abundance result passed as `abundances` are
   reduced to their parameters and composition.

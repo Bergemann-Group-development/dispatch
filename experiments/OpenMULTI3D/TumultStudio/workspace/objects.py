@@ -28,7 +28,7 @@ from . import naming
 from .session import FOCUS_TOOL, RESULT_TOOLS
 
 # the sidebar tools that own the left-sidebar focus while open: a panel beside the canvas
-FOCUS_TOOLS = (*RESULT_TOOLS, "linemask", "atom")
+FOCUS_TOOLS = (*RESULT_TOOLS, "linemask", "atom", "departures")
 
 
 class SpectrumObject:
@@ -174,14 +174,16 @@ class WorkspaceObjects:
         self.masks = None        # MaskStore: the line mask sets
         self.mask_view = None    # MaskTool: the LineMasks view over them
         self.atoms = None        # AtomTool: the model atoms and their view
+        self.departures = None   # DepartureTool: the departure solves and their view
         self.results = None      # tool name -> the result view owning that list
         self.on_change = lambda: None
 
-    def bind(self, canvas, *, masks, mask_view, atoms, results):
+    def bind(self, canvas, *, masks, mask_view, atoms, results, departures):
         self.canvas = canvas
         self.masks = masks
         self.mask_view = mask_view
         self.atoms = atoms
+        self.departures = departures
         self.results = results
         assert tuple(results) == RESULT_TOOLS
 
@@ -200,6 +202,8 @@ class WorkspaceObjects:
             return kind, self.masks.current_uid
         if kind == "atom":
             return kind, self.atoms.selected_uid
+        if kind == "departures":
+            return kind, self.departures.selected_uid
         return kind, self.results[FOCUS_TOOL[kind]].results.selected
 
     def focus_spectrum(self, uid):
@@ -222,6 +226,9 @@ class WorkspaceObjects:
             self.mask_view.select_set(uid)
         elif kind == "atom":
             self.atoms.select(uid)
+        elif kind == "departures":
+            if uid is not None:
+                self.departures.select(uid)
         elif uid is not None:
             self.results[FOCUS_TOOL[kind]].select_result(uid)
 
@@ -233,6 +240,7 @@ class WorkspaceObjects:
         current name of an object being renamed, which does not count as taken."""
         taken = {o.name for o in self.spectra}
         taken.update(r.name for w in self.results.values() for r in w.results)
+        taken.update(o.name for o in self.departures.objects)
         if pending:
             taken.update(job.name for job in self.ctx.jobs.active)
         taken.discard(own)
