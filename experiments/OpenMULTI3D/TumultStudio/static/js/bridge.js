@@ -130,17 +130,52 @@
   // folders in the list are clicked (mousedown inside the list is prevented, so the field
   // keeps focus and navigates in place). Clicking away closes it; picking a file
   // collapses it from the server.
+  // The list itself is a top-layer popover (see base.css) so it can overhang the column
+  // and the modal: its open state stays the `open` + `results-open` class pair (set here
+  // and pulsed from the server), and syncDropdown keeps the popover in step with them.
+  function placeDropdown(pick, list) {
+    var r = pick.getBoundingClientRect();
+    list.style.left = r.left + 'px';
+    list.style.top = (r.bottom + 2) + 'px';
+    list.style.minWidth = r.width + 'px';
+    list.style.maxWidth = (window.innerWidth - r.left - 8) + 'px';
+    list.style.maxHeight = Math.max(80, Math.min(200, window.innerHeight - r.bottom - 12)) + 'px';
+  }
+  function syncDropdown(pick) {
+    var list = pick.querySelector('.file-results');
+    if (!list || !list.showPopover) return;
+    var want = pick.classList.contains('open') && pick.classList.contains('results-open')
+               && pick.getClientRects().length > 0;
+    var shown = list.matches(':popover-open');
+    if (want) { placeDropdown(pick, list); if (!shown) list.showPopover(); }
+    else if (shown) list.hidePopover();
+  }
+  function syncDropdowns() {
+    document.querySelectorAll('.inline-picker-auto').forEach(syncDropdown);
+  }
   document.addEventListener('focusin', function (ev) {
     var pick = ev.target.closest('.inline-picker-auto');
     if (!pick) return;
     pick.classList.add('results-open');
     var el = pick.querySelector('.file-results'), nm = pick.dataset.results;
     if (el && nm) { var rb = model(nm); if (rb) el.innerHTML = rb.value; }
+    syncDropdown(pick);
   });
   document.addEventListener('focusout', function (ev) {
     var pick = ev.target.closest('.inline-picker-auto');
-    if (pick) pick.classList.remove('results-open');
+    if (pick) { pick.classList.remove('results-open'); syncDropdown(pick); }
   });
+  // the server pulses the classes; a modal closing or a page scrolling moves the field
+  new MutationObserver(function (muts) {
+    muts.forEach(function (m) {
+      if (m.target.classList.contains('inline-picker-auto')) syncDropdown(m.target);
+    });
+  }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  document.addEventListener('scroll', syncDropdowns, true);
+  window.addEventListener('resize', syncDropdowns);
+  document.addEventListener('close', function (ev) {
+    if (ev.target.tagName === 'DIALOG') syncDropdowns();
+  }, true);
   document.addEventListener('mousedown', function (ev) {
     var pick = ev.target.closest('.inline-picker-auto');
     if (!pick) return;

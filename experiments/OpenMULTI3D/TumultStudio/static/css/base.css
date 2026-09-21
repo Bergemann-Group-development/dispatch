@@ -318,10 +318,15 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
    play (`open`); the result list only drops down while the field is focused (`results-open`). */
 .inline-picker-auto { display: none; flex-direction: column; margin-top: 8px; }
 .inline-picker-auto.open { display: flex; }
-/* the dropdown hangs straight off the field; anything else in the block keeps a gap */
-.inline-picker-auto > * + *:not(.file-results) { margin-top: 8px; }
-.inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
-.inline-picker-auto.open.results-open .file-results { display: block; }
+.inline-picker-auto > * + * { margin-top: 8px; }
+/* the dropdown is a top-layer popover that bridge.js hangs under the field, so it escapes
+   the modal's scroll clipping and grows to its longest name like an OS menu (the UA's
+   popover box is reset here; bridge.js sets left/top/min-width/max-* per opening) */
+.inline-picker-auto .file-results {
+  display: none; position: fixed; inset: auto; margin: 0; padding: 0;
+  width: max-content; color: var(--text);
+}
+.inline-picker-auto .file-results:popover-open { display: block; }
 /* ---- file picker (cmd+P) -------------------------------------------------- */
 .file-results {
   margin-top: 8px; max-height: 320px; overflow-y: auto;
@@ -336,15 +341,9 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .file-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); color: var(--accent); }
 .file-item i { color: var(--text-muted); }
 .file-item:hover i { color: var(--accent); }
-/* a long path is elided at its head, so the file name and the folders nearest it stay
-   readable (…/Documents/Marcs/model): the RTL direction moves the ellipsis to the start
-   while the LTR text itself still reads left to right */
-.file-item span {
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  direction: rtl; text-align: left;
-}
-/* a grid model's row leads with its Teff, so it is elided at the tail instead */
-.file-item.model-item span { direction: ltr; }
+/* rows show a bare file or folder name (the path only travels in data-path), so a
+   long one is elided at its tail and its start stays readable */
+.file-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* a picked file spins in place of its icon until its load has landed, so picking several
    in a row shows which are still coming (the footer bar only says that something is) */
 .file-item.is-busy { color: var(--accent); cursor: progress; }

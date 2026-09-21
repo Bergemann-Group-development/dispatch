@@ -28,12 +28,13 @@
    bridge and controls first, then the shell, then the dialogs. Loaded from this
    application's own static route, which lives under the page's path (bokeh serves
    <prefix>/<app>/static/ from TumultStudio/static/), so the URL is derived from the
-   page instead of assuming where the server mounts the app. #}
+   page instead of assuming where the server mounts the app. The version query defeats
+   a browser's heuristic caching of a script edited since it was last fetched. #}
 <script>
 (function () {
   var base = location.pathname.replace(/\/$/, '') + '/static/js/';
-  ['bridge', 'workspace', 'preferences', 'synthesis', 'analysis'].forEach(function (name) {
-    document.write('<script src="' + base + name + '.js"><\/script>');
+  {{ js_scripts|list|tojson }}.forEach(function (name) {
+    document.write('<script src="' + base + name + '.js?v={{ js_version }}"><\/script>');
   });
 })();
 </script>

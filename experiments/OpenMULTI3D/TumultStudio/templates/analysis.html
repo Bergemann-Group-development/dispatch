@@ -223,7 +223,7 @@
         <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
              data-results="{{ abund_file_results_name }}">
           {{ embed(roots.abund_file_picker) }}
-          <div id="abund-file-results" class="file-results"></div>
+          <div id="abund-file-results" class="file-results" popover="manual"></div>
         </div>
         <div class="section-header">Stellar parameters</div>
         <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
@@ -267,7 +267,7 @@
         <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
              data-results="{{ corr_file_results_name }}">
           {{ embed(roots.corr_file_picker) }}
-          <div id="corr-file-results" class="file-results"></div>
+          <div id="corr-file-results" class="file-results" popover="manual"></div>
         </div>
         <div class="section-header">Stellar parameters</div>
         <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
@@ -305,7 +305,7 @@
         <div id="dep-file-picker" class="inline-picker-auto{{ ' open' if dep_show_file }}"
              data-results="{{ dep_file_results_name }}">
           {{ embed(roots.dep_file_picker) }}
-          <div id="dep-file-results" class="file-results"></div>
+          <div id="dep-file-results" class="file-results" popover="manual"></div>
         </div>
         <div class="hint">One model: a file of a registered grid, or an individual
           atmosphere. A grid is picked from rather than interpolated here — interpolating one

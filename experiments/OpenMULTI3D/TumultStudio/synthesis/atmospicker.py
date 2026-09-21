@@ -148,10 +148,6 @@ class AtmosPicker(FilePicker):
         self._list([(label, path, False, "file-text") for label, path in shown],
                    "No model matches the filter")
 
-    @property
-    def row_class(self):
-        return "file-item model-item" if self.node_mode else "file-item"
-
     def _render(self):
         super()._render()
         if self._note:

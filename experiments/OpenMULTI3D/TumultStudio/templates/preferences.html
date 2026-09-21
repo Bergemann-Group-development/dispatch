@@ -5,7 +5,7 @@
           <label>{{ pref_labels[key] }}</label>
           <div id="pref-{{ key }}-picker" class="inline-picker-auto open" data-results="{{ pref_picker_results[key] }}">
             {{ embed(root) }}
-            <div id="pref-{{ key }}-results" class="file-results"></div>
+            <div id="pref-{{ key }}-results" class="file-results" popover="manual"></div>
           </div>
           <div class="field-warn-hint">File not found</div>
           {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
@@ -61,7 +61,7 @@
              into that folder row when its field is focused (one Bokeh picker serves all) -->
         <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
           {{ embed(roots.grid_picker) }}
-          <div id="grid-results" class="file-results"></div>
+          <div id="grid-results" class="file-results" popover="manual"></div>
         </div>
       </div>
 

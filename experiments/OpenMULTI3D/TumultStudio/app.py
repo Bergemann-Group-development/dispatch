@@ -71,6 +71,21 @@ def page_css() -> str:
                      for name in CSS_SHEETS)
 
 
+# the page's scripts, loaded from the app's static route in this order (see index.html)
+JS_SCRIPTS = ("bridge", "workspace", "preferences", "synthesis", "analysis")
+
+
+def js_version() -> str:
+    """A query string that changes whenever a script does, so a browser refetches it.
+
+    The static route sends no Cache-Control, so a browser may reuse a cached script on a
+    plain navigation (heuristic freshness) while the inlined CSS and the templates come
+    fresh from a restarted server; the two then disagree until a hard reload.
+    """
+    return str(max(int((HERE / "static" / "js" / f"{name}.js").stat().st_mtime)
+                   for name in JS_SCRIPTS))
+
+
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 # Job failures are logged from the worker thread, traceback included, whether or not the
@@ -573,6 +588,7 @@ def build():
     _auto = masktool.source("auto")     # None while masktool.AUTO_MASKS is off
     doc.template_variables.update(
         css=page_css(),
+        js_scripts=JS_SCRIPTS, js_version=js_version(),
         main_empty=not workspace.spectra.objects,  # bake the empty-state class into the first paint
         objects_html=workspace.objects_panel_html(),
         processes_html=panel.body_html,

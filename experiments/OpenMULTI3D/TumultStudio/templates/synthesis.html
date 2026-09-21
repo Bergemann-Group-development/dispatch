@@ -17,7 +17,7 @@
         <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
              data-results="{{ synth_file_results_name }}">
           {{ embed(roots.synth_file_picker) }}
-          <div id="synth-file-results" class="file-results"></div>
+          <div id="synth-file-results" class="file-results" popover="manual"></div>
         </div>
         <div class="section-header">Stellar parameters</div>
         <div id="synth-fields">{{ synth_run_html|safe }}</div>
