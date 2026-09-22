@@ -71,7 +71,7 @@ contains
     class(link_t), pointer:: link, next
     integer :: lunit, iostat, k, ip
     integer :: patches_per_mpi=1
-    integer :: dims=1, nx=-1, ny=-1, nz=96, snap=0
+    integer :: dims=1, nx=-1, ny=-1, nz=-1, snap=0
     integer :: verbose=0
     logical :: use_abnd=.false., read_departures_local=.false.
     character(len=512) :: command
@@ -174,7 +174,7 @@ contains
        case ('marcs')
         call read_marcs(atmos_file, FeH, vmic, external_abund)
         if (.not. use_abnd) deallocate(external_abund)
-       case ('multi', 'must', 'm3dis')
+       case ('multi', 'm3dis')
         call read_multi_snapshot(atmos_file)
        case ('text')
         call read_text_1d(atmos_file, vmic, FeH)
@@ -184,7 +184,7 @@ contains
         call read_siu_bin(atmos_file, vmic)
        case default
         write(stdout, *) 'unknown atmos_format ', trim(atmos_format), &
-          ". Options are: 'Stagger', 'Co5bold', 'MUST', 'Multi', &
+          ". Options are: 'Stagger', 'Co5bold', 'Multi', &
         &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'."
         stop
       end select
@@ -203,9 +203,12 @@ contains
 
       if (one_dimensional) then
         nx = 1; ny = 1
-      elseif (nx < 0 .or. ny < 0) then
-        nx = ia%nx; ny = ia%ny
       endif
+
+      nx = merge(ia%nx, nx, nx <= 0)
+      ny = merge(ia%ny, ny, ny <= 0)
+      nz = merge(ia%nz, nz, nz <= 0)
+
       self%n = [nx, ny, nz]
 
       if (amr=='') then
