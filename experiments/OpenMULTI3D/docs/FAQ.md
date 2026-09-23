@@ -368,10 +368,10 @@ out of the local source term, which is tracked alongside the opacity, rather tha
 the integrated rate. `'original'` restores the previous subtraction. Both have the same
 fixed point, so they agree where the old one converges at all.
 
-`'largest'` needs the linear iteration solver, `include_linelist=F` and no `fixed_Jnu`,
-since it uses the formal solution's non-local part. Runs that do not meet this fall back
-to `'original'` and print one warning. It holds three extra `real(4)` arrays and one
-`integer` array over the frequency and spatial grid.
+`'largest'` needs `rt_iteration_params.solver='linear'`, since it uses the non-local part
+of the formal solution and only the linear solvers keep it. A run with `solver='hermite'`
+falls back to `'original'` and prints one warning. It holds three extra `real(4)` arrays
+and one `integer` array over the frequency and spatial grid.
 
 Do not read a plain lambda iteration (`preconditioning=F`) as a reference for this. It
 reports updates of 1e-5 while still tens of percent from the solution in the upper

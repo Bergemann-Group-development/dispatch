@@ -675,18 +675,19 @@ contains
     ! solvers gate its computation on compute_psi rather than on get_rates.
     self%compute_psi = any(self%get_rates) .or. self%do_scat_precond
     ! The Rybicki & Hummer rates need the formal solution's non-local part, which
-    ! only the linear solvers keep, and they need a formal solution at all.  Where
-    ! that does not hold, drop back to the original rate formulation and say so
-    ! once, rather than refuse to run.
+    ! only the linear solvers keep.  short_char_hermite builds Psi but not that
+    ! remainder, so fall back to the original rate formulation there and say so
+    ! once, rather than refuse to run.  fixed_Jnu needs no exception: it replaces
+    ! the formal solution altogether, leaving Psi at the zero it is allocated
+    ! with, and split_rate_terms then returns the unpreconditioned rates.
     self%split_rates = rate_formulation == 'largest' .and. any(self%get_rates)
-    if (self%split_rates .and. (rt_iter%solver /= 'linear' .or. &
-        rt_iter%include_linelist .or. fixed_Jnu > 0)) then
+    if (self%split_rates .and. rt_iter%solver /= 'linear') then
       self%split_rates = .false.
       !$omp critical (rate_formulation_fallback)
       if (.not. rate_formulation_warned) then
         rate_formulation_warned = .true.
         print '(a)', " WARNING: rate_formulation='largest' needs the linear iteration"// &
-          " solver, include_linelist=F and fixed_Jnu<=0; using 'original' instead."
+          " solver; using 'original' instead."
       endif
       !$omp end critical (rate_formulation_fallback)
     endif
@@ -1084,7 +1085,7 @@ contains
     real(4), intent(in), dimension(:,:,:) :: vproj
     type(rt_params_t), pointer :: rtp
     logical :: use_linelist, sample_ll, do_scat, use_store
-    integer :: i, i_seg
+    integer :: i, i_seg, x, y, z, f
     real(dp), allocatable :: window_lam(:)
     !-----------------------------------------------------------------------------
     ! A continuum set carries the background only, in the scattering iterations as
@@ -1110,23 +1111,6 @@ contains
     ! redirect that fraction of the line source from Bnu to Jnu (see below)
     do_scat = line_scattering .and. (use_linelist .or. sample_ll)
     if (do_scat) self%chi_scat = 0.
-
-    do i=1, self%natom
-      associate(atom=>self%atoms(i), trans=>self%trans(i))
-        adata => atom%data
-        if (do_rotate_atmos .and. i_mu /= 0) then
-          adata => atom%rotated_data(i_mu)
-        endif
-        if (self%bound_bound) then
-          ! force LTE only for an LTE *companion* set: the main set of a run with
-          ! no departures is already LTE and must not take this branch
-          call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, &
-                                              LTE=self%set_kind(i_set)==set_lte .and. &
-                                                  self%has_nlte_set, &
-                                              use_ll=self%use_ll(i), i_set=i_set, iatom=i)
-        endif
-      end associate
-    end do
 
     ! NLTE departure coefficients for this (i_set, i_mu), shared by both the full
     ! detailed line list and the sampled-mode detailed departure-species pass
@@ -1168,6 +1152,44 @@ contains
         end associate
       endif
     endif
+
+    ! rate_formulation='largest' tracks each model-atom line's share of the
+    ! emissivity separately, so that a line's own contribution can be taken back
+    ! out of the source term exactly rather than by subtraction.  Everything that
+    ! is not such a line -- continuum, bound-free and the line list -- enters as
+    ! one contribution with index 0, which is why the line list is accumulated
+    ! first and the model atoms only afterwards.  Seeding the contribution from
+    ! the finished non-atom emissivity keeps it a single exactly stored float.
+    if (self%split_rates) then
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
+            do f=self%fs, self%fe
+              self%split_opac(f,x,y,z,1) = self%work(f,x,y,z,2)*self%beta(f,x,y,z)
+              self%split_opac(f,x,y,z,2) = 0.
+              self%split_id(f,x,y,z) = 0
+            end do
+          end do
+        end do
+      end do
+    endif
+
+    do i=1, self%natom
+      associate(atom=>self%atoms(i), trans=>self%trans(i))
+        adata => atom%data
+        if (do_rotate_atmos .and. i_mu /= 0) then
+          adata => atom%rotated_data(i_mu)
+        endif
+        if (self%bound_bound) then
+          ! force LTE only for an LTE *companion* set: the main set of a run with
+          ! no departures is already LTE and must not take this branch
+          call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, &
+                                              LTE=self%set_kind(i_set)==set_lte .and. &
+                                                  self%has_nlte_set, &
+                                              use_ll=self%use_ll(i), i_set=i_set, iatom=i)
+        endif
+      end associate
+    end do
 
     ! line_scattering: the LTE lines were added as pure thermal absorbers (source
     ! Bnu).  The scattering fraction (1-eps) of their opacity now has its source
@@ -2948,13 +2970,6 @@ contains
           do f=self%fs, self%fe
             self%work(f,x,y,z,1) = self%xhat(f,x,y,z)
             self%work(f,x,y,z,2) = self%ehat(f,x,y,z)
-            if (self%split_rates) then
-              ! the whole continuum, bound-free included, enters as one
-              ! contribution with index 0; the lines are added per transition
-              self%split_opac(f,x,y,z,1) = self%ehat(f,x,y,z)*self%beta(f,x,y,z)
-              self%split_opac(f,x,y,z,2) = 0.
-              self%split_id(f,x,y,z) = 0
-            endif
           end do
         end do
       end do
@@ -2997,7 +3012,21 @@ contains
             if (self%split_rates) &
               eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
             chi  = xhat - eta
-            if (do_scat) eta = eta + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
+            if (do_scat) then
+              ! The redirected line-scattering source is not a model-atom line
+              ! either, so it joins contribution 0.  Adding it through the same
+              ! tracking keeps eta equal to the tracked total.  Index 0 then
+              ! labels two entries, which is harmless: only line indices are ever
+              ! asked for, and for those the answer is the total less that line.
+              if (self%split_rates) then
+                call add_largest(self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z), 0, &
+                  self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
+                  self%split_id(f,x,y,z))
+                eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
+              else
+                eta = eta + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
+              endif
+            endif
             ! Each line adds phi*Rij*(bi - bj*beta) to chi, which goes negative for
             ! an inverted population.  chi may then pass through zero, and eta/chi
             ! diverges.  Keep the sign (the inversion is real) but hold |chi| away
