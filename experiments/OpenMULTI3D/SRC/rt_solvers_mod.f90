@@ -144,11 +144,23 @@ contains
               endif
 
               Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
+              ! Hold the non-local part on its own as well: the preconditioned
+              ! rates need it, and Inu - Psi*ss would cancel.
+              if (self%split_rates) self%Irem(f,x,y,z) = Inuup*ex + (u0 - Psi)*ssup
             else
               !ex = 0
               u0 = 1 / dt
               Psi = 1 - u0
               Inu = u0*ssup + Psi*ss
+              if (self%split_rates) self%Irem(f,x,y,z) = u0*ssup
+            endif
+            if (self%split_rates) then
+              ! Psi=0 switches the preconditioning off at this point, so Irem
+              ! then has to carry the whole (clamped) intensity.
+              if (dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)) then
+                Psi = 0.
+                self%Irem(f,x,y,z) = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
+              endif
             endif
             Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
 
@@ -312,10 +324,22 @@ contains
               endif
 
               Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
+              ! Hold the non-local part on its own as well: the preconditioned
+              ! rates need it, and Inu - Psi*ss would cancel.
+              if (self%split_rates) self%Irem(f,x,y,z) = Inuup*ex + (u0 - Psi)*ssup
             else
               u0 = 1 / dt
               Psi = 1 - u0
               Inu = u0*ssup + Psi*ss
+              if (self%split_rates) self%Irem(f,x,y,z) = u0*ssup
+            endif
+            if (self%split_rates) then
+              ! Psi=0 switches the preconditioning off at this point, so Irem
+              ! then has to carry the whole (clamped) intensity.
+              if (dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)) then
+                Psi = 0.
+                self%Irem(f,x,y,z) = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
+              endif
             endif
             Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
 

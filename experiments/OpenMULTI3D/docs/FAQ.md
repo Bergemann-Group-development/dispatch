@@ -353,6 +353,30 @@ is reserved for the reported convergence and is currently left empty by the solv
 run's log file (`<field.folder>.log`) for the iteration history. Surfacing convergence in
 the field and the GUI is **Missing**.
 
+### The population updates stop falling and flip sign every iteration. Why?
+
+**Fixed for the bound-bound rates.** Radiative preconditioning subtracts the local part
+of the radiation field from each rate. For a thermalised, optically thick line the two
+terms agree to seven or eight decimal digits, so in single precision the preconditioned
+rate is whatever rounding leaves behind, and the iteration settles into a limit cycle at
+a few percent instead of converging. Hydrogen Lyman lines in a photosphere are the usual
+case.
+
+`nlte_params.rate_formulation` selects how those rates are formed. The default,
+`'largest'`, follows Rybicki & Hummer (1992), Sect. 2.4: the line's own share is taken
+out of the local source term, which is tracked alongside the opacity, rather than out of
+the integrated rate. `'original'` restores the previous subtraction. Both have the same
+fixed point, so they agree where the old one converges at all.
+
+`'largest'` needs the linear iteration solver, `include_linelist=F` and no `fixed_Jnu`,
+since it uses the formal solution's non-local part. Runs that do not meet this fall back
+to `'original'` and print one warning. It holds three extra `real(4)` arrays and one
+`integer` array over the frequency and spatial grid.
+
+Do not read a plain lambda iteration (`preconditioning=F`) as a reference for this. It
+reports updates of 1e-5 while still tens of percent from the solution in the upper
+atmosphere, and creeps towards it over hundreds of thousands of iterations.
+
 ---
 
 ## Long calculations and jobs

@@ -178,6 +178,15 @@ MODULE m3d_patch_mod
     logical, public, save :: nlte_finished=.true.
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
+    ! Which preconditioning the bound-bound rates use.  'original' subtracts the
+    ! local source term from the rate after the frequency integral, which for a
+    ! thermalised thick line leaves no significant digits and can stall the
+    ! iteration outright.  'largest' uses Rybicki & Hummer (1992) Sect. 2.4
+    ! instead, taking the line's own share out of the local source term rather
+    ! than out of the integrated rate.  Both have the same fixed point.  It needs
+    ! the linear iteration solver, which is the only one that keeps the formal
+    ! solution's non-local part; rt_patch falls back to 'original' otherwise.
+    character(len=16), public, save :: rate_formulation='largest'
     ! Olson-Auer-Buchler local ALI on the continuum-scattering source term.
     ! Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
     ! unaccelerated Lambda-iteration that converges at the scattering albedo per
@@ -269,7 +278,8 @@ MODULE m3d_patch_mod
     public :: hash_string, pre_update, update, print_execution_history
     public :: release_output_tasks
 
-    namelist /nlte_params/ preconditioning, scattering_preconditioning, &
+    namelist /nlte_params/ preconditioning, rate_formulation, &
+    scattering_preconditioning, &
     scat_op_max, decouple_continuum, overrelax, &
     flux_convergence, initial_Jnu, fixed_Jnu, &
     ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
@@ -315,6 +325,11 @@ MODULE m3d_patch_mod
         read (io%input, nlte_params)
       end if
       call io%namelist_warning ('nlte_params', iostat)
+      select case (rate_formulation)
+      case ('original', 'largest')
+      case default
+        error stop 'rate_formulation must be original or largest'
+      end select
       rewind (io%input)
       read (io%input, output_params, iostat=iostat)
       if (iostat > 0) then

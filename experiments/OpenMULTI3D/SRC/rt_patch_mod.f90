@@ -22,7 +22,8 @@ MODULE rt_patch_mod
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
-    Jnu_to_file, preconditioning, scattering_preconditioning, scat_op_max, &
+    Jnu_to_file, preconditioning, rate_formulation, &
+    scattering_preconditioning, scat_op_max, &
     make_eos, amr, save_Inu, save_chi, save_Snu, &
     fixed_Jnu, n_nu, save_Jnu, &
     convlim, converged, flux_convergence, flux_conv_signal, &
@@ -41,6 +42,7 @@ MODULE rt_patch_mod
   USE molecule_mod, only: molec_type
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
+  USE rate_preconditioning_mod, only: add_largest, other_contribution
   USE hprofl_mod, only: hprofile
   USE m3d_debug_mod
   USE shared_mod
@@ -55,6 +57,7 @@ MODULE rt_patch_mod
   implicit none
   private
   integer :: n_negative_chi = 0                 ! diagnostic: cells with chi<=0 in work_to_transfer_units
+  logical :: rate_formulation_warned = .false.  ! print the fallback note once per run
 
   !-----------------------------------------------------------------------------
   ! What a set *is*, as opposed to where it sits.  Historically the meaning of a
@@ -96,6 +99,18 @@ MODULE rt_patch_mod
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi
+    ! Per ray, frequency and cell: the largest single contribution to the
+    ! emissivity and the sum of all the others, with the index of the largest.
+    ! Holding the largest apart is what lets a line's own contribution be taken
+    ! out of the local source term without a cancelling subtraction.  Index 0 is
+    ! the whole continuum, seeded as one contribution in back_to_work, since the
+    ! bound-free rates do not use this path.
+    real(4), allocatable :: split_opac(:,:,:,:,:)
+    integer, allocatable :: split_id(:,:,:,:)
+    integer, allocatable :: split_offset(:)
+    ! The formal solution without its own local term, Inu - Psi*eta_total.
+    real(4), allocatable :: Irem(:,:,:,:)
+    logical :: split_rates=.false.
     ! PsiJ is the angle-averaged diagonal operator and Jali the full-sphere
     ! accelerated mean intensity of the continuum-scattering ALI.  Both carry a
     ! set index (the output-spectrum path has n_set>1) and both are persisted
@@ -190,6 +205,7 @@ MODULE rt_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
+    procedure :: split_rate_terms
     procedure :: fill_b4
     procedure :: reduce_ll_diag
     procedure :: convert_to_work_units
@@ -664,6 +680,22 @@ contains
     ! Psi must be built for the rates OR for the scattering ALI, so the formal
     ! solvers gate its computation on compute_psi rather than on get_rates.
     self%compute_psi = any(self%get_rates) .or. self%do_scat_precond
+    ! The Rybicki & Hummer rates need the formal solution's non-local part, which
+    ! only the linear solvers keep, and they need a formal solution at all.  Where
+    ! that does not hold, drop back to the original rate formulation and say so
+    ! once, rather than refuse to run.
+    self%split_rates = rate_formulation == 'largest' .and. any(self%get_rates)
+    if (self%split_rates .and. (rt_iter%solver /= 'linear' .or. &
+        rt_iter%include_linelist .or. fixed_Jnu > 0)) then
+      self%split_rates = .false.
+      !$omp critical (rate_formulation_fallback)
+      if (.not. rate_formulation_warned) then
+        rate_formulation_warned = .true.
+        print '(a)', " WARNING: rate_formulation='largest' needs the linear iteration"// &
+          " solver, include_linelist=F and fixed_Jnu<=0; using 'original' instead."
+      endif
+      !$omp end critical (rate_formulation_fallback)
+    endif
     end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
     end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
     if (.not. end_boundary .and. associated(self%dnstream)) then
@@ -777,6 +809,19 @@ contains
       allocate(self%xhat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%ehat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%work(fs:fe,self%nx,self%ny,zs:ze,3), source=0.)
+      if (self%split_rates) then
+        allocate(self%split_opac(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
+        allocate(self%split_id(fs:fe,self%nx,self%ny,self%nz), source=0)
+        allocate(self%Irem(fs:fe,self%nx,self%ny,self%nz), source=0.)
+        allocate(self%split_offset(self%natom))
+        nrad = 0
+        do i=1, self%natom
+          self%split_offset(i) = nrad
+          nrad = nrad + size(self%trans(i)%line)
+        end do
+        call mem_register(self%split_opac, label='split_opac')
+        call mem_register(self%Irem, label='Irem')
+      endif
       allocate(self%twohnu3_c2(fs:fe))
       allocate(vproj(self%nx,self%ny,self%nz))
       self%b4_ptr => null()  ! departure coefficients may have changed since last execute
@@ -864,6 +909,11 @@ contains
 
     !-----------------------------------------------------------------------------
     subroutine deallocate_arrays()
+      if (allocated(self%split_opac)) then
+        call mem_unregister(self%split_opac, label='split_opac')
+        call mem_unregister(self%Irem, label='Irem')
+        deallocate(self%split_opac, self%split_id, self%split_offset, self%Irem)
+      endif
       call mem_unregister(self%work     , label='self%work')
       call mem_unregister(self%chi_cont , label='self%chi_cont')
       call mem_unregister(self%sigma    , label='self%sigma')
@@ -1079,7 +1129,7 @@ contains
           call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, &
                                               LTE=self%set_kind(i_set)==set_lte .and. &
                                                   self%has_nlte_set, &
-                                              use_ll=self%use_ll(i), i_set=i_set)
+                                              use_ll=self%use_ll(i), i_set=i_set, iatom=i)
         endif
       end associate
     end do
@@ -1349,7 +1399,7 @@ contains
           adata => atom%rotated_data(i_mu)
         endif
         if (self%get_rates(i) .and. self%bound_bound) then
-          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj, self%use_ll(i))
+          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj, self%use_ll(i), i)
         endif
       end associate
     end do
@@ -2109,7 +2159,7 @@ contains
 
   !===============================================================================
   SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE, use_ll, &
-                                        i_set)
+                                        i_set, iatom)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(atom_type) :: atom
@@ -2127,10 +2177,10 @@ contains
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, ih, fs, fe
     logical :: LTE, do_LTE, get_wphi, use_ll
-    integer, intent(in) :: i_set
+    integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, save :: itimer=0, itimer1=0
-    integer :: x, y, z, f
+    integer :: x, y, z, f, index
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
     ! Copying continuum opacities to angle dependent opacities
@@ -2215,6 +2265,14 @@ contains
                 xhat = xhat + phi * chi_fac
                 ehat = ehat + phi * eta_fac
               end associate
+              if (self%split_rates) then
+                index = self%split_offset(iatom) + i
+                do f=fs, fe
+                  call add_largest(vphi(f)*eta_fac*self%beta(f,x,y,z), index, &
+                    self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
+                    self%split_id(f,x,y,z))
+                end do
+              endif
 
               if (get_wphi) then
                 wphi(x,y,z) = sum(phi * line%wq(fs:fe))
@@ -2415,7 +2473,7 @@ contains
   END SUBROUTINE reduce_ll_diag
 
   !===============================================================================
-  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, use_ll)
+  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, use_ll, iatom)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(atom_type) :: atom
@@ -2429,8 +2487,12 @@ contains
     real(4), dimension(:), allocatable :: wmunu
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
     real(4) :: vvv, a2, sum_I, sum_P, sum_A
-    real(4) :: g_ij, g_ji, q
-    real(4) :: lower_off, upper_off, ekt
+    real(4) :: g_ij, g_ji
+    real(8) :: q
+    real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
+    real(4) :: split_bi, split_bj, split_Rij, abs_coef, vpr2
+    real(8), allocatable :: pop_ratio(:,:,:)
+    integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe
     logical :: use_ll, get_wphi
     integer, save :: itimer=0
@@ -2438,6 +2500,11 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     allocate(wmunu(self%fs:self%fe))
+    ! The preconditioning correction has to subtract the same local term the formal
+    ! solver added, so it is built from the emissivity coefficient that
+    ! add_bound_bound_opacities used, pop_ratio included.
+    allocate(pop_ratio, mold=adata%totn)
+    call comp%population_ratio(atom%id, self%i_set_main, pop_ratio)
     ! Computing bound-bound radiative rates
 
     if (any(trans%line%hydrogen)) then
@@ -2475,6 +2542,27 @@ contains
             ekt = comp%e_kT(x,y,z)
             if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
             if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
+            if (preconditioning) then
+              ! Same arithmetic, in the same order, as add_bound_bound_opacities:
+              ! the split tracking can only take this line's emissivity back out
+              ! of the local source term if it is the identical float.
+              split_bj = adata%b(x,y,z,line%j)
+              if (upper_off /= 0) split_bj = split_bj * exp(-upper_off*ekt)
+              if (line%hydrogen .and. H_occupation_probability) &
+                split_bj = split_bj * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
+              split_Rij = adata%nstar(x,y,z,line%i) * pop_ratio(x,y,z)
+              split_Rij = split_Rij * line%Bij
+              eta_coef = split_Rij * split_bj
+              split_bi = adata%b(x,y,z,line%i)
+              if (lower_off /= 0) split_bi = split_bi * exp(-lower_off*ekt)
+              if (line%hydrogen .and. H_occupation_probability) &
+                split_bi = split_bi * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
+              abs_coef = split_Rij * split_bi
+              ! normalize_profiles scales g_ji by g_i/g_j, so this ratio is what makes
+              ! the two corrections cancel in the net rate at the old populations.
+              g_ratio = 0.0
+              if (nj > 0.0) g_ratio = (ni/nj) * (atom%g(line%j)/atom%g(line%i))
+            endif
 
             sum_A = 0.0
             sum_I = 0.0
@@ -2483,12 +2571,16 @@ contains
               do f=fs, fe
                 associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   q = line%q(f) - vpr
-                  phi = hprofile(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                  phi = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                     vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
                   vvv = phi * wmunu(f)
-                  sum_A = sum_A + vvv
-                  sum_I = sum_I + vvv * Inu
-                  sum_P = sum_P + vvv * phi * Psi
+                  if (self%split_rates) then
+                    call accumulate_split()
+                  else
+                    sum_A = sum_A + vvv
+                    sum_I = sum_I + vvv * Inu
+                    sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
+                  endif
                 end associate
               end do
             elseif (line%io > 1) then
@@ -2496,15 +2588,23 @@ contains
                 associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   phi = 0
                   do ih=1, line%io
-                    q = line%q(f) - line%dq(ih)
                     a2 = a + idf*line%da(ih)
-                    vgt = qlg_bot_profile(a2, q, vpr, idf)
+                    ! As in add_bound_bound_opacities, the sublevel offset shifts
+                    ! the velocity.  Subtracting it from q instead would also
+                    ! shift the nu/nu0 Jacobian qlg_bot_profile applies, giving a
+                    ! profile that differs from the one the opacity used.
+                    vpr2 = vpr + line%dq(ih)
+                    vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
                     phi = phi + vgt*line%wt(ih)
                   end do
                   vvv = phi * wmunu(f)
-                  sum_A = sum_A + vvv
-                  sum_I = sum_I + vvv * Inu
-                  sum_P = sum_P + vvv * phi * Psi
+                  if (self%split_rates) then
+                    call accumulate_split()
+                  else
+                    sum_A = sum_A + vvv
+                    sum_I = sum_I + vvv * Inu
+                    sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
+                  endif
                 end associate
               end do
             else
@@ -2512,19 +2612,22 @@ contains
                 associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                   vvv = phi * wmunu(f)
-                  sum_A = sum_A + vvv
-                  sum_I = sum_I + vvv * Inu
-                  sum_P = sum_P + vvv * phi * Psi
+                  if (self%split_rates) then
+                    call accumulate_split()
+                  else
+                    sum_A = sum_A + vvv
+                    sum_I = sum_I + vvv * Inu
+                    sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
+                  endif
                 end associate
               end do
             endif
 
             g_ij = sum_I
             g_ji = sum_I + sum_A
-
-            if (preconditioning) then
-              g_ij = g_ij - sum_P * line%Bji * nj
-              g_ji = g_ji - sum_P * line%Bij * ni
+            if (preconditioning .and. .not. self%split_rates) then
+              g_ij = g_ij - sum_P * eta_coef
+              g_ji = g_ji - sum_P * eta_coef * g_ratio
             endif
 
             trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
@@ -2534,7 +2637,45 @@ contains
       end do
     end do
     call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> The preconditioned rate integrands, with this line's own contribution
+    !> removed from the local source term rather than subtracted from Inu.
+    !---------------------------------------------------------------------------
+    subroutine accumulate_split()
+      real(4) :: eta_t, chi_t, up, spont
+      eta_t = phi*eta_coef*self%beta(f,x,y,z)
+      chi_t = phi*abs_coef - eta_t
+      call self%split_rate_terms(f, x, y, z, self%split_offset(iatom)+i, eta_t, chi_t, &
+        up, spont)
+      sum_I = sum_I + vvv*up
+      sum_A = sum_A + vvv*spont
+    end subroutine accumulate_split
   END SUBROUTINE bound_bound_rates
+
+  !===============================================================================
+  SUBROUTINE split_rate_terms (self, f, x, y, z, index, eta_t, chi_t, up, spont)
+    class(rt_patch_t), intent(in) :: self
+    integer, intent(in) :: f, x, y, z, index
+    real(4), intent(in) :: eta_t, chi_t
+    real(4), intent(out) :: up, spont
+    real(4) :: psi
+    !-----------------------------------------------------------------------------
+    psi = self%Psi(f,x,y,z)
+    if (.not. preconditioning .or. psi == 0.) then
+      up = self%work(f,x,y,z,3)
+      spont = 1.0
+    else
+      ! Rybicki & Hummer (1992), Eqs. (2.24) and (2.25): precondition within the
+      ! same transition.  Irem is the formal solution without its own local term,
+      ! so adding back the other contributions' share of it never forms
+      ! Inu - psi*eta_t as a difference of two nearly equal numbers.  The
+      ! spontaneous factor stays between zero and one and needs no such care.
+      up = self%Irem(f,x,y,z) + psi*other_contribution(eta_t, index, &
+        self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
+      spont = 1.0 - psi*chi_t
+    endif
+  END SUBROUTINE split_rate_terms
 
   !===============================================================================
   SUBROUTINE bound_free_rates (self, atom, trans, adata)
@@ -2818,6 +2959,13 @@ contains
           do f=self%fs, self%fe
             self%work(f,x,y,z,1) = self%xhat(f,x,y,z)
             self%work(f,x,y,z,2) = self%ehat(f,x,y,z)
+            if (self%split_rates) then
+              ! the whole continuum, bound-free included, enters as one
+              ! contribution with index 0; the lines are added per transition
+              self%split_opac(f,x,y,z,1) = self%ehat(f,x,y,z)*self%beta(f,x,y,z)
+              self%split_opac(f,x,y,z,2) = 0.
+              self%split_id(f,x,y,z) = 0
+            endif
           end do
         end do
       end do
@@ -2855,6 +3003,10 @@ contains
             ehat = self%work(f,x,y,z,2)
             beta = self%beta(f,x,y,z)
             eta  = ehat * beta
+            ! Take exactly the total the split tracking holds, so that removing
+            ! one transition's contribution reproduces the solver's local term.
+            if (self%split_rates) &
+              eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
             chi  = xhat - eta
             if (do_scat) eta = eta + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
             ! Each line adds phi*Rij*(bi - bj*beta) to chi, which goes negative for
