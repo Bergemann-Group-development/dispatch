@@ -32,7 +32,7 @@ MODULE rt_patch_mod
   USE mpi_mod, only: mpi
   USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z, &
                            save_linelist
-  USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
+  USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: tolerance
   USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
@@ -222,7 +222,6 @@ MODULE rt_patch_mod
     procedure :: short_char
     procedure :: set_fixed_Jnu
     procedure :: long_char_linear
-    procedure :: long_char_linear_spherical
     procedure :: long_char_quadratic
     procedure :: long_char_hermite
     procedure :: long_char_hermite2
@@ -256,11 +255,6 @@ MODULE rt_patch_mod
       class(rt_patch_t) :: self
       real(8), intent(in) :: vec(3)
     end subroutine short_char
-
-    module subroutine long_char_linear_spherical (self, vec)
-      class(rt_patch_t) :: self
-      real(8) :: vec(3)
-    end subroutine long_char_linear_spherical
 
     module subroutine long_char_linear (self, vec)
       class(rt_patch_t) :: self
@@ -1325,11 +1319,7 @@ contains
 
       select case(rt_out%solver)
         case('linear')
-        !if (one_dimensional .and. rstar > 2) then
-        !  call self%long_char_linear_spherical(vec)
-        !else
         call self%long_char_linear(vec)
-        !endif
         case('quadratic')
         call self%long_char_quadratic(vec)
         case('hermite')
@@ -1347,18 +1337,17 @@ contains
         stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
       end select
     else
+      ! The iteration pass exists to build rates or the scattering ALI, and both
+      ! need the approximate operator.  Only the solvers that fill Psi are
+      ! admitted here; the quadratic and long-characteristic Hermite schemes do
+      ! not, and with them preconditioning would silently degrade to a plain
+      ! lambda iteration.  They remain available for the output pass.
       if (one_dimensional .or. column_by_column) then
         select case(rt_iter%solver)
           case('linear')
             call self%long_char_linear(vec)
-          case('quadratic')
-            call self%long_char_quadratic(vec)
-          case('hermite')
-            call self%long_char_hermite(comp, vec, comp_up)
-          case('hermite2')
-            call self%long_char_hermite2(comp, vec, comp_up)
           case default
-            stop 'Unknown rt_iteration_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
+            stop 'rt_iteration_params solver: only "linear" builds Psi in 1D'
         end select
       else
         select case(rt_iter%solver)
@@ -1367,7 +1356,7 @@ contains
           case('hermite')
             call self%short_char_hermite(comp, vec)
           case default
-            stop 'Unknown rt_iteration_params solver, use "linear" or "hermite"'
+            stop 'rt_iteration_params solver: only "linear" and "hermite" build Psi in 3D'
         end select
       endif
     endif
