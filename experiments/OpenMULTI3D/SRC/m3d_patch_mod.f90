@@ -164,7 +164,7 @@ MODULE m3d_patch_mod
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
-    integer, save, public:: verbose=2
+    integer, save, public:: verbose=0
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
