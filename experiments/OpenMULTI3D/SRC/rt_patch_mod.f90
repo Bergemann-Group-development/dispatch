@@ -42,7 +42,6 @@ MODULE rt_patch_mod
   USE molecule_mod, only: molec_type
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
-  USE rate_preconditioning_mod, only: add_largest, other_contribution
   USE hprofl_mod, only: hprofile
   USE m3d_debug_mod
   USE shared_mod
@@ -2651,6 +2650,46 @@ contains
       sum_A = sum_A + vvv*spont
     end subroutine accumulate_split
   END SUBROUTINE bound_bound_rates
+
+  !===============================================================================
+  !> Keep the largest-magnitude term of a running sum apart from the rest, so
+  !> that one term can later be removed from the total without a cancelling
+  !> subtraction.  The remainder never contains the largest term, even when a
+  !> later term replaces it.  These two live here, next to their only callers,
+  !> rather than in a module of their own: they sit in the innermost frequency
+  !> loops of add_bound_bound_opacities and bound_bound_rates, and the build has
+  !> no link-time optimisation, so across a module boundary they would be a call
+  !> per frequency point per line per cell.
+  !===============================================================================
+  pure subroutine add_largest (value, index, largest, rest, largest_index)
+    real(4), intent(in) :: value
+    integer, intent(in) :: index
+    real(4), intent(inout) :: largest, rest
+    integer, intent(inout) :: largest_index
+    !-----------------------------------------------------------------------------
+    if (abs(value) > abs(largest)) then
+      rest = rest + largest
+      largest = value
+      largest_index = index
+    else
+      rest = rest + value
+    endif
+  end subroutine add_largest
+
+  !===============================================================================
+  !> The total less one named contribution, formed by addition only.
+  !===============================================================================
+  pure function other_contribution (value, index, largest, rest, largest_index) result(other)
+    real(4), intent(in) :: value, largest, rest
+    integer, intent(in) :: index, largest_index
+    real(4) :: other
+    !-----------------------------------------------------------------------------
+    if (index == largest_index) then
+      other = rest
+    else
+      other = largest + (rest-value)
+    endif
+  end function other_contribution
 
   !===============================================================================
   SUBROUTINE split_rate_terms (self, f, x, y, z, index, eta_t, chi_t, up, spont)
