@@ -57,7 +57,6 @@ MODULE rt_patch_mod
   implicit none
   private
   integer :: n_negative_chi = 0                 ! diagnostic: cells with chi<=0 in work_to_transfer_units
-  logical :: rate_formulation_warned = .false.  ! print the fallback note once per run
 
   !-----------------------------------------------------------------------------
   ! What a set *is*, as opposed to where it sits.  Historically the meaning of a
@@ -674,23 +673,12 @@ contains
     ! Psi must be built for the rates OR for the scattering ALI, so the formal
     ! solvers gate its computation on compute_psi rather than on get_rates.
     self%compute_psi = any(self%get_rates) .or. self%do_scat_precond
-    ! The Rybicki & Hummer rates need the formal solution's non-local part, which
-    ! only the linear solvers keep.  short_char_hermite builds Psi but not that
-    ! remainder, so fall back to the original rate formulation there and say so
-    ! once, rather than refuse to run.  fixed_Jnu needs no exception: it replaces
-    ! the formal solution altogether, leaving Psi at the zero it is allocated
-    ! with, and split_rate_terms then returns the unpreconditioned rates.
+    ! Every solver admitted for the iteration pass keeps the formal solution's
+    ! non-local part alongside Psi, so the Rybicki & Hummer rates need no further
+    ! condition.  fixed_Jnu needs none either: it replaces the formal solution
+    ! altogether, leaving Psi at the zero it is allocated with, and
+    ! split_rate_terms then returns the unpreconditioned rates.
     self%split_rates = rate_formulation == 'largest' .and. any(self%get_rates)
-    if (self%split_rates .and. rt_iter%solver /= 'linear') then
-      self%split_rates = .false.
-      !$omp critical (rate_formulation_fallback)
-      if (.not. rate_formulation_warned) then
-        rate_formulation_warned = .true.
-        print '(a)', " WARNING: rate_formulation='largest' needs the linear iteration"// &
-          " solver; using 'original' instead."
-      endif
-      !$omp end critical (rate_formulation_fallback)
-    endif
     end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
     end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
     if (.not. end_boundary .and. associated(self%dnstream)) then

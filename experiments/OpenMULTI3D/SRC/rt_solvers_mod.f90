@@ -1347,7 +1347,7 @@ contains
     real(4) :: dsup1, dsup2, dsup05, rpath, dsc2, u04, Psi4
     real(4) :: v1, v2, v3, gpe, aT, pec, rpec, rxpc, rxpup
     real(4) :: dchi, t1, sgn, mc, r1mbc, Bc, kf, dsdtau, dss
-    real(4) :: rhou, rhoc, gc, t1s, sgns, rdt4
+    real(4) :: rhou, rhoc, gc, t1s, sgns, rdt4, srem, Psi_loc
     real(8) :: ds(3), dt, rdt, ex, U0, U1, q, A, B, C ! keep in double precision
     real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
     real(4), dimension(:), pointer, contiguous :: xkern, ykern
@@ -1556,7 +1556,24 @@ contains
               t1s = dss * rdt4                       ! interval secant dS/dtau
               sgns = sign(1.0, t1s)
               dsdtau = ss*gc + Bc*(rhoc - rhou)*rdt4
-              dsdtau = sgns * max(0.0, min(sgns*dsdtau, 2.0*abs(t1s)))
+              ! Resolve the MC positivity clamp by branch rather than by min/max,
+              ! so that the slope in ss and the part that does not depend on it
+              ! are both known exactly.  kf is d(dsdtau)/dss on the branch taken,
+              ! srem is what is left of dsdtau once kf*ss is removed, written out
+              ! directly: Bc*rhoc*rdt cancels ss*rdt analytically, so the pair is
+              ! never formed as a difference of two nearly equal numbers.
+              if (sgns*dsdtau <= 0.0) then
+                dsdtau = 0.0                         ! clamped to zero slope
+                kf   = 0.0
+                srem = 0.0
+              elseif (sgns*dsdtau >= 2.0*abs(t1s)) then
+                dsdtau = 2.0*t1s                     ! clamped to twice the secant
+                kf   = 2.0*rdt4
+                srem = -2.0*rdt4*ssup
+              else
+                kf   = gc + rdt4                     ! product-rule slope, unclamped
+                srem = -Bc*rhou*rdt4
+              endif
 
               B = (2.0d0*U1 - q) * rdt
               A = U0 - B
@@ -1565,14 +1582,21 @@ contains
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               self%work(f,x,y,z,3) = Inu
               if (get_rates) then
-                if (dt > 0 .and. xx > 0) then
-                  ! Lambda diagonal from the product-rule slope (clamp neglected):
-                  ! d(dsdtau)/dss = gc + rdt, bounded into [0, 2/dt] so B + C*kf
-                  ! stays within the attenuated total
-                  kf = min(max(gc + rdt4, 0.0), 2.0*abs(rdt4))
-                  self%Psi(f,x,y,z) = real(B + C*dble(kf), 4) / xx
+                ! Lambda diagonal from the product-rule slope on the branch the
+                ! clamp selected.  Outside [0,1] the local term is not a weight
+                ! and the scheme has no operator to precondition with, so drop it
+                ! there, as for dt<=0 and chi<=0.
+                Psi_loc = real(B + C*dble(kf), 4)
+                if (dt > 0 .and. xx > 0 .and. Psi_loc >= 0. .and. Psi_loc <= 1. &
+                    .and. abs(Inu) < real(maser_Inu_max)) then
+                  self%Psi(f,x,y,z) = Psi_loc / xx
+                  if (self%split_rates) self%Irem(f,x,y,z) = Inuup*real(ex,4) &
+                    + real(A,4)*ssup + real(C,4)*srem
                 else
-                  self%Psi(f,x,y,z) = 0   ! 0<=Psi<=1 fails for dt<0/chi<0; no preconditioning
+                  ! Psi=0 switches the preconditioning off at this point, so Irem
+                  ! then has to carry the whole (clamped) intensity.
+                  self%Psi(f,x,y,z) = 0
+                  if (self%split_rates) self%Irem(f,x,y,z) = Inu
                 endif
               endif
             end do ! f-loop
@@ -1597,10 +1621,21 @@ contains
                   u04 = real(dt, 4) * (1.0 - Psi4)
                 endif
                 Inu = Inuup*real(ex,4) + (u04 - Psi4)*ssup + Psi4*ss
+                ! the non-local part on its own, as in short_char
+                if (self%split_rates) self%Irem(f,x,y,z) = Inuup*real(ex,4) &
+                  + (u04 - Psi4)*ssup
               else
                 u04 = real(1.0d0 / dt, 4)
                 Psi4 = 1.0 - u04
                 Inu = u04*ssup + Psi4*ss
+                if (self%split_rates) self%Irem(f,x,y,z) = u04*ssup
+              endif
+              if (self%split_rates) then
+                if (dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)) then
+                  Psi4 = 0.
+                  self%Irem(f,x,y,z) = max(-real(maser_Inu_max), &
+                    min(real(maser_Inu_max), Inu))
+                endif
               endif
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               self%work(f,x,y,z,3) = Inu
