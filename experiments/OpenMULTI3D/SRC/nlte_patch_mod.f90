@@ -19,6 +19,7 @@ MODULE nlte_patch_mod
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
   USE bbtrans_mod, only: bbtrans_type
+  USE line_types_mod, only: linelist_type
   USE composition_mod, only: composition_type, departure_pointer_t, read_departures
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
@@ -1050,46 +1051,35 @@ contains
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
+  ! Prevent a model atom's bound-bound transitions from being counted a second time
+  ! through the bulk line list.  exclude_from_line_list (the default) drops the atom's
+  ! species from the line list wholesale via in_linelist, which both the SoA metal
+  ! kernel and the AoS hydrogen path honour.  Otherwise only the records that the atom
+  ! reproduces are deactivated, so line-list lines the atom does not carry survive; the
+  ! match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
+  ! output transitions in pre_init_atom) so both sides carry the same conventions --
+  ! isotope fraction divided out and fine-structure components split.
   SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
     class(massive_type), pointer :: species
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    class(ion_type), pointer :: ion
-    class(bbtrans_type), pointer :: ll_line, line
-    integer :: i, j, l, ia
-    logical, save :: first_time=.true.
+    integer :: j, ia
     !-----------------------------------------------------------------------------
     do ia=1, self%natom
       associate(atom => self%atoms(ia))
         select type (species => atom%species)
          class is (element_type)
           element => species
-          if (all(element%ions%nline == 0)) return
           if (exclude_from_line_list) then
             element%ions%in_linelist = .false.
           else
-            do j=lbound(element%ions,1), ubound(element%ions,1) - 1
-              ion => element%ions(j)
-              if (ion%nline == 0) cycle
-
-              do l=1, ion%nline
-                ll_line => ion%line(l)
-
-                do i=1, atom%nline
-                  line => atom%trans%line(i)
-                  if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
-                    .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
-                    call ll_line%deactivate()
-                    print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
-                  endif
-                end do
-              end do
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+              call deactivate_duplicates(element%ions(j), self%output_atoms(ia)%trans%ll)
             end do
           endif
          class is (molec_type)
           molec => species
-          if (molec%nline == 0) return
           if (exclude_from_line_list) molec%in_linelist = .false.
         end select
         if (exclude_from_line_list) then
@@ -1097,6 +1087,32 @@ contains
         endif
       end associate
     end do
+  contains
+    !---------------------------------------------------------------------------
+    ! Deactivate every line of ptc's bulk line list that atom_ll also carries.
+    SUBROUTINE deactivate_duplicates (ptc, atom_ll)
+      class(particle_type), intent(inout) :: ptc
+      type(linelist_type), intent(in) :: atom_ll
+      integer :: iso, l, k
+      !-------------------------------------------------------------------------
+      if (.not. allocated(ptc%ll)) return
+      if (atom_ll%nline == 0) return
+      do iso=lbound(ptc%ll,1), ubound(ptc%ll,1)
+        associate (ll => ptc%ll(iso))
+          do l=1, ll%nline
+            if (.not. ll%active(l)) cycle
+            do k=1, atom_ll%nline
+              if (abs(atom_ll%nu0(k) / ll%nu0(l) - 1) < 1e-6 .and. &
+                  abs(atom_ll%loggf(k) - ll%loggf(l)) < 1e-4) then
+                ll%active(l) = .false.
+                print '(A, F10.2)', 'excluding linelist line at ', CC / ll%nu0(l) * 1e8
+                exit
+              endif
+            end do
+          end do
+        end associate
+      end do
+    END SUBROUTINE deactivate_duplicates
   END SUBROUTINE exclude_double_lines
 
   !===============================================================================
