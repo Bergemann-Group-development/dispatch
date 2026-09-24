@@ -18,6 +18,7 @@ MODULE atom_mod
                             reserve_linelist, ll_bij_const => bij_const
     USE os_mod
     USE trace_mod
+    USE console_mod
     USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
     USE ng_mod, only: ng_state_t, ng_promote, ng_should_fire, ng_coefficients, &
@@ -94,7 +95,6 @@ MODULE atom_mod
       integer :: nline  ! number of bound-bound transitions
       integer :: nlevel ! number of levels
       integer :: nprd=0 ! number of PRD transitions
-      integer :: verbose=0
       integer :: idep=0 ! index of atom in departure coefficients array
       logical :: precomputed = .false. ! whether departure coeffs are precomputed
       
@@ -387,6 +387,7 @@ MODULE atom_mod
     ! so a persistent M-matrix violation can be tied to a region of the atmosphere
     integer :: d_gpos(3), d_glvl(2)
     real(8) :: d_gneg, d_gr
+    character(len=256) :: msg
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_type%update_populations', itimer=itimer)
     adata => self%data
@@ -499,7 +500,8 @@ MODULE atom_mod
                 ! absorbed by the exponential damping below
                 call check_array(e, 'lineq solution', abort=.false., ok=ok)
                 if (.not.ok) then
-                  print *, 'ERROR: in lineq solution at x,y,z = ', x, y, z
+                  write(msg,'(a,3(1x,i0))') 'invalid lineq solution at x,y,z =', x, y, z
+                  call console_error (msg)
                   stop
                 endif
               endif
@@ -559,7 +561,8 @@ MODULE atom_mod
               if (check_NaN) then
                 call check_array(e, 'population correction', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
-                  print *, 'ERROR: in population correction vector at x,y,z = ', x, y, z
+                  write(msg,'(a,3(1x,i0))') 'invalid population correction vector at x,y,z =', x, y, z
+                  call console_error (msg)
                   stop
                 endif
               endif
@@ -567,7 +570,8 @@ MODULE atom_mod
               if (check_NaN) then
                 call check_array(b, 'departure coefficients', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
-                  print *, 'ERROR: in departure coefficients at x,y,z = ', x, y, z
+                  write(msg,'(a,3(1x,i0))') 'invalid departure coefficients at x,y,z =', x, y, z
+                  call console_error (msg)
                   stop
                 endif
               endif
@@ -652,6 +656,7 @@ MODULE atom_mod
     integer, save :: itimer=0, itimer2=0
     logical :: abort, ok, db_here
     logical, save :: first_time=.true.
+    character(len=256) :: msg
     !------------------------------------------------------------------------------------
     ! resolved once per cell: the transition loop below is the hottest in the
     ! solver and must not carry an array comparison per transition
@@ -732,7 +737,8 @@ MODULE atom_mod
       call check_array([(self%data%w(i,i), i=1, self%nlevel)], 'rate diagonal', check_zero=.true., abort=.false., ok=ok)
       call check_array(self%data%w, 'rate matrix', check_zero=.false., abort=.false., ok=ok)
       if (.not. ok) then
-        print *, 'ERROR: in rate matrix at x,y,z = ', x, y, z
+        write(msg,'(a,3(1x,i0))') 'invalid rate matrix at x,y,z =', x, y, z
+        call console_error (msg)
         stop
       endif
     endif
@@ -747,8 +753,9 @@ MODULE atom_mod
     real(4), dimension(:), allocatable :: xion
     real(4) :: prev
     logical :: first_time=.true.
+    character(len=256) :: msg
     !---------------------------------------------------------------------------------
-    if (.not. first_time .or. self%verbose==0) return
+    if (.not. first_time) return
     j1 = minval(self%ion)
     j2 = maxval(self%ion)
     allocate(xion(j1:j2))
@@ -764,8 +771,9 @@ MODULE atom_mod
     xion(j1:j2-1) = xion(j1+1:j2) - xion(j1:j2-1)
     do j=j1, min(j2-1, element%nion-1)
       if (abs(xion(j)/element%ions(j)%xion - 1) > 0.1) then
-        print *, 'WARNING: ionisation threshold for this ion differs from EOS value!'
-        print '(I3, 2(F12.4))', j, xion(j), element%ions(j)%xion
+        write(msg,'(a,a,a,i0,a,f8.4,a,f8.4,a)') 'ionisation threshold of ', trim(self%id), &
+          ' ion ', j, ' differs from the EOS value (', xion(j), ' vs ', element%ions(j)%xion, ' eV)'
+        call console_warn (ch_m3d, msg)
       end if
     end do
     first_time = .false.
@@ -917,6 +925,7 @@ MODULE atom_mod
     character(8) :: key, str1, str2, str3
     logical :: abort
     integer, save :: itimer=0
+    character(len=256) :: msg
     !---------------------------------------------------------------------------------
     call trace%begin('atom_mod%read_pandas', itimer=itimer)
     call os%check_file(atom_file)
@@ -976,8 +985,8 @@ MODULE atom_mod
             lin%ga_in, lin%gv_in, lin%gq_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
 
       if (iostat > 0) then
-        write(stdout,*) iostat, ' Error reading following line '
-        write(stdout,*) text
+        write(msg,'(a,i0,a)') 'read_atom: cannot parse line (iostat=', iostat, '):'
+        call console_error (trim(msg)//' '//trim(text))
         abort = .true.
       endif
 
@@ -1091,12 +1100,14 @@ MODULE atom_mod
 
           do j=2,cnt%nnu
             if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
-              write(stdout,*) 'read_atom: continuum transition nr', i, &
-                            ' wavelengths not decreasing!'
+              write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
+                            ' wavelengths not decreasing'
+              call console_error (msg)
               abort = .true.
             elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
-              write(stdout,*) 'read_atom: continuum transition nr', i, &
-                            ' wavelengths are not unique!'
+              write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
+                            ' wavelengths are not unique; shifted by 1e-6'
+              call console_warn (ch_m3d, msg)
               cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
             endif
           end do
@@ -1146,7 +1157,7 @@ MODULE atom_mod
     end do
 
     if (j>0) then
-      print *, j, " bound-free transitions auto-completed using Kramer's formula!"
+      if (console_on(ch_m3d, 1)) write(console_unit,'(i0,a)') j, " bound-free transitions auto-completed using Kramers' formula"
     endif
 
     allocate(self%irad(self%nrad), self%jrad(self%nrad))
@@ -1181,17 +1192,16 @@ MODULE atom_mod
         endif
         
         if (l==u) then
-          write(stdout, '(A, A, I4, I4, A)') "ll==ul for process ", trim(key), l, u, ". Ignoring this one."
+          write(msg,'(a,a,2(1x,i0),a)') "ll==ul for collision process ", trim(key), l, u, "; ignored"
+          call console_warn (ch_m3d, msg)
           cycle
         endif
 
         ! within level range
         if(l < 0 .or. u > self%nlevel) then
-          write(stdout,*) 'key=', key
-          write(stdout,*) 'll=',  l 
-          write(stdout,*) 'ul=',  u 
-          write(stdout,*) 'nk=',  self%nlevel
-          write(stdout,*) 'read_atom:  level index outside range (1,nk)'
+          write(msg,'(3a,3(a,i0))') 'read_atom: level index outside range (1,nk) for ', &
+            trim(key), ':', ' ll=', l, ' ul=', u, ' nk=', self%nlevel
+          call console_error (msg)
           abort = .true.
         endif
 
@@ -1217,13 +1227,15 @@ MODULE atom_mod
 
           select case(trim(key))
           case ('CE', 'CI')
-            if (self%ecol(tri) .and. self%verbose > 0) then
-              print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            if (self%ecol(tri) .and. console_on(ch_m3d, 2)) then
+              write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
+              call console_warn (ch_m3d, msg)
             endif
             self%ecol(tri) = .true.
           case ('CH', 'CHI')
-            if (self%hcol(tri) .and. self%verbose > 0) then
-              print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            if (self%hcol(tri) .and. console_on(ch_m3d, 2)) then
+              write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
+              call console_warn (ch_m3d, msg)
             endif
             self%hcol(tri) = .true.
           end select
@@ -1265,6 +1277,7 @@ MODULE atom_mod
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     character(512) :: text
+    character(len=256) :: msg
     logical :: abort
     integer, save :: itimer=0
     !---------------------------------------------------------------------
@@ -1315,7 +1328,7 @@ MODULE atom_mod
 
     ncont = count(self%ion < maxval(self%ion))
     if (ncont < self%ncont) then
-        print *, 'WARNING: Unrealisticly many bound-free transitions. Something is wrong!'
+        call console_warn (ch_m3d, 'more bound-free transitions than ionisable levels in '//trim(self%id))
     endif
 
     allocate(ij_check(self%nlevel, self%nlevel), source=.false.)
@@ -1340,13 +1353,15 @@ MODULE atom_mod
       lin%qmax = lin%qmax
 
       if (ij_check(lin%i, lin%j)) then
-        print '(A, I4, I4)', 'WARNING: Transition assigned twice!', lin%i, lin%j
+        write(msg,'(a,2(1x,i0))') 'bound-bound transition assigned twice:', lin%i, lin%j
+        call console_warn (ch_m3d, msg)
       else
         ij_check(lin%i, lin%j) = .true.
       endif
 
       if (lin%j > self%nlevel) then
-        print '(A, I8, I4, I4)', 'ERROR: Transition to non-existing level!', i, lin%i, lin%j
+        write(msg,'(a,3(1x,i0))') 'transition to a non-existing level:', i, lin%i, lin%j
+        call console_error (msg)
         abort = .true.
       endif
 
@@ -1395,8 +1410,8 @@ MODULE atom_mod
 
       nterm = lin%io
       if (nterm .ge. 2) then
-        write(stdout, *) uppercase(rname), &
-        ' found ' ,nterm, 'components in transition KR = ',i
+        if (console_on(ch_m3d, 2)) write(console_unit,'(2a,i0,a,i0)') uppercase(rname), &
+          ': found ', nterm, ' components in transition KR = ', i
 
         allocate(lin%dq (nterm) )
         allocate(lin%wt  (nterm) )
@@ -1486,7 +1501,8 @@ MODULE atom_mod
       call print_failed_line(latom, ios)
 
       if (self%ion(ii) == self%ion(jj)) then
-        print '(A, I4, A, I4, I4)', 'ERROR: Bound-free transition', i, ' is between two levels of the same ion', ii, jj
+        write(msg,'(a,i0,a,2(1x,i0))') 'bound-free transition ', i, ' connects two levels of the same ion:', ii, jj
+        call console_error (msg)
         abort = .true.
       endif
 
@@ -1496,7 +1512,8 @@ MODULE atom_mod
       cnt => self%trans%cont(ii)
 
       if (cnt%bf_type /= 'Kramer') then
-        print '(A, I4, A)', 'WARNING: Multiple bound-free transitions from lower state', ii, '. Ignoring the latter!'
+        write(msg,'(a,i0,a)') 'multiple bound-free transitions from lower state ', ii, '; ignoring the later one'
+        call console_warn (ch_m3d, msg)
         do j=1, nnu
           call nextentry(latom) 
           read(latom, '(A)') ! skipping
@@ -1504,7 +1521,8 @@ MODULE atom_mod
         cycle
       endif
       if (j /= cnt%j) then
-        print '(A, I4, A)', 'WARNING: Bound-free transition', i, ' has exited state as upper level. Worth checking!'
+        write(msg,'(a,i0,a)') 'bound-free transition ', i, ' has an excited state as upper level'
+        call console_warn (ch_m3d, msg)
         cnt%j = j
       endif
 
@@ -1526,12 +1544,14 @@ MODULE atom_mod
         
         do j=2,cnt%nnu
           if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
-            write(stdout,*) 'read_atom: continuum transition nr', i, &
-                          ' wavelengths not decreasing!'
+            write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
+                          ' wavelengths not decreasing'
+            call console_error (msg)
             abort = .true.
           elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
-            write(stdout,*) 'read_atom: continuum transition nr', i, &
-                          ' wavelengths are not unique!'
+            write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
+                          ' wavelengths are not unique; shifted by 1e-6'
+            call console_warn (ch_m3d, msg)
             cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
           endif
         end do
@@ -1590,7 +1610,7 @@ MODULE atom_mod
     end do
 
     if (j>0) then
-      print *, j, " bound-free transitions auto-completed using Kramer's formula!"
+      if (console_on(ch_m3d, 1)) write(console_unit,'(i0,a)') j, " bound-free transitions auto-completed using Kramers' formula"
     endif
 
     allocate(self%irad(self%nrad), self%jrad(self%nrad))
@@ -1622,11 +1642,11 @@ MODULE atom_mod
     case ('gencol')
       ! continue
     case default
-      write(stdout, *) 'Collision routine ', trim(self%crout), ' not supported. Stopping...'
+      call console_error ('collision routine '//trim(self%crout)//' not supported')
       stop
     end select
 
-    write(stdout, *) ' - Reading collision data'
+    if (console_on(ch_m3d, 1)) write(console_unit,'(a)') 'Reading collision data'
     ncoll = 0
     max_n_temp = 8
     ngrids = 0
@@ -1660,7 +1680,7 @@ MODULE atom_mod
         ngrids = ngrids + 1
       case default
         if (.not.is_valid_process(key)) then
-          write(stdout, *) 'read_collisions: unrecognized keyword '//key
+          call console_error ('read_collisions: unrecognized keyword '//trim(key))
           abort = .true.
         end if
         ncoll = ncoll + 1
@@ -1690,7 +1710,7 @@ MODULE atom_mod
       call nextentry(latom)
       read(latom,fmt='(a8)',iostat=ios) key
       if (ios<0) then
-        write(stdout, *) 'read_collisions: keyword "END" not found in collision file'
+        call console_error ('read_collisions: keyword "END" not found in collision file')
         stop
       endif
 
@@ -1720,7 +1740,7 @@ MODULE atom_mod
 
       case default
         if (.not.is_valid_process(key)) then
-          write(stdout,*) 'read_collisions: unrecognized keyword ', key
+          call console_error ('read_collisions: unrecognized keyword '//trim(key))
           stop
         endif
       end select
@@ -1735,12 +1755,14 @@ MODULE atom_mod
         call print_failed_line(latom, ios)
         
         if (l==u) then
-          write(stdout, '(A, A, I4, I4, A)') "ll==ul for process ", trim(key), l, u, ". Ignoring this one."
+          write(msg,'(a,a,2(1x,i0),a)') "ll==ul for collision process ", trim(key), l, u, "; ignored"
+          call console_warn (ch_m3d, msg)
           cycle
         endif
 
         if (any(self%cgrid(1:nc,i) <= 0)) then
-          write(stdout, *) "Non-positive cross sections for process ", key, l, u
+          write(msg,'(2a,2(1x,i0))') 'non-positive cross sections for collision process ', trim(key), l, u
+          call console_error (msg)
           abort = .true.
         else
           select case(trim(key))
@@ -1765,24 +1787,24 @@ MODULE atom_mod
 
         select case(trim(key))
         case ('CE', 'CI')
-          if (self%ecol(tri) .and. self%verbose > 0) then
-            print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          if (self%ecol(tri) .and. console_on(ch_m3d, 2)) then
+            write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
+              call console_warn (ch_m3d, msg)
           endif
           self%ecol(tri) = .true.
         case ('CH', 'CHI')
-          if (self%hcol(tri) .and. self%verbose > 0) then
-            print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          if (self%hcol(tri) .and. console_on(ch_m3d, 2)) then
+            write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
+              call console_warn (ch_m3d, msg)
           endif
           self%hcol(tri) = .true.
         end select
 
         ! within level range
         if(col%ll < 0 .or. col%ul > self%nlevel) then
-          write(stdout,*) 'key=', col%key
-          write(stdout,*) 'll=',  col%ll 
-          write(stdout,*) 'ul=',  col%ul 
-          write(stdout,*) 'nk=',  self%nlevel
-          write(stdout,*) 'read_atom:  level index outside range (1,nk)'
+          write(msg,'(3a,3(a,i0))') 'read_collisions: level index outside range (1,nk) for ', &
+            trim(col%key), ':', ' ll=', col%ll, ' ul=', col%ul, ' nk=', self%nlevel
+          call console_error (msg)
           abort = .true.
         endif
       end if
@@ -1802,6 +1824,7 @@ MODULE atom_mod
     logical :: is_molecule
     integer :: i, j, ic, iso, tri
     real(8) :: vbar2e4, cnt_ev, gij
+    character(len=256) :: msg
     !---------------------------------------------------------------------
     nullify(ions)
     select type(species)
@@ -1827,7 +1850,8 @@ MODULE atom_mod
           tri = (line%j-1)*(line%j-2)/2 + line%i
           self%cdata(tri) = self%cdata(tri) + line%f
         else
-          print *, 'WARNING: isotope', line%iso, ' not found. Deactivating line ', i
+          write(msg,'(a,i0,a,i0)') 'isotope ', line%iso, ' not found; deactivating line ', i
+          call console_warn (ch_m3d, msg)
           call line%deactivate()
           cycle
         endif
@@ -2092,7 +2116,7 @@ MODULE atom_mod
     end do
     if (first_time .and. n>0) then
       first_time = .false.
-      write(stdout, *) n, ' collisional transitions filled with classical recipes.'
+      if (console_on(ch_m3d, 1)) write(console_unit,'(i0,a)') n, ' collisional transitions filled with classical recipes'
     endif
     call trace%end(itimer)
   END SUBROUTINE classic_col
@@ -2178,7 +2202,7 @@ MODULE atom_mod
       if (is_grid_record(text)) n = n + 1
     end do
     if (n == 0) then
-      print '(A,A)', 'ERROR: no wavelengths in line_grid_file ', trim(line_grid_file)
+      call console_error ('no wavelengths in line_grid_file '//trim(line_grid_file))
       stop 'abort in atom_mod%read_line_grid'
     endif
     allocate(line_grid(n))
@@ -2192,7 +2216,7 @@ MODULE atom_mod
       read(text, *) line_grid(n)
     end do
     close(lunit)
-    print '(A,I0,A,A)', 'Line grid: ', n, ' wavelengths from ', trim(line_grid_file)
+    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,A)') 'Line grid: ', n, ' wavelengths from ', trim(line_grid_file)
   contains
     logical function is_grid_record(text)
       character(len=*), intent(in) :: text
@@ -2222,7 +2246,7 @@ MODULE atom_mod
         if (ired == 0 .or. iblue >= sp%nnu) then
           call cnt%deactivate()
         elseif (iblue == ired) then
-          print '(A, I6)', 'WARNING: single frequency for cont', i
+          if (console_on(ch_m3d, 2)) write(console_unit,'(a,i0,a)') 'continuum ', i, ' covers a single frequency; deactivated'
           call cnt%deactivate()
         else
           ! total number of frequencies where this continuum is active
@@ -2266,7 +2290,7 @@ MODULE atom_mod
           call lin%deactivate()
         else
           if (iblue == ired) then
-            print '(A, I8)', 'WARNING: single frequency for line', i
+            if (console_on(ch_m3d, 2)) write(console_unit,'(a,i0,a)') 'line ', i, ' covers a single frequency'
           endif
           ! total number of frequencies where this line is active
           nnu = ired - iblue + 1

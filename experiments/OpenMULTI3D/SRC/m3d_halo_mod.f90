@@ -17,6 +17,7 @@ MODULE m3d_halo_mod
   USE omp_lock_mod
   USE omp_timer_mod
   USE bits_mod
+  USE console_mod
   USE handyfuncs_mod, only:option
   implicit none
   private
@@ -229,8 +230,8 @@ CONTAINS
       task => self%task
       select type (task)
        class is (gpatch_t)
-        if (task%verbose>1) then
-          write(stdout,*) task%id, ' has finished!', task%task_list%nfinished, '/', task%task_list%na, timer%done
+        if (console_on(ch_m3d, 2, all_ranks=.true.)) then
+          write(console_unit,*) task%id, ' has finished!', task%task_list%nfinished, '/', task%task_list%na, timer%done
         endif
       end select
     endif

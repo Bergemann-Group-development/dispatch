@@ -21,6 +21,7 @@ MODULE ray_patch_mod
   USE patch_mod, only: patch_t
   USE op_math_mod, only: searchsorted
   USE interpol_mod, only: pchip_mono
+  USE console_mod
   USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, &
     converged, print_send, atom_update_counter, comoving_frame, n_nu_out
@@ -54,7 +55,6 @@ MODULE ray_patch_mod
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
-  integer, save:: verbose=0
 
 contains
 
@@ -86,9 +86,9 @@ contains
       counter => counter1
       label = 'internal'
     endif
-    if (self%i_nu > counter .and. self%verbose > 2) then
-      if (counter == -999) write(stdout,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
-      write(stdout,'(I4, I10,A3,I8)') self%i_nu, fs, ' - ', fe
+    if (self%i_nu > counter .and. console_on(ch_m3d, 2)) then
+      if (counter == -999) write(console_unit,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
+      write(console_unit,'(I4, I10,A3,I8)') self%i_nu, fs, ' - ', fe
       counter = self%i_nu
     endif
   END SUBROUTINE set_freq_indices
@@ -215,8 +215,8 @@ contains
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('ray_patch_t%ray_pack', itimer=itimer)
-    if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
-      write(stdout, '(I6, A32, I3, A6, I10)') self%id, 'packing message on rank', &
+    if ((console_on(ch_m3d, 3, all_ranks=.true.) .or. self%print_update_info) .and. print_send) then
+      write(console_unit, '(I6, A32, I3, A6, I10)') self%id, 'packing message on rank', &
         mpi%rank, 'tag=', self%mesg%tag
     endif
     !-----------------------------------------------------------------------------
@@ -281,8 +281,8 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin ('ray_patch_t%ray_unpack', itimer=itimer)
     call self%set (bits%busy)
-    if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
-      write(stdout, '(I6, A32, I3, A6, I10)') self%id, 'unpacking message on rank', &
+    if ((console_on(ch_m3d, 3, all_ranks=.true.) .or. self%print_update_info) .and. print_send) then
+      write(console_unit, '(I6, A32, I3, A6, I10)') self%id, 'unpacking message on rank', &
         mpi%rank, 'tag=', self%mesg%tag
     end if
     self%unpack_time = wallclock()
@@ -300,7 +300,8 @@ contains
     if (header%level == 0 .and. .not. converged) then
       converged = .true.
       call self%init_level()
-      write(stdout, '(A, I3, A, I3)'), 'Converged message has been passed by MPI from rank', header%rank, ' to', mpi%rank
+      if (console_on(ch_m3d, 2, all_ranks=.true.)) write(console_unit,'(A, I3, A, I3)') &
+        'Converged message has been passed by MPI from rank', header%rank, ' to', mpi%rank
     endif
     ibuf = ibuf + n_header
     if (.not. converged .or. self%do_out_sp) then

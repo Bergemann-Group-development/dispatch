@@ -28,6 +28,7 @@ PROGRAM dispatch
   USE mpi_mod
   USE os_mod
   USE setup_mod
+  USE console_mod
   !USE restart_mod
   USE dispatcher_mod
   !USE cartesian_mod
@@ -51,8 +52,9 @@ PROGRAM dispatch
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
-  write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  write(*,'(a, I3, a, F7.2, a)') 'OpenMULTI3D terminated normally.'
+  if (console_on(ch_m3d, 0, all_ranks=.true.)) &
+    write(console_unit,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
+  if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated normally.'
   !call os%print_tracked_mem()
   !i = findloc(os%labels(1:os%nlabels), 'rt_patch%mem', 1)
   !print *, os%n_allocated(i), os%labelled_mem(i)

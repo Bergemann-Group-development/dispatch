@@ -52,6 +52,7 @@ MODULE rt_patch_mod
   USE spectrum_mod, only: spectrum_type
   USE optab_mod, only: sample_optab_type
   USE omp_lock_mod, only: lock_t
+  USE console_mod
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   implicit none
   private
@@ -234,7 +235,6 @@ MODULE rt_patch_mod
   end type rt_patch_t
 
   !-----------------------------------------------------------------------------
-  integer, save:: verbose=0                           ! verbosity
   integer, public :: n_cntrbf=0
   integer, public, dimension(:), allocatable :: cntrbf_lines
   ! NB: work, the background arrays, cntrbf_data and the patch
@@ -365,12 +365,12 @@ contains
         if (is_nlte) output_set_kind(3) = set_lte
       else
         if (index(trim(set_file), trim(io%run_dir)) == 1) then
-          print '(a)', 'ERROR: output_params set_file must be outside the run directory'
+          call console_error ('output_params set_file must be outside the run directory')
           error stop 'invalid set_file location'
         endif
         open(newunit=unit, file=trim(set_file), status='old', action='read', iostat=ios)
         if (ios /= 0) then
-          print '(2a)', 'ERROR: cannot open set_file: ', trim(set_file)
+          call console_error ('cannot open set_file: '//trim(set_file))
           error stop 'cannot open set_file'
         endif
         max_set = 0
@@ -400,7 +400,7 @@ contains
           case ('nlte');      i = set_nlte
           case ('lte');       i = set_lte
           case default
-            print '(2a)', 'ERROR: unknown kind in set_file: ', trim(kind)
+            call console_error ('unknown kind in set_file: '//trim(kind))
             error stop 'invalid set kind'
           end select
           if (seen(number) .and. output_set_kind(number) /= i) &
@@ -412,7 +412,7 @@ contains
           else
             z = atomic_number(element)
             if (z == 0) then
-              print '(2a)', 'ERROR: unknown element in set_file: ', trim(element)
+              call console_error ('unknown element in set_file: '//trim(element))
               error stop 'invalid ladder element'
             endif
             read(da_word, *, iostat=ios) da
@@ -1603,6 +1603,7 @@ contains
     integer :: s, fs, fe
     integer, save :: itimer
     integer :: x, y, z, f
+    character(len=256) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%lte_background_emission', itimer=itimer)
     if (.not. associated(self%up_twin)) self%up_twin => self
@@ -1616,7 +1617,7 @@ contains
     case ('0', 'ZERO')
       Jnu_to_Bnu = .false.
     case default
-      print *, 'WARNING: Unknown initial_Jnu, use "Planck" or "zero". Setting to "Planck".'
+      call console_warn (ch_m3d, 'unknown initial_Jnu, use "Planck" or "zero"; using "Planck"')
       Jnu_to_Bnu = .true.
     end select
 
@@ -1655,10 +1656,10 @@ contains
             do x=1, self%nx
               do f=fs, fe
                 if (.not. ieee_is_finite(self%Jnu(f,x,y,z,i_set))) then
-                  write(stdout,'(A,I8,A,2(I8),A,4(I4),A,2(ES12.4))') &
+                  write(msg,'(A,I8,A,2(I8),A,4(I4),A,2(ES12.4))') &
                     'RACE: bad Jnu in', self%id, ' twins', self%up_twin%id, self%dn_twin%id, &
                     ' at f,x,y,z=', f, x, y, z, ' Jup,Jdn=', Jup(f,x,y,z,i_set), Jdn(f,x,y,z,i_set)
-                  flush(stdout)
+                  call console_error (msg)
                   call shared%abort ('rt_patch_t%lte_background_emission: non-finite Jnu')
                 endif
               end do
@@ -2793,6 +2794,7 @@ contains
     real(4) :: xxold(3), xxnew(ng)
     integer, save :: itimer=0
     integer :: x, y, z, f
+    character(len=256) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%set_upstream_boundary', itimer=itimer)
     z = merge(lbound(self%work,4), ubound(self%work,4), self%dir > 0)
@@ -2843,11 +2845,11 @@ contains
             do f=self%fs, self%fe
               do i=1, 3
                 if (.not. ieee_is_finite(self%work(f,x,y,z,i))) then
-                  write(stdout,'(A,I8,A,I8,A,3(I4),A,I3,A,2(I4),A,ES12.4)') &
+                  write(msg,'(A,I8,A,I8,A,3(I4),A,I3,A,2(I4),A,ES12.4)') &
                     'RACE: bad upstream boundary in', self%id, ' from', self%upstream%id, &
                     ' at f,x,y=', f, x, y, ' w=', i, ' i_mu,i_set=', i_mu, i_set, &
                     ' value=', self%work(f,x,y,z,i)
-                  flush(stdout)
+                  call console_error (msg)
                   call shared%abort ('rt_patch_t%set_upstream_boundary: non-finite boundary')
                 endif
               end do
@@ -2940,7 +2942,7 @@ contains
       if (check_NaN) then
         nan_check = self%work(self%fcheck, p(1), p(2), p(3),1:3)
         if (any(nan_check/=nan_check)) then
-          print *, 'NaN in rt_patch', nan_check
+          call console_warn (ch_m3d, 'NaN in rt_patch at pcheck')
         endif
       endif
       if (i_mu==self%mus .and. i_set==self%i_set_main) then   ! sample the spectrum set once
@@ -3032,6 +3034,7 @@ contains
     integer :: x, y, z, f, i
     real(4) :: xhat, eta, chi, floor
     real(4), allocatable :: chiv(:)
+    character(len=256) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%work_to_transfer_units', itimer=itimer)
     allocate(chiv(self%fs:self%fe))
@@ -3089,10 +3092,10 @@ contains
                 i = n_negative_chi
                 !$omp end atomic
                 if (i <= 20) then
-                  write(stdout,'(A,A,4(I5),4(1x,ES13.5))') self%m3d_patch_info(), &
+                  write(msg,'(A,A,4(I5),4(1x,ES13.5))') trim(self%m3d_patch_info()), &
                     '  CHI floored f,x,y,z=', f, x, y, z, chi, xhat, eta, &
                     self%beta(f,x,y,z)
-                  flush(stdout)
+                  call console_warn (ch_m3d, msg)
                 endif
               endif
             endif
@@ -3291,7 +3294,7 @@ contains
   SUBROUTINE print_post_update_info (self)
     class(rt_patch_t) :: self
     !-----------------------------------------------------------------------------
-    if (self%verbose > 1) then
+    if (console_on(ch_m3d, 2, all_ranks=.true.)) then
       call self%print_to_stdout(arr=memcheck(1:3))
     endif
   END SUBROUTINE print_post_update_info
@@ -3665,6 +3668,7 @@ contains
     class(patch_t):: tgt
     integer :: i, i_set, i_mu
     integer :: x, y
+    character(len=256) :: msg
     !-----------------------------------------------------------------------------
     ! Invariant: the source of a download always holds a boundary buffer.  It is
     ! handed over (not copied) below, and the source re-creates one in
@@ -3675,10 +3679,10 @@ contains
     ! hand out a null pointer, which set_upstream_boundary() would then read.
     !-----------------------------------------------------------------------------
     if (.not. associated(self%mem)) then
-      write(stdout,'(A,2(A,I8),2(A,L2))') 'RACE: copy_to with unassociated source mem', &
+      write(msg,'(A,2(A,I8),2(A,L2))') 'RACE: copy_to with unassociated source mem', &
         ' src=', self%id, ' tgt=', tgt%id, ' src_static=', self%static_mem, &
         ' tgt_static=', tgt%static_mem
-      flush(stdout)
+      call console_error (msg)
       call shared%abort ('rt_patch_t%copy_to: source mem gone')
     endif
     if (.not. self%static_mem) then
@@ -3730,12 +3734,14 @@ contains
     class(atomic_spectrum_type), intent(in) :: output_sp
     integer, intent(in) :: n_nu_out
     integer :: i_nu, i_seg, fs, fe, prev_fe
+    character(len=256) :: msg
     !---------------------------------------------------------------------------
     if (output_sp%n_segments == 0) return
 
     if (mod(n_nu_out, output_sp%n_segments) /= 0) then
-      write(stderr,'(A,I0,A,I0)') &
-        'ERROR: n_nu_out=', n_nu_out, ' is not a multiple of n_segments=', output_sp%n_segments
+      write(msg,'(A,I0,A,I0)') &
+        'n_nu_out=', n_nu_out, ' is not a multiple of n_segments=', output_sp%n_segments
+      call console_error (msg)
       error stop 'n_nu_out and n_segments mismatch'
     endif
 
@@ -3745,19 +3751,21 @@ contains
       i_seg = output_patch_window(output_sp, i_nu, n_nu_out)
       if (fs /= prev_fe + 1 .or. fe < fs .or. &
           fs < output_sp%segment_first(i_seg) .or. fe > output_sp%segment_last(i_seg)) then
-        write(stderr,'(A,I0,A,I0,A,I0,A,I0)') 'ERROR: output patch i_nu=', i_nu, &
+        write(msg,'(A,I0,A,I0,A,I0,A,I0)') 'output patch i_nu=', i_nu, &
           ' covers [', fs, ',', fe, '] in window ', i_seg
+        call console_error (msg)
         error stop 'output patches do not tile the windows'
       endif
       prev_fe = fe
     enddo
     if (prev_fe /= output_sp%nnu) then
-      write(stderr,'(A,I0,A,I0)') 'ERROR: output patches end at ', prev_fe, ' of ', output_sp%nnu
+      write(msg,'(A,I0,A,I0)') 'output patches end at ', prev_fe, ' of ', output_sp%nnu
+      call console_error (msg)
       error stop 'incomplete segment coverage'
     endif
 
-    write(stdout,'(A,I0,A,I0,A)') 'Verified: ', n_nu_out, ' output patches tile ', &
-      output_sp%n_segments, ' windows'
+    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,I0,A)') 'Verified: ', n_nu_out, &
+      ' output patches tile ', output_sp%n_segments, ' windows'
   END SUBROUTINE verify_output_patch_coverage
 
 END MODULE rt_patch_mod

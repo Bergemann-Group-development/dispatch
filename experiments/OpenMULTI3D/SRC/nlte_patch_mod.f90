@@ -34,6 +34,7 @@ MODULE nlte_patch_mod
   USE rt_patch_mod, only: rt_patch_t
   USE m3d_debug_mod
   USE shared_mod
+  USE console_mod
   USE, intrinsic :: ieee_arithmetic
   implicit none
 
@@ -153,7 +154,7 @@ contains
         end do
       endif
       if (natom == 0) then
-        print *, 'WARNING: no atom specified'
+        if (console_on(ch_m3d, 2)) write(console_unit,'(a)') 'no atom specified'
         call trace%end(itimer)
         return
       else
@@ -186,10 +187,9 @@ contains
       do i=1, natom
         associate(atom_file=>atom_file(i), atom=>atoms(i))
           atom%name = 'input'
-          atom%verbose = self%verbose
           j = rindex(atom_file, '/')+1
           pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
-          print '(A, A)', 'Reading atom file: ', trim(atom_file)
+          if (console_on(ch_m3d, 1)) write(console_unit,'(A, A)') 'Reading atom file: ', trim(atom_file)
           if (pandas_format) then
             level_partf = .false.
             call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
@@ -401,9 +401,9 @@ contains
       if (save_sp) then
         call sp%save(name)
       endif
-      if (set_active) then
-        write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-        write(*,'(a,I0,a)') 'sp_from_atom: ', sum(nac+nal), ' active transition-frequency points'
+      if (set_active .and. console_on(ch_m3d, 1)) then
+        write(console_unit,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
+        write(console_unit,'(a,I0,a)') 'sp_from_atom: ', sum(nac+nal), ' active transition-frequency points'
       endif
       call os%deallocate(nac)
       call os%deallocate(nal)
@@ -493,9 +493,9 @@ contains
           ! It lags by an iteration, which is immaterial for a coarse "is there
           ! anything left to gain" test.
           call atom%ng_acceleration(self%iter, self%global, convlim, ng_emax, ng_epos)
-          if (ng_emax /= 0 .and. self%verbose > 0) then
+          if (ng_emax /= 0 .and. console_on(ch_m3d, 2)) then
             ng_epos = ng_epos + [0,0,0,self%zs-1]
-            print '(A, ES14.7, 4(I6))', 'NG acceleration ', ng_emax, ng_epos
+            write(console_unit,'(A, ES14.7, 4(I6))') 'NG acceleration ', ng_emax, ng_epos
           endif
         endif
       endif
@@ -666,6 +666,7 @@ contains
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
     integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit, nzero
+    character(len=160) :: msg
     integer :: itimer=0
     logical :: found
     !-----------------------------------------------------------------------------
@@ -676,7 +677,7 @@ contains
       run_dir = atmos_file
       save_folder = trim(run_dir)//'/save/'
       if (.not. os%exists_dir(save_folder)) then
-        print *, ' - No folder found ', save_folder
+        call console_warn (ch_m3d, 'no departure folder found: '//trim(save_folder))
       endif
     endif
 
@@ -765,9 +766,10 @@ contains
           end do
         end do
         if (nzero > 0) then
-          write(stdout,'(A,I0,A,A,A)') ' WARNING: ', nzero, &
+          write(msg,'(I0,A,A,A)') nzero, &
             ' underflowed departure coefficients read for ', trim(atom%id), &
             ' -- the run they came from had not converged'
+          call console_warn (ch_m3d, msg)
         endif
       else
         allocate(dep%ev, source=atom%ev_keys())
@@ -939,7 +941,7 @@ contains
     real(8) :: global
     logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------
-    if (self%verbose > 1) then
+    if (console_on(ch_m3d, 2, all_ranks=.true.)) then
       if (self%iter == 0) then
         write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
       elseif (converged) then
@@ -956,25 +958,25 @@ contains
         call self%print_to_stdout()
       endif
     endif
-    if (associated(self%atoms)) then
-      if (self%verbose == 0) then
+    if (associated(self%atoms) .and. console_on(ch_m3d, 0, all_ranks=.true.)) then
+      if (.not. console_on(ch_m3d, 2, all_ranks=.true.)) then
         if (first_time) then
           first_time = .false.
-          write(stdout, '(A8, A10, A5, A14)') 'iter', 'global', 'lvl', 'pos'
+          write(console_unit, '(A8, A10, A5, A14)') 'iter', 'global', 'lvl', 'pos'
         endif
-        write(stdout, '(I4, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
+        write(console_unit, '(I4, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
           self%iter, self%maxiter, abs(self%global*100), elvl, epos
       else
-        write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
+        write(console_unit,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
           '  local =', self%local,  ', global =', self%global, &
           ', lvl =', elvl, ', pos=', epos, self%atoms(eatom)%id
         flux_pos = global_flux_pos%update(+0)
         if (flux_pos >= 0) then
-          write(stdout,'(A, ES12.4, A, I4, A, F10.2, A)') &
+          write(console_unit,'(A, ES12.4, A, I4, A, F10.2, A)') &
             '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
             ', lambda =', global_flux_lambda%update(0.d0), ' AA'
         endif
-        write(stdout,'(1X, A80)') &
+        write(console_unit,'(1X, A80)') &
           '................................................................................'
       endif
     endif
@@ -1038,7 +1040,7 @@ contains
             if (ok) then
               trans%active = .false.
               if (first_time) then
-                print *, 'excluding transition ', trans%label
+                if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
               endif
               exit
             endif
@@ -1082,7 +1084,7 @@ contains
           if (exclude_from_line_list) molec%in_linelist = .false.
         end select
         if (exclude_from_line_list) then
-          print *, 'excluding all ', trim(atom%id), ' lines from line list'
+          if (console_on(ch_m3d, 1)) write(console_unit,'(3a)') 'excluding all ', trim(atom%id), ' lines from line list'
         endif
       end associate
     end do
@@ -1104,7 +1106,7 @@ contains
               if (abs(atom_ll%nu0(k) / ll%nu0(l) - 1) < 1e-6 .and. &
                   abs(atom_ll%loggf(k) - ll%loggf(l)) < 1e-4) then
                 ll%active(l) = .false.
-                print '(A, F10.2)', 'excluding linelist line at ', CC / ll%nu0(l) * 1e8
+                if (console_on(ch_m3d, 2)) write(console_unit,'(A, F10.2)') 'excluding linelist line at ', CC / ll%nu0(l) * 1e8
                 exit
               endif
             end do

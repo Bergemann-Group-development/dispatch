@@ -30,6 +30,7 @@ MODULE ng_mod
   !=============================================================================
   USE io_mod
   USE trace_mod
+  USE console_mod
   implicit none
   private
 
@@ -344,12 +345,14 @@ SUBROUTINE ng_extrapolate (self, bpop, oldb, nstar, totn, nlevel, emax, epos, ap
     end do
     end do
     if (exp(worst) - 1d0 > ng_max_change) then
-      !$omp critical (ng_print)
-      write(stdout,'(A,ES10.3,A,ES10.3,A,2F9.4)') &
-        ' NG vetoed: step ', exp(worst) - 1d0, ' exceeds ng_max_change ', &
-        ng_max_change, ', a,b =', a, b
-      flush(stdout)
-      !$omp end critical (ng_print)
+      if (console_on(ch_m3d, 1)) then
+        !$omp critical (ng_print)
+        write(console_unit,'(A,ES10.3,A,ES10.3,A,2F9.4)') &
+          'NG vetoed: step ', exp(worst) - 1d0, ' exceeds ng_max_change ', &
+          ng_max_change, ', a,b =', a, b
+        flush(console_unit)
+        !$omp end critical (ng_print)
+      end if
       call trace%end(itimer)
       return
     endif

@@ -4,6 +4,7 @@ MODULE rt_params_mod
                      set_lobatto_quadratures, set_gauss_quadratures, &
                      set_custom_quadratures, set_grid_quadratures
   USE handyfuncs_mod, only: count_words, lowercase
+  USE console_mod
   USE composition_mod, only: comp_sample_linelist => sample_linelist
   implicit none
   private
@@ -181,15 +182,15 @@ CONTAINS
       allocate (p%vec(3,0))
       allocate (p%wmu(0))
     case default
-      print *, 'Quadrature keyword "'// trim(p%angle_quad) // '" not recognized for ' // &
-        trim(merge('rt_output_params   ', 'rt_iteration_params', is_output)) // '. Stopping...'
+      call console_error ('quadrature keyword "'// trim(p%angle_quad) // '" not recognized for ' // &
+        trim(merge('rt_output_params   ', 'rt_iteration_params', is_output)))
       stop
     end select
   contains
     subroutine assert_output ()
       if (.not. is_output) then
-        print *, 'Quadrature keyword "'// trim(p%angle_quad) // &
-          '" is only available for rt_output_params. Stopping...'
+        call console_error ('quadrature keyword "'// trim(p%angle_quad) // &
+          '" is only available for rt_output_params')
         stop
       end if
     end subroutine assert_output

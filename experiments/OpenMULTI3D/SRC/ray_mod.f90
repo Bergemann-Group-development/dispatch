@@ -1,6 +1,7 @@
 MODULE ray_mod
   USE const_mod
   USE radau_mod
+  USE console_mod
   implicit none
 
   ! *******************************************************************
@@ -181,7 +182,7 @@ contains
         0.06900520, 0.06900520, 0.06900520, 0.17152232/)
 
      case default
-      print *, 'Quadrature keyword "'// trim(quad_scheme) // '" not recognized. Stopping...'
+      call console_error ('quadrature keyword "'// trim(quad_scheme) // '" not recognized')
       stop
     end select
 

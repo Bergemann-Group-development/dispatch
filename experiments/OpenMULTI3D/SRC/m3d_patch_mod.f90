@@ -43,6 +43,7 @@ MODULE m3d_patch_mod
     USE linelist_mod, only: print_ll_particle, print_ll_atom
     USE molecule_mod, only: molec_type
     USE optab_mod, only: sample_optab_type
+    USE console_mod
     USE, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -164,7 +165,7 @@ MODULE m3d_patch_mod
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
-    integer, save, public:: verbose=0
+    integer, save, public:: verbose=console_inherit
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
@@ -369,13 +370,12 @@ MODULE m3d_patch_mod
 
       if (ng_step > 0) then
         if (ng_step < 3) then
-          print *, 'NG acceleration needs 3 initial iterations. Resetting ng_step to 3'
+          call console_warn (ch_m3d, 'NG acceleration needs 3 initial iterations; ng_step set to 3')
           ng_step = 3
         endif
       endif
+      call console_set_level (verbose, ch_m3d)
     end if
-  
-    self%verbose = verbose
 
     self%n_out = size(rt_out%vec, 2)
     self%do_final = self%i_mu < 0 ! this is the ray working on the final output spectrum after scattering
@@ -387,7 +387,8 @@ MODULE m3d_patch_mod
     ! first execute, and those tasks are not to be held back.
     self%wait_for_nlte = self%do_out_sp
   
-    if (self%pre_initialized) print *, 'pre_init issued somewhere'
+    if (self%pre_initialized .and. console_on(ch_m3d, 3)) &
+      write(console_unit,'(a)') 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
   
     call self%patch_t%pre_init()
@@ -645,7 +646,7 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_update', itimer=itimer)
     if (print_start) then
-      write(stdout, *) 'Update on', self%id, 'has begun', self%finished, self%time
+      write(console_unit, *) 'Update on', self%id, 'has begun', self%finished, self%time
     endif
     if (.not. self%is_finished()) then
       if (converged .and. self%do_full_sp) then
@@ -701,12 +702,10 @@ MODULE m3d_patch_mod
     else
       call print_execution_history(self, 'END')
     endif
-    if (self%verbose > -1) then
-      if (self%print_update_info) then
-        call self%print_post_update_info()
-      elseif (self%verbose > 2) then
-        call self%print_to_stdout()
-      endif
+    if (self%print_update_info) then
+      call self%print_post_update_info()
+    elseif (console_on(ch_m3d, 3)) then
+      call self%print_to_stdout()
     endif
     call self%check_mem_NaN()
     call trace%end(itimer)
@@ -748,11 +747,11 @@ MODULE m3d_patch_mod
   !===============================================================================
   FUNCTION m3d_patch_info (self) result(text)
     class(m3d_patch_t) :: self
-    character(len=merge(48, 32, self%verbose>3)) :: text
+    character(len=48) :: text
     integer :: i
     !-----------------------------------------------------------------------------
     i = omp%place
-    if (self%verbose > 3) then
+    if (console_on(ch_m3d, 3)) then
       write(text, '(I3, 1x, I3, 1x, F8.4, A12, I8, 3(I4))') i, self%place, self%time, &
                       trim(self%kind), self%id, self%ipos(3)+1, self%i_nu, self%i_mu
     else
@@ -1211,6 +1210,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t):: self
     integer :: i,j,k,v,t,w
     integer, save :: itimer
+    character(len=128) :: msg
     !-----------------------------------------------------------------------------
     if (.not. check_NaN) return
     call trace%begin ('m3d_patch_t%check_mem_NaN', itimer=itimer)
@@ -1222,10 +1222,12 @@ MODULE m3d_patch_mod
       do j=lbound(self%mem, 2), ubound(self%mem, 2)
       do i=lbound(self%mem, 1), ubound(self%mem, 1)
         if (self%mem(i,j,k,v,t,w) /= self%mem(i,j,k,v,t,w)) then
-          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v,t,w
+          write(msg, '(A,A,3(I4),I5,I3,I3)') trim(self%m3d_patch_info()), '  NaN', i,j,k,v,t,w
+          call console_error (msg)
           stop
         elseif (self%mem(i,j,k,v,t,w) > inf4) then
-          write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v,t,w
+          write(msg, '(A,A,3(I4),I5,I3,I3)') trim(self%m3d_patch_info()), '  Infinity', i,j,k,v,t,w
+          call console_error (msg)
           stop
         !elseif (self%unsigned(w) .and. self%mem(i,j,k,v,t,w) < 0) then
         !  write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  negative', i,j,k,v,t,w
@@ -1248,8 +1250,8 @@ MODULE m3d_patch_mod
     integer :: place
     !-----------------------------------------------------------------------------
     other%place = place
-    if (self%id /= other%id) then
-      print '(A, A, A, A, I4, A, I4)', trim(self%m3d_patch_info2()), ' set place of ', &
+    if (self%id /= other%id .and. console_on(ch_m3d, 3)) then
+      write(console_unit,'(A, A, A, A, I4, A, I4)') trim(self%m3d_patch_info2()), ' set place of ', &
       trim(other%kind), ' ', other%id, ' to ', other%place
     endif
   END SUBROUTINE set_place
@@ -1276,8 +1278,8 @@ MODULE m3d_patch_mod
     class is (m3d_patch_t)
       if (.not. associated(other%mem)) then
         call io%lock%set('check_access')
-        print *, 'memory of ', other%m3d_patch_info()
-        print *, 'cannot be accessed from ', self%m3d_patch_info()
+        call console_error ('memory of '//trim(other%m3d_patch_info())// &
+          ' cannot be accessed from '//trim(self%m3d_patch_info()))
         call io%lock%unset('check_access')
         call shared%abort('memory array not accessible')
       endif
@@ -1293,16 +1295,16 @@ MODULE m3d_patch_mod
     !$omp critical (cr_print_to_stdout)
     if (present(arr)) then
       if (size(arr)==0) then
-        write(stdout,'(A, A)') trim(patch_info()), 'invalid index!'
+        write(console_unit,'(A, A)') trim(patch_info()), 'invalid index!'
       else
-        write(stdout,'(A, 6(ES15.7))') trim(patch_info()), arr
+        write(console_unit,'(A, 6(ES15.7))') trim(patch_info()), arr
       endif
     elseif (present(text)) then
-      write(stdout,'(A, A, A)') trim(patch_info()), ' ', trim(text)
+      write(console_unit,'(A, A, A)') trim(patch_info()), ' ', trim(text)
     else
-      write(stdout,'(A)') trim(patch_info())
+      write(console_unit,'(A)') trim(patch_info())
     endif
-    flush(stdout)
+    flush(console_unit)
     !$omp end critical (cr_print_to_stdout)
   contains
     function patch_info() result(text)
@@ -1318,7 +1320,7 @@ MODULE m3d_patch_mod
   SUBROUTINE print_post_update_info (self)
     class(m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
-    if (self%verbose > 1) then
+    if (console_on(ch_m3d, 2, all_ranks=.true.)) then
       call self%print_to_stdout()
     endif
   END SUBROUTINE print_post_update_info
