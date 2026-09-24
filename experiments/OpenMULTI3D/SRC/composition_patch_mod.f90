@@ -34,6 +34,7 @@ MODULE composition_patch_mod
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
+  USE console_mod
   USE scaling_mod
   USE units_mod
   USE ray_mod, only: set_carlson_quadratures, one_dimensional
@@ -85,7 +86,7 @@ contains
 SUBROUTINE read_composition_params ()
   integer :: i, iostat
   real(4) :: tmolim=-99
-  integer, save:: itimer=0, verbose=0
+  integer, save:: itimer=0, verbose=console_inherit
   namelist /composition_params/ verbose, absdat_file, abund_file, &
   isotope_file, molec_file, H_occupation_probability, &
   switch, mhd_eos, debye_shield, &
@@ -147,8 +148,7 @@ SUBROUTINE read_composition_params ()
   endif
   write (io%namelist, linelist_params)
 
-  if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
-  composition%verbose = verbose
+  call console_set_level (verbose, ch_hop)
 
   if (absmet_file /= '') then
     call osmet%init(absmet_file)
@@ -241,7 +241,7 @@ SUBROUTINE composition_pre_init (self)
           end if
         end do
       elseif (any(linelist_file /= '')) then
-        print *, 'linelist_params: no pass includes or samples the line list -- skipping line-list read'
+        call console_warn (ch_hop, 'linelist_params: no pass includes or samples the line list; line list not read')
       endif
       if (allocated(ll_intervals)) deallocate(ll_intervals)
     end block
@@ -868,7 +868,7 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   ! post_update also runs before the first execute, where there is nothing yet
   if (.not. associated(self%composition)) return
-  if (self%verbose > 1) then
+  if (console_on(ch_m3d, 2, all_ranks=.true.)) then
     p = self%pcheck
     comp => self%composition
     memcheck(1) = real(comp%temp(p(1),p(2),p(3)))

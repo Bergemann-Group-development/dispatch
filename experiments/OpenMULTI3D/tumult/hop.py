@@ -112,9 +112,9 @@ def _check(lib, status, what):
 def _verbosity(verbose):
     """HOP's integer verbosity from a bool: False = -1 (nothing at all), True = 1.
 
-    Any other value passes through, so the dispatch levels (0 = the linelist
-    line count only, 1 = progress messages, 2 = per-solve diagnostics) remain
-    available as ints.
+    Any other value passes through, so the console levels shared with dispatch.x
+    (0 = warnings, 1 = setup summaries such as the linelist line count, 2 =
+    per-solve diagnostics) remain available as ints.
     """
     return (1 if verbose else -1) if isinstance(verbose, bool) else int(verbose)
 
@@ -163,11 +163,11 @@ class HopEOS:
     recognized names are exactly what ``option_names()`` reports; the value is
     parsed by libhop against the option's own type.
 
-    The library is silent by default (``verbose=False``, i.e. HOP verbosity -1);
-    ``verbose=0`` restores what a dispatch run prints at its own default -- the
-    'N of M lines read from linelist' line -- ``verbose=True``/1 adds HOP's
-    progress messages (which abundances were overridden, ...) and ``verbose=2``
-    the per-solve diagnostics.
+    The library is silent by default (``verbose=False``, i.e. HOP console level
+    -1); ``verbose=0`` prints warnings, ``verbose=True``/1 adds what a dispatch
+    run prints at its own default (the 'N of M lines read from linelist' line,
+    which abundances were overridden, ...) and ``verbose=2`` the per-solve
+    diagnostics.
 
     One live instance per process -- constructing a second without closing the
     first raises.  Use as a context manager or call close().
