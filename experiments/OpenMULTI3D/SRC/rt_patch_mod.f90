@@ -675,7 +675,7 @@ contains
     ! non-local part alongside Psi, so the Rybicki & Hummer rates need no further
     ! condition.  fixed_Jnu needs none either: it replaces the formal solution
     ! altogether, leaving Psi at the zero it is allocated with, and
-    ! split_rate_terms then returns the unpreconditioned rates.
+    ! bound_bound_rates then takes the unpreconditioned rates.
     self%split_rates = rate_formulation == 'largest' .and. any(self%get_rates)
     end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
     end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
@@ -2481,23 +2481,24 @@ contains
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
     real(4), dimension(:,:,:,:), allocatable :: lnbase, wphi_buf
-    real(4), dimension(:), allocatable :: wmunu
+    real(4), dimension(:), allocatable :: wmunu, vph
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
     real(4) :: vvv, a2, sum_I, sum_P, sum_A
     real(4) :: g_ij, g_ji
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef, vpr2
+    real(4) :: psi, eta_t, chi_t, other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
-    integer :: i, l, ih, fs, fe
+    integer :: i, l, ih, fs, fe, index
     logical :: use_ll, get_wphi, split_rates
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     split_rates = self%split_rates
-    allocate(wmunu(self%fs:self%fe))
+    allocate(wmunu(self%fs:self%fe), vph(self%fs:self%fe))
     ! The preconditioning correction has to subtract the same local term the formal
     ! solver added, so it is built from the emissivity coefficient that
     ! add_bound_bound_opacities used, pop_ratio included.
@@ -2571,10 +2572,8 @@ contains
               if (split_rates) then
                 do f=fs, fe
                   q = line%q(f) - vpr
-                  phi = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                  vph(f) = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                     vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
-                  vvv = phi * wmunu(f)
-                  call accumulate_split()
                 end do
               else
                 do f=fs, fe
@@ -2603,8 +2602,7 @@ contains
                     vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
                     phi = phi + vgt*line%wt(ih)
                   end do
-                  vvv = phi * wmunu(f)
-                  call accumulate_split()
+                  vph(f) = phi
                 end do
               else
                 do f=fs, fe
@@ -2625,11 +2623,7 @@ contains
               endif
             else
               if (split_rates) then
-                do f=fs, fe
-                  phi = qlg_bot_profile(a, line%q(f), vpr, idf)
-                  vvv = phi * wmunu(f)
-                  call accumulate_split()
-                end do
+                vph(fs:fe) = qlg_bot_profile(a, line%q(fs:fe), vpr, idf)
               else
                 do f=fs, fe
                   associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
@@ -2641,6 +2635,36 @@ contains
                   end associate
                 end do
               endif
+            endif
+
+            ! The split rate integrands, from the profile the branches above
+            ! stored: Rybicki & Hummer (1992), Eqs. (2.24) and (2.25), which
+            ! precondition within the same transition.  Irem is the formal
+            ! solution without its own local term, so adding back the other
+            ! contributions' share of it never forms Inu - Psi*eta_t as a
+            ! difference of two nearly equal numbers.  The spontaneous factor
+            ! stays between zero and one and needs no such care.  Where Psi is
+            ! zero (fixed_Jnu) the unpreconditioned integrands are taken.
+            if (split_rates .and. preconditioning) then
+              index = self%split_offset(iatom) + i
+              do f=fs, fe
+                psi = self%Psi(f,x,y,z)
+                eta_t = vph(f)*eta_coef*self%beta(f,x,y,z)
+                chi_t = vph(f)*abs_coef - eta_t
+                other = other_contribution(eta_t, index, self%split_opac(f,x,y,z,1), &
+                  self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
+                up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
+                spont = merge(1.0, 1.0 - psi*chi_t, psi == 0.)
+                vvv = vph(f) * wmunu(f)
+                sum_I = sum_I + vvv*up
+                sum_A = sum_A + vvv*spont
+              end do
+            else if (split_rates) then
+              do f=fs, fe
+                vvv = vph(f) * wmunu(f)
+                sum_I = sum_I + vvv*self%work(f,x,y,z,3)
+                sum_A = sum_A + vvv
+              end do
             endif
 
             g_ij = sum_I
@@ -2657,20 +2681,6 @@ contains
       end do
     end do
     call trace%end(itimer)
-  contains
-    !---------------------------------------------------------------------------
-    !> The preconditioned rate integrands, with this line's own contribution
-    !> removed from the local source term rather than subtracted from Inu.
-    !---------------------------------------------------------------------------
-    subroutine accumulate_split()
-      real(4) :: eta_t, chi_t, up, spont
-      eta_t = phi*eta_coef*self%beta(f,x,y,z)
-      chi_t = phi*abs_coef - eta_t
-      call split_rate_terms(self, f, x, y, z, self%split_offset(iatom)+i, eta_t, chi_t, &
-        up, spont)
-      sum_I = sum_I + vvv*up
-      sum_A = sum_A + vvv*spont
-    end subroutine accumulate_split
   END SUBROUTINE bound_bound_rates
 
   !===============================================================================
@@ -2712,30 +2722,6 @@ contains
       other = largest + (rest-value)
     endif
   end function other_contribution
-
-  !===============================================================================
-  SUBROUTINE split_rate_terms (self, f, x, y, z, index, eta_t, chi_t, up, spont)
-    class(rt_patch_t), intent(in) :: self
-    integer, intent(in) :: f, x, y, z, index
-    real(4), intent(in) :: eta_t, chi_t
-    real(4), intent(out) :: up, spont
-    real(4) :: psi
-    !-----------------------------------------------------------------------------
-    psi = self%Psi(f,x,y,z)
-    if (.not. preconditioning .or. psi == 0.) then
-      up = self%work(f,x,y,z,3)
-      spont = 1.0
-    else
-      ! Rybicki & Hummer (1992), Eqs. (2.24) and (2.25): precondition within the
-      ! same transition.  Irem is the formal solution without its own local term,
-      ! so adding back the other contributions' share of it never forms
-      ! Inu - psi*eta_t as a difference of two nearly equal numbers.  The
-      ! spontaneous factor stays between zero and one and needs no such care.
-      up = self%Irem(f,x,y,z) + psi*other_contribution(eta_t, index, &
-        self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
-      spont = 1.0 - psi*chi_t
-    endif
-  END SUBROUTINE split_rate_terms
 
   !===============================================================================
   SUBROUTINE bound_free_rates (self, atom, trans, adata)
