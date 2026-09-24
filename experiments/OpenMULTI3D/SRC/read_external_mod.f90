@@ -161,8 +161,10 @@ contains
       read_departures = read_departures_local
       atmos_file = save_file
       atmos_format = 'save'
+      write (stdout,*) 'Reading saved atmosphere from ', trim(atmos_file)
       call self%read_saved_snapshot(atmos_file, dims)
     else
+      write (stdout,*) 'Reading ', trim(atmos_format), ' atmosphere from ', trim(atmos_file)
       read_departures = .false.
       select case (atmos_format)
        case('stagger')
