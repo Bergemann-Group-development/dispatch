@@ -203,7 +203,6 @@ MODULE rt_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
-    procedure :: split_rate_terms
     procedure :: fill_b4
     procedure :: reduce_ll_diag
     procedure :: convert_to_work_units
@@ -2492,11 +2491,12 @@ contains
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe
-    logical :: use_ll, get_wphi
+    logical :: use_ll, get_wphi, split_rates
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
+    split_rates = self%split_rates
     allocate(wmunu(self%fs:self%fe))
     ! The preconditioning correction has to subtract the same local term the formal
     ! solver added, so it is built from the emissivity coefficient that
@@ -2565,65 +2565,87 @@ contains
             sum_A = 0.0
             sum_I = 0.0
             sum_P = 0.0
+            ! One f-loop per rate formulation and profile kind, so that none
+            ! carries the rate_formulation branch.
             if (line%hydrogen) then
-              do f=fs, fe
-                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+              if (split_rates) then
+                do f=fs, fe
                   q = line%q(f) - vpr
                   phi = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                     vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
                   vvv = phi * wmunu(f)
-                  if (self%split_rates) then
-                    call accumulate_split()
-                  else
+                  call accumulate_split()
+                end do
+              else
+                do f=fs, fe
+                  associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                    q = line%q(f) - vpr
+                    phi = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                      vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+                    vvv = phi * wmunu(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
-                  endif
-                end associate
-              end do
+                  end associate
+                end do
+              endif
             elseif (line%io > 1) then
-              do f=fs, fe
-                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+              ! As in add_bound_bound_opacities, the sublevel offset shifts the
+              ! velocity.  Subtracting it from q instead would also shift the
+              ! nu/nu0 Jacobian qlg_bot_profile applies, giving a profile that
+              ! differs from the one the opacity used.
+              if (split_rates) then
+                do f=fs, fe
                   phi = 0
                   do ih=1, line%io
                     a2 = a + idf*line%da(ih)
-                    ! As in add_bound_bound_opacities, the sublevel offset shifts
-                    ! the velocity.  Subtracting it from q instead would also
-                    ! shift the nu/nu0 Jacobian qlg_bot_profile applies, giving a
-                    ! profile that differs from the one the opacity used.
                     vpr2 = vpr + line%dq(ih)
                     vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
                     phi = phi + vgt*line%wt(ih)
                   end do
                   vvv = phi * wmunu(f)
-                  if (self%split_rates) then
-                    call accumulate_split()
-                  else
+                  call accumulate_split()
+                end do
+              else
+                do f=fs, fe
+                  associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                    phi = 0
+                    do ih=1, line%io
+                      a2 = a + idf*line%da(ih)
+                      vpr2 = vpr + line%dq(ih)
+                      vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
+                      phi = phi + vgt*line%wt(ih)
+                    end do
+                    vvv = phi * wmunu(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
-                  endif
-                end associate
-              end do
+                  end associate
+                end do
+              endif
             else
-              do f=fs, fe
-                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+              if (split_rates) then
+                do f=fs, fe
                   phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                   vvv = phi * wmunu(f)
-                  if (self%split_rates) then
-                    call accumulate_split()
-                  else
+                  call accumulate_split()
+                end do
+              else
+                do f=fs, fe
+                  associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                    phi = qlg_bot_profile(a, line%q(f), vpr, idf)
+                    vvv = phi * wmunu(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
-                  endif
-                end associate
-              end do
+                  end associate
+                end do
+              endif
             endif
 
             g_ij = sum_I
             g_ji = sum_I + sum_A
-            if (preconditioning .and. .not. self%split_rates) then
+            if (preconditioning .and. .not. split_rates) then
               g_ij = g_ij - sum_P * eta_coef
               g_ji = g_ji - sum_P * eta_coef * g_ratio
             endif
@@ -2644,7 +2666,7 @@ contains
       real(4) :: eta_t, chi_t, up, spont
       eta_t = phi*eta_coef*self%beta(f,x,y,z)
       chi_t = phi*abs_coef - eta_t
-      call self%split_rate_terms(f, x, y, z, self%split_offset(iatom)+i, eta_t, chi_t, &
+      call split_rate_terms(self, f, x, y, z, self%split_offset(iatom)+i, eta_t, chi_t, &
         up, spont)
       sum_I = sum_I + vvv*up
       sum_A = sum_A + vvv*spont
@@ -3019,41 +3041,53 @@ contains
   !===============================================================================
   SUBROUTINE work_to_transfer_units (self)
     class(rt_patch_t) :: self
-    logical :: do_scat
+    logical :: do_scat, split_rates
     integer, save :: itimer=0
     integer :: x, y, z, f, i
-    real(4) :: xhat, ehat, beta, eta, chi, floor
+    real(4) :: xhat, eta, chi, floor
+    real(4), allocatable :: chiv(:)
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%work_to_transfer_units', itimer=itimer)
+    allocate(chiv(self%fs:self%fe))
     do_scat = self%do_line_scat
+    split_rates = self%split_rates
     do z=1, self%nz
       do y=1, self%ny
         do x=1, self%nx
-          do f=self%fs, self%fe
-            xhat = self%work(f,x,y,z,1)
-            ehat = self%work(f,x,y,z,2)
-            beta = self%beta(f,x,y,z)
-            eta  = ehat * beta
-            ! Take exactly the total the split tracking holds, so that removing
-            ! one transition's contribution reproduces the solver's local term.
-            if (self%split_rates) &
+          ! chi (to chiv) and eta (to the ehat slot) come first, one f-loop per
+          ! rate formulation, so that neither carries the other's branch; the
+          ! maser floor and Snu = eta/chi follow in a loop of their own.
+          if (split_rates) then
+            do f=self%fs, self%fe
+              ! Take exactly the total the split tracking holds, so that removing
+              ! one transition's contribution reproduces the solver's local term.
               eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
-            chi  = xhat - eta
-            if (do_scat) then
-              ! The redirected line-scattering source is not a model-atom line
-              ! either, so it joins contribution 0.  Adding it through the same
-              ! tracking keeps eta equal to the tracked total.  Index 0 then
-              ! labels two entries, which is harmless: only line indices are ever
-              ! asked for, and for those the answer is the total less that line.
-              if (self%split_rates) then
+              chiv(f) = self%work(f,x,y,z,1) - eta
+              if (do_scat) then
+                ! The redirected line-scattering source is not a model-atom line
+                ! either, so it joins contribution 0.  Adding it through the same
+                ! tracking keeps eta equal to the tracked total.  Index 0 then
+                ! labels two entries, which is harmless: only line indices are ever
+                ! asked for, and for those the answer is the total less that line.
                 call add_largest(self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z), 0, &
                   self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
                   self%split_id(f,x,y,z))
                 eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
-              else
-                eta = eta + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
               endif
-            endif
+              self%work(f,x,y,z,2) = eta
+            end do
+          else
+            do f=self%fs, self%fe
+              eta = self%work(f,x,y,z,2) * self%beta(f,x,y,z)
+              chiv(f) = self%work(f,x,y,z,1) - eta
+              if (do_scat) eta = eta + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
+              self%work(f,x,y,z,2) = eta
+            end do
+          endif
+          do f=self%fs, self%fe
+            xhat = self%work(f,x,y,z,1)
+            eta  = self%work(f,x,y,z,2)
+            chi  = chiv(f)
             ! Each line adds phi*Rij*(bi - bj*beta) to chi, which goes negative for
             ! an inverted population.  chi may then pass through zero, and eta/chi
             ! diverges.  Keep the sign (the inversion is real) but hold |chi| away
