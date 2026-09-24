@@ -246,7 +246,6 @@ MODULE m3d_patch_mod
     character(len=6), public, save :: initial_Jnu='Planck'
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
-    logical, public, save :: overrelax=.false.
     logical, public, save :: save_cntrbf=.false., depression_cntrbf=.true.
     logical, public, save :: save_Inu=.false., save_chi=.false.
     logical, public, save :: save_Snu=.false., save_Jnu=.false.
@@ -280,7 +279,7 @@ MODULE m3d_patch_mod
 
     namelist /nlte_params/ preconditioning, rate_formulation, &
     scattering_preconditioning, &
-    scat_op_max, decouple_continuum, overrelax, &
+    scat_op_max, decouple_continuum, &
     flux_convergence, initial_Jnu, fixed_Jnu, &
     ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
     ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, ng_cond_min, &
@@ -702,7 +701,7 @@ MODULE m3d_patch_mod
     else
       call print_execution_history(self, 'END')
     endif
-    if (self%verbose > 0) then
+    if (self%verbose > -1) then
       if (self%print_update_info) then
         call self%print_post_update_info()
       elseif (self%verbose > 2) then

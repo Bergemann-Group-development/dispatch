@@ -748,7 +748,7 @@ MODULE atom_mod
     real(4) :: prev
     logical :: first_time=.true.
     !---------------------------------------------------------------------------------
-    if (.not. first_time) return
+    if (.not. first_time .or. self%verbose==0) return
     j1 = minval(self%ion)
     j2 = maxval(self%ion)
     allocate(xion(j1:j2))
@@ -1217,12 +1217,12 @@ MODULE atom_mod
 
           select case(trim(key))
           case ('CE', 'CI')
-            if (self%ecol(tri)) then
+            if (self%ecol(tri) .and. self%verbose > 0) then
               print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
             endif
             self%ecol(tri) = .true.
           case ('CH', 'CHI')
-            if (self%hcol(tri)) then
+            if (self%hcol(tri) .and. self%verbose > 0) then
               print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
             endif
             self%hcol(tri) = .true.
@@ -1765,12 +1765,12 @@ MODULE atom_mod
 
         select case(trim(key))
         case ('CE', 'CI')
-          if (self%ecol(tri)) then
+          if (self%ecol(tri) .and. self%verbose > 0) then
             print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
           endif
           self%ecol(tri) = .true.
         case ('CH', 'CHI')
-          if (self%hcol(tri)) then
+          if (self%hcol(tri) .and. self%verbose > 0) then
             print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
           endif
           self%hcol(tri) = .true.

@@ -23,7 +23,7 @@ MODULE nlte_patch_mod
   USE composition_mod, only: composition_type, departure_pointer_t, read_departures
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
-    decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
+    decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks, &
@@ -185,6 +185,8 @@ contains
 
       do i=1, natom
         associate(atom_file=>atom_file(i), atom=>atoms(i))
+          atom%name = 'input'
+          atom%verbose = self%verbose
           j = rindex(atom_file, '/')+1
           pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
           print '(A, A)', 'Reading atom file: ', trim(atom_file)
@@ -195,8 +197,6 @@ contains
           else
             call atom%read_classic(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
           endif
-          atom%name = 'input'
-          atom%verbose = self%verbose
 
           call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
           if (associated(element)) then
@@ -493,7 +493,7 @@ contains
           ! It lags by an iteration, which is immaterial for a coarse "is there
           ! anything left to gain" test.
           call atom%ng_acceleration(self%iter, self%global, convlim, ng_emax, ng_epos)
-          if (ng_emax /= 0) then
+          if (ng_emax /= 0 .and. self%verbose > 0) then
             ng_epos = ng_epos + [0,0,0,self%zs-1]
             print '(A, ES14.7, 4(I6))', 'NG acceleration ', ng_emax, ng_epos
           endif
@@ -937,44 +937,43 @@ contains
     character(len=64) :: text
     integer :: i, flux_pos
     real(8) :: global
+    logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------
-    if (self%iter == 0) then
-      write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
-    elseif (converged) then
-      write(text,'(A)') 'Converged!'
-    else
-      write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
-    endif
-    call io%header(text)
-    if (self%update_skipped) then
-      call self%print_to_stdout(text='update skipped')
-    elseif (self%m3d_patch_t%check_in_bounds()) then
-      call self%print_to_stdout(arr=memcheck(1:4))
-    else
-      call self%print_to_stdout()
+    if (self%verbose > 1) then
+      if (self%iter == 0) then
+        write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
+      elseif (converged) then
+        write(text,'(A)') 'Converged!'
+      else
+        write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
+      endif
+      call io%header(text)
+      if (self%update_skipped) then
+        call self%print_to_stdout(text='update skipped')
+      elseif (self%m3d_patch_t%check_in_bounds()) then
+        call self%print_to_stdout(arr=memcheck(1:4))
+      else
+        call self%print_to_stdout()
+      endif
     endif
     if (associated(self%atoms)) then
-      write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
-        '  local =', self%local,  ', global =', self%global, &
-        ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
-      ! The damping weight in force, next to the two error ratios it has to
-      ! control: r1 = global/prev_global is this step's amplification, r2 the
-      ! previous one.  A mode that alternates sign shows up as r1 < 0.
-      if (overrelax) then
-        write(stdout,'(A, F8.4, A, ES12.4, A, ES12.4)') &
-          '  omega =', sor_w, ', ratio =', &
-          self%global / merge(self%prev_global, 1d0, self%prev_global /= 0d0), &
-          ', prev ratio =', &
-          self%prev_global / merge(self%prev_prev_global, 1d0, self%prev_prev_global /= 0d0)
-      endif
-      flux_pos = global_flux_pos%update(+0)
-      if (flux_pos >= 0) then
-        write(stdout,'(A, ES12.4, A, I4, A, F10.2, A)') &
-          '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
-          ', lambda =', global_flux_lambda%update(0.d0), ' AA'
-      endif
-
-      if (self%verbose > 1) then
+      if (self%verbose == 0) then
+        if (first_time) then
+          first_time = .false.
+          write(stdout, '(A8, A10, A5, A14)') 'iter', 'global', 'lvl', 'pos'
+        endif
+        write(stdout, '(I4, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
+          self%iter, self%maxiter, abs(self%global*100), elvl, epos
+      else
+        write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
+          '  local =', self%local,  ', global =', self%global, &
+          ', lvl =', elvl, ', pos=', epos, self%atoms(eatom)%id
+        flux_pos = global_flux_pos%update(+0)
+        if (flux_pos >= 0) then
+          write(stdout,'(A, ES12.4, A, I4, A, F10.2, A)') &
+            '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
+            ', lambda =', global_flux_lambda%update(0.d0), ' AA'
+        endif
         write(stdout,'(1X, A80)') &
           '................................................................................'
       endif
