@@ -229,21 +229,6 @@ MODULE m3d_patch_mod
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true.
     character, public, save :: amr='P'
-    !---------------------------------------------------------------------------
-    ! Optionally drop the outermost planes of a 3D snapshot before the AMR mesh
-    ! is laid out.  The horizontal spread of the electron pressure grows very
-    ! fast with height, and in the topmost planes a sizeable fraction of the
-    ! columns falls far below the plane's own mean -- those cells reach electron
-    ! densities two orders of magnitude below anything a 1D model contains, and
-    ! the statistical equilibrium there is radiatively controlled with almost no
-    ! collisional damping.  prune_top removes every plane above the highest one
-    ! whose cells ALL exceed min_k <ln Pe>(k), i.e. the topmost plane's mean;
-    ! prune_tol is the fraction of cells per plane that may fall below it (0 =
-    ! strict).  The mesh keeps its full patch count, so the only cost is a
-    ! shorter -- and correspondingly slightly better resolved -- z range.
-    !---------------------------------------------------------------------------
-    logical, public, save :: prune_top=.false.
-    real, public, save :: prune_tol=0.0
     character(len=6), public, save :: initial_Jnu='Planck'
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.

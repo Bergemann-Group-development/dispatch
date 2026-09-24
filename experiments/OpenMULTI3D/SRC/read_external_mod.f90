@@ -28,7 +28,7 @@ MODULE read_external_mod
   USE m3d_patch_mod, only: m3d_patch_t, atom_update_counter, &
     global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
-    flux_conv_signal, flux_final_counter, prune_top, prune_tol
+    flux_conv_signal, flux_final_counter
   USE rt_params_mod, only: rt_iter, rt_out
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
@@ -80,8 +80,7 @@ contains
     character(len=512) :: atmos_root=''
     namelist /atmos_params/ atmos_root, atmos_file, dims, verbose, patches_per_mpi, FeH, &
       save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, pchip_interpolation, &
-      log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures, &
-      prune_top, prune_tol
+      log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures
     namelist /console_params/ level
     !-----------------------------------------------------------------------------
     if (associated(task_list)) return
@@ -213,7 +212,6 @@ contains
 
     if (atmos_format /= 'save') then
       call ia%thick2thin()
-      call ia%prune_top_planes()
       call ia%scale_box(box=self%size, scale=scaling%l)
 
       if (one_dimensional) then
