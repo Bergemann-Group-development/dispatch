@@ -37,11 +37,12 @@ MODULE read_external_mod
   USE atmos_reader_mod, only: atmos_format_from_name
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
+  USE console_mod
   implicit none
 
   type, public:: read_external_t
     class(task_list_t), pointer:: task_list
-    integer :: dims(3)=[1,1,1], n(3), verbose
+    integer :: dims(3)=[1,1,1], n(3)
     real(8) :: ds(3), size(3)
   contains
     procedure:: init
@@ -72,7 +73,7 @@ contains
     integer :: lunit, iostat, k, ip
     integer :: patches_per_mpi=1
     integer :: dims=1, nx=-1, ny=-1, nz=-1, snap=0
-    integer :: verbose=0
+    integer :: verbose=console_inherit, level=1
     logical :: use_abnd=.false., read_departures_local=.false.
     character(len=512) :: command
     character(len=512) :: save_file
@@ -81,6 +82,7 @@ contains
       save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, pchip_interpolation, &
       log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures, &
       prune_top, prune_tol
+    namelist /console_params/ level
     !-----------------------------------------------------------------------------
     if (associated(task_list)) return
     call trace%begin('read_external_t%init')
@@ -91,6 +93,15 @@ contains
     ! The first thread reads the namelist parameters and saves them
     !-----------------------------------------------------------------------------
     call io%lock%set
+    rewind (io%input)
+    read (io%input, nml=console_params, iostat=iostat)
+    if (iostat > 0) then
+      rewind (io%input)
+      read (io%input, console_params)
+    end if
+    call io%namelist_warning ('console_params', iostat)
+    call console_set_level (level)
+    call console_set_master (mpi%master)
     rewind (io%input)
     read (io%input, nml=atmos_params, iostat=iostat)
     if (iostat > 0) then
@@ -119,7 +130,7 @@ contains
 
     if (patches_per_mpi > 1) then
       if (dims > 1) then
-        print *, 'Cannot give PATCHES_PER_MPI if DIMS is also specified in ATMOS_PARAMS. Stopping...'
+        call console_error ('PATCHES_PER_MPI and DIMS cannot both be given in ATMOS_PARAMS')
         stop
       else
         self%dims(3) = mpi%size * patches_per_mpi
@@ -133,11 +144,11 @@ contains
     endif
 
     if (mpi%size > self%dims(3)) then
-      print *, 'More mpi ranks requested than spatial atmosphere splits. Stopping...'
+      call console_error ('more MPI ranks requested than spatial atmosphere splits')
       stop
     endif
 
-    self%verbose = verbose
+    call console_set_level (verbose, ch_atmos)
     call io%lock%unset
 
     atmos_format = lowercase(atmos_format)
@@ -145,7 +156,7 @@ contains
     if (trim(atmos_format)=='unknown') then
       atmos_format = atmos_format_from_name(atmos_file)
       if (atmos_format == '') then
-        write(stdout, *) 'Could not determine atmos_format from atmos_file. Please specify atmos_format in the input file. Stopping...'
+        call console_error ('cannot determine atmos_format from atmos_file; set atmos_format in ATMOS_PARAMS')
         stop
       endif
     endif
@@ -161,10 +172,12 @@ contains
       read_departures = read_departures_local
       atmos_file = save_file
       atmos_format = 'save'
-      write (stdout,*) 'Reading saved atmosphere from ', trim(atmos_file)
+      if (console_on(ch_atmos, 1)) &
+        write (console_unit,'(2a)') 'Reading saved atmosphere from ', trim(atmos_file)
       call self%read_saved_snapshot(atmos_file, dims)
     else
-      write (stdout,*) 'Reading ', trim(atmos_format), ' atmosphere from ', trim(atmos_file)
+      if (console_on(ch_atmos, 1)) &
+        write (console_unit,'(4a)') 'Reading ', trim(atmos_format), ' atmosphere from ', trim(atmos_file)
       read_departures = .false.
       select case (atmos_format)
        case('stagger')
@@ -185,9 +198,9 @@ contains
        case ('siu_bin')
         call read_siu_bin(atmos_file, vmic)
        case default
-        write(stdout, *) 'unknown atmos_format ', trim(atmos_format), &
+        call console_error ('unknown atmos_format '//trim(atmos_format)// &
           ". Options are: 'Stagger', 'Co5bold', 'Multi', &
-        &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'."
+        &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
         stop
       end select
       if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
@@ -287,18 +300,18 @@ contains
         close(lunit)
       endif
 
-      if (verbose > 0) then
-        if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
-        write(stdout,'(I4, I6,A3,I4,4X,3I4, 2X, F7.4, E14.4)') k+1, patch%zs+1, ' - ', patch%ze, &
+      if (console_on(ch_atmos, 2)) then
+        if (k==0) write(console_unit,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
+        write(console_unit,'(I4, I6,A3,I4,4X,3I4, 2X, F7.4, E14.4)') k+1, patch%zs+1, ' - ', patch%ze, &
           patch%n, (patch%position(3)-patch%origin(3))/patch%box(3), patch%ds(3)
       endif
     end do
 
     nz_total = patch%ze
 
-    if (verbose > 0) then
-      write (stdout, '(A, 3(F10.4))') 'box = ', patch%box
-      write (stdout,*) ip, 'tasks generated'
+    if (console_on(ch_atmos, 2)) then
+      write (console_unit,'(A, 3(F10.4))') 'box = ', patch%box
+      write (console_unit,'(I0,A)') ip, ' tasks generated'
     endif
 
     io%end_time = (rt_iter%maxiter + rt_out%maxiter + 1) * patch%dtime
@@ -308,29 +321,25 @@ contains
     !-----------------------------------------------------------------------------
     ! Generate nbor lists and set status bits for all tasks
     !-----------------------------------------------------------------------------
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: init_levels'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: init_levels'
     call task_list%init_levels()
     shared%levelroot = shared%levelmin
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: init_ids'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: init_ids'
     call init_ids(task_list)
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: init_all_nbors'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: init_all_nbors'
     call init_all_nbors(task_list)
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: remove_external'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: remove_external'
     call remove_external(task_list)
-    !if (verbose > 1) then
-    !  write(stdout,*) 'read_external_t%init: info'
-    !  call task_list%info
-    !endif
     !-----------------------------------------------------------------------------
     ! This counts are not fully correct until the patch meshes have been allocated
     !-----------------------------------------------------------------------------
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: count status'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: count status'
     call self%task_list%count_status
     !-----------------------------------------------------------------------------
     ! The I/O conunters must be set before initializing patches
     !-----------------------------------------------------------------------------
     call self%task_list%set_io_counts
-    if (verbose > 0) write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
+    if (console_on(ch_atmos, 2)) write (console_unit,'(a,i8)') 'number of tasks in task list:', self%task_list%n
     io%nwrite = product(self%dims)
     write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
 
@@ -360,12 +369,12 @@ contains
     !-----------------------------------------------------------------------------
     call self%task_list%set_io_counts
     write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: print tasks'
     call self%task_list%print_tasks
     !call self%task_list%check_hash_table
     !call self%task_list%hash_table%stats
-    if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
-    flush (stdout)
+    if (console_on(ch_atmos, 3)) write(console_unit,'(a)') 'read_external_t%init: done'
+    flush (console_unit)
     !-----------------------------------------------------------------------------
     call trace%end()
   END SUBROUTINE init

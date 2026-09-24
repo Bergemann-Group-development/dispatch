@@ -107,6 +107,24 @@ defaults are documented in the Fortran sources under `SRC/` and in the presets i
 `tumult/presets/` (`base.nml`, `nlte.nml`, `departures.nml`), which the Python layer stacks
 under a user's settings.
 
+### How do I control how much `dispatch.x` prints?
+
+**Available.** `&console_params level=… /` sets the global level. The `verbose` key of
+`&atmos_params`, `&m3d_debug_params` or `&composition_params` overrides it for the
+atmosphere reader, the NLTE/RT patches or HOP respectively.
+
+| level | prints |
+|---|---|
+| -1 | errors only |
+| 0 | warnings, the NLTE iteration table, the final summary |
+| 1 (default) | setup summaries: files read, abundance changes, line counts |
+| 2 | per-patch and per-task diagnostics |
+| 3 | trace output |
+
+Errors go to stderr; everything else goes to stdout, from the master MPI rank only.
+The DISPATCH framework's own output (`&io_params`, `&timer_params`, `&task_params`) is
+controlled separately.
+
 ### How do I read and plot the result?
 
 **Available.** Use `tumult.read` and `crop`; do not read the `save/*.bin` files by hand.

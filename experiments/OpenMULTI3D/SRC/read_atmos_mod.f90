@@ -13,6 +13,7 @@ MODULE read_atmos_mod
   USE composition_mod, only: composition_type
   USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file
   USE units_mod, only: cgs
+  USE console_mod
   implicit none
   private
 
@@ -381,11 +382,11 @@ contains
 
     if (FeH < -99) then
       FeH = atmos%feh
-      write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
     endif
 
     if (vmic < 0) then
-      write(stdout, '(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', atmos%vmic(1,1,1)
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', atmos%vmic(1,1,1)
     else
       ia%vmic = vmic
     endif
@@ -403,12 +404,12 @@ contains
     call read_parsed(read_text_1d_file, atmos_file, atmos)
     if (atmos%has_feh .and. FeH < -99) then
       FeH = atmos%feh
-      write(stdout, '(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
     endif
 
     if (vmic >= 0) then
       ia%vmic = vmic
-      write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
     endif
 
     use_ne = use_ne .and. atmos%has_pe
@@ -426,7 +427,7 @@ contains
     call read_parsed(read_multi_1d_file, atmos_file, atmos)
     if (vmic >= 0) then
       ia%vmic = vmic
-      write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
     endif
 
     use_ne = .true.
@@ -455,7 +456,7 @@ contains
     !-----------------------------------------------------------------------------
     call reader(atmos_file, atmos, ierr, msg)
     if (ierr /= 0) then
-      write(stdout,*) 'Error: ', trim(msg)
+      call console_error (trim(msg))
       error stop 'atmosphere read failed'
     endif
     call ia%allocate(atmos%nx, atmos%ny, atmos%nz)
@@ -844,7 +845,7 @@ contains
     if (.not. prune_top) return
     if (self%nx*self%ny <= 1) return
     if (.not. use_ne) then
-      write(stdout,*) 'WARNING: prune_top needs use_ne=T; no planes removed'
+      call console_warn (ch_atmos, 'prune_top needs use_ne=T; no planes removed')
       return
     endif
     nz = self%nz - 2*self%gz
@@ -867,15 +868,17 @@ contains
     end do
 
     if (ktop < nz) then
-      write(stdout,'(A,I0,A,I0,A,F6.2,A)') &
-        ' prune_top: dropping ', nz-ktop, ' of ', nz, ' planes (', &
-        100.0*(nz-ktop)/nz, '% of the box height)'
-      write(stdout,'(A,ES10.3,A,ES10.3)') &
-        '            min ln Pe at the new top ', minval(lpe(:,:,ktop)), &
-        ' vs ', minval(lpe(:,:,nz))
+      if (console_on(ch_atmos, 1)) then
+        write(console_unit,'(A,I0,A,I0,A,F6.2,A)') &
+          'prune_top: dropping ', nz-ktop, ' of ', nz, ' planes (', &
+          100.0*(nz-ktop)/nz, '% of the box height)'
+        write(console_unit,'(A,ES10.3,A,ES10.3)') &
+          '           min ln Pe at the new top ', minval(lpe(:,:,ktop)), &
+          ' vs ', minval(lpe(:,:,nz))
+      end if
       self%nz = ktop + 2*self%gz
     else
-      write(stdout,*) 'prune_top: no planes removed'
+      if (console_on(ch_atmos, 1)) write(console_unit,'(a)') 'prune_top: no planes removed'
     endif
   END SUBROUTINE prune_top_planes
 
