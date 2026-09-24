@@ -513,7 +513,7 @@ SUBROUTINE execute (self)
   compute_gradients = (need_gradients .or. save_atmos) &
                       .and. pchip_interpolation .and. .not. make_eos
   if (need_gradients .and. .not. pchip_interpolation) &
-    stop "the 'hermite'/'hermite2' solvers require pchip_interpolation=.true."
+    error stop "the 'hermite'/'hermite2' solvers require pchip_interpolation=.true."
 
   if (self%iter == 0) then
     allocate(self%composition)
@@ -537,7 +537,7 @@ SUBROUTINE execute (self)
     if (atmos_format == 'save') then
       call self%load5('atmos', run_dir=atmos_file, alloc=atmos)
       if (size(atmos,4) < self%i_dpe_z) &
-        stop 'saved atmosphere predates the gradient slots -- regenerate it'
+        error stop 'saved atmosphere predates the gradient slots -- regenerate it'
     elseif (save_atmos) then
       allocate(atmos(n(1),n(2),n(3),self%i_dpe_z,self%nw))
     endif

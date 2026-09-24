@@ -782,7 +782,7 @@ contains
 
     select case (uppercase(amr))
     case ('P')
-      if (.not. use_ne) stop 'AMR based on pressure is not supported when use_ne is false'
+      if (.not. use_ne) error stop 'AMR based on pressure is not supported when use_ne is false'
       lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
     case ('T')
       lpe => self%ltemp(:,:,1+self%gz:nz+self%gz)

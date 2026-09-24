@@ -183,7 +183,7 @@ contains
 
      case default
       call console_error ('quadrature keyword "'// trim(quad_scheme) // '" not recognized')
-      stop
+      error stop
     end select
 
     if (mirror) then
@@ -303,7 +303,7 @@ contains
         0.212508417834, 0.251275603210, 0.271405240910/)
 
      case default
-      stop 'Error: ntheta is set too high. *ntheta<=5*'
+      error stop 'Error: ntheta is set too high. *ntheta<=5*'
     end select
 
     call nphi_copies(nphi, mu, wmu, vec, wts, Jnu_weights=Jnu_weights)
@@ -351,7 +351,7 @@ contains
       wmu = (/0.08566225, 0.18038079, 0.23395697, 0.23395697, 0.18038079, 0.08566225/)
 
      case default
-      stop 'Error: ntheta is set too high. *ntheta<=6*'
+      error stop 'Error: ntheta is set too high. *ntheta<=6*'
     end select
 
     call nphi_copies(nphi, mu, wmu, vec, wts, Jnu_weights=Jnu_weights)
@@ -890,7 +890,7 @@ contains
       wts = 1.
       return
     elseif (n < 3) then
-      stop 'less than 3 weights in simps_weights'
+      error stop 'less than 3 weights in simps_weights'
     endif
 
     allocate(h(n-1))

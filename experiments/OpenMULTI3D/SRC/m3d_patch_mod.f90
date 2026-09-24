@@ -1224,11 +1224,11 @@ MODULE m3d_patch_mod
         if (self%mem(i,j,k,v,t,w) /= self%mem(i,j,k,v,t,w)) then
           write(msg, '(A,A,3(I4),I5,I3,I3)') trim(self%m3d_patch_info()), '  NaN', i,j,k,v,t,w
           call console_error (msg)
-          stop
+          error stop
         elseif (self%mem(i,j,k,v,t,w) > inf4) then
           write(msg, '(A,A,3(I4),I5,I3,I3)') trim(self%m3d_patch_info()), '  Infinity', i,j,k,v,t,w
           call console_error (msg)
-          stop
+          error stop
         !elseif (self%unsigned(w) .and. self%mem(i,j,k,v,t,w) < 0) then
         !  write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  negative', i,j,k,v,t,w
         !  stop

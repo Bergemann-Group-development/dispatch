@@ -131,7 +131,7 @@ contains
     if (patches_per_mpi > 1) then
       if (dims > 1) then
         call console_error ('PATCHES_PER_MPI and DIMS cannot both be given in ATMOS_PARAMS')
-        stop
+        error stop
       else
         self%dims(3) = mpi%size * patches_per_mpi
       endif
@@ -145,7 +145,7 @@ contains
 
     if (mpi%size > self%dims(3)) then
       call console_error ('more MPI ranks requested than spatial atmosphere splits')
-      stop
+      error stop
     endif
 
     call console_set_level (verbose, ch_atmos)
@@ -157,7 +157,7 @@ contains
       atmos_format = atmos_format_from_name(atmos_file)
       if (atmos_format == '') then
         call console_error ('cannot determine atmos_format from atmos_file; set atmos_format in ATMOS_PARAMS')
-        stop
+        error stop
       endif
     endif
 
@@ -201,7 +201,7 @@ contains
         call console_error ('unknown atmos_format '//trim(atmos_format)// &
           ". Options are: 'Stagger', 'Co5bold', 'Multi', &
         &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
-        stop
+        error stop
       end select
       if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
     endif

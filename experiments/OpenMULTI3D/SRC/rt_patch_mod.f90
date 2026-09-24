@@ -1335,14 +1335,14 @@ contains
         ! that means ray-aligned (rotated) compositions -- the rotate_array
         ! shortcut above rotates only chi/Snu, not the thermodynamic state
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
-          stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
+          error stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
         call self%long_char_hermite(comp, vec, comp_up)
         case('hermite2')
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
-          stop "rt_output_params solver='hermite2' in 3D requires rotate_atmos=.true."
+          error stop "rt_output_params solver='hermite2' in 3D requires rotate_atmos=.true."
         call self%long_char_hermite2(comp, vec, comp_up)
         case default
-        stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
+        error stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
       end select
     else
       ! The iteration pass exists to build rates or the scattering ALI, and both
@@ -1355,7 +1355,7 @@ contains
           case('linear')
             call self%long_char_linear(vec)
           case default
-            stop 'rt_iteration_params solver: only "linear" builds Psi in 1D'
+            error stop 'rt_iteration_params solver: only "linear" builds Psi in 1D'
         end select
       else
         select case(rt_iter%solver)
@@ -1364,7 +1364,7 @@ contains
           case('hermite')
             call self%short_char_hermite(comp, vec)
           case default
-            stop 'rt_iteration_params solver: only "linear" and "hermite" build Psi in 3D'
+            error stop 'rt_iteration_params solver: only "linear" and "hermite" build Psi in 3D'
         end select
       endif
     endif

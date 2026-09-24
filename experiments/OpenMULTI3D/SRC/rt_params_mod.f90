@@ -184,14 +184,14 @@ CONTAINS
     case default
       call console_error ('quadrature keyword "'// trim(p%angle_quad) // '" not recognized for ' // &
         trim(merge('rt_output_params   ', 'rt_iteration_params', is_output)))
-      stop
+      error stop
     end select
   contains
     subroutine assert_output ()
       if (.not. is_output) then
         call console_error ('quadrature keyword "'// trim(p%angle_quad) // &
           '" is only available for rt_output_params')
-        stop
+        error stop
       end if
     end subroutine assert_output
   END SUBROUTINE setup_quadrature

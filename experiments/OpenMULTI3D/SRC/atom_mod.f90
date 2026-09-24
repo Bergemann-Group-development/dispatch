@@ -502,7 +502,7 @@ MODULE atom_mod
                 if (.not.ok) then
                   write(msg,'(a,3(1x,i0))') 'invalid lineq solution at x,y,z =', x, y, z
                   call console_error (msg)
-                  stop
+                  error stop
                 endif
               endif
               
@@ -563,7 +563,7 @@ MODULE atom_mod
                 if (.not.ok) then
                   write(msg,'(a,3(1x,i0))') 'invalid population correction vector at x,y,z =', x, y, z
                   call console_error (msg)
-                  stop
+                  error stop
                 endif
               endif
 
@@ -572,7 +572,7 @@ MODULE atom_mod
                 if (.not.ok) then
                   write(msg,'(a,3(1x,i0))') 'invalid departure coefficients at x,y,z =', x, y, z
                   call console_error (msg)
-                  stop
+                  error stop
                 endif
               endif
 
@@ -739,7 +739,7 @@ MODULE atom_mod
       if (.not. ok) then
         write(msg,'(a,3(1x,i0))') 'invalid rate matrix at x,y,z =', x, y, z
         call console_error (msg)
-        stop
+        error stop
       endif
     endif
   END SUBROUTINE setup_transition_matrix
@@ -1243,7 +1243,7 @@ MODULE atom_mod
       end do
     endif
     close(latom)
-    if (abort) stop 'abort in atom_mod%read_pandas'
+    if (abort) error stop 'abort in atom_mod%read_pandas'
     call trace%end(itimer)
   END SUBROUTINE read_pandas
 
@@ -1643,7 +1643,7 @@ MODULE atom_mod
       ! continue
     case default
       call console_error ('collision routine '//trim(self%crout)//' not supported')
-      stop
+      error stop
     end select
 
     if (console_on(ch_m3d, 1)) write(console_unit,'(a)') 'Reading collision data'
@@ -1659,7 +1659,7 @@ MODULE atom_mod
       call nextentry(latom)
       read(latom, '(a)', iostat=ios) key
       if (ios<0) then
-        stop 'read_collisions: keyword "END" not found in collision file'
+        error stop 'read_collisions: keyword "END" not found in collision file'
       endif
       key = trim(uppercase(adjustl(key)))
 
@@ -1711,7 +1711,7 @@ MODULE atom_mod
       read(latom,fmt='(a8)',iostat=ios) key
       if (ios<0) then
         call console_error ('read_collisions: keyword "END" not found in collision file')
-        stop
+        error stop
       endif
 
       key = trim(uppercase(adjustl(key)))
@@ -1730,7 +1730,7 @@ MODULE atom_mod
         call print_failed_line(latom, ios)
         self%tgrid(1:ntemp, itemp) = tgrid(1:ntemp)
         if (ntemp < 2) then
-            stop "read_collisions: ntemp < 2"
+            error stop "read_collisions: ntemp < 2"
         endif
 
       ! MB  5.04.2018 - added CH0 keyword
@@ -1741,7 +1741,7 @@ MODULE atom_mod
       case default
         if (.not.is_valid_process(key)) then
           call console_error ('read_collisions: unrecognized keyword '//trim(key))
-          stop
+          error stop
         endif
       end select
 
@@ -1810,7 +1810,7 @@ MODULE atom_mod
       end if
     end do
     close(latom)
-    if (abort) stop 'abort in atom_mod%read'
+    if (abort) error stop 'abort in atom_mod%read'
     call trace%end(itimer)
   END SUBROUTINE read_classic
 
@@ -2203,7 +2203,7 @@ MODULE atom_mod
     end do
     if (n == 0) then
       call console_error ('no wavelengths in line_grid_file '//trim(line_grid_file))
-      stop 'abort in atom_mod%read_line_grid'
+      error stop 'abort in atom_mod%read_line_grid'
     endif
     allocate(line_grid(n))
     rewind(lunit)

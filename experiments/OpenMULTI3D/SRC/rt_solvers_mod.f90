@@ -567,9 +567,9 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_hermite', itimer=itimer)
     if (.not. allocated(comp%dpe_dz)) &
-      stop 'long_char_hermite: composition gradients missing -- set_gradients was not called'
+      error stop 'long_char_hermite: composition gradients missing -- set_gradients was not called'
     if (self%nz < 2) &
-      stop 'long_char_hermite: needs nz >= 2'
+      error stop 'long_char_hermite: needs nz >= 2'
     ds = self%ds(3) * scaling%l
     dsup = ds / abs(vec(3))
     rdsup = 1./ dsup
@@ -1048,9 +1048,9 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_hermite2', itimer=itimer)
     if (.not. allocated(comp%dpe_dz)) &
-      stop 'long_char_hermite2: composition gradients missing -- set_gradients was not called'
+      error stop 'long_char_hermite2: composition gradients missing -- set_gradients was not called'
     if (self%nz < 2) &
-      stop 'long_char_hermite2: needs nz >= 2'
+      error stop 'long_char_hermite2: needs nz >= 2'
     ds = self%ds(3) * scaling%l
     dsup = ds / abs(vec(3))
     rdsup = 1./ dsup
@@ -1447,7 +1447,7 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%short_char_hermite', itimer=itimer)
     if (.not. (allocated(comp%dpe_dz) .and. allocated(comp%dpe_dx))) &
-      stop 'short_char_hermite: directional composition gradients missing -- set_gradients was not called'
+      error stop 'short_char_hermite: directional composition gradients missing -- set_gradients was not called'
     allocate(work_up(self%fs:self%fe,5))
     allocate(work_min(self%fs:self%fe,5))
     allocate(row_red(self%fs:self%fe, 5, self%nx, self%ny))
