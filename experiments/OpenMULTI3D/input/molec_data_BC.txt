@@ -1,5 +1,6 @@
 ! MOLECULE ID,  constant dissociation energy, number of terms in partition function,
-!               optional total nuclear spin weight of the partition function (default 1)
+!               optional total nuclear spin weight of the partition function (default 1),
+!               optional lowest temperature the polynomial is fitted over (default 1000)
 ! Dissociation energy, optional polynomial for vib-rot energies
 ! Dissociation constants, always 5 numbers
 ! Barklem & Collet (2016) partition function
@@ -10,8 +11,21 @@
 ! for H,H,O-16) to match the 3:1 ortho/para weights in its line list g column.
 ! get_dis divides it back out; the line-opacity path uses Q as tabulated.
 !
+! The 5th field is where the polynomial stops being a fit and starts being an
+! extrapolation. Below it irwin_partf continues Q as a power law through the
+! polynomial's values at that limit and 1.5x it, which is faithful for the atomic
+! and diatomic Irwin fits (all of which start at 1000 K) but not for a polyatomic,
+! whose Q curves so strongly that the power law undershoots by a factor of several
+! at 300 K. The polyatomic entries below are therefore fitted from 100 K up.
+!
 ! H2O is the BT2/Barber Q rather than a B&C one, because it is the only entry that
 ! matches the convention of the BT2 line list used for H2O opacity.
+!
+! CO2, CH4 and NH3 are fits to the partition function of their ExoMol line list
+! (UCL-4000, MM, CoYuTe), spliced above 4000/2000/1800 K -- where each list stops
+! being complete -- onto the Irwin polynomial they replace, times the nuclear spin
+! weight. The ExoMol degeneracies count nuclear spin states, so their line opacity
+! needs a Q that does too.
 !-----------------------------------------------------
 H2    0   6
 4.478        0.00975     -0.12427      0.60602     -1.4772     2.6757
@@ -53,10 +67,10 @@ O2    1   6
 5.116
 0 0 0 0 0
 -6.004294e+02 3.738430e+02 -9.243023e+01 1.142635e+01 -7.048883e-01 1.741080e-02
-NO    1   6
+NO    1   6   3
 6.497
 0 0 0 0 0
--8.639955e+02 5.434873e+02 -1.358107e+02 1.694477e+01 -1.053666e+00 2.615592e-02
+-8.628969e+02 5.434873e+02 -1.358107e+02 1.694477e+01 -1.053666e+00 2.615592e-02
 NH    1   6
 3.420
 0 0 0 0 0
@@ -105,15 +119,15 @@ AlH   1   6
 2.949
 0 0 0 0 0
 1.500907e+03 -9.441299e+02 2.375972e+02 -2.985264e+01 1.874054e+00 -4.697131e-02
-CO2   1   6
+CO2   1   8   1   100
 16.561
 0 0 0 0 0
--2.40560030D+02  1.67607692D+02 -4.51933052D+01  5.97099488D+00 -3.83714796D-01  9.71180362D-03
-CH4   1   7
+ 3.74518344D+02 -3.98083757D+02  1.78216266D+02 -4.31528841D+01  6.11090615D+00 -5.06408230D-01  2.28153556D-02 -4.32488251D-04
+CH4   1   8  16   100
 17.021
 0 0 0 0 0
--5.77530829D+02  2.83825550D+02 -3.68730795D+01 -2.99772793D+00  1.15291506D+00 -9.99118614D-02 2.91845845D-03
-NH3   1   7
+-4.37085228D+02  5.47713970D+02 -2.86860643D+02  8.16335473D+01 -1.35813529D+01  1.31933104D+00 -6.92409615D-02  1.51689535D-03
+NH3   1   8  24   100
 12.000
 0 0 0 0 0
-4.46907510D+02 -4.19611026D+02  1.57735545D+02 -3.04532710D+01  3.19877775D+00 -1.73352351D-01 3.79909440D-03
+-3.32759635D+02  3.94078376D+02 -1.95802661D+02  5.32419496D+01 -8.50338151D+00  7.95453353D-01 -4.02545246D-02  8.49928075D-04
