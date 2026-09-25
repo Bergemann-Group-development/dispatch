@@ -63,20 +63,18 @@ def convert_broadening(ion, gv, ga, gq):
     ``prepare_vanderwaals`` in ``HOP/linelist_mod.f90``. NaN asks Korg to apply its own
     approximation, which is what HOP does for the corresponding zero code.
 
-    Two codes do not map exactly. ``-20 < gv < 0`` is Turbospectrum's 'W' recipe, which
+    One code does not map exactly. ``-20 < gv < 0`` is Turbospectrum's 'W' recipe, which
     HOP makes temperature independent by dividing out the ``vbar2**0.3`` it applies
     later, while Korg scales it as T^0.3; the value returned matches HOP at 10,000 K and
-    drifts from it elsewhere. ``-10 <= gq < 0`` is read here as log10(gamma_stark) per
-    electron, without the ``1e-4/6`` factor ``prepare_stark`` applies and does not
-    explain. Both codes are rare: in a 200 A extract of `master_line.txt` they cover 1
-    and 3 of 6168 lines.
+    drifts from it elsewhere. It is rare: in a 200 A extract of `master_line.txt` it
+    covers 1 of 6168 lines.
     """
     is_mol = ion in molecule_dict
     awgt = get_particle_weight(ion if is_mol else ion.split()[0])
 
     if gq < -10.0:                       # recipe c4 SIU: gq is log10(C4)
         gamma_stark = BK * 10.0 ** (C19 + (2.0 / 3.0) * gq) * 1e4 ** (1.0 / 6.0)
-    elif gq < 0.0:                       # log10(gamma_stark) at 1e4 K; see docstring
+    elif gq < 0.0:                       # log10(gamma_stark) per electron at 1e4 K
         gamma_stark = 10.0 ** gq
     elif gq == 0.0:
         gamma_stark = float('nan')       # HOP uses its Cowley-like branch, Korg its own
