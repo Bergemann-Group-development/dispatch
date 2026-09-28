@@ -1,88 +1,52 @@
-"""Pin the standalone HOP library (libhop.so) through the tumult.hop wrapper.
+"""The standalone HOP library (libhop.so) through the tumult.hop wrapper.
 
-These are the gate for the FFI work: the ABI generation, the thicker C shim and the move
-of wavelength chunking from the wrapper into OpenMP inside hop_opacity must all leave
-these bit-identical.  ``test_chunking_is_neutral`` is the one that matters most for the
-threading step - it is the invariant the in-Fortran split has to keep.
+Needs ``HOP/standalone/build/libhop.so`` (``make hop_standalone``). Chunking is only
+neutral within one process: a spawned worker reads only the lines within dlam of its own
+chunk, so a far Lorentz wing reaching in from outside that window is missing (as in a
+Dispatch run). Hence nprocs=1 here.
 
-Note that chunking is only neutral *within one process*: a spawned worker reads only the
-lines within dlam of its own chunk, so a far Lorentz wing reaching in from outside that
-window is missing (exactly as in a dispatch run).  Hence nprocs=1 here.
+References ``tests/golden/hop_eos.npz`` and ``hop_opacity.npz``
+------------------------------------------------------------------
+Purpose: catch unintended changes to HOP's equation of state, continuum and line-list
+opacity on a 4 x 6 (T, rho) grid (3500-12000 K, 1e-10 to 1e-7 g/cm^3) over 5160-5170 AA
+(vacuum, R = 20000), vmic = 1 km/s. Densities are in 1/cm^3, opacities in 1/cm. There is
+no analytic answer for these states, so the reference records agreement with a reviewed
+result, not correctness.
+
+Generated at df4c20bf with gfortran 15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from
+(md5 prefix): input/TS_absdat.dat 5b921bc86ca0, input/abund/abund_magg22 abcd0926adda,
+input/isotopes_blp d63a83de4230, input/molec_data_BC.txt a4e2d3274cda,
+input/linelists/master_line.txt 2821ea404b92.
+
+Tolerance rtol = 1e-5. The references are exact on the generating build. A change of the
+optimisation flags alone (-O1 to -O3) moved line-opacity cells by float32 roundoff of at
+most 5e-6 relative, so a tighter bound would fail on a different build without any change
+in the physics. Changes to the physics or input data below 1e-5 go undetected.
+
+Regenerate with ``python -m tests.support.golden hop_eos hop_opacity`` (review the
+summary), then ``--write``, and give the reason in the commit message.
 """
 import numpy as np
 import pytest
 
-from cases import (HOP_DLAM, HOP_LIB, HOP_LINELIST, HOP_VMIC, hop_eos_cases, hop_grid,
-                   hop_opacity_cases, hop_wavelengths)
-from conftest import assert_matches_golden, load_golden
+from tests.native.hop_reference import (HOP_DLAM, HOP_LIB, HOP_LINELIST, HOP_VMIC,
+                                        hop_eos_reference, hop_grid, hop_opacity_reference,
+                                        hop_wavelengths)
+from tests.support.golden import assert_matches_golden, load_golden
 
 pytestmark = pytest.mark.skipif(
     not HOP_LIB.exists(),
-    reason="libhop.so not built - run 'make -C HOP/standalone -j8'")
+    reason="libhop.so not built - run 'make hop_standalone'")
+
+RTOL = 1e-5
 
 
-def test_eos_matches_golden():
-    assert_matches_golden(hop_eos_cases(), load_golden("hop_eos"))
+def test_eos_matches_reference():
+    assert_matches_golden(hop_eos_reference(), load_golden("hop_eos"), rtol=RTOL)
 
 
-def test_opacity_matches_golden():
-    """Continuum and line opacity, against the golden.
-
-    REGENERATED 2026-09-11 after the standalone build was aligned with Dispatch's
-    ``OPTS=hoppe`` profile (``-O3 -mcpu=apple-m1`` here) instead of its former ``-O1``.
-    Continuum opacity, continuum scattering and wavelengths remain bit-identical. The
-    compiler change moves 239 of 960 line-opacity cells and 376 line-scattering cells by
-    float32 roundoff: respectively 4.5e-13 / 4.8e-6 and 9.1e-13 / 5.0e-6 maximum
-    absolute / relative difference. This is a build-configuration change rather than a
-    change in the line physics.
-
-    REGENERATED 2026-09-10, because the previous golden described a stale
-    ``HOP/standalone/build/libhop.so`` rather than the committed source. The shipped
-    library predated the window line-selection commits (``facc5eb2`` "Keep only the lines
-    the windows actually need", ``e49148bb`` "Confine each output patch to its own
-    window's lines"), so the suite was green only as long as nobody rebuilt it; rebuilding
-    from committed source moves the line terms. Verified by rebuilding the library from an
-    untouched checkout of ``HOP/standalone/hop_c_api.f90``, which fails against the old
-    golden identically.
-
-    The selection is what moved, and only the line terms: chi_continuum, scat_continuum and
-    lam came back bit-identical, chi_linelist shifted by 1.9e-4 max / 2.7e-5 rms over
-    452 of 960 cells and scat_linelist by 3.0e-3 max / 2.2e-4 rms over 533. Both move
-    *up* in the large majority (392 of 452, 440 of 533) and the median moved cell shifts
-    3e-6, so this is a handful of marginal lines entering the set rather than a change to
-    any line's physics. The shift also sits where line opacity is comparable to the
-    continuum (median line/continuum 1.4 among the moved cells against 1.0 among the
-    unmoved), which is where a selection change belongs -- a line that was dropped and is
-    now kept matters near its own core, not in a far wing.
-
-    Previously REGENERATED 2026-09-09, for the radiative-damping column of
-    ``input/linelists/master_line.txt``. That file used to be written in a convention
-    where small column-5 values were multiplied by 1e8 at run time; the code no longer
-    does that (``init_linelist`` reads the column straight into ``lin%ga_in``,
-    composition_mod.f90:1119,1129), so the file was rewritten to carry the real s^-1
-    values -- 1.160e+00 became 1.160e+08 and so on. The old pairing gave those lines a
-    radiative damping ~1e8 too small, i.e. cores and wings that were far too narrow.
-
-    Only the line entries moved: chi_continuum and scat_continuum came back
-    bit-identical. chi_linelist shifted by 91% max / 15% rms and scat_linelist by 96%
-    max / 25% rms, but the distribution is very skewed -- the median cell moves ~1%,
-    and 133 of 960 move by more than 10%. Those are the lines whose column 5 actually
-    changed; the shift is concentrated where the line opacity is comparable to the
-    continuum (median line/continuum ~1 among them), not in the far wings, which is
-    where a damping-constant change belongs. Line opacity goes *up* almost everywhere
-    (97% of wing cells), as broader Lorentzian wings should.
-
-    Previously REGENERATED 2026-09-04, when QLG-bot replaced Traving/Eriksson's
-    voigt_function2 as the one Voigt kernel (HOP/qlg_mod.f90; the rivals it was chosen
-    over are on the `voigt-kernel-zoo` branch): chi_linelist moved 2.9% max / 1e-3 rms
-    and scat_linelist 18% max / 6e-3 rms, both in the far wings where line opacity is
-    ~1e-13, with the continuum bit-identical. That shift was voigt_function2's error
-    being removed, not introduced -- scored against the fp64 Humlicek-Weideman
-    reference over a in [1e-4,10] x v in [1e-2,1e3], voigt_function2 reaches 3.0e-1
-    relative and is worse than 1% at 722 of 24k sampled points, while qlg_bot_phi peaks
-    at 6.1e-3 and is never worse than 1%.
-    """
-    assert_matches_golden(hop_opacity_cases(), load_golden("hop_opacity"))
+def test_opacity_matches_reference():
+    assert_matches_golden(hop_opacity_reference(), load_golden("hop_opacity"), rtol=RTOL)
 
 
 def test_chunking_is_exact_without_a_linelist():
@@ -175,8 +139,8 @@ def test_linelist_rebuild_is_transparent():
 def test_reopen_after_close():
     """HOP keeps process-global state; closing must leave it reusable.
 
-    gen_goldens.py and the two golden tests above all open an instance in the same
-    process, so this is a precondition for the rest of the module.
+    The reference generator and the two reference tests above all open an instance in
+    the same process, so this is a precondition for the rest of the module.
     """
     from tumult.hop import HopEOS
 

@@ -78,3 +78,7 @@ analytic solution exists, a small approved reference may be committed, and it ca
 
 Regenerating a reference from the current implementation is not validation. A change to a
 reference or an assertion needs a justification beyond making the test pass.
+
+References live in `golden/` and are written only by
+`python -m tests.support.golden <name>`, which prints a per-quantity summary of what would
+change; add `--write` once the summary has been reviewed.

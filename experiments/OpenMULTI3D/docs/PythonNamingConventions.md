@@ -76,8 +76,5 @@ several editor panes side by side.
 
 - `utils.py` and `auxfuncs.py` are grab bags, and `auxfuncs.py` exists mainly to keep old
   wildcard imports resolving. Neither is a pattern to extend.
-- The golden dict keys in `tests/cases.py` keep the pre-rename `_mAA` spelling, because
-  they name arrays already stored in the `.npz` files. Renaming a key would silently miss
-  its array rather than fail.
 - `tumult.tumult` and `tumult.grid` remain as aliases of `Run` and `RunGrid` for code
   outside this repository.

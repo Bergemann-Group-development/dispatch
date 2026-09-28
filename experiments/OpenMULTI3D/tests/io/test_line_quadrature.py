@@ -1,14 +1,14 @@
 """The parts of tumult.line_quadrature that need no HOP: the thinning invariant and the
 atom copy, whose contract is that only the ``nq qmax q0`` columns change."""
+from pathlib import Path
+
 import numpy as np
 
 from tumult.line_quadrature import (read_classic_atom, thin_linear, write_atom_copy,
                                     write_atom_linelist)
 from tumult.linelist import LineList
 
-from conftest import ROOT
-
-ATOM = ROOT / "input" / "atoms" / "atom.ba06"
+ATOM = Path(__file__).resolve().parents[2] / "input" / "atoms" / "atom.ba06"
 
 
 def test_thin_linear_recovers_within_tolerance():

@@ -14,8 +14,7 @@ import subprocess
 
 import pytest
 
-from cases import HOP_LIB
-from conftest import ROOT
+from tests.native.hop_reference import HOP_LIB, PROJECT_DIR as ROOT
 
 STANDALONE = ROOT / "HOP" / "standalone"
 HEADER = STANDALONE / "libhop.h"
