@@ -18,7 +18,6 @@ MODULE nlte_patch_mod
   USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
-  USE bbtrans_mod, only: bbtrans_type
   USE line_types_mod, only: linelist_type
   USE composition_mod, only: composition_type, departure_pointer_t, read_departures
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
@@ -1054,8 +1053,8 @@ contains
   !===============================================================================
   ! Prevent a model atom's bound-bound transitions from being counted a second time
   ! through the bulk line list.  exclude_from_line_list (the default) drops the atom's
-  ! species from the line list wholesale via in_linelist, which both the SoA metal
-  ! kernel and the AoS hydrogen path honour.  Otherwise only the records that the atom
+  ! species from the line list wholesale via in_linelist, which both the metal and
+  ! the hydrogen kernel honour.  Otherwise only the records that the atom
   ! reproduces are deactivated, so line-list lines the atom does not carry survive; the
   ! match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
   ! output transitions in pre_init_atom) so both sides carry the same conventions --

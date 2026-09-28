@@ -35,7 +35,6 @@ MODULE m3d_patch_mod
     USE rt_params_mod, only: rt_iter, rt_out, read_rt_params, echo_rt_params, &
                              setup_quadrature, ray_offset, pivot_z
     USE m3d_debug_mod
-    USE bbtrans_mod, only: bbtrans_type
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type, particle_type
@@ -162,6 +161,7 @@ MODULE m3d_patch_mod
       procedure :: sort_nbors
       procedure :: rotate_cube4
       procedure :: print_linelist
+      procedure :: collect_line_diagnostics
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
@@ -1100,40 +1100,81 @@ MODULE m3d_patch_mod
   END SUBROUTINE allocate_mem
 
   !===============================================================================
-  ! Write linelist_out.txt in the same block format as the input linelists, via the
-  ! writers in linelist_mod (print_ll_particle / print_ll_atom). This driver only
-  ! walks the composition and the model atoms -- it stays here because linelist_mod
-  ! sits below composition_mod/atom_mod in the module hierarchy and cannot see
-  ! their types.
+  ! Merge the line-list diagnostics of this patch's composition copies (unrotated,
+  ! rotated and the sampled table's) into the global composition they were copied
+  ! from, which print_linelist exports. Called by every rt_patch after its final pass,
+  ! so every line strength and reach is the maximum over all patches merged so far.
   !-------------------------------------------------------------------------------
-  SUBROUTINE print_linelist (self, comp, n_nu)
+  SUBROUTINE collect_line_diagnostics (self)
     class(m3d_patch_t), target :: self
-    class(composition_type), target :: comp
+    integer :: i
+    !-----------------------------------------------------------------------------
+    !$omp critical (line_diagnostics)
+    associate (p => self%m3d_parent)
+      if (associated(p%composition)) call merge_copy(p%composition)
+      if (associated(p%rotated_composition)) then
+        do i=1, size(p%rotated_composition)
+          call merge_copy(p%rotated_composition(i))
+        end do
+      endif
+      if (associated(p%tab_comp)) call merge_copy(p%tab_comp)
+    end associate
+    !$omp end critical (line_diagnostics)
+  contains
+    subroutine merge_copy (copy)
+      type(composition_type), target, intent(in) :: copy
+      type(composition_type), pointer :: cp
+      !---------------------------------------------------------------------------
+      cp => copy
+      if (associated(cp, composition)) return
+      call composition%merge_line_diagnostics(copy)
+    end subroutine merge_copy
+  END SUBROUTINE collect_line_diagnostics
+
+  !===============================================================================
+  ! Write linelist_out.txt in the same block format as the input linelists, via the
+  ! writers in linelist_mod (print_ll_particle / print_ll_atom), from the global
+  ! composition that collect_line_diagnostics merges the patch copies into. Every
+  ! rt_patch collects before an end-boundary patch downstream of it writes, so the
+  ! last file written covers them all. This driver only walks the composition and the
+  ! model atoms -- it stays here because linelist_mod sits below composition_mod/
+  ! atom_mod in the module hierarchy and cannot see their types.
+  !-------------------------------------------------------------------------------
+  SUBROUTINE print_linelist (self, n_nu)
+    class(m3d_patch_t), target :: self
     integer, intent(in) :: n_nu
+    type(composition_type), pointer :: comp
     class(element_type), pointer :: element
     integer :: lunit, i, j, called=0
     character(len=256) :: linelist_out_file
     ! ----------------------------------------------------------------------------
+    !$omp critical (line_diagnostics)
     called = called + 1
-    if (called < n_nu) return ! only print once per patch by the last task to update
-
-    linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
-    open(newunit=lunit, file=linelist_out_file, form='formatted')
-
-    do i=1, comp%nel
-      element => comp%elements(i)
-      if (.not. any(element%ions%in_linelist)) cycle
-      do j=lbound(element%ions,1), ubound(element%ions,1)
-        call print_particle(element%ions(j))
-      end do
-    end do
-    do i=1, comp%nmolec
-      call print_particle(comp%molecules(i))
-    end do
-    call print_atoms()
-    close(lunit)
+    if (called >= n_nu) call write_file() ! only print once per patch by the last task to update
+    !$omp end critical (line_diagnostics)
 
   contains
+    !-----------------------------------------------------------------------------
+    subroutine write_file
+      !---------------------------------------------------------------------------
+      comp => composition
+      linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
+      open(newunit=lunit, file=linelist_out_file, form='formatted')
+
+      do i=1, comp%nel
+        element => comp%elements(i)
+        if (.not. any(element%ions%in_linelist)) cycle
+        do j=lbound(element%ions,1), ubound(element%ions,1)
+          call print_particle(element%ions(j))
+        end do
+      end do
+      do i=1, comp%nmolec
+        call print_particle(comp%molecules(i))
+      end do
+      call print_atoms()
+      close(lunit)
+    end subroutine write_file
+
     !-----------------------------------------------------------------------------
     subroutine print_particle (ptc)
       class(particle_type), target :: ptc
@@ -1145,11 +1186,7 @@ MODULE m3d_patch_mod
       if (associated(ptc%isotope)) niso = size(ptc%isotope)
       allocate(iso_values(niso))
       iso_values = [(ptc%isotope(k)%iso, k=1, niso)]
-      if (allocated(ptc%line)) then
-        call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll, ptc%line(1:ptc%nline))
-      else
-        call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll)
-      endif
+      call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll)
     end subroutine print_particle
 
     !-----------------------------------------------------------------------------

@@ -42,7 +42,7 @@ MODULE rt_patch_mod
   USE molecule_mod, only: molec_type
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
-  USE hprofl_mod, only: hprofile
+  USE hprofl_mod, only: hprofile, hline_t, hline_of, hcell_t, hcell_prepare
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, ref_lam, &
@@ -750,12 +750,15 @@ contains
     if (allocated(self%use_ll) .and. self%do_final) then
       if (any(self%use_ll)) call self%reduce_ll_diag()
     endif
-    if (self%do_final) call self%free_ll_point_table()
+    if (self%do_final) then
+      call self%free_ll_point_table()
+      call self%collect_line_diagnostics()
+    endif
 
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
-        if (save_linelist) call self%print_linelist(comp, self%n_nu)
+        if (save_linelist) call self%print_linelist(self%n_nu)
       elseif (self%do_full_sp .and. top_of_domain) then
         call self%check_flux_convergence()
       endif
@@ -2164,6 +2167,8 @@ contains
     class(atom_trans_t) :: trans
     class(atom_data_t), target :: adata
     class(line_type), pointer :: line
+    type(hline_t) :: hline
+    type(hcell_t) :: hcell
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
@@ -2202,6 +2207,7 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
+      if (line%hydrogen) hline = hline_of(line)
       ! non-hydrogen lines are handled by the SoA kernel below when use_ll
       if (use_ll .and. .not. line%hydrogen) cycle
       fs = line%iblue
@@ -2232,10 +2238,11 @@ contains
 
             associate(phi => vphi(fs:fe))
               if (line%hydrogen) then
+                call hcell_prepare(hline, temp(x,y,z), ne(x,y,z), fo(x,y,z), vbar2h(x,y,z), &
+                                   tothi(x,y,z), t3nhe(x,y,z), idf, hcell)
                 do f=fs, fe
                   q = line%q(f) - vproj(x,y,z)
-                  vphi(f) = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
-                    vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+                  vphi(f) = hprofile(hline, hcell, q)
                 end do
                 if (H_occupation_probability) then
                   wj = comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
@@ -2478,6 +2485,8 @@ contains
     class(atom_trans_t) :: trans
     class(atom_data_t), target :: adata
     class(line_type), pointer :: line
+    type(hline_t) :: hline
+    type(hcell_t) :: hcell
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
@@ -2525,6 +2534,7 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
+      if (line%hydrogen) hline = hline_of(line)
       fs = line%iblue
       fe = line%ired
       wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
@@ -2570,18 +2580,18 @@ contains
             ! One f-loop per rate formulation and profile kind, so that none
             ! carries the rate_formulation branch.
             if (line%hydrogen) then
+              call hcell_prepare(hline, temp(x,y,z), ne(x,y,z), fo(x,y,z), vbar2h(x,y,z), &
+                                 tothi(x,y,z), t3nhe(x,y,z), idf, hcell)
               if (split_rates) then
                 do f=fs, fe
                   q = line%q(f) - vpr
-                  vph(f) = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
-                    vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+                  vph(f) = hprofile(hline, hcell, q)
                 end do
               else
                 do f=fs, fe
                   associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                     q = line%q(f) - vpr
-                    phi = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
-                      vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+                    phi = hprofile(hline, hcell, q)
                     vvv = phi * wmunu(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu

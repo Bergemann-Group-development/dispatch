@@ -29,7 +29,7 @@ MODULE composition_patch_mod
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only: rt_patch_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
+  USE bbtrans_mod, only: tolerance, disable_ga, disable_stark, disable_vdw, ga_fallback
   USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init, interval_t, merge_intervals
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
