@@ -22,7 +22,7 @@ from tumult.synthesis.cancel import CancelledError
 
 pytestmark = pytest.mark.skipif(os.name != 'posix', reason='the daemon needs POSIX')
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 _FAKE_EXECUTE = '''
 import time
@@ -48,8 +48,9 @@ operations.synthesize = synthesize
 
 
 @pytest.fixture
-def fake_env(tmp_path, monkeypatch):
-    """Spawned daemons run the fake calculation; returns the release file."""
+def fake_env(tmp_path, monkeypatch, daemon_dir):
+    """Spawned daemons run the fake calculation in this test's own daemon directory;
+    returns the release file."""
     hook = tmp_path / 'hook'
     hook.mkdir()
     (hook / 'sitecustomize.py').write_text(_FAKE_EXECUTE)

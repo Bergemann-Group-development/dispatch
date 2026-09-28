@@ -8,13 +8,13 @@ import astropy.units as u
 import numpy as np
 import pytest
 
-from cases import LINE_X0, gauss_line
+from tests.support.spectra import LINE_LAM0 as LINE_X0, gaussian_line
 
 
 def _spectrum():
     from tumult.spectrum import Spectrum
 
-    x, y = gauss_line()
+    x, y = gaussian_line()
     return Spectrum(x, y), x, y
 
 

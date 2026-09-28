@@ -110,7 +110,8 @@ operations.fit = fit
 
 
 @pytest.fixture
-def fit_env(tmp_path, monkeypatch):
+def fit_env(tmp_path, monkeypatch, daemon_dir):
+    """Spawned daemons run the fake fit in this test's own daemon directory."""
     hook = tmp_path / 'hook'
     hook.mkdir()
     (hook / 'sitecustomize.py').write_text(_FAKE_FIT)

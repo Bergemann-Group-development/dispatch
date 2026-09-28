@@ -1,4 +1,8 @@
-"""Public request, preparation, departure and durable-submission contracts."""
+"""Public request, preparation and departure contracts.
+
+The durable-submission contracts, which need the workflow daemon, are in
+``tests/execution/test_synthesis_submission.py``.
+"""
 import time
 from pathlib import Path
 
@@ -158,51 +162,6 @@ def test_saved_departures_can_be_opened_from_native_artifacts(tmp_path):
     field = Departures.load(folder)
     assert field.saved and field.resolution == (4, 5, 6)
     assert field.species == ('Mg',) and field.composition['abundances'] == 'Mg=0.2'
-
-
-def test_durable_submission_reopens_saved_result(tmp_path, monkeypatch, workflow_daemon):
-    from tumult.synthesis import operations, submission
-    request = _request(Atmosphere('one.mod'), tmp_path)
-
-    def synthesize(request, background_lines=True, cancel_token=None):
-        spec = Spectrum(np.array([5000., 5001.]), np.array([1., .9]))
-        return SynthesisResult((spec,), (None,), request, {}, {})
-
-    monkeypatch.setattr(operations, 'synthesize', synthesize)
-    handle = submission.submit_operation('synthesis.synthesize', request,
-                                         root=tmp_path / 'jobs')
-    result = handle.result(timeout=5)
-    reopened = submission.open_workflow(handle.folder)
-    assert reopened.status == 'finished'
-    assert np.allclose(reopened.result().spectrum.values[1], result.spectrum.values[1])
-    assert reopened.result().request.to_dict() == request.to_dict()
-    assert reopened.progress['phase'] == 'finished'
-
-
-def test_submission_records_scheduled_runs_before_completion(tmp_path, monkeypatch,
-                                                            workflow_daemon):
-    """The workflow record names its native runs as the executor schedules them."""
-    import threading
-    from tumult.synthesis import operations, runtime, submission
-    request = _request(Atmosphere('one.mod'), tmp_path)
-    scheduled = tmp_path / 'out' / 'run_a'
-    release = threading.Event()
-    seen = {}
-
-    def synthesize(request, background_lines=True, cancel_token=None):
-        runtime.note_run(str(scheduled))            # what _run_batch does per job
-        seen['during'] = submission.open_workflow(handle.folder).runs
-        release.wait(5)
-        spec = Spectrum(np.array([5000., 5001.]), np.array([1., .9]))
-        return SynthesisResult((spec,), (None,), request, {}, {}, runs=(str(scheduled),))
-
-    monkeypatch.setattr(operations, 'synthesize', synthesize)
-    handle = submission.submit_operation('synthesis.synthesize', request,
-                                         root=tmp_path / 'jobs')
-    release.set()
-    handle.result(timeout=5)
-    assert seen['during'] == (str(scheduled),)
-    assert submission.open_workflow(handle.folder).runs == (str(scheduled),)
 
 
 def test_window_batch_reports_runs_without_a_ladder(tmp_path, monkeypatch):
