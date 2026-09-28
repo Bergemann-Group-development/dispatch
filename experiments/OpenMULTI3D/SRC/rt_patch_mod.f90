@@ -40,7 +40,7 @@ MODULE rt_patch_mod
   USE hprofl_mod, only: hprofile, hline_t, hydrogen_line, hcell_t, hcell_prepare
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only: composition_type, ref_lam, &
+  USE composition_mod, only: composition_type, ref_lam, element_ids, &
     departure_pointer_t, read_departures, &
     line_scattering
   USE osmet_mod, only: compute_epsilon_stage
@@ -391,7 +391,7 @@ contains
           if (trim(element) == '-') then
             if (trim(da_word) /= '-') error stop 'set_file has da without element'
           else
-            z = atomic_number(element)
+            z = findloc(element_ids, adjustl(element), dim=1)
             if (z == 0) then
               call console_error ('unknown element in set_file: '//trim(element))
               error stop 'invalid ladder element'
@@ -436,22 +436,6 @@ contains
       if (rt_out%sample_linelist) &
         error stop 'abundance ladders require rt_output_params sample_linelist=.false.'
     endif
-  contains
-    integer function atomic_number(symbol) result(number)
-      character(len=*), intent(in) :: symbol
-      character(len=3), parameter :: ids(92) = [ &
-        'H  ','He ','Li ','Be ','B  ','C  ','N  ','O  ','F  ','Ne ','Na ','Mg ', &
-        'Al ','Si ','P  ','S  ','Cl ','Ar ','K  ','Ca ','Sc ','Ti ','V  ','Cr ', &
-        'Mn ','Fe ','Co ','Ni ','Cu ','Zn ','Ga ','Ge ','As ','Se ','Br ','Kr ', &
-        'Rb ','Sr ','Y  ','Zr ','Nb ','Mo ','Tc ','Ru ','Rh ','Pd ','Ag ','Cd ', &
-        'In ','Sn ','Sb ','Te ','I  ','Xe ','Cs ','Ba ','La ','Ce ','Pr ','Nd ', &
-        'Pm ','Sm ','Eu ','Gd ','Tb ','Dy ','Ho ','Er ','Tm ','Yb ','Lu ','Hf ', &
-        'Ta ','W  ','Re ','Os ','Ir ','Pt ','Au ','Hg ','Tl ','Pb ','Bi ','Po ', &
-        'At ','Rn ','Fr ','Ra ','Ac ','Th ','Pa ','U  ']
-      character(len=3) :: key
-      key = adjustl(symbol)
-      number = findloc(ids, key, dim=1)
-    end function atomic_number
   END SUBROUTINE init_set_layout
 
   !===============================================================================
@@ -482,7 +466,7 @@ contains
         if (any(output_set_element(:,i_set))) then
           do z=1,92
             if (.not. output_set_element(z,i_set)) cycle
-            write(c_element, '(A)') trim(element_symbol(z))
+            write(c_element, '(A)') trim(element_ids(z))
             write(c_da, '(SP,F7.3)') output_set_da(z,i_set)
             write(lunit, '(I5, 2X, A9, 2X, A7, 2X, A7)') &
               i_set, set_kind_name(self%set_kind(i_set)), c_element, c_da
@@ -495,19 +479,6 @@ contains
       close(lunit)
     endif
     !$omp end critical (cr_save_set_manifest)
-  contains
-    function element_symbol(z) result(symbol)
-      integer, intent(in) :: z
-      character(len=2) :: symbol
-      character(len=2), parameter :: ids(92) = [ &
-        'H ','He','Li','Be','B ','C ','N ','O ','F ','Ne','Na','Mg','Al','Si','P ','S ','Cl','Ar', &
-        'K ','Ca','Sc','Ti','V ','Cr','Mn','Fe','Co','Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr', &
-        'Rb','Sr','Y ','Zr','Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn','Sb','Te','I ','Xe', &
-        'Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','Hf', &
-        'Ta','W ','Re','Os','Ir','Pt','Au','Hg','Tl','Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th', &
-        'Pa','U ']
-      symbol = ids(z)
-    end function element_symbol
   END SUBROUTINE save_set_manifest
 
   !===============================================================================

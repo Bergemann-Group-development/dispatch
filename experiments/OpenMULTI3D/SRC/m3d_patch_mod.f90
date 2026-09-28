@@ -23,7 +23,8 @@ MODULE m3d_patch_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf4
     USE patch_mod, only: patch_t, patch_t_init
-    USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock
+    USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock, &
+                            add_nbor_by_key
     USE spectrum_mod, only: lam_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix, &
@@ -39,7 +40,7 @@ MODULE m3d_patch_mod
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type, particle_type
     USE line_types_mod, only: linelist_type
-    USE linelist_mod, only: print_ll_particle, print_ll_atom
+    USE linelist_mod, only: print_ll_atom
     USE molecule_mod, only: molec_type
     USE optab_mod, only: sample_optab_type
     USE console_mod
@@ -1066,7 +1067,7 @@ MODULE m3d_patch_mod
 
   !===============================================================================
   ! Write linelist_out.txt in the same block format as the input linelists, via the
-  ! writers in linelist_mod (print_ll_particle / print_ll_atom), from the global
+  ! writers composition_type%write_linelists and linelist_mod%print_ll_atom, from the global
   ! composition and the model atoms that the final-pass patches merged their copies
   ! into. Called once by the main program after the task list has run, when every
   ! merge is complete; does nothing unless a patch collected diagnostics
@@ -1075,38 +1076,15 @@ MODULE m3d_patch_mod
   ! hierarchy and cannot see their types.
   !-------------------------------------------------------------------------------
   SUBROUTINE write_linelist_out ()
-    class(element_type), pointer :: element
-    integer :: lunit, i, j
+    integer :: lunit
     ! ----------------------------------------------------------------------------
     if (.not. have_line_diagnostics) return
     open(newunit=lunit, file=trim(io%run_dir)//'linelist_out.txt', form='formatted')
-    do i=1, composition%nel
-      element => composition%elements(i)
-      if (.not. any(element%ions%in_linelist)) cycle
-      do j=lbound(element%ions,1), ubound(element%ions,1)
-        call print_particle(element%ions(j))
-      end do
-    end do
-    do i=1, composition%nmolec
-      call print_particle(composition%molecules(i))
-    end do
+    call composition%write_linelists(lunit)
     call print_atoms()
     close(lunit)
 
   contains
-    !-----------------------------------------------------------------------------
-    subroutine print_particle (ptc)
-      class(particle_type), target :: ptc
-      integer, allocatable :: iso_values(:)
-      integer :: k, niso
-      !---------------------------------------------------------------------------
-      if (.not. allocated(ptc%ll)) return   ! no SoA linelists were built
-      niso = 0
-      if (associated(ptc%isotope)) niso = size(ptc%isotope)
-      allocate(iso_values(niso))
-      iso_values = [(ptc%isotope(k)%iso, k=1, niso)]
-      call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll)
-    end subroutine print_particle
 
     !-----------------------------------------------------------------------------
     ! model-atom SoA linelists; gather the per-stage species ids from the
@@ -1306,21 +1284,9 @@ MODULE m3d_patch_mod
   SUBROUTINE check_nbor (self, key, nbors)
     class(m3d_patch_t):: self
     class(nbor_t), pointer:: nbors
-    class(link_t), pointer:: nblink
     integer:: key(4)
-    logical:: added
     !-----------------------------------------------------------------------------
-    call self%task_list%hash_table%get (key, nblink)
-    if (associated(nblink)) then
-      select type (link => self%link)
-      class is (halo_t)
-        call link%conditionally_add_nbor (nblink, nbors, added)
-        if (added) then
-          !$omp atomic update
-          self%n_nbors = self%n_nbors + 1
-        end if
-      end select
-    end if
+    call add_nbor_by_key (self, key, nbors)
   END SUBROUTINE check_nbor
 
   !===============================================================================

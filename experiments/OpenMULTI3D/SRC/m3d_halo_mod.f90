@@ -35,9 +35,33 @@ MODULE m3d_halo_mod
   logical, public, save :: print_finished=.false.
   logical, public, save :: print_lock=.false.
 
-  public :: lock_mem, unlock_mem
+  public :: lock_mem, unlock_mem, add_nbor_by_key
 
 CONTAINS
+
+!===============================================================================
+!> Add the task stored under key in the task list's hash table, if any, to the
+!> nbor list nbors of task, and count it
+!===============================================================================
+SUBROUTINE add_nbor_by_key (task, key, nbors)
+  class(gpatch_t):: task
+  integer:: key(4)
+  class(nbor_t), pointer:: nbors
+  class(link_t), pointer:: nblink
+  logical:: added
+  !-----------------------------------------------------------------------------
+  call task%task_list%hash_table%get (key, nblink)
+  if (associated(nblink)) then
+    select type (link => task%link)
+    class is (halo_t)
+      call link%conditionally_add_nbor (nblink, nbors, added)
+      if (added) then
+        !$omp atomic update
+        task%n_nbors = task%n_nbors + 1
+      end if
+    end select
+  end if
+END SUBROUTINE add_nbor_by_key
 
   !===============================================================================
   SUBROUTINE append_to(self, list)

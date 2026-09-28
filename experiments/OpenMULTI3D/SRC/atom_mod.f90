@@ -917,7 +917,7 @@ MODULE atom_mod
     integer, pointer, contiguous, dimension(:) :: icont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
-    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dlam
+    real(8) :: gv, cnt_ev, nu_max, alpha0, thresh_aa, dlam
     real(8) :: gij, vbar2e4, loggf
     character(512) :: dummy_string, text
     character(8) :: key, str1, str2, str3
@@ -1002,57 +1002,14 @@ MODULE atom_mod
       gij = self%g(lin%i) / self%g(lin%j)
       call lin%init_einstein_coefficients(lin%f, gij)
 
-      ! make sure we always have an odd number of frequency points for a line
-      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      lin%nnu = nq_fac * (lin%nnu-1) + 1
-      if (lin%io <= 1 .and. legacy_freql) then
-        lin%nnu = 2 * (lin%nnu-1) + 1
-      endif
-
-      if (nq_min < 0) then
-        lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
-        if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      elseif (lin%nnu > 0) then
-        lin%nnu = max(lin%nnu, nq_min)
-      endif
-      lin%nnu = min(lin%nnu, nq_max)
+      call set_line_nnu(self, lin, loggf)
 
       if (lin%iso == 0) then
         tri = (lin%j-1)*(lin%j-2)/2 + lin%i
         self%cdata(tri) = lin%f
       endif
 
-      if (logf_cut > -99) then
-        scr = log10(self%g(lin%i)*lin%f)
-        if (scr < logf_cut) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
-      call lin%get_lam(qnorm, lin%lam_input, legacy=legacy_freql)
-      call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
-      lin%lam_min = lin%lam_input(1)
-      lin%lam_max = lin%lam_input(lin%nnu)
-
-      if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
-        if (lin%lam_max < blue_cut .or. lin%lam_min > red_cut) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
-      lin%ntrans = i
-      lin%profile_type = trim(lowercase(lin%profile_type))
-
-      select case (lin%profile_type)
-      case ('voigt', 'hlinop')
-        continue
-      case default
-        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                lin%profile_type, ' Setting it to VOIGT'
-        lin%profile_type = 'voigt'
-      end select
+      if (.not. line_frequency_grid(self, lin, i, qnorm, legacy_freql)) cycle
     end do
 
     do i=1, ncont
@@ -1269,8 +1226,8 @@ MODULE atom_mod
     type(coll_type), pointer :: col => null()
     logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-    real(8) :: scr, gv, cnt_ev, lam_min, alpha0, thresh_aa, dlam
-    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
+    real(8) :: gv, cnt_ev, lam_min, alpha0, thresh_aa, dlam
+    real(8) :: gij, red_fcut, blu_fcut, vbar2e4
     integer :: ncont, nnu
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -1363,22 +1320,7 @@ MODULE atom_mod
         abort = .true.
       endif
 
-      ! make sure we always have an odd number of frequency points for a line
-      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-
-      lin%nnu = nq_fac * (lin%nnu-1) + 1
-      if (lin%io <= 1 .and. legacy_freql) then
-        lin%nnu = 2 * (lin%nnu-1) + 1
-      endif
-
-      if (nq_min < 0) then
-        loggf = log10(lin%f*self%g(lin%i))
-        lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
-        if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      elseif (lin%nnu > 0) then
-        lin%nnu = max(lin%nnu, nq_min)
-      endif
-      lin%nnu = min(lin%nnu, nq_max)
+      call set_line_nnu(self, lin)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
@@ -1438,44 +1380,9 @@ MODULE atom_mod
         endif
       endif
 
-      if (logf_cut > -99) then
-        scr = log10(self%g(lin%i)*lin%f)
-        if (scr < logf_cut) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
-      call lin%get_lam(qnorm, lin%lam_input, legacy=nterm<=1 .and. legacy_freql)
-      call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
-      lin%lam_min = lin%lam_input(1)
-      lin%lam_max = lin%lam_input(lin%nnu)
-
+      if (.not. line_frequency_grid(self, lin, i, qnorm, nterm<=1 .and. legacy_freql)) cycle
       gij = self%g(lin%i) / self%g(lin%j)
       call lin%init_einstein_coefficients(lin%f, gij)
-
-      if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
-        if (lin%lam_max < blue_cut .or. lin%lam_min > red_cut) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
-      lin%ntrans = i
-      lin%profile_type = trim(lowercase(lin%profile_type))
-
-      select case (lin%profile_type)
-      case ('voigt', 'hlinop')
-        continue
-      case default
-        if (index(lin%profile_type, '.')>0) then
-          continue
-        else
-          write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                  lin%profile_type, ' Setting it to VOIGT'
-        endif
-        lin%profile_type = 'voigt'
-      end select
     end do
 
     do i=1, ncont
@@ -1808,6 +1715,85 @@ MODULE atom_mod
     if (abort) error stop 'abort in atom_mod%read'
     call trace%end(itimer)
   END SUBROUTINE read_classic
+
+  !====================================================================================
+  ! Number of frequency points of a bound-bound line, shared by both atom readers:
+  ! odd, scaled by nq_fac (and doubled for single-component lines with legacy_freql),
+  ! then clamped to nq_min/nq_max.  A negative nq_min grows the count with log(gf);
+  ! loggf is computed from f and g when the reader has not already parsed it.
+  !------------------------------------------------------------------------------------
+  SUBROUTINE set_line_nnu (self, lin, loggf)
+    class(atom_type), intent(in) :: self
+    class(line_type), intent(inout) :: lin
+    real(8), intent(in), optional :: loggf
+    real(8) :: lgf
+    !----------------------------------------------------------------------------------
+    if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+    lin%nnu = nq_fac * (lin%nnu-1) + 1
+    if (lin%io <= 1 .and. legacy_freql) then
+      lin%nnu = 2 * (lin%nnu-1) + 1
+    endif
+
+    if (nq_min < 0) then
+      if (present(loggf)) then
+        lgf = loggf
+      else
+        lgf = log10(lin%f*self%g(lin%i))
+      endif
+      lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(lgf+5)))
+      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+    elseif (lin%nnu > 0) then
+      lin%nnu = max(lin%nnu, nq_min)
+    endif
+    lin%nnu = min(lin%nnu, nq_max)
+  END SUBROUTINE set_line_nnu
+
+  !====================================================================================
+  ! Post-parse selection and wavelength grid of bound-bound line i, shared by both
+  ! atom readers.  Returns .false. (and deactivates the line) when logf_cut or the
+  ! red/blue cuts remove it.  An unrecognised profile_type falls back to 'voigt'.
+  !------------------------------------------------------------------------------------
+  LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
+    class(atom_type), intent(in) :: self
+    class(line_type), intent(inout) :: lin
+    integer, intent(in) :: i
+    real(8), intent(in) :: qnorm
+    logical, intent(in) :: legacy
+    !----------------------------------------------------------------------------------
+    keep = .false.
+    if (logf_cut > -99) then
+      if (log10(self%g(lin%i)*lin%f) < logf_cut) then
+        call lin%deactivate()
+        return
+      endif
+    endif
+
+    call lin%get_lam(qnorm, lin%lam_input, legacy=legacy)
+    call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
+    lin%lam_min = lin%lam_input(1)
+    lin%lam_max = lin%lam_input(lin%nnu)
+
+    if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
+      if (lin%lam_max < blue_cut .or. lin%lam_min > red_cut) then
+        call lin%deactivate()
+        return
+      endif
+    endif
+
+    lin%ntrans = i
+    lin%profile_type = trim(lowercase(lin%profile_type))
+    select case (lin%profile_type)
+    case ('voigt', 'hlinop')
+      continue
+    case default
+      if (index(lin%profile_type, '.') == 0) then
+        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
+                lin%profile_type, ' Setting it to VOIGT'
+      endif
+      lin%profile_type = 'voigt'
+    end select
+    keep = .true.
+  END FUNCTION line_frequency_grid
 
   !====================================================================================
   SUBROUTINE prepare_damping(self, species)

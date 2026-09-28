@@ -15,7 +15,7 @@ MODULE experiment_mod
   USE halo_mod, only: halo_t
   USE gpatch_mod, only: gpatch_t
   USE handyfuncs_mod
-  USE m3d_halo_mod, only: m3d_halo_t
+  USE m3d_halo_mod, only: m3d_halo_t, add_nbor_by_key
   USE m3d_patch_mod, only: verbose, print_execution_history, amr
   USE rt_params_mod, only: rt_out
   USE composition_patch_mod, only: composition_patch_t
@@ -326,21 +326,9 @@ CONTAINS
   SUBROUTINE check_nbor (self, key, nbors)
     class(experiment_t):: self
     class(nbor_t), pointer:: nbors
-    class(link_t), pointer:: nblink
     integer:: key(4)
-    logical:: added
     !-----------------------------------------------------------------------------
-    call self%task_list%hash_table%get (key, nblink)
-    if (associated(nblink)) then
-      select type (link => self%link)
-       class is (halo_t)
-        call link%conditionally_add_nbor (nblink, nbors, added)
-        if (added) then
-          !$omp atomic update
-          self%n_nbors = self%n_nbors + 1
-        end if
-      end select
-    end if
+    call add_nbor_by_key (self, key, nbors)
   END SUBROUTINE check_nbor
 
 END MODULE
