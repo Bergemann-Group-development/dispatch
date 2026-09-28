@@ -42,7 +42,7 @@ MODULE rt_patch_mod
   USE molecule_mod, only: molec_type
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
-  USE hprofl_mod, only: hprofile, hline_t, hline_of, hcell_t, hcell_prepare
+  USE hprofl_mod, only: hprofile, hline_t, hydrogen_line, hcell_t, hcell_prepare
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, ref_lam, &
@@ -752,13 +752,12 @@ contains
     endif
     if (self%do_final) then
       call self%free_ll_point_table()
-      call self%collect_line_diagnostics()
+      if (save_linelist) call self%collect_line_diagnostics()
     endif
 
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
-        if (save_linelist) call self%print_linelist(self%n_nu)
       elseif (self%do_full_sp .and. top_of_domain) then
         call self%check_flux_convergence()
       endif
@@ -2207,7 +2206,7 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
-      if (line%hydrogen) hline = hline_of(line)
+      if (line%hydrogen) hline = hydrogen_line(line%i, line%j, line%nu0)
       ! non-hydrogen lines are handled by the SoA kernel below when use_ll
       if (use_ll .and. .not. line%hydrogen) cycle
       fs = line%iblue
@@ -2436,7 +2435,9 @@ contains
 
   !===============================================================================
   ! Push the used/strength/reach diagnostics of the per-patch SoA lists back to the
-  ! shared source lists (self%atoms(k)%trans%ll), which print_linelist exports.
+  ! source lists (self%atoms(k)%trans%ll), which every final-pass patch shares and
+  ! write_linelist_out exports. The critical section is the one collect_line_diagnostics
+  ! merges the composition copies under.
   !-------------------------------------------------------------------------------
   SUBROUTINE reduce_ll_diag (self)
     class(rt_patch_t) :: self
@@ -2462,7 +2463,7 @@ contains
           gstr(gl)  = max(gstr(gl), pll%strength(l))
           greach(gl) = max(greach(gl), pll%reach(l))
         end do
-        call lock_mem(self%m3d_parent, 'll_used')
+        !$omp critical (line_diagnostics)
         do l=1, sll%nline
           gl = sll%itrans(l)
           if (gused(gl)) then
@@ -2471,7 +2472,7 @@ contains
             sll%reach(l)    = max(sll%reach(l), greach(gl))
           endif
         end do
-        call unlock_mem(self%m3d_parent, 'll_used')
+        !$omp end critical (line_diagnostics)
         deallocate(gused, gstr, greach)
       end associate
     end do
@@ -2534,7 +2535,7 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
-      if (line%hydrogen) hline = hline_of(line)
+      if (line%hydrogen) hline = hydrogen_line(line%i, line%j, line%nu0)
       fs = line%iblue
       fe = line%ired
       wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij

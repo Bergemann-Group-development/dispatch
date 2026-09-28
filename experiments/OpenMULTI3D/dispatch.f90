@@ -37,6 +37,7 @@ PROGRAM dispatch
   USE read_external_mod
   USE timer_mod
   USE mpi_debug_mod
+  USE m3d_patch_mod, only: write_linelist_out
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !integer :: i
@@ -50,6 +51,7 @@ PROGRAM dispatch
   !call cartesian%init (task_list)               ! .. or else here ...
   !call read_snapshot%init (task_list)           ! Construct ICs
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
+  call write_linelist_out()                     ! Line-list diagnostics, if collected
   if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
   if (console_on(ch_m3d, 0, all_ranks=.true.)) &

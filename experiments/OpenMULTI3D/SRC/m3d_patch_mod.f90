@@ -160,7 +160,6 @@ MODULE m3d_patch_mod
       procedure :: queue_before
       procedure :: sort_nbors
       procedure :: rotate_cube4
-      procedure :: print_linelist
       procedure :: collect_line_diagnostics
     end type m3d_patch_t
   
@@ -259,9 +258,13 @@ MODULE m3d_patch_mod
     ! the global `converged` flag, which then winds the run down as usual.
     type(mpi_counter_t), public :: flux_conv_signal, flux_final_counter
     type(composition_type), public, save, target :: composition
+    ! the output atoms whose line lists write_linelist_out exports, and whether any
+    ! final-pass patch has merged its diagnostics (set by collect_line_diagnostics)
+    type(atom_type), dimension(:), pointer, save :: linelist_atoms => null()
+    logical, save :: have_line_diagnostics = .false.
       
     public :: hash_string, pre_update, update, print_execution_history
-    public :: release_output_tasks
+    public :: release_output_tasks, write_linelist_out
 
     namelist /nlte_params/ preconditioning, rate_formulation, &
     scattering_preconditioning, &
@@ -1102,14 +1105,19 @@ MODULE m3d_patch_mod
   !===============================================================================
   ! Merge the line-list diagnostics of this patch's composition copies (unrotated,
   ! rotated and the sampled table's) into the global composition they were copied
-  ! from, which print_linelist exports. Called by every rt_patch after its final pass,
-  ! so every line strength and reach is the maximum over all patches merged so far.
+  ! from, which write_linelist_out exports. Called by every rt_patch after its final
+  ! pass when save_linelist is set, so every line strength and reach is the maximum
+  ! over all patches. The model-atom lists are merged by rt_patch's reduce_ll_diag
+  ! under the same critical section; every final-pass patch shares those output
+  ! atoms, and this records them for write_linelist_out.
   !-------------------------------------------------------------------------------
   SUBROUTINE collect_line_diagnostics (self)
     class(m3d_patch_t), target :: self
     integer :: i
     !-----------------------------------------------------------------------------
     !$omp critical (line_diagnostics)
+    have_line_diagnostics = .true.
+    if (associated(self%atoms)) linelist_atoms => self%atoms
     associate (p => self%m3d_parent)
       if (associated(p%composition)) call merge_copy(p%composition)
       if (associated(p%rotated_composition)) then
@@ -1134,47 +1142,33 @@ MODULE m3d_patch_mod
   !===============================================================================
   ! Write linelist_out.txt in the same block format as the input linelists, via the
   ! writers in linelist_mod (print_ll_particle / print_ll_atom), from the global
-  ! composition that collect_line_diagnostics merges the patch copies into. Every
-  ! rt_patch collects before an end-boundary patch downstream of it writes, so the
-  ! last file written covers them all. This driver only walks the composition and the
-  ! model atoms -- it stays here because linelist_mod sits below composition_mod/
-  ! atom_mod in the module hierarchy and cannot see their types.
+  ! composition and the model atoms that the final-pass patches merged their copies
+  ! into. Called once by the main program after the task list has run, when every
+  ! merge is complete; does nothing unless a patch collected diagnostics
+  ! (save_linelist). This driver only walks the composition and the model atoms -- it
+  ! stays here because linelist_mod sits below composition_mod/atom_mod in the module
+  ! hierarchy and cannot see their types.
   !-------------------------------------------------------------------------------
-  SUBROUTINE print_linelist (self, n_nu)
-    class(m3d_patch_t), target :: self
-    integer, intent(in) :: n_nu
-    type(composition_type), pointer :: comp
+  SUBROUTINE write_linelist_out ()
     class(element_type), pointer :: element
-    integer :: lunit, i, j, called=0
-    character(len=256) :: linelist_out_file
+    integer :: lunit, i, j
     ! ----------------------------------------------------------------------------
-    !$omp critical (line_diagnostics)
-    called = called + 1
-    if (called >= n_nu) call write_file() ! only print once per patch by the last task to update
-    !$omp end critical (line_diagnostics)
+    if (.not. have_line_diagnostics) return
+    open(newunit=lunit, file=trim(io%run_dir)//'linelist_out.txt', form='formatted')
+    do i=1, composition%nel
+      element => composition%elements(i)
+      if (.not. any(element%ions%in_linelist)) cycle
+      do j=lbound(element%ions,1), ubound(element%ions,1)
+        call print_particle(element%ions(j))
+      end do
+    end do
+    do i=1, composition%nmolec
+      call print_particle(composition%molecules(i))
+    end do
+    call print_atoms()
+    close(lunit)
 
   contains
-    !-----------------------------------------------------------------------------
-    subroutine write_file
-      !---------------------------------------------------------------------------
-      comp => composition
-      linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
-      open(newunit=lunit, file=linelist_out_file, form='formatted')
-
-      do i=1, comp%nel
-        element => comp%elements(i)
-        if (.not. any(element%ions%in_linelist)) cycle
-        do j=lbound(element%ions,1), ubound(element%ions,1)
-          call print_particle(element%ions(j))
-        end do
-      end do
-      do i=1, comp%nmolec
-        call print_particle(comp%molecules(i))
-      end do
-      call print_atoms()
-      close(lunit)
-    end subroutine write_file
-
     !-----------------------------------------------------------------------------
     subroutine print_particle (ptc)
       class(particle_type), target :: ptc
@@ -1199,15 +1193,15 @@ MODULE m3d_patch_mod
       character(len=20), allocatable :: ids(:)
       integer :: ia, s, s0, s1
       !---------------------------------------------------------------------------
-      if (.not. associated(self%atoms)) return
-      do ia=1, size(self%atoms)
-        atom => self%atoms(ia)
+      if (.not. associated(linelist_atoms)) return
+      do ia=1, size(linelist_atoms)
+        atom => linelist_atoms(ia)
         if (.not. associated(atom%trans)) cycle
         associate(sll => atom%trans%ll)
           if (sll%nline == 0) cycle
           nullify(el, ml)
-          call comp%element_by_id(atom%id, el, verbose=.false.)
-          if (.not. associated(el)) call comp%molecule_by_id(atom%id, ml, verbose=.false.)
+          call composition%element_by_id(atom%id, el, verbose=.false.)
+          if (.not. associated(el)) call composition%molecule_by_id(atom%id, ml, verbose=.false.)
 
           s0 = minval(sll%ipart(1:sll%nline))
           s1 = maxval(sll%ipart(1:sll%nline))
@@ -1225,7 +1219,7 @@ MODULE m3d_patch_mod
         end associate
       end do
     end subroutine print_atoms
-  END SUBROUTINE print_linelist
+  END SUBROUTINE write_linelist_out
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)

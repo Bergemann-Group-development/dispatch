@@ -241,7 +241,7 @@ contains
 
           ! global SoA copy of the bb transitions, exported in linelist_out.txt;
           ! build on the output transitions (out_trans), since those are what the
-          ! output patch's output_atoms point at and what print_linelist walks
+          ! output patch's output_atoms point at and what write_linelist_out walks
           call atom%build_ll(out_trans(i))
 
           if (pandas_format) then
