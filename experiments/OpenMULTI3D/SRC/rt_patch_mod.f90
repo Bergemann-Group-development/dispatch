@@ -34,12 +34,7 @@ MODULE rt_patch_mod
                            save_linelist
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
-  USE bbtrans_mod, only: tolerance
   USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
-  USE linelist_mod, only: ll_add_opacity => add_opacity, &
-    ll_add_opacity_equi => add_opacity_equi, voigt_peak
-  USE element_mod, only: element_type
-  USE molecule_mod, only: molec_type
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
   USE hprofl_mod, only: hprofile, hline_t, hydrogen_line, hcell_t, hcell_prepare
@@ -59,13 +54,10 @@ MODULE rt_patch_mod
   integer :: n_negative_chi = 0                 ! diagnostic: cells with chi<=0 in work_to_transfer_units
 
   !-----------------------------------------------------------------------------
-  ! What a set *is*, as opposed to where it sits.  Historically the meaning of a
-  ! set was carried by its index alone (set 1 = main, 2 = continuum, 3 = forced
-  ! LTE), which stops working the moment the set axis becomes variable-length --
-  ! and is already wrong for the ALI branch below, whose single set is the main
-  ! one and has no continuum companion.  These kinds are recorded per set and
-  ! written to 'sets.txt' so the reader looks the layout up instead of guessing
-  ! it from the component count.
+  ! What a set *is*, as opposed to where it sits.  The set axis is variable-length
+  ! (the ALI branch below has a single main set and no continuum companion), so
+  ! the kind is recorded per set and written to 'sets.txt'; the reader looks the
+  ! layout up instead of inferring it from the set index or component count.
   !-----------------------------------------------------------------------------
   integer, parameter, public :: set_continuum=0    ! background only; skips foreground
   integer, parameter, public :: set_nlte=1         ! the main spectrum, with departures
@@ -172,12 +164,6 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt   ! per-mu continuum stash
-    ! SoA line kernel path for model-atom bb transitions (see linelist_mod)
-    logical, dimension(:), allocatable :: use_ll        ! per atom: SoA kernel path active
-    real(4), dimension(:,:,:,:), allocatable :: logref  ! log(tol*cont/voigt_peak) per set
-    real(4), dimension(:,:,:,:), allocatable :: b4      ! real(4) copy of adata%b
-    class(atom_data_t), pointer :: b4_ptr => null()     ! adata the b4 copy belongs to
-    real(8), dimension(:), allocatable :: llam          ! log(lambda[AA]) of the patch grid
     real(8), dimension(:), allocatable :: flux_prev       ! previous-iteration top emergent flux, per frequency (fs:fe)
     real(8) :: flux_global=0.d0, flux_maxerr=0.d0          ! globally-agreed / local worst relative flux change this iteration
   contains
@@ -204,8 +190,6 @@ MODULE rt_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
-    procedure :: fill_b4
-    procedure :: reduce_ll_diag
     procedure :: convert_to_work_units
     procedure :: reset_array
     procedure :: back_to_work
@@ -235,15 +219,12 @@ MODULE rt_patch_mod
   end type rt_patch_t
 
   !-----------------------------------------------------------------------------
-  integer, public :: n_cntrbf=0
-  integer, public, dimension(:), allocatable :: cntrbf_lines
-  ! NB: work, the background arrays, cntrbf_data and the patch
-  ! dimensions nx,ny,nz are
-  ! now components of rt_patch_t (owned per patch); the loop indices x,y,z,f are
-  ! plain locals in each routine. They used to live here as module threadprivate
-  ! variables, which on macOS/GCC routed every access through emulated TLS
-  ! (pthread_getspecific). One thread per patch makes instance/local data both
-  ! race-free and TLS-free.
+  ! NB: work, the background arrays, cntrbf_data and the patch dimensions
+  ! nx,ny,nz are components of rt_patch_t (owned per patch); the loop indices
+  ! x,y,z,f are plain locals in each routine.  Keep them out of module
+  ! threadprivate storage: on macOS/GCC that routes every access through emulated
+  ! TLS (pthread_getspecific).  One thread per patch makes instance/local data
+  ! both race-free and TLS-free.
 
   !-----------------------------------------------------------------------------
   !> Formal solvers, implemented in the rt_solvers_mod submodule (rt_solvers_mod.f90)
@@ -546,15 +527,6 @@ contains
     self%bound_bound = any([(associated(self%atoms(i)%trans%line), i=1, self%natom)])
     self%bound_free = any([(associated(self%atoms(i)%trans%cont), i=1, self%natom)])
     allocate(self%trans(self%natom))
-    allocate(self%use_ll(self%natom))
-    ! SoA kernel path for atom lines: disabled for now (no speed gain over the old
-    ! formalism for dense model atoms); atom%build_ll still runs globally so the
-    ! transitions are exported in linelist_out.txt. Re-enable by restoring
-    !   associated(self%atoms(i)%species)
-    ! The path covers opacity only (ll_add_opacity); there is no SoA rate kernel,
-    ! so enabling it needs one written first -- otherwise its lines carry opacity
-    ! but no radiative rates. bound_bound_rates stops rather than allow that.
-    self%use_ll = .false.
 
     do k=1, self%natom
       associate(atom=>self%atoms(k), trans=>self%trans(k))
@@ -604,11 +576,6 @@ contains
             trans%cont(j)%ired = fe
             j = j + 1
           end do
-        endif
-        ! windowed SoA copy of the (non-hydrogen) patch line subset for the
-        ! SoA opacity/rate kernels
-        if (self%use_ll(k) .and. self%bound_bound) then
-          call atom%build_ll(trans, self%fs)
         endif
       end associate
     end do
@@ -747,9 +714,6 @@ contains
       end do
     endif
 
-    if (allocated(self%use_ll) .and. self%do_final) then
-      if (any(self%use_ll)) call self%reduce_ll_diag()
-    endif
     if (self%do_final) then
       call self%free_ll_point_table()
       if (save_linelist) call self%collect_line_diagnostics()
@@ -807,7 +771,6 @@ contains
       endif
       allocate(self%twohnu3_c2(fs:fe))
       allocate(vproj(self%nx,self%ny,self%nz))
-      self%b4_ptr => null()  ! departure coefficients may have changed since last execute
       self%twohnu3_c2 = twoh_c2 * self%nu**3
       call mem_register(self%chi_cont,  label='self%chi_cont')
       call mem_register(self%sigma,     label='self%sigma')
@@ -822,11 +785,7 @@ contains
       do i=1, self%natom
         trans => self%trans(i)
         if (self%bound_bound) then
-          ! with the SoA kernel path, adamp is only read by the old-formalism loops,
-          ! which then handle just the hydrogen lines
-          if (.not. self%use_ll(i) .or. any(trans%line%hydrogen)) then
-            call os%allocate(trans%adamp, [self%nx,self%ny,self%nz,size(trans%line)], label='adamp', zero=.true.)
-          endif
+          call os%allocate(trans%adamp, [self%nx,self%ny,self%nz,size(trans%line)], label='adamp', zero=.true.)
         endif
         if (self%get_rates(i)) then
           nrad = size(trans%line) + size(trans%cont)
@@ -834,14 +793,6 @@ contains
           call os%allocate(trans%gamma_ji, [self%nx,self%ny,self%nz,nrad], label='gamma_ji', zero=.true.)
         endif
       end do
-      if (allocated(self%use_ll)) then
-        if (self%bound_bound .and. any(self%use_ll)) then
-          allocate(self%logref(fs:fe,self%nx,self%ny,self%nz))
-          call mem_register(self%logref, label='self%logref')
-          allocate(self%llam(fs:fe))
-          self%llam = log(HZ_TO_AA / self%nu(fs:fe))
-        endif
-      endif
       if (line_scattering) then
         allocate(self%chi_scat(fs:fe,self%nx,self%ny,self%nz), source=0.)
         call mem_register(self%chi_scat, label='self%chi_scat')
@@ -916,18 +867,12 @@ contains
           call os%deallocate(trans%gamma_ji, label='gamma_ji')
         endif
       end do
-      if (allocated(self%logref)) then
-        call mem_unregister(self%logref, label='self%logref')
-        deallocate(self%logref)
-        deallocate(self%llam)
-      endif
       if (allocated(self%chi_scat)) then
         call mem_unregister(self%chi_scat, label='self%chi_scat')
         call mem_unregister(self%one_m_eps, label='self%one_m_eps')
         call mem_unregister(self%dJnu, label='self%dJnu')
         deallocate(self%chi_scat, self%one_m_eps, self%dJnu)
       endif
-      if (allocated(self%b4)) deallocate(self%b4)
       if (allocated(self%Jnu) .and. Jnu_to_file) then
         call mem_unregister(self%Jnu, label='Jnu')
         deallocate(self%Jnu)
@@ -1028,37 +973,6 @@ contains
         endif
       end associate
     end do
-
-    ! log-space tolerance reference for the SoA line kernels; the continuum xhat
-    ! (work units, incl. bound-free) is fixed per i_set, so compute it once here and
-    ! reuse it for all mu directions
-    if (allocated(self%logref) .and. i_set /= self%i_set_cnt) then
-      call fill_logref()
-    endif
-
-  contains
-    subroutine fill_logref()
-      real(4) :: log_tol, b
-      integer :: x, y, z, f
-      integer, save :: itimer=0
-      call trace%begin('rt_patch%fill_logref', itimer=itimer)
-      log_tol = log(tolerance / voigt_peak)
-      do z=1, self%nz
-        do y=1, self%ny
-          do x=1, self%nx
-            do f=self%fs, self%fe
-              b = self%xhat(f,x,y,z)
-              if (b > 0.) then
-                self%logref(f,x,y,z) = log_tol + log(b)
-              else
-                self%logref(f,x,y,z) = -huge(1.)
-              endif
-            end do
-          end do
-        end do
-      end do
-      call trace%end(itimer)
-    end subroutine fill_logref
   END SUBROUTINE background
 
   !===============================================================================
@@ -1174,7 +1088,7 @@ contains
           call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, &
                                               LTE=self%set_kind(i_set)==set_lte .and. &
                                                   self%has_nlte_set, &
-                                              use_ll=self%use_ll(i), i_set=i_set, iatom=i)
+                                              i_set=i_set, iatom=i)
         endif
       end associate
     end do
@@ -1398,7 +1312,7 @@ contains
           adata => atom%rotated_data(i_mu)
         endif
         if (self%get_rates(i) .and. self%bound_bound) then
-          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj, self%use_ll(i), i)
+          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj, i)
         endif
       end associate
     end do
@@ -2158,7 +2072,7 @@ contains
   END SUBROUTINE bound_bound_damping
 
   !===============================================================================
-  SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE, use_ll, &
+  SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE, &
                                         i_set, iatom)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
@@ -2170,15 +2084,12 @@ contains
     type(hcell_t) :: hcell
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
-    real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
-    real(4), dimension(:,:,:,:), allocatable :: lnbase, dummy_dep
-    real(4) :: eps_dummy(0,0,0,0), scat_dummy(0,0,0,0)
     real(4), dimension(:), allocatable :: vphi
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, ih, fs, fe
-    logical :: LTE, do_LTE, get_wphi, use_ll
+    logical :: LTE, do_LTE, get_wphi
     integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, save :: itimer=0, itimer1=0
@@ -2207,8 +2118,6 @@ contains
     do i=1, size(trans%line)
       line => trans%line(i)
       if (line%hydrogen) hline = hydrogen_line(line%i, line%j, line%nu0)
-      ! non-hydrogen lines are handled by the SoA kernel below when use_ll
-      if (use_ll .and. .not. line%hydrogen) cycle
       fs = line%iblue
       fe = line%ired
 
@@ -2294,191 +2203,11 @@ contains
         call unlock_mem(self%m3d_parent, 'wphi')
       endif
     end do
-
-    ! SoA kernel for the non-hydrogen lines: exp(arg) populations from the
-    ! composition ion densities, damping recomputed per cell, LTE wing cutoff
-    if (use_ll .and. trans%ll%nline > 0) then
-      call get_ll_env(comp, atom, trans, adata, e_kT4, ne4, tothi4, sp4, idf3, vb3, &
-                      lnbase, i_set)
-      associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2), &
-                cont=>self%xhat)
-        if (do_LTE) then
-          allocate(dummy_dep(1,1,1,1), source=0.)
-          if (self%sub_sp%equidistant) then
-            call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false., &
-              eps_dummy, scat_dummy, .false.)
-          else
-            call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false., &
-              eps_dummy, scat_dummy, .false.)
-          endif
-        else
-          call self%fill_b4(adata, atom%nlevel)
-          if (self%sub_sp%equidistant) then
-            call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
-              self%b4(:,:,:,1:atom%nlevel), .true., eps_dummy, scat_dummy, .false.)
-          else
-            call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
-              self%b4(:,:,:,1:atom%nlevel), .true., eps_dummy, scat_dummy, .false.)
-          endif
-        endif
-      end associate
-    endif
     call trace%end(itimer)
   END SUBROUTINE add_bound_bound_opacities
 
   !===============================================================================
-  ! Gather the per-cell inputs of the SoA line kernels (linelist_mod) for one atom:
-  ! thermodynamic fields, Doppler arrays (single isotope, index 0) and the per-ion-
-  ! stage population base
-  !   lnbase(:,:,:,s) = log(n_s) - log_part_s + log(inv_df)
-  ! from the composition particle (element ion stage s, or the molecule itself) --
-  ! the same formalism as the bulk linelist path in add_linelist_opacities.
-  !-------------------------------------------------------------------------------
-  SUBROUTINE get_ll_env (comp, atom, trans, adata, e_kT, ne, tothi, stark_pe, &
-                         idf3, vb3, lnbase, i_set)
-    class(composition_type), target :: comp
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t) :: adata
-    real(4), dimension(:,:,:),   allocatable, intent(out) :: e_kT, ne, tothi, stark_pe
-    real(4), dimension(:,:,:),   allocatable, intent(out) :: idf3, vb3
-    real(4), dimension(:,:,:,:), allocatable, intent(out) :: lnbase
-    integer, intent(in), optional :: i_set
-    class(element_type), pointer :: element
-    class(molec_type), pointer :: mol
-    integer :: m(3), np, s
-    integer :: set_index
-    real(8), dimension(:,:,:), pointer :: set_n
-    real(8) :: set_scale
-    integer, save :: itimer=0
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%get_ll_env', itimer=itimer)
-    m = shape(adata%inv_df)
-    set_index = 0
-    if (present(i_set)) set_index = i_set
-    allocate(e_kT(m(1),m(2),m(3)))
-    allocate(ne, tothi, stark_pe, mold=e_kT)
-    e_kT     = comp%e_kT
-    ne       = real(comp%ne)
-    tothi    = real(comp%tothi)
-    stark_pe = real(comp%stark_pe)
-
-    allocate(idf3(m(1),m(2),m(3)), vb3(m(1),m(2),m(3)))
-    idf3 = adata%inv_df
-    vb3  = atom%compute_vbar2(real(comp%temp, 4))
-
-    np = maxval(trans%ll%ipart(1:trans%ll%nline))
-    allocate(lnbase(m(1),m(2),m(3),np))
-    lnbase = -huge(1.)   ! stages without an EOS particle contribute no opacity
-
-    call comp%element_by_id(atom%id, element, verbose=.false.)
-    if (associated(element)) then
-      do s=1, np
-        if (s < lbound(element%ions,1) .or. s > ubound(element%ions,1)) cycle
-        associate(ion => element%ions(s))
-          if (.not. allocated(ion%n)) cycle
-          call comp%set_population(ion%id, set_index, set_n, set_scale)
-          if (associated(set_n)) then
-            lnbase(:,:,:,s) = log(max(set_n,tiny(1d0)))
-          else
-            lnbase(:,:,:,s) = log(max(ion%n,tiny(1d0))) + real(log(set_scale),4)
-          endif
-          lnbase(:,:,:,s) = lnbase(:,:,:,s) - ion%part + log(idf3)
-        end associate
-      end do
-    else
-      call comp%molecule_by_id(atom%id, mol, verbose=.false.)
-      if (associated(mol)) then
-        if (allocated(mol%n)) then
-          call comp%set_population(mol%id, set_index, set_n, set_scale)
-          if (associated(set_n)) then
-            lnbase(:,:,:,1) = log(max(set_n,tiny(1d0))) - mol%part + log(idf3)
-          else
-            lnbase(:,:,:,1) = log(max(mol%n,tiny(1d0))) - mol%part + log(idf3) &
-                            + real(log(set_scale),4)
-          endif
-        endif
-      endif
-    endif
-    call trace%end(itimer)
-  END SUBROUTINE get_ll_env
-
-  !===============================================================================
-  ! real(4) copy of the departure coefficients for the SoA kernels; cached per
-  ! adata within one execute (b is constant during an execute)
-  !-------------------------------------------------------------------------------
-  SUBROUTINE fill_b4 (self, adata, nlevel)
-    class(rt_patch_t) :: self
-    class(atom_data_t), target :: adata
-    integer, intent(in) :: nlevel
-    integer :: l
-    !-----------------------------------------------------------------------------
-    if (associated(self%b4_ptr, adata)) then
-      if (size(self%b4,4) >= nlevel) return
-    endif
-    if (allocated(self%b4)) then
-      if (size(self%b4,4) < nlevel) deallocate(self%b4)
-    endif
-    if (.not. allocated(self%b4)) then
-      allocate(self%b4(self%nx,self%ny,self%nz,nlevel))
-    endif
-    do l=1, nlevel
-      self%b4(:,:,:,l) = adata%b(:,:,:,l)
-    end do
-    self%b4_ptr => adata
-  END SUBROUTINE fill_b4
-
-  !===============================================================================
-  ! Push the used/strength/reach diagnostics of the per-patch SoA lists back to the
-  ! source lists (self%atoms(k)%trans%ll), which every final-pass patch shares and
-  ! write_linelist_out exports. The critical section is the one collect_line_diagnostics
-  ! merges the composition copies under.
-  !-------------------------------------------------------------------------------
-  SUBROUTINE reduce_ll_diag (self)
-    class(rt_patch_t) :: self
-    logical, allocatable :: gused(:)
-    real(4), allocatable :: gstr(:), greach(:)
-    integer :: k, l, gl
-    !-----------------------------------------------------------------------------
-    do k=1, self%natom
-      if (.not. self%use_ll(k)) cycle
-      associate(pll => self%trans(k)%ll, sll => self%atoms(k)%trans%ll, &
-                lines => self%trans(k)%line)
-        if (pll%nline == 0) cycle
-        if (.not. any(pll%used(1:pll%nline))) cycle
-        ! collect per (global) transition, then mark all its source entries
-        ! (multi-component entries share the same transition index)
-        allocate(gused(size(self%atoms(k)%trans%line)), source=.false.)
-        allocate(gstr (size(self%atoms(k)%trans%line)), source=0.)
-        allocate(greach(size(self%atoms(k)%trans%line)), source=0.)
-        do l=1, pll%nline
-          if (.not. pll%used(l)) cycle
-          gl = lines(pll%itrans(l))%ntrans
-          gused(gl) = .true.
-          gstr(gl)  = max(gstr(gl), pll%strength(l))
-          greach(gl) = max(greach(gl), pll%reach(l))
-        end do
-        !$omp critical (line_diagnostics)
-        do l=1, sll%nline
-          gl = sll%itrans(l)
-          if (gused(gl)) then
-            sll%used(l)     = .true.
-            sll%strength(l) = max(sll%strength(l), gstr(gl))
-            sll%reach(l)    = max(sll%reach(l), greach(gl))
-          endif
-        end do
-        !$omp end critical (line_diagnostics)
-        deallocate(gused, gstr, greach)
-      end associate
-    end do
-  END SUBROUTINE reduce_ll_diag
-
-  !===============================================================================
-  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, use_ll, iatom)
+  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, iatom)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(atom_type) :: atom
@@ -2489,8 +2218,6 @@ contains
     type(hcell_t) :: hcell
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
-    real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
-    real(4), dimension(:,:,:,:), allocatable :: lnbase, wphi_buf
     real(4), dimension(:), allocatable :: wmunu, vph
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
     real(4) :: vvv, a2, sum_I, sum_P, sum_A
@@ -2502,7 +2229,7 @@ contains
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe, index
-    logical :: use_ll, get_wphi, split_rates
+    logical :: get_wphi, split_rates
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -2525,12 +2252,6 @@ contains
       tothi = comp%tothi
       t3nhe = comp%t3nhe
     endif
-
-    ! use_ll routes the non-hydrogen lines to the SoA kernel, which covers opacity
-    ! only: there is no rate counterpart, so those lines would end up with opacity
-    ! and no radiative rates.  pre_init holds use_ll at .false. for that reason;
-    ! stop here rather than let a silently wrong rate matrix through.
-    if (use_ll) error stop 'bound_bound_rates: use_ll has no rate kernel (see pre_init)'
 
     do i=1, size(trans%line)
       line => trans%line(i)

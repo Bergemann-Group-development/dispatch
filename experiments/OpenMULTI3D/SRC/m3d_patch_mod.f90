@@ -25,7 +25,7 @@ MODULE m3d_patch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: lam_tolerance
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix, &
                         max_update, min_pop_frac, conv_pop_floor, sor_w
     USE ng_mod, only: ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, &
@@ -98,13 +98,12 @@ MODULE m3d_patch_mod
       logical :: initialized  = .false.
       real(8) :: t_offset=0
       integer :: iter=0, maxiter, master_maxiter, dir=0
-      integer :: n_nu, n_omega, n_out, zs, ze
+      integer :: n_nu, n_out, zs, ze
       integer :: fcheck, pcheck(3)
       logical :: do_out_sp=.false., do_full_sp=.false., do_final=.false.
       logical :: wait_for_nlte=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
-      logical :: free_self=.false.
       logical :: has_atom=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
@@ -113,9 +112,6 @@ MODULE m3d_patch_mod
       integer :: i_chi500=7, i_vmic=8
       integer :: i_dlnt_x=9, i_dlnt_y=10, i_dlnt_z=11
       integer :: i_dpe_x=12, i_dpe_y=13, i_dpe_z=14
-      integer :: i_chi=1, i_eta=2, i_snu=2
-      integer :: i_Gij=1, i_Gji=2
-      integer :: i_Inu=1
       logical :: prepend=.false.
     contains
       procedure :: pre_init
@@ -134,20 +130,15 @@ MODULE m3d_patch_mod
       procedure :: set_initial_time
       procedure :: set_maxiter
       procedure :: init_bdries
-      procedure :: m3d_name
       procedure :: init_level
       procedure :: task_info
       procedure :: append_to_task_list
       procedure :: extrapolate_guards
       procedure :: is_ahead_of
       procedure :: rotate
-      procedure :: distance_to
-      procedure :: nbors_finished
-      procedure :: skip_iterations
       procedure :: comp_ptr
       procedure :: allocate_mem
       procedure :: check_mem_NaN
-      procedure :: check_access
       procedure :: m3d_patch_info
       procedure :: m3d_patch_info2
       procedure :: print_to_stdout
@@ -220,7 +211,6 @@ MODULE m3d_patch_mod
     logical, public, save :: suppress_masers=.false. ! instead force chi>0 (kills the maser)
     logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true.
-    logical, public, save :: comoving_frame=.false.
     logical, public, save :: use_rho=.true., use_ne=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
@@ -270,7 +260,7 @@ MODULE m3d_patch_mod
     scattering_preconditioning, &
     scat_op_max, decouple_continuum, &
     flux_convergence, initial_Jnu, fixed_Jnu, &
-    ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
+    ng_step, ng_start, ng_global, cswitch, lse_solver, &
     ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, ng_cond_min, &
     ng_max_change, ng_min_gap, &
     convlim, convmax, premature_finish, &
@@ -286,7 +276,7 @@ MODULE m3d_patch_mod
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
     diag_pops, diag_db, diag_no_scat_loop
 
-    namelist /run_params/ n_nu, comoving_frame, make_eos, rotate_atmos, &
+    namelist /run_params/ n_nu, make_eos, rotate_atmos, &
     column_by_column, lam_tolerance
 
   contains
@@ -578,11 +568,6 @@ MODULE m3d_patch_mod
     self%iit(self%nt) = self%new   ! slot for new values
     self%time = self%t(self%it)    ! initial time
 
-    !if (self%kind=='nlte_patch') then
-    !  ! this is set back to 1 in update
-    !  self%dtime = self%dtime + self%dtime*rt_out%maxiter
-    !endif
-
     call trace%end()
   END SUBROUTINE set_initial_time
 
@@ -664,7 +649,6 @@ MODULE m3d_patch_mod
     call trace%begin('m3d_patch_t%update', itimer=itimer)
     call lock_mem(self, 'update')
     if (.not. self%is_finished()) then
-      !call self%check_access(self)
       call self%execute()
       call self%post_update()
     endif
@@ -726,7 +710,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
     self%iter = self%iter + 1
-    if (self%iter > self%maxiter) then! .or. self%nbors_finished()) then
+    if (self%iter > self%maxiter) then
       call self%finish()
     endif
     call self%task_t%rotate
@@ -775,29 +759,6 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     is_finished = self%time >= io%end_time
   END FUNCTION is_finished
-  
-  !===============================================================================
-  FUNCTION nbors_finished (self)
-    class(m3d_patch_t):: self
-    class(nbor_t), pointer:: nbor, nbnbor
-    class(task_t), pointer:: nbtask, nbnbtask
-    logical :: nbors_finished
-    !-----------------------------------------------------------------------------
-    nbors_finished=.true.
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needed) then
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (m3d_patch_t)
-          if (.not. nbtask%finished) then
-            nbors_finished=.false.
-          endif
-        end select
-      endif
-      nbor => nbor%next
-    end do
-  END FUNCTION nbors_finished
 
   !===============================================================================
   SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
@@ -920,13 +881,6 @@ MODULE m3d_patch_mod
   END SUBROUTINE init_level
   
   !===============================================================================
-  character(len=17) FUNCTION m3d_name (self)
-    class(m3d_patch_t):: self
-    !----------------------------------------------------------------------------
-    write(m3d_name, '(A12,I5)') trim(self%kind), self%id
-  END FUNCTION
-  
-  !===============================================================================
   SUBROUTINE extrapolate_guards (self, target_mem)
     class(m3d_patch_t):: self
     real(4), pointer, contiguous, optional:: target_mem(:,:,:,:)
@@ -1026,33 +980,6 @@ MODULE m3d_patch_mod
   END SUBROUTINE release_output_tasks
 
   !===============================================================================
-  !> Disambiguation: distance from self to task -- applies (only) to Cartesian
-  !> meshes
-  !===============================================================================
-  FUNCTION distance_to (self, task) RESULT (d)
-    class(m3d_patch_t):: self
-    class(task_t):: task
-    real(8):: d(3), p(3)
-    !-----------------------------------------------------------------------------
-    !select type (task)
-    !class is (m3d_patch_t)
-    !  if (self%i_mu /= 0 .and. task%i_mu /= 0) then
-    !    if (self%i_mu /= task%i_mu) then
-    !      d = huge(1.0)
-    !      return
-    !    endif
-    !  endif
-    !  if (self%i_nu /= 0 .and. task%i_nu /= 0) then
-    !    if (self%i_nu /= task%i_nu) then
-    !      d = huge(1.0)
-    !      return
-    !    endif
-    !  endif
-    !end select
-    d = self%task_t%distance_to(task)
-  END FUNCTION distance_to
-
-  !===============================================================================
   !> The composition of the i-th rotated copy of the atmosphere.  i=1 is the
   !> unrotated one, held in self%composition; the rest resample the cube along
   !> their own ray direction and live in self%rotated_composition.
@@ -1107,9 +1034,7 @@ MODULE m3d_patch_mod
   ! rotated and the sampled table's) into the global composition they were copied
   ! from, which write_linelist_out exports. Called by every rt_patch after its final
   ! pass when save_linelist is set, so every line strength and reach is the maximum
-  ! over all patches. The model-atom lists are merged by rt_patch's reduce_ll_diag
-  ! under the same critical section; every final-pass patch shares those output
-  ! atoms, and this records them for write_linelist_out.
+  ! over all patches.
   !-------------------------------------------------------------------------------
   SUBROUTINE collect_line_diagnostics (self)
     class(m3d_patch_t), target :: self
@@ -1271,36 +1196,6 @@ MODULE m3d_patch_mod
       trim(other%kind), ' ', other%id, ' to ', other%place
     endif
   END SUBROUTINE set_place
-  
-  !===============================================================================
-  SUBROUTINE skip_iterations (self, n)
-    class(m3d_patch_t):: self
-    integer, intent(in) :: n
-    !-----------------------------------------------------------------------------
-    self%time = self%time + n * self%dtime
-    self%iter = self%iter + n
-
-    if (self%iter > self%maxiter) then
-      call self%finish()
-    endif
-  END SUBROUTINE skip_iterations
-
-  !===============================================================================
-  SUBROUTINE check_access (self, other)
-    class(m3d_patch_t):: self
-    class(task_t):: other
-    !-----------------------------------------------------------------------------
-    select type(other)
-    class is (m3d_patch_t)
-      if (.not. associated(other%mem)) then
-        call io%lock%set('check_access')
-        call console_error ('memory of '//trim(other%m3d_patch_info())// &
-          ' cannot be accessed from '//trim(self%m3d_patch_info()))
-        call io%lock%unset('check_access')
-        call shared%abort('memory array not accessible')
-      endif
-    end select
-  END SUBROUTINE check_access
 
   !===============================================================================
   SUBROUTINE print_to_stdout (self, arr, text)

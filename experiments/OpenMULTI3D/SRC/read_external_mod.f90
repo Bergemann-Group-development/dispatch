@@ -682,17 +682,12 @@ contains
     class(list_t):: list
     class(link_t), pointer:: link
     class(task_t), pointer:: task
-    integer, save :: level=0
     !-----------------------------------------------------------------------------
     call list%lock%set ('init_ids')
     link => list%head
     do while (associated(link))
       task => link%task
       call task%init_unique (same=.true.) ! obtain a unique ID
-      !if (task%level > level) then
-      !  level = task%level
-      !  list%first(level)%pointer => link
-      !endif
       link => link%next
     end do
     call list%lock%unset ('init_ids')
@@ -712,11 +707,8 @@ contains
     do while (associated(link))
       next => link%next
       if (link%task%is_set (bits%external)) then
-        !call link%remove_nbor_list2 (link%nbor)
         call list%remove (link)
         call link%task%dealloc()
-        !deallocate (link%task)
-        !deallocate (link)
       end if
       link => next
     end do

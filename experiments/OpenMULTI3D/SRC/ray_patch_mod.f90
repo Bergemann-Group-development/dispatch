@@ -22,9 +22,8 @@ MODULE ray_patch_mod
   USE op_math_mod, only: searchsorted
   USE interpol_mod, only: pchip_mono
   USE console_mod
-  USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, &
-    converged, print_send, atom_update_counter, comoving_frame, n_nu_out
+    converged, print_send, atom_update_counter, n_nu_out
   USE spectrum_mod, only: spectrum_type
   USE const_mod, only: cc, over_4pi, PI
   implicit none
@@ -35,7 +34,6 @@ MODULE ray_patch_mod
   public :: output_patch_window, output_patch_range
 
   type, public, extends(m3d_patch_t) :: ray_patch_t
-    type(ray_type) :: ray
     real(8) :: vec(3), wmu
     integer :: fs, fe, nf
     integer :: pre_pad_fs, pre_pad_fe

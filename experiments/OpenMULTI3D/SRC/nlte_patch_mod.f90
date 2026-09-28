@@ -21,7 +21,7 @@ MODULE nlte_patch_mod
   USE line_types_mod, only: linelist_type
   USE composition_mod, only: composition_type, departure_pointer_t, read_departures
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
-    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
+    global_maxerr, convlim, convmax, atom_update_counter, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &

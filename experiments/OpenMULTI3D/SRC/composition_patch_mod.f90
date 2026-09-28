@@ -11,7 +11,7 @@ MODULE composition_patch_mod
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, dlam, &
+  USE m3d_patch_mod,   only: m3d_patch_t, composition, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   rotate_atmos, decouple_continuum, n_nu, n_nu_out, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
@@ -20,7 +20,7 @@ MODULE composition_patch_mod
   USE m3d_debug_mod
   USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
   USE interpol_mod, only: pchip_slopes
-  USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
+  USE composition_mod, only: composition_type, exclude_elements, only_elements, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, &
   sample_linelist, opac_table_vmic, &
@@ -29,8 +29,9 @@ MODULE composition_patch_mod
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only: rt_patch_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, disable_ga, disable_stark, disable_vdw, ga_fallback
-  USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init, interval_t, merge_intervals
+  USE bbtrans_mod, only: tolerance, disable_ga, disable_stark, disable_vdw
+  USE linelist_mod, only: ll_profile, voigt_kernel, interval_t, merge_intervals
+  USE qlg, only: qlg_init
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
@@ -48,7 +49,6 @@ MODULE composition_patch_mod
   
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
-    class(gpatch_t), pointer :: mhd => null() ! pointer to MHD patch
     class(nlte_patch_t), pointer :: nlte_patch => null()
   contains
     procedure :: pre_init => composition_pre_init
@@ -63,7 +63,7 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.05
+  real(8), public :: FeH=-99.9, ldne=0.25, ldrho=0.25, ldtemp=0.05
   logical, public :: save_atmos=.true., save_eos=.false.
   logical, public :: pca_opac=.true.       ! .false. -> axis-aligned (lnT,lnNe) sampling grid
   real(4), public, dimension(:), allocatable :: external_abund
@@ -89,14 +89,13 @@ SUBROUTINE read_composition_params ()
   integer, save:: itimer=0, verbose=console_inherit
   namelist /composition_params/ verbose, absdat_file, abund_file, &
   isotope_file, molec_file, H_occupation_probability, &
-  switch, mhd_eos, debye_shield, &
+  mhd_eos, debye_shield, &
   tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, hydrogen_BPO, &
-  hydrogen_vcs_table, vcs_data_dir, &
-  ga_fallback, eosmet
+  hydrogen_vcs_table, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
-  dtemp, ldne, ldrho, ldtemp, absmet_file
+  ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
   tolerance, only_elements, line_scattering, ll_profile, voigt_kernel
   ! ----------------------------------------------------------------------------
@@ -135,7 +134,7 @@ SUBROUTINE read_composition_params ()
 
   ! Build QLG-bot's lookup tables. Must precede any opacity accumulation -- see the
   ! kernel note in HOP/linelist_mod.f90.
-  call voigt_kernel_init
+  call qlg_init
 
   if (linelist_folder /= '') then
     deallocate(linelist_file)

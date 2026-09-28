@@ -26,7 +26,6 @@ MODULE experiment_mod
     class(composition_patch_t), pointer :: composition => null()
     integer :: iter=0, maxiter, zs, ze
     integer :: dims(3), nbox(3)
-    character(len=2) :: v5
   contains
     procedure:: pre_init
     procedure:: init
@@ -138,7 +137,6 @@ CONTAINS
       call self%init_bdries ()
     endif
     call data_io%init (self)
-    !call self%init_level()
     call trace%end (itimer=itimer)
   END SUBROUTINE init
 
@@ -191,14 +189,7 @@ CONTAINS
   !===============================================================================
   SUBROUTINE post_update (self)
     class(experiment_t):: self
-    integer :: p(3)
     !----------------------------------------------------------------------------
-    !if (self%verbose > 1) then
-    !    p = [1,1,1]
-    !    p = p + self%li - 1
-    !    write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
-    !    self%mem(p(1),p(2),p(3),:,1,1)
-    !endif
     call print_execution_history(self, 'END')
   END SUBROUTINE post_update
 
@@ -209,7 +200,6 @@ CONTAINS
     character(len=64)  :: experiment_name
     optional           :: nq, ntask, experiment_name
     !-----------------------------------------------------------------------------
-    !print *, 'Experiment update called for patch', self%id
   END SUBROUTINE info
 
 !===============================================================================
@@ -231,7 +221,6 @@ CONTAINS
   SUBROUTINE finish (self)
     class(experiment_t):: self
     !-----------------------------------------------------------------------------
-    !self%finished = .true.
     self%time = io%end_time
     self%t = io%end_time
     call self%set(bits%frozen)
@@ -241,12 +230,8 @@ CONTAINS
   SUBROUTINE init_level (self)
     class(experiment_t):: self
     !-----------------------------------------------------------------------------
-    !if (irregular) then
-    !  self%level = stagger_levels(self%ipos(3)+1)
-    !elseif (any(self%n > 1)) then
     ! The level does not depend on the patch size in non-regular grids
     self%level = 1
-    !end if
   END SUBROUTINE init_level
 
   !===============================================================================
@@ -260,23 +245,10 @@ CONTAINS
     link%task => self
     self%link => link
     call self%init_level()
-    !call link%append_to(list)
     call list%append_link(self%link)
     self%key = self%hash_key()
     call list%hash_table%add (self%key, self%link)
   END SUBROUTINE append_to
-
-!!===============================================================================
-!SUBROUTINE experiment_nbor_relations(self, another, needed, needs_me, download)
-!  class(experiment_t) :: self
-!  class(task_t), pointer :: another         ! another task in the list
-!  logical :: needed, needs_me, download    ! Is the other task: needed,
-!                                           !    does it need me, should I download?
-!  !-----------------------------------------------------------------------------
-!  call trace%begin ('experiment_t%experiment_nbor_relations')
-!  call self%extras_t%nbor_relations(another, needed, needs_me, download)
-!  call trace%end()
-!END SUBROUTINE experiment_nbor_relations
 
   !===============================================================================
   SUBROUTINE statistics (self)

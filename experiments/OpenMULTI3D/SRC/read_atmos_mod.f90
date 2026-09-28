@@ -9,7 +9,7 @@ MODULE read_atmos_mod
   USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted
   USE m3d_patch_mod, only: composition, use_ne, use_rho, make_eos
   USE rt_params_mod, only: pivot_z, ray_offset
-  USE ray_mod, only: one_dimensional, rstar, rorigin
+  USE ray_mod, only: one_dimensional
   USE composition_mod, only: composition_type
   USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file
   USE units_mod, only: cgs
@@ -47,14 +47,8 @@ MODULE read_atmos_mod
   real(4), parameter :: luur = log(uur)
   real(4), parameter :: uut = 1.0e2       ! time
   real(4), parameter :: uuv = uul / uut   ! velocity
-  real(4), parameter :: uum = uuv * uur   ! momentum
   real(4), parameter :: uue = uuv**2      ! internal energy per unit mass
-  real(4), parameter :: uup = uur * uue   ! pressure
-  real(4), parameter :: uua = 1./uul      ! extinction coefficient (alpha)
-  !character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=256), save :: mesh_file, snap_file, data_file, aux_file
-  real(4), save :: maxTemp=huge(1.0)
-  real(4), save :: ee_offset=3.2122
   real(4), public :: timestamp=-1.0
   logical, public, save :: log_interpolation=.true.
   logical, public, save :: pchip_interpolation=.true.
@@ -377,7 +371,6 @@ contains
     !-----------------------------------------------------------------------------
     call read_parsed(read_marcs_file, file, atmos)
     allocate(abund, source=atmos%abund)
-    rstar = atmos%radius
 
     if (FeH < -99) then
       FeH = atmos%feh
@@ -731,12 +724,6 @@ contains
 
     if (self%zz(1) > self%zz(nz)) then
       self%zz = -self%zz
-    endif
-
-    if (rstar > 2) then
-      ! for spherical geometries
-      rorigin = self%zz(self%gz+1) + rstar
-      rstar = rstar + self%zz(nz)
     endif
 
     self%xx = self%xx - self%xx(1)         ! let the origin be zero

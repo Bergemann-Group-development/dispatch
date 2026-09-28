@@ -36,7 +36,7 @@ MODULE atom_mod
     !---------------------------------------------------------------------
     type, public, extends(spectrum_type) :: atomic_spectrum_type
       ! maximum number of active lines or continua at any given frequency
-      integer :: maxal=0, maxac=0, nmax=0, nlower, nupper
+      integer :: nmax=0
       ! which continua (ac) and lines (al) are active at each frequency
       integer, dimension(:,:), contiguous, pointer :: ac,al
       ! how many continua (nac) and lines (nal) are active at each frequency
@@ -72,9 +72,9 @@ MODULE atom_mod
     type, public :: atom_trans_t
       type(line_type), dimension(:), pointer, contiguous :: line => null()
       type(cont_type), dimension(:), pointer, contiguous :: cont => null()
-      ! SoA copy of the (non-hydrogen) bound-bound transitions for the SoA line kernel
-      ! path; built by atom_type%build_ll (globally for the linelist_out.txt export,
-      ! per rt-patch for the opacity/rate kernels)
+      ! SoA copy of the (non-hydrogen) bound-bound transitions, built by
+      ! atom_type%build_ll for the linelist_out.txt export and for deduplication
+      ! against the bulk line list
       type(linelist_type) :: ll
       real(4), dimension(:,:,:,:), allocatable :: adamp
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
@@ -94,7 +94,6 @@ MODULE atom_mod
       integer :: ncont  ! number of bound-free transitions
       integer :: nline  ! number of bound-bound transitions
       integer :: nlevel ! number of levels
-      integer :: nprd=0 ! number of PRD transitions
       integer :: idep=0 ! index of atom in departure coefficients array
       logical :: precomputed = .false. ! whether departure coeffs are precomputed
       
@@ -175,7 +174,7 @@ MODULE atom_mod
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: use_classic_col = .False., legacy_freql=.False.
-    logical, public :: lse_no_pivot = .True., kramer_bf=.False.
+    logical, public :: kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.false.
     logical, public :: ch0_hmip=.false.
@@ -230,7 +229,6 @@ MODULE atom_mod
     logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
 
-    public :: unique_int
   
   contains
 
@@ -1630,9 +1628,6 @@ MODULE atom_mod
     call nextentry(latom)
     read(latom,fmt='(a)') self%crout
 
-    ! sanity check
-    !self%crout = adjustl(self%crout)
-    !strl=len_trim(self%crout)
     self%crout = lowercase(adjustl(self%crout))
 
     select case (self%crout)
@@ -1884,26 +1879,19 @@ MODULE atom_mod
 
   !====================================================================================
   ! Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
-  ! linelist trans%ll for the SoA line kernels (linelist_mod).  Broadening is
-  ! copied as prepared by prepare_damping (same over_4pi/nu0 scaling), populations use
-  ! the composition ion densities via lnbase/ipart (= ion stage; lower_ev re-referenced
-  ! to the stage ground level), and multi-component lines (io>1) are expanded into one
-  ! entry per component sharing the same lower/upper levels and transition column.
-  !
-  ! f_offset present -> per-rt-patch build: the per-line frequency windows
-  ! [iblue,ired] (already clamped to the patch range) are stored 1-based relative to
-  ! f_offset, and itrans is the subset column (index in trans%line, matching
-  ! trans%gamma_ij).  Absent -> global build for the linelist_out.txt export, sorted
-  ! by wavelength.
+  ! linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
+  ! prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
+  ! (lower_ev re-referenced to the stage ground level), and multi-component lines
+  ! (io>1) are expanded into one entry per component sharing the same lower/upper
+  ! levels and transition column.
   !------------------------------------------------------------------------------------
-  SUBROUTINE build_ll (self, trans, f_offset)
+  SUBROUTINE build_ll (self, trans)
     class(atom_type), intent(in) :: self
     class(atom_trans_t), target :: trans
-    integer, intent(in), optional :: f_offset
     class(line_type), pointer :: line
     class(isotope_type), pointer :: isotopes(:)
     real(8) :: gf, gpref0, llam0, lower_ev, dej, frac, loggf, wt
-    integer :: i, ih, s, ig, iso, off, k0, n
+    integer :: i, ih, s, ig, iso, n
     !----------------------------------------------------------------------------------
     nullify(isotopes)
     if (associated(self%species)) then
@@ -1914,9 +1902,6 @@ MODULE atom_mod
         isotopes => species%isotope
       end select
     endif
-
-    off = 0
-    if (present(f_offset)) off = f_offset - 1
 
     ! pre-size the arrays so the per-line appends do not reallocate
     n = 0
@@ -1950,7 +1935,6 @@ MODULE atom_mod
       loggf  = log10(gf / frac)
       llam0  = log(line%lam0)
       dej    = H_E * line%nu0
-      k0     = trans%ll%nline
 
       if (line%io > 1) then
         do ih=1, line%io
@@ -1967,23 +1951,12 @@ MODULE atom_mod
           line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
           loggf, line%gv_in, line%ga_in, line%gq_in)
       endif
-
-      if (present(f_offset)) then
-        ! all entries just appended (components) share the line's frequency window;
-        ! the window grid is symmetric about the line centre, so its midpoint seeds f0
-        trans%ll%iws(k0+1:trans%ll%nline)  = line%iblue - off
-        trans%ll%iwe(k0+1:trans%ll%nline)  = line%ired - off
-        trans%ll%icen(k0+1:trans%ll%nline) = (line%iblue + line%ired) / 2 - off
-      endif
     end do
 
-    if (.not. present(f_offset)) then
-      call finalize_linelist(trans%ll)
-      ! the old bb formalism evaluates every active line, so flag them all as used
-      ! for the linelist_out.txt export (the SoA kernels, which would set the flag
-      ! per line, are currently disabled in rt_patch_mod)
-      trans%ll%used(1:trans%ll%nline) = .true.
-    endif
+    call finalize_linelist(trans%ll)
+    ! the bb formalism in rt_patch_mod evaluates every active line, so flag them all
+    ! as used for the linelist_out.txt export
+    trans%ll%used(1:trans%ll%nline) = .true.
   END SUBROUTINE build_ll
 
   !====================================================================================
@@ -2355,50 +2328,6 @@ MODULE atom_mod
 
     call trace%end(itimer)
   END SUBROUTINE set_active_transitions
-
-  !===============================================================================
-  ! returns arr without duplicate elements (assumes that all entries are positive!)
-  !===============================================================================
-  SUBROUTINE unique_int(arr, nout, idx)
-    integer, intent(inout), dimension(:) :: arr
-    integer, intent(out) :: nout
-    integer, intent(out), optional, dimension(:) :: idx
-    integer, dimension(:), allocatable, save :: scratch
-    !$omp threadprivate (scratch)
-    integer :: i, j, n, last
-    logical :: new, return_index
-    !-----------------------------------------------------------------------------
-    return_index = present(idx)
-    n = size(arr)
-
-    if (.not. allocated(scratch)) then
-      allocate(scratch(n))
-    elseif (n /= size(scratch)) then
-      deallocate(scratch)
-      allocate(scratch(n))
-    endif
-
-    nout = 0
-    do i=1, n
-      new = .true.
-      do j=1, nout
-        new = arr(i)/=scratch(j)
-        if (.not. new) exit
-      end do
-
-      if (new) then
-        nout = nout+1
-        scratch(nout) = arr(i)
-        j = nout
-      endif
-
-      if (return_index) then
-        idx(i) = j
-      endif
-    end do
-
-    arr(1:nout) = scratch(1:nout)
-  END SUBROUTINE unique_int
 
   !===============================================================================
   !     calculates partition function for ch
