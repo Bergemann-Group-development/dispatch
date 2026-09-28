@@ -2334,7 +2334,7 @@ contains
   ! Gather the per-cell inputs of the SoA line kernels (linelist_mod) for one atom:
   ! thermodynamic fields, Doppler arrays (single isotope, index 0) and the per-ion-
   ! stage population base
-  !   lnbase(:,:,:,s) = log(n_s) - log_part_s + dxi*(s-1)*e_kT + log(inv_df)
+  !   lnbase(:,:,:,s) = log(n_s) - log_part_s + log(inv_df)
   ! from the composition particle (element ion stage s, or the molecule itself) --
   ! the same formalism as the bulk linelist path in add_linelist_opacities.
   !-------------------------------------------------------------------------------
@@ -2387,8 +2387,7 @@ contains
           else
             lnbase(:,:,:,s) = log(max(ion%n,tiny(1d0))) + real(log(set_scale),4)
           endif
-          lnbase(:,:,:,s) = lnbase(:,:,:,s) - ion%part &
-                          + real(comp%dxi) * (s-1) * e_kT + log(idf3)
+          lnbase(:,:,:,s) = lnbase(:,:,:,s) - ion%part + log(idf3)
         end associate
       end do
     else
