@@ -54,10 +54,11 @@ $ OMP_STACKSIZE=256M ./dispatch.x demo.nml
 ```
 
 `dispatch.x` takes one namelist and writes its run under `data/<namelist name>/`, here
-`data/demo/`. The console shows the atmosphere and atom being read, then one
-`Iteration n/99` block per iteration of the statistical equilibrium, each ending with the
-largest relative population change (`global`), until `Converged` appears once that change
-falls below `convlim` (0.01 in `demo.nml`). The run ends with
+`data/demo/`. The console shows the atmosphere and atom being read, then one table row
+per iteration of the statistical equilibrium (`n/99`), whose `global` column is the
+largest relative population change of the previous iteration. Once that change falls
+below `convlim` (0.01 in `demo.nml`), every depth patch completes the current iteration
+and the solve stops. The run ends with
 
 ```
 OpenMULTI3D terminated normally.

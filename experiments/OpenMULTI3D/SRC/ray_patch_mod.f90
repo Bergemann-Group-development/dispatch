@@ -23,7 +23,7 @@ MODULE ray_patch_mod
   USE interpol_mod, only: pchip_mono
   USE console_mod
   USE m3d_patch_mod, only: m3d_patch_t, &
-    converged, print_send, atom_update_counter, n_nu_out
+    converged, print_send, n_nu_out
   USE spectrum_mod, only: spectrum_type
   USE const_mod, only: cc, over_4pi, PI
   implicit none

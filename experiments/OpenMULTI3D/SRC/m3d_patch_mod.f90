@@ -250,7 +250,6 @@ MODULE m3d_patch_mod
     integer, public, save :: save_rates=0
     character(len=128), public :: atmos_format='unknown'
     character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
-    type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
     type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
     ! flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
     ! flux has converged. rt_patch computes the flux AFTER nlte_patch has already

@@ -21,7 +21,7 @@ MODULE nlte_patch_mod
   USE line_types_mod, only: linelist_type
   USE composition_mod, only: composition_type, departure_pointer_t, read_departures
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
-    global_maxerr, convlim, convmax, atom_update_counter, global_pos, &
+    convlim, convmax, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, n_nu_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
@@ -43,7 +43,7 @@ MODULE nlte_patch_mod
     class(atomic_spectrum_type), pointer :: output_sp=>null()
     class(atomic_spectrum_type), pointer :: bf_sp=>null()
     class(atomic_spectrum_type), pointer :: bb_sp=>null()
-    real(8) :: maxerr=0, global=0, prev_global=0, prev_prev_global=0
+    real(8) :: maxerr=0, global=0
     real(8), dimension(:), allocatable :: lvlerr
     real(8) :: local
     integer :: natom=0
@@ -71,6 +71,15 @@ MODULE nlte_patch_mod
   end type nlte_patch_t
 
   integer, save :: epos(3), elvl, eatom=1
+  !-----------------------------------------------------------------------------
+  ! Population convergence is judged per iteration (see execute).  sweep_iter is
+  ! the iteration now under way, sweep_active the number of nlte_patches that
+  ! update in it, sweep_updates how many have, and sweep_maxerr the largest
+  ! change among them.  last_maxerr is the largest change of the previous,
+  ! complete iteration.  n_finished counts the finished nlte_patches.
+  !-----------------------------------------------------------------------------
+  integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
+  real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
   logical, public, save :: external_sp=.false.
   !-----------------------------------------------------------------------------
@@ -420,10 +429,9 @@ contains
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, p(3), m(3), ipos, ng_epos(4)
-    integer, save:: count=0
-    real(8) :: global, ng_emax
-    logical :: do_ng, locally_converged, found
+    integer :: i, j, k, p(3), m(3), ng_epos(4), count
+    real(8) :: ng_emax
+    logical :: do_ng, locally_converged, found, last
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
@@ -525,6 +533,43 @@ contains
       call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
     end do
 
+    !---------------------------------------------------------------------------
+    ! Population convergence.  Every nlte_patch of an iteration updates before
+    ! any RT task of that iteration runs, and those finish before the next
+    ! iteration starts, so the first update of an iteration marks the previous
+    ! one as complete.  Each patch compares the largest change of that complete
+    ! iteration with convlim; they all see the same value, whatever the order
+    ! they run in.  Once it is below convlim, every patch still performs this
+    ! iteration's solve, against the radiation field of the converged
+    ! populations, and the last one to do so sets `converged`.  The RT tasks of
+    ! this iteration and the next iteration's nlte updates are then skipped
+    ! (m3d_patch_t%pre_update), and each patch finishes with this solve.  The
+    ! count is taken before a patch finishes early (below), which must not
+    ! remove it from the iteration it has just solved.
+    !---------------------------------------------------------------------------
+    if (self%iter > 0) then
+      !$omp critical (nlte_sweep)
+      if (self%iter /= sweep_iter) then
+        if (sweep_updates /= sweep_active) then
+          call shared%abort ('nlte_patch_t%execute: an iteration started before the previous one had completed')
+        endif
+        sweep_iter = self%iter
+        sweep_active = n_nlte_patches - n_finished
+        sweep_updates = 0
+        last_maxerr = sweep_maxerr
+        sweep_maxerr = 0d0
+      endif
+      if (abs(self%maxerr) > abs(sweep_maxerr)) sweep_maxerr = self%maxerr
+      sweep_updates = sweep_updates + 1
+      last = sweep_updates == sweep_active
+      !$omp end critical (nlte_sweep)
+      self%global = last_maxerr
+      if (last .and. abs(self%global) > 0 .and. abs(self%global) < convlim &
+          .and. .not. flux_convergence .and. self%iter < self%maxiter) then
+        converged = .true.
+      endif
+    endif
+
     ! locally_converged is population/convmax-based (premature_finish shortcut);
     ! it must not terminate the task ahead of the flux metric when
     ! flux_convergence is the authoritative one (see the matching guard in
@@ -533,32 +578,7 @@ contains
       call self%finish()
     endif
 
-    if (self%iter == 0) then
-      call self%init_departures()
-    else
-      !$omp critical (maxerr_reset)
-      self%prev_prev_global = self%prev_global
-      self%prev_global = self%global
-      self%global = global_maxerr%update(0.d0)
-      ipos = global_pos%update(+0)
-      count = atom_update_counter%update(+1)
-      !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
-      if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%global)) then
-        call global_pos%reset(self%ipos(3))
-        call global_maxerr%reset(self%maxerr)
-        self%global = self%maxerr
-      endif
-      !$omp end critical (maxerr_reset)
-      if (count >= self%task_list%dims(3)) then
-        if ((abs(self%global) > 0) .and. abs(self%global) < convlim .and. abs(self%maxerr) < convlim) then
-          if (.not. flux_convergence) then
-            if (self%iter < self%maxiter) converged = .true.
-            !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
-            call self%finish()
-          endif
-        endif
-      endif
-    endif
+    if (self%iter == 0) call self%init_departures()
 
     ! Flux-convergence wind-down (one more population solve):
     ! rt_patch raised flux_conv_signal in the PREVIOUS iteration, after nlte_patch
@@ -600,7 +620,6 @@ contains
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
     integer :: i, j, l, n
-    integer, save :: count=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
 
@@ -634,8 +653,8 @@ contains
 
     call self%m3d_patch_t%finish()
     !$omp atomic capture
-    count = count + 1
-    n = count
+    n_finished = n_finished + 1
+    n = n_finished
     !$omp end atomic
     if (n == self%task_list%dims(3)) then
       call self%save_convergence_report()
