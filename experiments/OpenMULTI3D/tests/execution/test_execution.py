@@ -659,17 +659,19 @@ def test_monitor_reports_what_it_can_without_a_log(tmp_path):
 QUEUE = """\
  print_list
  F T F F   0   1   0.0000   mhd_patch     128   1
- F T F F     rt_patch     129   1 -15  -1
- F T F F     rt_patch     130   1 -14  -1
- F T F F     rt_patch     131   1 -13  -1
- F T F F     rt_patch     132   1  -3   1
- F T F F     rt_patch     133   1   1   1
+ F T F F    rt_column     129   1 -15  -1
+ F T F F    rt_column     130   1 -14  -1
+ F T F F    rt_column     131   1 -13  -1
+ F T F F    rt_column     132   1  -3   1
+ F T F F    rt_column     133   1   1   1
 """
 DISPATCH = """\
        0.18499600  0   3  PRE    mhd_patch      128   1   0   0        0.00000000
        0.18505000  0   3  END    mhd_patch      128   1   0   0        0.00000000
-       0.20000000  0   3  PRE     rt_patch      129   1 -15  -1        0.50000000
-       0.30000000  0   3  END     rt_patch      129   1 -15  -1        0.50000000
+       0.20000000  0   3  PRE    rt_column      129   0 -15  -1        0.50000000
+       0.20000000  0   3  PRE     rt_patch        2   1 -15  -1        0.50000000
+       0.30000000  0   3  END     rt_patch        2   1 -15  -1        0.50000000
+       0.30000000  0   3  END    rt_column      129   0 -15  -1        0.50000000
        0.30000000  0   3  SKP     rt_patch      130   1 -14  -1        0.50000000
        0.40000000  0   4  PRE     rt_patch      131   1 -13  -1        0.50000000
        0.40000000  0   5  END     rt_patch      132   1  -3   1        0.50000000
@@ -681,8 +683,8 @@ DISPATCH = """\
 def test_monitor_counts_the_output_pass_rt_tasks(tmp_path):
     """A synthesis's rate is its output pass: the final output rays (``i_mu < 0``) run
     once, the scattering loop's rays (``i_nu < 0``) ``rt_output_params%maxiter`` times,
-    both listed in the queue at the start and logged in the dispatch file as they end
-    (or are skipped, their result at hand). The iteration pass (both indices positive)
+    both listed in the queue at the start as columns (here of one depth slab) and logged
+    in the dispatch file as each slab ends (or is skipped, its result at hand). The iteration pass (both indices positive)
     sweeps its rays repeatedly until convergence, so those rows are left out and a
     departure solve's iterations, from the log, are its rate."""
     from tumult.launch import monitor

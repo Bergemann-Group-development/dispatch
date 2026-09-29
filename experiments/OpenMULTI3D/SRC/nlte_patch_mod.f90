@@ -23,14 +23,13 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
-    rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, detailed_absmet, &
+    rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, n_nu_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates
   USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
-  USE rt_patch_mod, only: rt_patch_t
   USE m3d_debug_mod
   USE shared_mod
   USE console_mod
@@ -1123,20 +1122,22 @@ contains
     !    does it need me, should I download?
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')
+    if (another%kind == 'rt_column') then
+      ! every column sweeps this slab: an update needs the rates of all of
+      ! them, and each of their iterations needs the populations
+      needed = .true.; needs_me = .true.; download = .false.
+      call trace%end()
+      return
+    endif
     call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
     if (needed .or. needs_me) then
-      select type (another)
-       class is (rt_patch_t)
-        ! is needed and needs_me
-       class default
-        if (another%id == self%m3d_parent%id) then
-          ! the composition patch needs this to be able to
-          ! update again before final spectrum is printed
-        else
-          needed = .false. ; needs_me = .false.
-        endif
-      end select
+      if (another%id == self%m3d_parent%id) then
+        ! the composition patch needs this to be able to
+        ! update again before final spectrum is printed
+      else
+        needed = .false. ; needs_me = .false.
+      endif
     endif
 
     call trace%end()
@@ -1161,10 +1162,10 @@ contains
     integer :: key(4), i_nu, i_mu
     !-----------------------------------------------------------------------------
     call self%m3d_patch_t%init_nbors_hash(nbors)
-    key = self%key
-    key(4) = hash_string('rt_patch')
+    key(1) = 0
+    key(4) = hash_string('rt_column')
     do i_mu=-1, 2
-      do i_nu=-self%n_nu, 2*self%n_nu
+      do i_nu=-n_nu_out, 2*n_nu
         key(2) = i_nu
         key(3) = i_mu
         call self%check_nbor(key, nbors)

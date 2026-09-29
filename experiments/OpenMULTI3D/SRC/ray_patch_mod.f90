@@ -37,17 +37,14 @@ MODULE ray_patch_mod
     real(8) :: vec(3), wmu
     integer :: fs, fe, nf
     integer :: pre_pad_fs, pre_pad_fe
-    logical :: padded, level_boundary=.false.
+    logical :: padded
   contains
     procedure :: check_in_bounds
-    procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
-    procedure :: is_upstream => ray_is_upstream
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
     procedure :: total_mesg_buffer_size
-    procedure :: init_nbors_hash
     procedure :: init_bdries
     procedure :: bndries
   end type ray_patch_t
@@ -124,80 +121,21 @@ contains
   END SUBROUTINE output_patch_range
 
 !===============================================================================
-!> Determine if a task is upstream.
-!===============================================================================
-  logical FUNCTION ray_is_upstream (self, other) result(is_upstream)
-    class(ray_patch_t):: self, other
-    !-----------------------------------------------------------------------------
-    is_upstream = self%i_mu == other%i_mu
-    is_upstream = is_upstream .and. self%key(1)-self%dir == other%key(1)
-  END FUNCTION ray_is_upstream
-
-!===============================================================================
-!> Initialize boundary bits
+!> Keep only the physical boundary bit of the face through which the rays
+!> enter; set_upstream_boundary reads it to find the start of a sweep.
 !===============================================================================
   SUBROUTINE init_bdries (self)
     class(ray_patch_t):: self
     !-----------------------------------------------------------------------------
     call trace%begin ('ray_patch_t%init_bdries')
     call self%m3d_patch_t%init_bdries()
-    if (self%dir == 0) then
-      call self%set(bits%no_download)
-    elseif (self%dir > 0) then
+    if (self%dir > 0) then
       call self%boundaries%clear(bits%zu)
-      if (self%boundaries%is_set(bits%zl)) then
-        call self%set(bits%no_download)
-      endif
     elseif (self%dir < 0) then
       call self%boundaries%clear(bits%zl)
-      if (self%boundaries%is_set(bits%zu)) then
-        call self%set(bits%no_download)
-      endif
     endif
     call trace%end()
   END SUBROUTINE init_bdries
-
-  !===============================================================================
-  SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
-    class(ray_patch_t) :: self
-    class(task_t), pointer :: another         ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed,
-    !    does it need me, should I download?
-    !-----------------------------------------------------------------------------
-    call trace%begin ('ray_patch_t%ray_nbor_relations')
-    call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
-
-    if (needed .or. needs_me) then
-      select type(another)
-       class is(ray_patch_t)
-        if (self%kind==another%kind) then
-          if (self%is_upstream(another)) then
-            needs_me = .false.
-            self%level_boundary = another%level /= self%level
-          elseif (another%is_upstream(self)) then
-            needed = .false.
-            download = .false.
-          elseif (self%ipos(3) /= another%ipos(3)) then
-            needed = .false.; needs_me = .false.; download = .false.
-          endif
-        endif
-       class is(m3d_patch_t)
-        if (another%id /= self%m3d_parent%id) then
-          needed = .false.; needs_me = .false.; download = .false.
-          if (associated(another%m3d_parent)) then
-            if (another%m3d_parent%id == self%m3d_parent%id) then
-              ! could be a nlte_patch needed by net_opac
-              needed = .true.
-            endif
-          endif
-        endif
-       class default
-        needed = .false.; needs_me = .false.; download = .false.
-      end select
-    endif
-
-    call trace%end()
-  END SUBROUTINE ray_nbor_relations
 
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
@@ -392,30 +330,6 @@ contains
     cib = self%fcheck>=self%fs .and. self%fcheck<=self%fe
     cib = cib .and. self%m3d_patch_t%check_in_bounds()
   END FUNCTION check_in_bounds
-
-!===============================================================================
-!> Fast method to generate nbor lists in cases with very long task lists
-!===============================================================================
-  SUBROUTINE init_nbors_hash (self, nbors)
-    class(ray_patch_t):: self
-    class(nbor_t), pointer:: nbors
-    !.............................................................................
-    class(task_t), pointer:: task
-    class(nbor_t), pointer:: nbor
-    integer, save:: itimer=0
-    integer :: i, key(4)
-    !-----------------------------------------------------------------------------
-    call trace%begin('ray_patch_t%init_nbors_hash', itimer=itimer)
-    !call self%m3d_patch_t%init_nbors_hash(nbors)
-
-    key(2:4) = self%key(2:4)
-    key(1) = self%key(1)-1
-    call self%check_nbor(key, nbors)
-
-    key(1) = self%key(1)+1
-    call self%check_nbor(key, nbors)
-    call trace%end (itimer)
-  END SUBROUTINE init_nbors_hash
 
   !===============================================================================
   SUBROUTINE bndries (self)

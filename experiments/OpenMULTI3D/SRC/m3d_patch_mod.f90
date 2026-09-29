@@ -596,7 +596,7 @@ MODULE m3d_patch_mod
       self%maxiter = 1
     case ('nlte_patch')
       self%maxiter = rt_iter%maxiter
-    case ('rt_patch')
+    case ('rt_patch', 'rt_column')
       self%maxiter = rt_iter%maxiter - 1
     end select
 
@@ -969,10 +969,8 @@ MODULE m3d_patch_mod
   !> Put the output-spectrum tasks back in play, once the last nlte_patch has
   !> converged.  This has to be done explicitly: check_ready() is normally called
   !> on a task by its nbors, as they update, but the nbors of these tasks -- the
-  !> nlte_patch, the composition and the iterative rt_patches of their column --
-  !> have all finished by now, so no update that would check them is left.  The
-  !> task at the bottom of the domain is the one that matters; the ones above it
-  !> are picked up as the long-characteristics sweep works its way up.
+  !> nlte_patches and compositions of their slabs -- may all have finished by
+  !> now, so no update that would check them is left.
   !===============================================================================
   SUBROUTINE release_output_tasks (task_list)
     class(list_t), pointer :: task_list

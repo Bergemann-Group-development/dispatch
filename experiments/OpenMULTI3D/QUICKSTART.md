@@ -71,10 +71,11 @@ Before execution, `Memory estimate rank ...` reports the expected peak of the me
 Dispatch registers on each MPI rank, in GiB (2³⁰ bytes). The equation-of-state setup,
 the NLTE iteration and the output pass run one after the other, so the estimate is the
 persistent allocation plus the largest of the three phases. The EOS phase grows with
-the cells of the composition patches that run at the same time; the RT phases hold one
-workspace per busy thread, one boundary buffer per column of patches and, with
-`Jnu_to_file=F`, the radiation fields of every patch. `n_nu` splits the frequencies
-over more patches and shrinks only the per-thread workspace.
+the cells of the composition patches that run at the same time. In the RT phases each
+busy thread sweeps one column (a frequency window and ray direction through all depth
+slabs) and holds the workspace of one slab and the column's boundary buffer; with
+`Jnu_to_file=F` the radiation fields of every slab are held as well. Raising `n_nu`
+splits the frequencies over more columns and shrinks both per-thread terms.
 
 At completion, `Memory comparison rank ...` gives the estimate, the registered peak and
 their difference. Opacity caches, solver temporaries and allocations Dispatch does not

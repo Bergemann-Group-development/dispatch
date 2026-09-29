@@ -59,9 +59,10 @@ zero, since it takes seconds. Within a step, the bar fills with the step's own d
 runs: every two seconds the document reads them (`WorkflowHandle.native_fraction`: the
 batch executor names every run of a step before launching any, so the mean over them of
 not started, running and finished is the step's fraction; a running run's share is
-`tumult.launch.monitor`, which counts the output pass's `rt_patch` tasks the run's
-`rank_00000.que` lists, the final rays once and the scattering loop's rays
-`rt_output_params%maxiter` times, against those its `rank_00000.disp` has ended, while
+`tumult.launch.monitor`, which counts the output pass's slab sweeps, those of the
+`rt_column` tasks the run's `rank_00000.que` lists, the final rays once and the
+scattering loop's rays `rt_output_params%maxiter` times, against the `rt_patch` slabs its
+`rank_00000.disp` has ended, while
 the converging iteration pass reports its iterations from the log) and shows the
 fraction as `synthesis 45%`, feeding it into the remaining-time estimate. On the Fe
 balance-test masks against the KPNO atlas on the MARCS grid (LTE, 15 lines, 40 runs in

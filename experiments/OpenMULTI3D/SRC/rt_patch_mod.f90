@@ -16,7 +16,7 @@ MODULE rt_patch_mod
   USE handyfuncs_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
-  USE m3d_halo_mod, only: lock_mem, unlock_mem
+  USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
     dlam, n_nu_out, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
@@ -80,12 +80,18 @@ MODULE rt_patch_mod
   public :: verify_output_patch_coverage
 
   !-----------------------------------------------------------------------------
+  ! The state of one frequency window, ray direction and depth slab.  A slab is
+  ! not a task: the rt_column_t of its window and direction sweeps it in order
+  ! (rt_column_mod), sets upstream to the slab swept before it, hands it the
+  ! boundary buffer (mem) and marks the last slab of a complete sweep with
+  ! column_end.  up_twin and dn_twin are set there too.
+  !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: rt_patch_t
     class(rt_patch_t), pointer :: upstream=>null()
-    class(rt_patch_t), pointer :: dnstream=>null()
     class(rt_patch_t), pointer :: up_twin=>null()
     class(rt_patch_t), pointer :: dn_twin=>null()
     logical :: Jnu_freed=.false.
+    logical :: column_end=.false.
     ! The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
     ! last iteration whose hemisphere this patch has completed.  combined_iter:
     ! the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
@@ -221,12 +227,15 @@ MODULE rt_patch_mod
     procedure :: get_vproj
     procedure :: free_point_tables
     procedure :: print_post_update_info
-    procedure :: nbor_relations => rt_patch_nbor_relations
-    procedure :: init_nbors_hash
+    procedure :: append_to_task_list
     procedure :: finish
     procedure :: allocate_mem
-    procedure :: copy_to
+    procedure :: allocate_boundary
   end type rt_patch_t
+
+  type, public :: rt_patch_ptr_t
+    class(rt_patch_t), pointer :: p => null()
+  end type rt_patch_ptr_t
 
   !-----------------------------------------------------------------------------
   ! NB: work, the background arrays, cntrbf_data and the patch dimensions
@@ -283,13 +292,12 @@ MODULE rt_patch_mod
 contains
 
   !===============================================================================
-  !> Leading registered RT allocations of one patch, in bytes, before the first
+  !> Leading registered RT allocations of one slab, in bytes, before the first
   !> execution.  Keep the array counts consistent with allocate_arrays and
   !> deallocate_arrays.  work is execution-local; retained survives between
-  !> executions when Jnu_to_file is false; boundary is one downstream buffer,
-  !> which is handed down the column (copy_to), so a chain holds one at a time;
-  !> persistent is the patch's u_phase.  Opacity caches and solver temporaries
-  !> are excluded.
+  !> executions when Jnu_to_file is false; boundary is the buffer its column
+  !> hands from slab to slab; persistent is the slab's u_phase.  Opacity caches
+  !> and solver temporaries are excluded.
   !===============================================================================
   SUBROUTINE estimate_memory (self, work, retained, boundary, persistent)
     class(rt_patch_t), intent(in) :: self
@@ -306,7 +314,6 @@ contains
     retained = 0.d0
     boundary = 3*real(storage_size(0.0_4)/8,8)*self%nf* &
       self%n(1)*self%n(2)*self%n_mu*self%n_set
-    if (associated(self%mem)) boundary = 0.d0 ! already in the startup allocation
     ! u_phase, allocated by patch_t%init when the patch first executes
     persistent = real(storage_size(0.0_4)/8,8)*product(real(self%n+2*self%ng,8))
     if (associated(self%u_phase)) persistent = 0.d0
@@ -633,6 +640,10 @@ contains
   END SUBROUTINE init_patch_trans
 
   !===============================================================================
+  !> A slab whose atoms have converged (premature_finish) keeps the exit plane of
+  !> its last sweep (static_mem), which its column passes on to the slabs after
+  !> it in place of a new one.
+  !===============================================================================
   SUBROUTINE rt_patch_pre_update (self)
     class(rt_patch_t), target :: self
     logical :: conv
@@ -657,7 +668,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: vproj
     real(4) :: wmu
     real(8) :: vec(3)
-    logical :: skip, get_cntrbf, end_boundary, do_rotate_atmos, top_of_domain
+    logical :: skip, get_cntrbf, do_rotate_atmos, top_of_domain
     integer :: i, j, i_mu, zs, ze, fs, fe, ng, i_set, nrad
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -695,11 +706,6 @@ contains
     ! altogether, leaving Psi at the zero it is allocated with, and
     ! bound_bound_rates then takes the unpreconditioned rates.
     self%split_rates = rate_formulation == 'largest' .and. any(self%get_rates)
-    end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
-    end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
-    if (.not. end_boundary .and. associated(self%dnstream)) then
-      end_boundary = self%dnstream%is_finished()
-    endif
     top_of_domain = self%patch%boundaries%is_set(bits%zu) .and. (self%dir > 0)
 
     call allocate_arrays()
@@ -772,13 +778,14 @@ contains
       if (save_linelist) call self%collect_line_diagnostics()
     endif
 
-    if (end_boundary) then
+    ! mem holds the emergent intensity at the end of a complete sweep; the
+    ! column frees it afterwards
+    if (self%column_end) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
       elseif (self%do_full_sp .and. top_of_domain) then
         call self%check_flux_convergence()
       endif
-      call self%deallocate_mem()
     endif
 
     call deallocate_arrays()
@@ -1422,8 +1429,9 @@ contains
   !> previous iteration or the current one, or a partial accumulation, depending
   !> on the schedule.  Instead, the twin that completes an iteration last forms
   !> the average and hands it to both.  This is safe without a lock on the data:
-  !> the partner has finished the iteration, and it cannot start the next one
-  !> before this task has advanced its time, which happens after execute returns.
+  !> the partner has finished the iteration, and its column cannot start the
+  !> next one before this slab's column has finished the current one (the twin
+  !> columns need each other, see rt_column_t%nbor_relations).
   !> Every iteration therefore reads the previous iteration's full-sphere values
   !> only, whatever the thread count or schedule.
   !>
@@ -1719,7 +1727,6 @@ contains
     character(len=256) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%lte_background_emission', itimer=itimer)
-    if (.not. associated(self%up_twin)) self%up_twin => self
 
     fs = self%fs
     fe = self%fe
@@ -2744,8 +2751,8 @@ contains
         end do
       end do
       !-------------------------------------------------------------------------
-      ! The incoming boundary comes straight from the upstream patch, via the
-      ! buffer handed over in copy_to().  If it is already non-finite here, the
+      ! The incoming boundary comes straight from the upstream slab, via the
+      ! buffer the column handed over.  If it is already non-finite here, the
       ! corruption did not happen in this patch, and the upstream id says where
       ! to look next.  If it is clean, but mem is non-finite in post_update, the
       ! garbage was produced locally (opacities, Jnu, or the transfer solve).
@@ -2866,7 +2873,7 @@ contains
     endif
 
     if (.not. associated(self%mem)) then
-      call self%allocate_mem()
+      call self%allocate_boundary()
     endif
 
     z = merge(self%patch%n(3), 1, self%dir > 0)
@@ -3211,105 +3218,19 @@ contains
   END SUBROUTINE print_post_update_info
 
   !===============================================================================
-  SUBROUTINE rt_patch_nbor_relations(self, another, needed, needs_me, download)
-    class(rt_patch_t) :: self
-    class(task_t), pointer :: another        ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed,
-    ! does it need me, should I download?
-    class(task_t), pointer :: other
-    logical :: default
-    ! ----------------------------------------------------------------------------
-    call trace%begin ('rt_patch_t%nbor_relations')
-    call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
-
-    if (needed .or. needs_me) then
-      select type(another)
-       class is (rt_patch_t)
-        ! do nothing
-        if (self%ipos(3) /= another%ipos(3)) then
-          if (needed) then
-            self%upstream => another
-          endif
-          if (needs_me) then
-            self%dnstream => another
-          endif
-        else
-          if (self%do_final) then
-            needs_me = .false.
-            if (another%i_mu==1) then
-              self%up_twin => another
-            elseif (another%i_mu==2) then
-              self%dn_twin => another
-            endif
-          elseif(another%do_final) then
-            needed = .false.
-          else
-            ! we only use dn_twin here as it doesn't really matter
-            ! which one goes up and which one goes down. We assign
-            ! the other direction with self in lte_background_emission
-            self%dn_twin => another
-          endif
-        endif
-       class is (m3d_patch_t)
-        if (another%id == self%m3d_parent%id) then
-          needs_me = .false.
-        else
-          select case(another%kind)
-           case ('nlte_patch')
-            needs_me = .true.; needed = .true.
-          end select
-        endif
-       class default
-        needed = .false.; needs_me = .false.
-      end select
-    endif
-
-    call trace%end()
-  END SUBROUTINE rt_patch_nbor_relations
-
+  !> Slab states are swept by their rt_column_t and never enter the task list.
+  !> They still get a link of their own, since patch_t%init takes the level and
+  !> hash key (the file key) from self%link%task.
   !===============================================================================
-  !> Fast method to generate nbor lists in cases with very long task lists
-  !===============================================================================
-  SUBROUTINE init_nbors_hash (self, nbors)
-    class(rt_patch_t):: self
-    class(nbor_t), pointer:: nbors
-    !.............................................................................
-    class(task_t), pointer:: task
-    class(nbor_t), pointer:: nbor
-    integer, save:: itimer=0
-    integer :: key(4)
+  SUBROUTINE append_to_task_list (self)
+    class(rt_patch_t), target :: self
+    class(m3d_halo_t), pointer :: link
     !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch_t%init_nbors_hash', itimer=itimer)
-    call self%ray_patch_t%init_nbors_hash(nbors)
-
-    key = self%key
-    if (rt_out%maxiter > 0) then
-      if (self%do_out_sp) then
-        if (self%do_final) then
-          key(3) = 1
-          call self%check_nbor(key, nbors)
-          key(3) = 2
-          call self%check_nbor(key, nbors)
-        else
-          key(3) = -1
-          call self%check_nbor(key, nbors)
-        endif
-      endif
-    endif
-    if (.not. self%do_final) then
-      key(3) = merge(1, 2, self%i_mu==2)
-      call self%check_nbor(key, nbors)
-    endif
-
-    key(2) = 0
-    key(3) = 0
-    key(4) = hash_string('nlte_patch')
-    call self%check_nbor(key, nbors)
-
-    key(4) = hash_string('composition')
-    call self%check_nbor(key, nbors)
-    call trace%end (itimer)
-  END SUBROUTINE init_nbors_hash
+    allocate (link)
+    call link%init()
+    link%task => self
+    self%link => link
+  END SUBROUTINE append_to_task_list
 
   !===============================================================================
   SUBROUTINE finish(self)
@@ -3318,23 +3239,6 @@ contains
     logical :: cleanup
     ! ----------------------------------------------------------------------------
     call self%m3d_patch_t%finish()
-    !-----------------------------------------------------------------------------
-    ! Free the upstream boundary memory, but only if the upstream task will not
-    ! run again.  For i_mu=2 the upstream is the patch above, which converges
-    ! later than this one and is then still iterating -- taking its mem away
-    ! races with the set_downstream_boundary() writing it.  Such an upstream
-    ! frees its own mem on its next execute anyway, where end_boundary has now
-    ! become true, because this task, its dnstream, has finished.
-    !-----------------------------------------------------------------------------
-    if (associated(self%upstream)) then
-      if (self%upstream%is_finished()) then
-        call lock_mem (self%upstream, 'finish')
-        if (associated(self%upstream%mem)) then
-          call self%upstream%deallocate_mem()
-        endif
-        call unlock_mem (self%upstream, 'finish')
-      endif
-    endif
     !-----------------------------------------------------------------------------
     ! Both twins hold a Jnu, and both are freed here, by whichever of the two
     ! finishes last.  They can reach this point at the same time, though, so the
@@ -3392,26 +3296,27 @@ contains
   END SUBROUTINE finish
 
   !===============================================================================
+  !> patch_t%init allocates mem here.  A slab's mem is only its boundary buffer,
+  !> which allocate_boundary creates when a sweep first needs it.
+  !===============================================================================
   SUBROUTINE allocate_mem(self, m_in)
     class(rt_patch_t) :: self
-    class(line_type), pointer :: line
-    real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: tmp
     integer, intent(in), optional :: m_in(6)
-    integer :: i, fs, fe, m(6)
-    logical :: ok
-    ! ----------------------------------------------------------------------------
-    ok = self%is_set(bits%no_download) .or. self%iter > 0
-    if (ok) then
-      m = [self%nf, self%n(1), self%n(2), self%n_mu*self%n_set, 1, 3]
-      call self%patch_t%allocate_mem(m)
-      fs = self%fs
-      fe = self%fe
-      self%nx = self%n(1)
-      self%ny = self%n(2)
-      tmp => self%mem
-      self%mem(fs:fe,1:self%nx,1:self%ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
-    endif
   END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  !> The boundary buffer: the exit plane (chi, S, I) of every ray and set.
+  !===============================================================================
+  SUBROUTINE allocate_boundary(self)
+    class(rt_patch_t) :: self
+    real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: tmp
+    integer :: m(6)
+    ! ----------------------------------------------------------------------------
+    m = [self%nf, self%n(1), self%n(2), self%n_mu*self%n_set, 1, 3]
+    call self%patch_t%allocate_mem(m)
+    tmp => self%mem
+    self%mem(self%fs:self%fe,1:self%n(1),1:self%n(2),self%mus:self%mue,1:self%n_set,1:3) => tmp
+  END SUBROUTINE allocate_boundary
 
   !===============================================================================
   SUBROUTINE save_intensity (self)
@@ -3572,53 +3477,6 @@ contains
     endif
     call trace%end(itimer)
   END SUBROUTINE check_flux_convergence
-
-  !===============================================================================
-  SUBROUTINE copy_to (self, tgt)
-    class(rt_patch_t):: self
-    class(patch_t):: tgt
-    integer :: i, i_set, i_mu
-    integer :: x, y
-    character(len=256) :: msg
-    !-----------------------------------------------------------------------------
-    ! Invariant: the source of a download always holds a boundary buffer.  It is
-    ! handed over (not copied) below, and the source re-creates one in
-    ! set_downstream_boundary().  A source without mem here means someone else
-    ! took it -- the download only holds a *read* lock on the source, while
-    ! copy_to modifies it, so a concurrent download by the source's own dnstream,
-    ! or by the source itself, can steal the buffer.  Report loudly rather than
-    ! hand out a null pointer, which set_upstream_boundary() would then read.
-    !-----------------------------------------------------------------------------
-    if (.not. associated(self%mem)) then
-      write(msg,'(A,2(A,I8),2(A,L2))') 'RACE: copy_to with unassociated source mem', &
-        ' src=', self%id, ' tgt=', tgt%id, ' src_static=', self%static_mem, &
-        ' tgt_static=', tgt%static_mem
-      call console_error (msg)
-      call shared%abort ('rt_patch_t%copy_to: source mem gone')
-    endif
-    if (.not. self%static_mem) then
-      tgt%mem => self%mem
-      nullify(self%mem)
-    else
-      if (.not. associated(tgt%mem)) then
-        call tgt%allocate_mem()
-      endif
-      do i=1, 3
-        do i_set=1, self%n_set
-          do i_mu=self%mus, self%mue
-            do y=1, self%n(2)
-              do x=1, self%n(1)
-                tgt%mem(:,x,y,i_mu,i_set,i) = self%mem(:,x,y,i_mu,i_set,i)
-              end do
-            end do
-          end do
-        end do
-      end do
-      if (tgt%static_mem) then
-        call self%deallocate_mem()
-      endif
-    endif
-  END SUBROUTINE copy_to
 
   !===============================================================================
   SUBROUTINE mem_register(arr, label)

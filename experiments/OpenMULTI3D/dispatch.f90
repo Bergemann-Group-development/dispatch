@@ -24,7 +24,7 @@ PROGRAM dispatch
   USE timer_mod
   USE mpi_debug_mod
   USE m3d_patch_mod, only: write_linelist_out
-  USE composition_patch_mod, only: report_memory_estimate
+  USE rt_column_mod, only: report_memory_estimate
   class(task_list_t), pointer:: task_list => null()
   real(8):: memory_estimate
   !.............................................................................

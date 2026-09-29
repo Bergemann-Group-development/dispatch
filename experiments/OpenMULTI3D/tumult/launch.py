@@ -202,13 +202,14 @@ def monitor(folder, log_file=None):
     solve's progress against ``rt_iteration_params%maxiter``, replaced by an extrapolated
     total once the last few iterations are improving monotonically enough to fit. The
     dispatcher's queue and dispatch logs give the patch tasks: the atmosphere setup, and
-    the output pass's ``rt_patch`` tasks, one per patch and frequency set, listed in the
-    queue when the run starts and logged in the dispatch file each time one ends, so a
-    synthesis reports its RT sweep as it goes. The queue's last two columns (``i_nu``,
-    ``i_mu``) tell the passes apart: the final output ray (``i_mu < 0``) runs once, the
-    output scattering loop (``i_nu < 0``) a fixed ``rt_output_params%maxiter`` times, and
-    the iteration pass (both positive) up to ``rt_iteration_params%maxiter`` times with
-    converged sets skipped, so its tasks are not counted -- the iterations are its rate.
+    the output pass's RT sweeps. The queue lists one ``rt_column`` task per frequency
+    window and ray direction when the run starts; each sweeps every depth slab, and the
+    dispatch file logs an ``rt_patch`` line each time a slab ends, so a synthesis reports
+    its RT sweep as it goes. The last two columns (``i_nu``, ``i_mu``) tell the passes
+    apart: the final output ray (``i_mu < 0``) runs once, the output scattering loop
+    (``i_nu < 0``) a fixed ``rt_output_params%maxiter`` times, and the iteration pass
+    (both positive) up to ``rt_iteration_params%maxiter`` times with converged sets
+    skipped, so its tasks are not counted -- the iterations are its rate.
     Everything is optional: a run that has not written its namelist yet, or one launched
     without a log file, reports what it can rather than failing. ``total`` is an estimate
     and ``done`` can exceed it when a solve outruns its own extrapolation, so a caller
@@ -260,12 +261,13 @@ def monitor(folder, log_file=None):
     file = folder / 'rank_00000.que'
     if file.is_file():
         lines = file.read_text(errors='replace').splitlines()
-        nmax += len([l for l in lines if 'mhd_patch'  in l])
+        n_slab = len([l for l in lines if 'mhd_patch'  in l])
+        nmax += n_slab
         nmax += len([l for l in lines if 'nlte_patch' in l and '-' in l])
         for l in lines:
-            if 'rt_patch' in l:
+            if 'rt_column' in l:
                 cols = l.split()
-                rt_total += rt_sweeps(int(cols[-2]), int(cols[-1]))
+                rt_total += n_slab*rt_sweeps(int(cols[-2]), int(cols[-1]))
         nmax += rt_total
 
     file = folder / 'rank_00000.disp'

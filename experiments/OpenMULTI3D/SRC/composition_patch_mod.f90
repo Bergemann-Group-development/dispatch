@@ -27,7 +27,7 @@ MODULE composition_patch_mod
   line_scattering
   USE atom_mod, only: use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
-  USE rt_patch_mod, only: rt_patch_t, output_set_da, output_set_element, verify_output_patch_coverage
+  USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, disable_ga, disable_stark, disable_vdw
   USE linelist_mod, only: ll_profile, voigt_kernel
@@ -40,9 +40,6 @@ MODULE composition_patch_mod
   USE scaling_mod
   USE units_mod
   USE ray_mod, only: set_carlson_quadratures, one_dimensional
-  USE list_mod, only: list_t
-  USE link_mod, only: nbor_t, link_t
-  USE mpi_mod, only: mpi
   USE bits_mod
   USE atom_mod, only: atom_type, atomic_spectrum_type
   use, intrinsic :: ieee_arithmetic
@@ -52,6 +49,9 @@ MODULE composition_patch_mod
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(nlte_patch_t), pointer :: nlte_patch => null()
+    ! the RT slab states of this depth slab, which init_rt_columns groups into
+    ! rt_column_t tasks
+    type(rt_patch_ptr_t), allocatable :: rt_slabs(:)
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: execute
@@ -81,7 +81,7 @@ MODULE composition_patch_mod
   character(len=512), save :: linelist_folder=''
   character(len=256), save, dimension(:), allocatable :: linelist_file
 
-  public :: read_composition_params, report_memory_estimate
+  public :: read_composition_params
 
 contains
 
@@ -492,10 +492,12 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
+  if (.not. allocated(self%rt_slabs)) allocate(self%rt_slabs(0))
   do m=mu(1), mu(2)
     do n=nu(1), nu(2)
       allocate(rt_patch)
       call rt_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atoms=atoms)
+      self%rt_slabs = [self%rt_slabs, rt_patch_ptr_t(rt_patch)]
     end do
   end do
 END SUBROUTINE create_sub_patches
@@ -953,6 +955,13 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%nbor_relations')
 
+  if (another%kind == 'rt_column') then
+    ! the columns through this slab need its composition
+    needed = .false.; needs_me = .true.; download = .false.
+    call trace%end()
+    return
+  endif
+
   call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
 
   if (needed .or. needs_me) then
@@ -960,8 +969,6 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
       select case (another%kind)
       case ('nlte_patch')
         ! is needed after convergence and needs me
-      case ('rt_patch')
-        needed = .false.
       case default
         needed = .false.; needs_me = .false.
       end select
@@ -1004,76 +1011,5 @@ SUBROUTINE estimate_eos_memory (self, transient, retained)
   retained = retained + merge(2, 1, H_occupation_probability)*field*n_level
   retained = retained*n_comp
 END SUBROUTINE estimate_eos_memory
-
-!===============================================================================
-!> Per-rank estimate of the peak registered allocation.  The EOS setup, the NLTE
-!> iteration and the output pass run one after the other (output tasks wait for
-!> nlte_finished), so the estimate is the startup allocation and the retained
-!> EOS species plus the largest phase.  A phase holds one workspace per busy
-!> thread, its retained RT fields, and one boundary buffer per chain of patches
-!> (a patch without an upstream heads a chain).  Allocations outside Dispatch's
-!> registry, opacity caches and solver temporaries are excluded, so this is an
-!> estimate, not an upper bound.  RT patches allocate u_phase when they first
-!> execute and keep it, so both RT phases count it for every RT patch.
-!===============================================================================
-SUBROUTINE report_memory_estimate (list, estimate)
-  class(list_t), intent(in) :: list
-  real(8), intent(out) :: estimate
-  class(link_t), pointer :: link
-  real(8), parameter :: gib=1024d0**3
-  real(8) :: work, retained, boundary, persistent, transient, eos_retained, eos_work, rt_persistent
-  real(8) :: max_work(2), sum_retained(2), sum_boundary(2), phase(3)
-  integer :: n_rt(2), n_chain(2), n_comp, workers(2), eos_workers, k
-  character(len=6), parameter :: label(2) = ['NLTE  ', 'output']
-  !-----------------------------------------------------------------------------
-  n_rt = 0; n_chain = 0; n_comp = 0
-  max_work = 0d0; sum_retained = 0d0; sum_boundary = 0d0
-  eos_work = 0d0; eos_retained = 0d0; rt_persistent = 0d0
-  link => list%head
-  do while (associated(link))
-    if (link%task%is_clear(bits%remove+bits%external+bits%virtual)) then
-      select type (patch => link%task)
-      class is (rt_patch_t)
-        k = merge(2, 1, patch%do_out_sp)
-        call patch%estimate_memory(work, retained, boundary, persistent)
-        rt_persistent = rt_persistent + persistent
-        n_rt(k) = n_rt(k) + 1
-        max_work(k) = max(max_work(k), work)
-        sum_retained(k) = sum_retained(k) + retained
-        if (.not. associated(patch%upstream) .and. .not. associated(patch%mem)) then
-          n_chain(k) = n_chain(k) + 1
-          sum_boundary(k) = sum_boundary(k) + boundary
-        endif
-      class is (composition_patch_t)
-        call patch%estimate_eos_memory(transient, retained)
-        n_comp = n_comp + 1
-        ! the patch being loaded holds its own retained arrays inside transient
-        eos_work = max(eos_work, transient - retained/merge(1+patch%n_out, 1, rotate_atmos))
-        eos_retained = eos_retained + retained
-      end select
-    endif
-    link => link%next
-  end do
-  workers = min(omp%nthreads, n_rt)
-  eos_workers = min(omp%nthreads, n_comp)
-  phase(1) = eos_workers*eos_work
-  phase(2:3) = workers*max_work + sum_retained + sum_boundary + rt_persistent
-  estimate = os%gb + (eos_retained + maxval(phase))/gib
-  if (.not. console_on(ch_m3d, 1, all_ranks=.true.)) return
-  write(console_unit,'(a,i0,a)') 'Memory estimate rank ', mpi%rank, ' [GiB]:'
-  write(console_unit,'(a,f10.4)') '  startup registered allocation ', os%gb
-  write(console_unit,'(a,f10.4)') '  retained EOS species          ', eos_retained/gib
-  write(console_unit,'(a,f10.4,a,i0,a)') '  EOS phase                     ', phase(1)/gib, &
-    '  (', eos_workers, ' concurrent composition patches)'
-  do k=1, 2
-    if (n_rt(k) == 0) cycle
-    write(console_unit,'(2x,a6,a,f10.4,a,i0,a,f8.4,a,f8.4,a,i0,a,f8.4,a,f8.4,a)') label(k), &
-      ' phase                  ', phase(k+1)/gib, '  (', workers(k), ' x ', max_work(k)/gib, &
-      ' work, ', sum_retained(k)/gib, ' retained, ', n_chain(k), ' chains x buffer = ', &
-      sum_boundary(k)/gib, ', ', rt_persistent/gib, ' u_phase)'
-  end do
-  write(console_unit,'(a,f10.4)') '  estimated peak allocation     ', estimate
-  flush(console_unit)
-END SUBROUTINE report_memory_estimate
 
 END MODULE composition_patch_mod

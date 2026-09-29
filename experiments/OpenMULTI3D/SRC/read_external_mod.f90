@@ -30,6 +30,7 @@ MODULE read_external_mod
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_conv_signal, flux_final_counter
   USE rt_params_mod, only: rt_iter, rt_out
+  USE rt_column_mod, only: init_rt_columns
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
     log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
@@ -306,6 +307,7 @@ contains
     end do
 
     nz_total = patch%ze
+    call init_rt_columns (task_list)
 
     if (console_on(ch_atmos, 2)) then
       write (console_unit,'(A, 3(F10.4))') 'box = ', patch%box
