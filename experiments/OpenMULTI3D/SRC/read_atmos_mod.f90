@@ -12,7 +12,6 @@ MODULE read_atmos_mod
   USE ray_mod, only: one_dimensional
   USE composition_mod, only: composition_type
   USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file
-  USE units_mod, only: cgs
   USE console_mod
   implicit none
   private
@@ -557,6 +556,7 @@ contains
     real(4) :: wts(-2:3)=[c,b,a,a,b,c]
     ! ----------------------------------------------------------------------------
     n = size(f,1)
+    fout = 0
     do i=1, n
       do j=-2,3
         idx = i + j
@@ -955,10 +955,10 @@ contains
     endif
 
     ! ---- hand over in the composition's own variables and units ---------------
-    ne = pe / (cgs%k_b * temp)
-    vx = vx / cgs%c
-    vy = vy / cgs%c
-    vz = vz / cgs%c
+    ne = pe / (bk * temp)
+    vx = vx / cc
+    vy = vy / cc
+    vz = vz / cc
 
     call trace%end(itimer)
   END SUBROUTINE interpolate_atmos

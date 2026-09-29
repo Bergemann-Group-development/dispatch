@@ -218,7 +218,7 @@ contains
     select case (ntheta)
      case (1)
       mu  = 1.0
-      wts = 1.0
+      wmu = 1.0
 
      case (2)
       mu  = (/1.0,        0.44721360/)
@@ -245,7 +245,7 @@ contains
         0.212508417834, 0.251275603210, 0.271405240910/)
 
      case default
-      error stop 'Error: ntheta is set too high. *ntheta<=5*'
+      error stop 'Error: ntheta is set too high. *ntheta<=6*'
     end select
 
     call nphi_copies(nphi, mu, wmu, vec, wts, Jnu_weights=Jnu_weights)
@@ -266,11 +266,11 @@ contains
     allocate(mu(ntheta))
     allocate(wmu(ntheta))
 
-    ! setting indexes and hard-coded Lobatto coefficients
+    ! setting indexes and hard-coded Gauss-Legendre coefficients
     select case (ntheta)
      case (1)
       mu  = 1.0
-      wts = 1.0
+      wmu = 1.0
 
      case (2)
       mu  = (/0.78867513, 0.21132487/)
@@ -337,9 +337,8 @@ contains
 
       wmu = swts(nrays+1:2:-1)
       mu = mu(nrays:1:-1)
+      if (present(zrot)) zrot = zrot(order(nrays:1:-1))
     endif
-
-    if (present(zrot)) zrot = zrot(order(nrays:1:-1))
     call nphi_copies(nphi, mu, wmu, vec, wts, zrot, Jnu_weights=.false.)
   END SUBROUTINE set_custom_quadratures
 

@@ -2014,17 +2014,16 @@ contains
     class(atom_trans_t) :: trans
     class(atom_data_t) :: adata
     class(line_type), pointer :: line
-    real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp, nh6
+    real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp
     real(4), dimension(:,:,:), allocatable :: stark_pe, unsold
     integer :: i
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_damping', itimer=itimer)
-    allocate(temp, ne, tothi, vbar2, stark_pe, unsold, nh6, mold=adata%inv_df)
+    allocate(temp, ne, tothi, vbar2, stark_pe, unsold, mold=adata%inv_df)
     ne = real(comp%ne)
     temp = real(comp%temp)
     tothi = real(comp%tothi) ! total neutral hydrogen density
-    nh6 = real(comp%elements(1)%ions(1)%levels(6)%n) ! neutral hydrogen density in level 6
     stark_pe = ne * temp**one_sixth
     vbar2 = atom%compute_vbar2(temp)
     unsold = vbar2**0.3 * tothi

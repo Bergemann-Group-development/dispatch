@@ -1821,6 +1821,8 @@ MODULE atom_mod
       line => self%trans%line(i)
       if (.not. line%active) cycle
       j = self%ion(line%j)
+      ! the default radiative damping uses the full gf, before any isotope fraction
+      if (line%f > 0) line%loggf = log10(line%f * self%g(line%i))
 
       if (line%iso > 0) then
         iso = findloc(isotopes%iso, line%iso, 1)
@@ -2519,7 +2521,7 @@ MODULE atom_mod
 
           elseif (col%dir == 1) then ! upwards transition
             cup = ct * n_collider
-            cup = cdn / nji
+            cdn = cup / nji
           end if
         end select
 
