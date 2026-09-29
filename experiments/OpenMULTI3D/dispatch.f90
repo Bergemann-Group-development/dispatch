@@ -24,20 +24,27 @@ PROGRAM dispatch
   USE timer_mod
   USE mpi_debug_mod
   USE m3d_patch_mod, only: write_linelist_out
+  USE composition_patch_mod, only: report_memory_estimate
   class(task_list_t), pointer:: task_list => null()
+  real(8):: memory_estimate
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
   call check_mpi_debug()
   call read_external%init (task_list)           ! Initialize task_list
+  call report_memory_estimate (task_list, memory_estimate)
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call write_linelist_out()                     ! Line-list diagnostics, if collected
   if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
   if (console_on(ch_m3d, 0, all_ranks=.true.)) &
     write(console_unit,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
+  if (console_on(ch_m3d, 1, all_ranks=.true.)) &
+    write(console_unit,'(a,i0,3(a,f12.6))') 'Memory comparison rank ', mpi%rank, &
+      ': estimated [GiB]=', memory_estimate, ': registered peak [GiB]=', os%max_mem, &
+      ': peak - estimate [GiB]=', os%max_mem-memory_estimate
   if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated normally.'
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch
-  
+

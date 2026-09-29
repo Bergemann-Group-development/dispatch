@@ -177,6 +177,7 @@ MODULE rt_patch_mod
     procedure :: init_patch_trans
     procedure :: pre_update => rt_patch_pre_update
     procedure :: execute
+    procedure :: estimate_memory
     procedure :: check_flux_convergence
     procedure :: background
     procedure :: foreground
@@ -280,6 +281,76 @@ MODULE rt_patch_mod
   end interface
 
 contains
+
+  !===============================================================================
+  !> Leading registered RT allocations of one patch, in bytes, before the first
+  !> execution.  Keep the array counts consistent with allocate_arrays and
+  !> deallocate_arrays.  work is execution-local; retained survives between
+  !> executions when Jnu_to_file is false; boundary is one downstream buffer,
+  !> which is handed down the column (copy_to), so a chain holds one at a time;
+  !> persistent is the patch's u_phase.  Opacity caches and solver temporaries
+  !> are excluded.
+  !===============================================================================
+  SUBROUTINE estimate_memory (self, work, retained, boundary, persistent)
+    class(rt_patch_t), intent(in) :: self
+    real(8), intent(out) :: work, retained, boundary, persistent
+    real(8) :: cell, field, sets
+    logical :: scat_ali, psi
+    integer :: i, nrad
+    !-----------------------------------------------------------------------------
+    cell = real(storage_size(0.0_4)/8,8)*product(real(self%n,8))
+    field = cell*self%nf
+    sets = field*self%n_set
+    work = 5*field + 3*real(storage_size(0.0_4)/8,8)*self%nf* &
+      self%n(1)*self%n(2)*(real(self%n(3),8)+2*self%ng(3))
+    retained = 0.d0
+    boundary = 3*real(storage_size(0.0_4)/8,8)*self%nf* &
+      self%n(1)*self%n(2)*self%n_mu*self%n_set
+    if (associated(self%mem)) boundary = 0.d0 ! already in the startup allocation
+    ! u_phase, allocated by patch_t%init when the patch first executes
+    persistent = real(storage_size(0.0_4)/8,8)*product(real(self%n+2*self%ng,8))
+    if (associated(self%u_phase)) persistent = 0.d0
+
+    if (Jnu_to_file) then
+      work = work + sets
+    else
+      retained = retained + sets
+    endif
+    do i=1, self%natom
+      if (self%bound_bound) work = work + cell*size(self%trans(i)%line)
+      if (self%get_rates(i)) then
+        nrad = size(self%trans(i)%line) + size(self%trans(i)%cont)
+        work = work + 2*cell*nrad
+      endif
+    enddo
+    ! split_opac(2), split_id and Irem
+    if (rate_formulation == 'largest' .and. any(self%get_rates)) work = work + 4*field
+    if (line_scattering) work = work + 4*field
+    ! the do_scat_precond and compute_psi tests of execute
+    scat_ali = scattering_preconditioning .and. .not. self%do_final &
+      .and. (any(self%get_rates) .or. self%do_out_sp) &
+      .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0)
+    psi = any(self%get_rates) .or. scat_ali
+    if (psi) then
+      work = work + field
+      if (self%bound_free .or. scat_ali) then
+        if (scat_ali .and. .not. Jnu_to_file) then
+          retained = retained + sets
+        else
+          work = work + sets
+        endif
+      endif
+      if (scat_ali) then
+        if (Jnu_to_file) then
+          work = work + sets
+        else
+          retained = retained + sets
+        endif
+      endif
+    endif
+    if (self%do_final .and. save_cntrbf) work = work + 5*field*self%n_mu
+  END SUBROUTINE estimate_memory
+
 
   !===============================================================================
   SUBROUTINE rt_patch_pre_init (self)
