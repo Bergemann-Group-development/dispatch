@@ -17,7 +17,7 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
   USE m3d_halo_mod, only: lock_mem, unlock_mem
-  USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, &
+  USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
     dlam, n_nu_out, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
@@ -209,7 +209,7 @@ MODULE rt_patch_mod
     procedure :: long_char_hermite2
     procedure :: short_char_hermite
     procedure :: get_vproj
-    procedure :: free_ll_point_table
+    procedure :: free_point_tables
     procedure :: print_post_update_info
     procedure :: nbor_relations => rt_patch_nbor_relations
     procedure :: init_nbors_hash
@@ -686,7 +686,7 @@ contains
     endif
 
     if (self%do_final) then
-      call self%free_ll_point_table()
+      call self%free_point_tables()
       if (save_linelist) call self%collect_line_diagnostics()
     endif
 
@@ -1160,13 +1160,26 @@ contains
   END SUBROUTINE foreground
 
   !===============================================================================
-  !> Free the stored line-list opacity of this patch's output i_nu.  The final pass
-  !> is its last reader: the i_mu twins have finished their iterations before it runs.
+  !> Free the stored line-list and background opacity of this patch's output i_nu.
+  !> The final pass is their last reader: the i_mu twins have finished their
+  !> iterations before it runs.
   !===============================================================================
-  SUBROUTINE free_ll_point_table (self)
+  SUBROUTINE free_point_tables (self)
     class(rt_patch_t) :: self
     integer :: i
     !-----------------------------------------------------------------------------
+    if (associated(self%m3d_parent%bg_point_tables)) then
+      call self%m3d_parent%bg_point_locks(self%i_nu)%set('bg_point_table')
+      associate(store => self%m3d_parent%bg_point_tables(self%i_nu))
+        if (store%initialised) then
+          call mem_unregister(store%chi, label='bg_point_table')
+          call mem_unregister(store%sigma, label='bg_point_table')
+          deallocate(store%chi, store%sigma)
+          store%initialised = .false.
+        endif
+      end associate
+      call self%m3d_parent%bg_point_locks(self%i_nu)%unset('bg_point_table')
+    endif
     if (.not. associated(self%m3d_parent%ll_point_tables)) return
     call self%m3d_parent%ll_point_locks(self%i_nu)%set('ll_point_table')
     associate(table => self%m3d_parent%ll_point_tables(self%i_nu))
@@ -1184,7 +1197,7 @@ contains
       endif
     end associate
     call self%m3d_parent%ll_point_locks(self%i_nu)%unset('ll_point_table')
-  END SUBROUTINE free_ll_point_table
+  END SUBROUTINE free_point_tables
 
   !===============================================================================
   SUBROUTINE radiative_transfer(self, comp, vec, do_rotate_atmos, i_mu)
@@ -1374,6 +1387,9 @@ contains
     type(spectrum_type) :: tab_sp
     type(rt_params_t), pointer :: rtp
     logical :: include_absmet, do_sample_opac, do_make_eos
+    type(bg_opac_t), pointer :: store
+    type(lock_t), pointer :: lock
+    logical :: use_store
     integer :: fs, fe
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -1399,6 +1415,23 @@ contains
         end do
       end do
     end do
+
+    ! A 1D atmosphere is static, and its background depends on i_nu alone, so the
+    ! first rt_patch of an i_nu stores chi_cont and sigma while its twins wait on
+    ! the lock; they and every later iteration and pass copy them back.
+    use_store = associated(self%m3d_parent%bg_point_tables) .and. .not. do_make_eos
+    if (use_store) then
+      lock  => self%m3d_parent%bg_point_locks (self%i_nu)
+      store => self%m3d_parent%bg_point_tables(self%i_nu)
+      call lock%set('bg_point_table')
+      if (store%initialised) then
+        self%chi_cont = store%chi
+        self%sigma    = store%sigma
+        call lock%unset('bg_point_table')
+        call trace%end(itimer)
+        return
+      endif
+    endif
 
     ! A table's content depends on i_nu alone, so the rt_patches that differ only
     ! in i_mu share the one the composition patch holds for this i_nu: the first
@@ -1466,6 +1499,15 @@ contains
       call comp%opacity(self%sub_sp, self%chi_cont, self%sigma, &
         include_absmet=include_absmet, include_llist=.false., &
         beta=self%beta, sorted=self%sp%sorted)
+    endif
+
+    if (use_store) then
+      allocate(store%chi, source=self%chi_cont)
+      allocate(store%sigma, source=self%sigma)
+      call mem_register(store%chi, label='bg_point_table')
+      call mem_register(store%sigma, label='bg_point_table')
+      store%initialised = .true.
+      call lock%unset('bg_point_table')
     endif
     call trace%end(itimer)
   END SUBROUTINE lte_background_opacities

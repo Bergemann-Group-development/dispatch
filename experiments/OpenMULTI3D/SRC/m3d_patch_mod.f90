@@ -64,6 +64,13 @@ MODULE m3d_patch_mod
     type, public :: point_opac_t
       type(point_opac_set_t), allocatable :: set(:)   ! (n_set)
     end type point_opac_t
+
+    ! LTE background opacity (chi_cont, sigma) of one 1D rt_patch slice, as
+    ! lte_background_opacities returns it.  Shape (fs:fe,nx,ny,nz).
+    type, public :: bg_opac_t
+      real(4), dimension(:,:,:,:), allocatable :: chi, sigma
+      logical :: initialised=.false.
+    end type bg_opac_t
   
     !-----------------------------------------------------------------------------
   
@@ -90,6 +97,11 @@ MODULE m3d_patch_mod
       ! iterations and the final pass; indexed by the output i_nu in [-n_nu_out,-1].
       type(point_opac_t), pointer :: ll_point_tables(:) => null()
       type(lock_t),       pointer :: ll_point_locks(:)  => null()   ! same bounds
+      ! LTE background opacity of a 1D atmosphere, stored by the first
+      ! lte_background_opacities of each i_nu and copied back by its twins and
+      ! later iterations; indexed like opac_tables, [-n_nu_out, 2*n_nu].
+      type(bg_opac_t), pointer :: bg_point_tables(:) => null()
+      type(lock_t),    pointer :: bg_point_locks(:)  => null()   ! same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()

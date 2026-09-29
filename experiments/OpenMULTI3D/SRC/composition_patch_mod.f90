@@ -295,6 +295,16 @@ SUBROUTINE composition_pre_init (self)
       end do
     endif
   endif
+  ! In 1D the LTE background opacity is the same for every direction, set and
+  ! iteration, so each i_nu of either pass computes it once (see
+  ! lte_background_opacities in rt_patch_mod).  make_eos writes tables instead.
+  if (one_dimensional .and. .not. make_eos) then
+    allocate(self%bg_point_tables(-n_nu_out:2*n_nu))
+    allocate(self%bg_point_locks (-n_nu_out:2*n_nu))
+    do i=-n_nu_out, 2*n_nu
+      call self%bg_point_locks(i)%init('bg_point', i)
+    end do
+  endif
   ! In 1D the detailed line opacity is isotropic, so the output pass computes it
   ! once per output i_nu and set and reuses it for every direction, scattering
   ! iteration and the final pass (see stored_linelist in rt_patch_mod); a column
