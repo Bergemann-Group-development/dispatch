@@ -86,6 +86,12 @@ MODULE rt_patch_mod
     class(rt_patch_t), pointer :: up_twin=>null()
     class(rt_patch_t), pointer :: dn_twin=>null()
     logical :: Jnu_freed=.false.
+    ! The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
+    ! last iteration whose hemisphere this patch has completed.  combined_iter:
+    ! the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
+    ! patch now holds in place of its own hemisphere; -1 before the first.
+    integer :: hemisphere_iter=-1, combined_iter=-1
+    logical :: PsiJ_combined=.false.
     class(atom_trans_t), dimension(:), pointer :: trans=>null()
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
@@ -176,6 +182,9 @@ MODULE rt_patch_mod
     procedure :: foreground
     procedure :: aniso_integrations
     procedure :: iso_integrations
+    procedure :: has_twin
+    procedure :: restore_combined_state
+    procedure :: combine_twin_hemispheres
     procedure :: save_debug_arrays
     procedure :: save_set_manifest
     procedure :: init_set_layout
@@ -662,6 +671,7 @@ contains
         end do
       end do
     else ! ALI iteration for NLTE populations or scattering iteration for final spectrum
+      if (self%has_twin() .and. self%iter > 0) call self%restore_combined_state()
       do i_set=1, self%n_set
         comp => self%m3d_parent%composition
         call self%background(comp, 0, i_set, do_rotate_atmos)
@@ -683,6 +693,7 @@ contains
         end do
         call self%iso_integrations()
       end do
+      if (self%has_twin()) call self%combine_twin_hemispheres()
     endif
 
     if (self%do_final) then
@@ -922,7 +933,7 @@ contains
     call self%reset_array(self%Jnu(:,:,:,:,i_set:i_set))
     ! PsiJ now persists across iterations for the scattering ALI, so zero it for a
     ! fresh angle accumulation here -- after lte_background_emission has already
-    ! read the previous iteration's twin PsiJ for the OAB correction.
+    ! read the previous iteration's combined PsiJ for the OAB correction.
     if (allocated(self%PsiJ)) self%PsiJ(:,:,:,:,i_set) = 0.
     call self%reset_array(self%work)
     
@@ -1305,7 +1316,6 @@ contains
   !===============================================================================
   SUBROUTINE iso_integrations(self)
     class(rt_patch_t) :: self
-    character(8) :: Jnu_label
     integer :: i
     !-----------------------------------------------------------------------------
     do i=1, self%natom
@@ -1316,38 +1326,143 @@ contains
         endif
       end associate
     end do
-
-    ! Twin sub-patches only exist for do_full_sp when rt_iter%maxiter>0, and for
-    ! the output-spectrum scattering loop when rt_out%maxiter>0 (see
-    ! composition_patch_mod.f90 create_sub_patches calls) -- saving Jnu outside
-    ! those conditions leaves it with no reader.
-    !
-    ! The i_mu=[1,2] hemisphere pair created for rt_out%maxiter>0 is do_out_sp
-    ! and *not* do_final, so the second test has to be do_out_sp: those are the
-    ! patches that both read (each other, at the next iteration) and are read by
-    ! the do_final ray.  Testing do_final here was dead code -- iso_integrations
-    ! is only reached from the non-final branch of execute() -- and left the
-    ! Jnu_out files unwritten, so the readers below died on a missing file.
-    if (Jnu_to_file .and. ((self%do_full_sp .and. rt_iter%maxiter > 0) .or. &
-                           (self%do_out_sp .and. rt_out%maxiter > 0))) then
-      Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
-      call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=save_Jnu)
-    endif
-    ! Scattering ALI: persist the hemisphere PsiJ (twin-combined at the next
-    ! iteration's OAB step) and the accelerated Jali, mirroring the Jnu channel.
-    ! iso_integrations runs once per set and saves the whole array, so the last
-    ! call of an execute holds the complete state; the reader only ever sees the
-    ! writer's last save.  Seed flags are raised per set in the OAB block.
-    !
-    ! add2meta=.false.: these are scratch, deleted again in finish(), and the
-    ! readers below pass mem= (never alloc=), so nothing consults the meta file.
-    ! Indexing them would append a line per patch per set per iteration, under
-    ! the global io lock, describing files that no longer exist by run's end.
-    if (self%do_scat_precond .and. Jnu_to_file) then
-      call self%save5(self%PsiJ, 'PsiJ', key=self%key(1:3), add2meta=.false.)
-      call self%save5(self%Jali, 'Jali', key=self%key(1:3), add2meta=.false.)
-    endif
   END SUBROUTINE iso_integrations
+
+  !===============================================================================
+  !> Does this patch iterate as one of an i_mu hemisphere pair?  Such twins exist
+  !> for do_full_sp when rt_iter%maxiter>0, and for the output-spectrum scattering
+  !> loop when rt_out%maxiter>0 (see the create_sub_patches calls in
+  !> composition_patch_mod.f90).  The do_final ray reads the output pair, but is
+  !> not part of it.
+  !===============================================================================
+  LOGICAL FUNCTION has_twin (self)
+    class(rt_patch_t) :: self
+    !-----------------------------------------------------------------------------
+    has_twin = .not. self%do_final .and. &
+      ((self%do_full_sp .and. rt_iter%maxiter > 0) .or. &
+       (self%do_out_sp .and. rt_out%maxiter > 0))
+  END FUNCTION has_twin
+
+  !===============================================================================
+  !> Each twin integrates Jnu (and PsiJ) over its own hemisphere, while the next
+  !> iteration needs the full-sphere average.  Both twins of a pair run the same
+  !> iteration concurrently, and each overwrites its hemisphere as it goes, so a
+  !> twin cannot read its partner's arrays during an execute: it would see the
+  !> previous iteration or the current one, or a partial accumulation, depending
+  !> on the schedule.  Instead, the twin that completes an iteration last forms
+  !> the average and hands it to both.  This is safe without a lock on the data:
+  !> the partner has finished the iteration, and it cannot start the next one
+  !> before this task has advanced its time, which happens after execute returns.
+  !> Every iteration therefore reads the previous iteration's full-sphere values
+  !> only, whatever the thread count or schedule.
+  !>
+  !> With Jnu_to_file each twin saves its hemisphere before announcing it, and
+  !> the last one averages the two files and writes the result back to both.
+  !> Jali is per patch and needs no exchange; it is saved alongside.
+  !===============================================================================
+  SUBROUTINE combine_twin_hemispheres (self)
+    class(rt_patch_t) :: self
+    class(rt_patch_t), pointer :: twin
+    real(4), dimension(:,:,:,:,:), allocatable :: other
+    character(8) :: Jnu_label
+    logical :: last, with_PsiJ
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%combine_twin_hemispheres', itimer=itimer)
+    twin => self%dn_twin
+    if (.not. associated(twin)) then
+      call shared%abort ('rt_patch_t%combine_twin_hemispheres: no twin')
+    endif
+    Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
+    ! add2meta=.false.: PsiJ and Jali are scratch, deleted again in finish(), and
+    ! the readers pass mem= (never alloc=), so nothing consults the meta file.
+    if (Jnu_to_file) then
+      call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=.false.)
+      if (self%do_scat_precond) then
+        call self%save5(self%PsiJ, 'PsiJ', key=self%key(1:3), add2meta=.false.)
+        call self%save5(self%Jali, 'Jali', key=self%key(1:3), add2meta=.false.)
+      endif
+    endif
+
+    !$omp critical (twin_hemisphere_combine)
+    self%PsiJ_combined = .false.
+    self%hemisphere_iter = self%iter
+    last = twin%hemisphere_iter == self%iter
+    !$omp end critical (twin_hemisphere_combine)
+    if (last) then
+      with_PsiJ = self%do_scat_precond .and. twin%do_scat_precond
+      if (Jnu_to_file) then
+        allocate(other, mold=self%Jnu)
+        call twin%load5(trim(Jnu_label), key=twin%key(1:3), mem=other)
+        call average(self%Jnu, other)
+        call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=save_Jnu)
+        call twin%save5(self%Jnu, trim(Jnu_label), key=twin%key(1:3), add2meta=save_Jnu)
+        if (with_PsiJ) then
+          call twin%load5('PsiJ', key=twin%key(1:3), mem=other)
+          call average(self%PsiJ, other)
+          call self%save5(self%PsiJ, 'PsiJ', key=self%key(1:3), add2meta=.false.)
+          call twin%save5(self%PsiJ, 'PsiJ', key=twin%key(1:3), add2meta=.false.)
+        endif
+        deallocate(other)
+      else
+        call average(self%Jnu, twin%Jnu)
+        twin%Jnu = self%Jnu
+        if (with_PsiJ) then
+          call average(self%PsiJ, twin%PsiJ)
+          twin%PsiJ = self%PsiJ
+        endif
+      endif
+      self%combined_iter = self%iter
+      twin%combined_iter = self%iter
+      self%PsiJ_combined = with_PsiJ
+      twin%PsiJ_combined = with_PsiJ
+    endif
+    call trace%end(itimer)
+  contains
+    subroutine average (a, b)
+      real(4), intent(inout) :: a(:,:,:,:,:)
+      real(4), intent(in) :: b(:,:,:,:,:)
+      integer :: f, x, y, z, s
+      do s=1, size(a,5)
+        do z=1, size(a,4)
+          do y=1, size(a,3)
+            do x=1, size(a,2)
+              do f=1, size(a,1)
+                a(f,x,y,z,s) = 0.5*(a(f,x,y,z,s) + b(f,x,y,z,s))
+              end do
+            end do
+          end do
+        end do
+      end do
+    end subroutine average
+  END SUBROUTINE combine_twin_hemispheres
+
+  !===============================================================================
+  !> Before a twin's next iteration, check that the pair's combine has happened
+  !> (see combine_twin_hemispheres) and, with Jnu_to_file, load the combined
+  !> state for all sets at once.  Each set then reads its previous value before
+  !> overwriting it, whether it lives in memory or came from the file.
+  !===============================================================================
+  SUBROUTINE restore_combined_state (self)
+    class(rt_patch_t) :: self
+    character(8) :: Jnu_label
+    character(len=256) :: msg
+    !-----------------------------------------------------------------------------
+    if (self%combined_iter /= self%iter-1) then
+      write(msg,'(A,I8,A,I8,A,2I6)') 'twin hemispheres not combined: id', self%id, &
+        ' twin', self%dn_twin%id, ' iter, combined_iter', self%iter, self%combined_iter
+      call console_error (msg)
+      call shared%abort ('rt_patch_t%restore_combined_state: twin exchange out of step')
+    endif
+    if (Jnu_to_file) then
+      Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
+      call self%load5(trim(Jnu_label), key=self%key(1:3), mem=self%Jnu)
+      if (self%do_scat_precond) then
+        if (self%PsiJ_combined) call self%load5('PsiJ', key=self%key(1:3), mem=self%PsiJ)
+        if (any(self%Jali_valid)) call self%load5('Jali', key=self%key(1:3), mem=self%Jali)
+      endif
+    endif
+  END SUBROUTINE restore_combined_state
 
   !===============================================================================
   SUBROUTINE save_debug_arrays(self, i_set, i_mu)
@@ -1521,8 +1636,6 @@ contains
     logical, intent(in) :: include_absmet, do_rotate_atmos
     real(4), dimension(:,:,:,:,:), allocatable, target :: Jup_mem, Jdn_mem
     real(4), dimension(:,:,:,:,:), pointer, contiguous :: Jup, Jdn
-    real(4), dimension(:,:,:,:,:), allocatable, target :: PsiJup_mem, PsiJdn_mem, Jali_mem
-    real(4), dimension(:,:,:,:,:), pointer, contiguous :: PsiJup, PsiJdn
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
@@ -1552,30 +1665,38 @@ contains
 
     if (self%iter > 0 .or. (self%do_final .and. rt_out%maxiter > 0)) then
       Jnu_to_Bnu = .false.
-      if (Jnu_to_file) then
-        Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
-        allocate(Jup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
-        allocate(Jdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
-        call self%up_twin%load5(Jnu_label, key=self%up_twin%key(1:3), mem=Jup_mem)
-        call self%dn_twin%load5(Jnu_label, key=self%dn_twin%key(1:3), mem=Jdn_mem)
-        Jup => Jup_mem
-        Jdn => Jdn_mem
-      else
-        Jup => self%up_twin%Jnu
-        Jdn => self%dn_twin%Jnu
-      endif
-      do z=1, self%nz
-        do y=1, self%ny
-          do x=1, self%nx
-            do f=fs, fe
-              self%Jnu(f,x,y,z,i_set) = 0.5*(Jup(f,x,y,z,i_set) + Jdn(f,x,y,z,i_set))
+      !-------------------------------------------------------------------------
+      ! A twin already holds the previous iteration's full-sphere Jnu in its own
+      ! array (combine_twin_hemispheres, restore_combined_state).  The do_final
+      ! ray reads the output hemisphere pair, which has finished iterating and
+      ! holds the combined Jnu in both halves.
+      !-------------------------------------------------------------------------
+      if (self%do_final) then
+        if (Jnu_to_file) then
+          Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
+          allocate(Jup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
+          allocate(Jdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
+          call self%up_twin%load5(Jnu_label, key=self%up_twin%key(1:3), mem=Jup_mem)
+          call self%dn_twin%load5(Jnu_label, key=self%dn_twin%key(1:3), mem=Jdn_mem)
+          Jup => Jup_mem
+          Jdn => Jdn_mem
+        else
+          Jup => self%up_twin%Jnu
+          Jdn => self%dn_twin%Jnu
+        endif
+        do z=1, self%nz
+          do y=1, self%ny
+            do x=1, self%nx
+              do f=fs, fe
+                self%Jnu(f,x,y,z,i_set) = 0.5*(Jup(f,x,y,z,i_set) + Jdn(f,x,y,z,i_set))
+              end do
             end do
           end do
         end do
-      end do
+      endif
       !-------------------------------------------------------------------------
       ! Jnu enters eta via comp%scattering, so a corrupt Jnu -- from the twins'
-      ! save/load, whichever way it is passed -- shows up as an infinite source
+      ! exchange, whichever way it is passed -- shows up as an infinite source
       ! function.  Separate that from a corrupt boundary (see
       ! set_upstream_boundary) and from a corrupt opacity.
       !-------------------------------------------------------------------------
@@ -1585,9 +1706,9 @@ contains
             do x=1, self%nx
               do f=fs, fe
                 if (.not. ieee_is_finite(self%Jnu(f,x,y,z,i_set))) then
-                  write(msg,'(A,I8,A,2(I8),A,4(I4),A,2(ES12.4))') &
+                  write(msg,'(A,I8,A,2(I8),A,4(I4))') &
                     'RACE: bad Jnu in', self%id, ' twins', self%up_twin%id, self%dn_twin%id, &
-                    ' at f,x,y,z=', f, x, y, z, ' Jup,Jdn=', Jup(f,x,y,z,i_set), Jdn(f,x,y,z,i_set)
+                    ' at f,x,y,z=', f, x, y, z
                   call console_error (msg)
                   call shared%abort ('rt_patch_t%lte_background_emission: non-finite Jnu')
                 endif
@@ -1603,7 +1724,7 @@ contains
       ! Continuum-scattering ALI (Olson-Auer-Buchler local operator).
       !
       ! self%Jnu now holds the full-sphere formal-solution mean intensity
-      ! J_FS = 0.5*(Jup+Jdn).  The source it feeds is
+      ! J_FS, the average of the twins' hemispheres.  The source it feeds is
       !   eta = chi_tot*Bnu + sigma_scat*(J - Bnu),
       ! so J appears on both sides and plain Lambda-iteration converges only at
       ! the scattering albedo per iteration.  Replace J_FS with
@@ -1611,10 +1732,10 @@ contains
       ! the standard (1 - Lambda* a)^-1 acceleration.  Psi is stored as
       ! Lambda_diag/chi (rt_solvers_mod), so the dimensionless self-coupling is
       ! sigma_scat*PsiJ -- multiply by the scattering *opacity*, mirroring the
-      ! bound-free `phi = PsiJ * cont%alpha`.  PsiJ_full = 0.5*(PsiJup+PsiJdn)
+      ! bound-free `phi = PsiJ * cont%alpha`.  PsiJ_full is the twins' average,
       ! because each twin integrates only its own hemisphere; unlike bound-free,
       ! which consumes PsiJ linearly, this update divides by (1-op) and so must
-      ! see the full sphere.
+      ! see the full sphere.  combine_twin_hemispheres leaves it in self%PsiJ.
       !
       ! op <= 1 identically: sigma is the scattering part of chi_cont
       ! by construction on both the exact and the sampled path, and
@@ -1624,38 +1745,17 @@ contains
       ! in the numerator cancels heavily as op -> 1, so it is formed in real(8).
       ! Where there is no scattering op = 0 and Jali = J_FS exactly.
       !-------------------------------------------------------------------------
-      ! Both twins must be carrying a PsiJ.  do_scat_precond follows
-      ! any(get_rates), which drops as soon as the atom converges, and the twins
-      ! reach that point on their own schedules -- so a twin can have freed its
-      ! PsiJ while this one still wants it.  Skip the correction for this
-      ! iteration rather than dereferencing a dead array.  This is a local
-      ! decision only: self%do_scat_precond stays up so PsiJ keeps accumulating
-      ! and the recurrence can resume as soon as the twin is back.
-      do_scat_now = self%do_scat_precond
-      if (do_scat_now .and. .not. Jnu_to_file) then
-        do_scat_now = allocated(self%up_twin%PsiJ) .and. allocated(self%dn_twin%PsiJ)
-      endif
+      ! The full-sphere PsiJ exists only where both twins accumulated one in the
+      ! previous iteration.  do_scat_precond follows any(get_rates), which drops
+      ! as soon as the atom converges, so the pair may not have (see
+      ! PsiJ_combined).  Skip the correction for this iteration then.  This is a
+      ! local decision only: self%do_scat_precond stays up so PsiJ keeps
+      ! accumulating and the recurrence can resume in the next iteration.
+      do_scat_now = self%do_scat_precond .and. self%PsiJ_combined
       if (do_scat_now) then
         allocate(Jali_old(fs:fe,self%nx,self%ny,self%nz))
-        if (Jnu_to_file) then
-          allocate(PsiJup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
-          allocate(PsiJdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
-          call self%up_twin%load5('PsiJ', key=self%up_twin%key(1:3), mem=PsiJup_mem)
-          call self%dn_twin%load5('PsiJ', key=self%dn_twin%key(1:3), mem=PsiJdn_mem)
-          PsiJup => PsiJup_mem
-          PsiJdn => PsiJdn_mem
-        else
-          PsiJup => self%up_twin%PsiJ
-          PsiJdn => self%dn_twin%PsiJ
-        endif
         if (self%Jali_valid(i_set)) then
-          if (Jnu_to_file) then
-            allocate(Jali_mem(fs:fe,self%nx,self%ny,self%nz,self%n_set))
-            call self%load5('Jali', key=self%key(1:3), mem=Jali_mem)
-            Jali_old = Jali_mem(:,:,:,:,i_set)
-          else
-            Jali_old = self%Jali(:,:,:,:,i_set)
-          endif
+          Jali_old = self%Jali(:,:,:,:,i_set)
         else
           Jali_old = self%Jnu(:,:,:,:,i_set)   ! seed the recurrence with J_FS
         endif
@@ -1667,8 +1767,7 @@ contains
           do y=1, self%ny
             do x=1, self%nx
               do f=fs, fe
-                op = self%sigma(f,x,y,z) * 0.5d0 * &
-                     (dble(PsiJup(f,x,y,z,i_set)) + dble(PsiJdn(f,x,y,z,i_set)))
+                op = self%sigma(f,x,y,z) * dble(self%PsiJ(f,x,y,z,i_set))
                 op_raw = max(op_raw, op)
                 op = max(0.0d0, min(op, scat_op_max))
                 op_max = max(op_max, op)
@@ -1698,8 +1797,6 @@ contains
         endif
         self%Jali(:,:,:,:,i_set) = self%Jnu(:,:,:,:,i_set)
         self%Jali_valid(i_set) = .true.
-        if (allocated(PsiJup_mem)) deallocate(PsiJup_mem, PsiJdn_mem)
-        if (allocated(Jali_mem)) deallocate(Jali_mem)
         deallocate(Jali_old)
       endif
     elseif (.not. Jnu_to_Bnu) then
