@@ -55,8 +55,10 @@ MODULE atom_mod
       real(8), dimension(:,:,:,:), allocatable :: nstar
       real(8), dimension(:,:,:,:), allocatable :: b
       real(8), dimension(:,:,:,:,:), allocatable :: oldb
-      real(8), dimension(:,:,:,:), allocatable :: gamma_ij
-      real(8), dimension(:,:,:,:), allocatable :: gamma_ji
+      ! radiative rates, summed over frequency windows and directions.  real(4)
+      ! suffices: each window's contribution is already a real(4) sum
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ij
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ji
       real(4), dimension(:,:,:,:), allocatable :: wphi
       real(4), dimension(:,:,:),   allocatable :: inv_df
       real(8), dimension(:),   allocatable  :: e
@@ -310,8 +312,8 @@ MODULE atom_mod
     class(atom_data_t), pointer :: adata
     class(transition_type), pointer :: line, cont
     integer, intent(in) :: iter
-    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, nstar
-    real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
+    real(8), dimension(:,:,:,:), pointer, contiguous :: nstar
+    real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, wphi
     real(8) :: gij
     integer :: i
     ! ----------------------------------------------------------------------------
@@ -347,7 +349,9 @@ MODULE atom_mod
     do i=i, self%nrad
       cont => self%trans%cont(i-self%nline)
       if (.not. cont%active) cycle
-      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
+      ! the unscaled rate carries exp(-h nu/kT), so the LTE ratio is formed in
+      ! real(8) and only the physical rate is stored
+      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * (nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j))
     end do
 
     if (allocated(adata%oldb)) then
@@ -648,7 +652,8 @@ MODULE atom_mod
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
-    real(8), dimension(:), pointer :: b, nstar, rij, rji
+    real(8), dimension(:), pointer :: b, nstar
+    real(4), dimension(:), pointer :: rij, rji
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0

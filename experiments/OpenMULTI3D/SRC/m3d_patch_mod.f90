@@ -229,7 +229,9 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
     logical, public, save :: column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save :: Jnu_to_file=.true.
+    ! Keep the RT arrays that outlive a slab sweep (Jnu, PsiJ, Jali and the exit
+    ! planes of frozen slabs) in files under save/ rather than in memory
+    logical, public, save :: rt_to_file=.true.
     character, public, save :: amr='P'
     character(len=6), public, save :: initial_Jnu='Planck'
     logical, public, save :: rotate_atmos=.false.
@@ -281,7 +283,7 @@ MODULE m3d_patch_mod
 
     namelist /output_params/ save_id, save_patch_kind, save_resolved, &
     save_cntrbf, depression_cntrbf, save_Inu, save_chi, save_Snu, save_Jnu, &
-    Jnu_to_file, overlapping_bb_in_output, &
+    rt_to_file, overlapping_bb_in_output, &
     save_populations, save_rates, save_rate_matrix, bound_free_in_output, set_file
 
     namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
@@ -356,7 +358,7 @@ MODULE m3d_patch_mod
         pivot_z = self%patch%box(3)
       endif
 
-      Jnu_to_file = (Jnu_to_file .and. .not. one_dimensional) .or. save_Jnu
+      rt_to_file = (rt_to_file .and. .not. one_dimensional) .or. save_Jnu
 
       if (ng_step > 0) then
         if (ng_step < 3) then

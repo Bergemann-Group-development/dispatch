@@ -386,8 +386,16 @@ out of the local source term, which is tracked alongside the opacity, rather tha
 the integrated rate. `'original'` restores the previous subtraction. Both have the same
 fixed point, so they agree where the old one converges at all.
 
+The spontaneous factor `1 - Psi*chi_line` of the same scheme cancels in the core of a very
+thick line, where it is about `1/dtau`. It is therefore built from the escape factor
+`1 - Psi*chi` that the formal solver returns and from the extinction of everything except
+the line, which is tracked like the emissivity. The Mg I 2852 A resonance line in the
+outer layers of a MARCS red supergiant is such a case. Formed as a subtraction, the
+factor was rounding noise there, and the departures wandered by 0.2% per iteration
+indefinitely.
+
 `'largest'` works with every iteration solver and needs no further settings. It holds
-three extra `real(4)` arrays and one `integer` array over the frequency and spatial grid.
+six extra `real(4)` arrays and two `integer` arrays over the frequency and spatial grid.
 
 Do not read a plain lambda iteration (`preconditioning=F`) as a reference for this. It
 reports updates of 1e-5 while still tens of percent from the solution in the upper

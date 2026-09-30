@@ -22,7 +22,7 @@ MODULE rt_patch_mod
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
-    Jnu_to_file, preconditioning, rate_formulation, &
+    rt_to_file, preconditioning, rate_formulation, &
     scattering_preconditioning, scat_op_max, &
     make_eos, amr, save_Inu, save_chi, save_Snu, &
     fixed_Jnu, n_nu, save_Jnu, &
@@ -92,6 +92,9 @@ MODULE rt_patch_mod
     class(rt_patch_t), pointer :: dn_twin=>null()
     logical :: Jnu_freed=.false.
     logical :: column_end=.false.
+    ! settled: the atoms of this slab and of every deeper one have converged, as
+    ! the column finds at the start of its sweep (rt_patch_pre_update)
+    logical :: settled=.false.
     ! The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
     ! last iteration whose hemisphere this patch has completed.  combined_iter:
     ! the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
@@ -107,12 +110,15 @@ MODULE rt_patch_mod
     ! Holding the largest apart is what lets a line's own contribution be taken
     ! out of the local source term without a cancelling subtraction.  Index 0 is
     ! the whole continuum, seeded as one contribution in back_to_work, since the
-    ! bound-free rates do not use this path.
-    real(4), allocatable :: split_opac(:,:,:,:,:)
-    integer, allocatable :: split_id(:,:,:,:)
+    ! bound-free rates do not use this path.  split_chi and split_chi_id hold the
+    ! net extinction (absorption less stimulated emission) the same way, with a
+    ! largest of their own, so that chi - chi_t is never formed by subtraction.
+    real(4), allocatable :: split_opac(:,:,:,:,:), split_chi(:,:,:,:,:)
+    integer, allocatable :: split_id(:,:,:,:), split_chi_id(:,:,:,:)
     integer, allocatable :: split_offset(:)
-    ! The formal solution without its own local term, Inu - Psi*eta_total.
-    real(4), allocatable :: Irem(:,:,:,:)
+    ! The formal solution without its own local term, Inu - Psi*eta_total, and
+    ! the escape factor 1 - Psi*chi of the local term, both from the solver.
+    real(4), allocatable :: Irem(:,:,:,:), escape(:,:,:,:)
     logical :: split_rates=.false.
     ! PsiJ is the angle-averaged diagonal operator and Jali the full-sphere
     ! accelerated mean intensity of the continuum-scattering ALI.  Both carry a
@@ -231,6 +237,9 @@ MODULE rt_patch_mod
     procedure :: finish
     procedure :: allocate_mem
     procedure :: allocate_boundary
+    procedure :: retain_exit_plane
+    procedure :: restore_exit_plane
+    procedure :: release_exit_plane
   end type rt_patch_t
 
   type, public :: rt_patch_ptr_t
@@ -295,7 +304,7 @@ contains
   !> Leading registered RT allocations of one slab, in bytes, before the first
   !> execution.  Keep the array counts consistent with allocate_arrays and
   !> deallocate_arrays.  work is execution-local; retained survives between
-  !> executions when Jnu_to_file is false; boundary is the buffer its column
+  !> executions when rt_to_file is false; boundary is the buffer its column
   !> hands from slab to slab; persistent is the slab's u_phase.  Opacity caches
   !> and solver temporaries are excluded.
   !===============================================================================
@@ -318,7 +327,7 @@ contains
     persistent = real(storage_size(0.0_4)/8,8)*product(real(self%n+2*self%ng,8))
     if (associated(self%u_phase)) persistent = 0.d0
 
-    if (Jnu_to_file) then
+    if (rt_to_file) then
       work = work + sets
     else
       retained = retained + sets
@@ -330,8 +339,8 @@ contains
         work = work + 2*cell*nrad
       endif
     enddo
-    ! split_opac(2), split_id and Irem
-    if (rate_formulation == 'largest' .and. any(self%get_rates)) work = work + 4*field
+    ! split_opac(2), split_id, split_chi(2), split_chi_id, Irem and escape
+    if (rate_formulation == 'largest' .and. any(self%get_rates)) work = work + 8*field
     if (line_scattering) work = work + 4*field
     ! the do_scat_precond and compute_psi tests of execute
     scat_ali = scattering_preconditioning .and. .not. self%do_final &
@@ -341,14 +350,14 @@ contains
     if (psi) then
       work = work + field
       if (self%bound_free .or. scat_ali) then
-        if (scat_ali .and. .not. Jnu_to_file) then
+        if (scat_ali .and. .not. rt_to_file) then
           retained = retained + sets
         else
           work = work + sets
         endif
       endif
       if (scat_ali) then
-        if (Jnu_to_file) then
+        if (rt_to_file) then
           work = work + sets
         else
           retained = retained + sets
@@ -640,22 +649,21 @@ contains
   END SUBROUTINE init_patch_trans
 
   !===============================================================================
-  !> A slab whose atoms have converged (premature_finish) keeps the exit plane of
-  !> its last sweep (static_mem), which its column passes on to the slabs after
-  !> it in place of a new one.
+  !> With premature_finish, an iteration slab freezes (static_mem) once it is
+  !> settled: it sweeps once more and finishes.  Both columns then freeze from
+  !> the bottom, the up column the first slabs of its sweep and the down column
+  !> the last, so the two twins of a slab freeze in the same iteration, and only
+  !> the up column has slabs after its frozen ones, which receive the exit plane
+  !> of the highest frozen slab (rt_column_t%execute).  Population convergence
+  !> does not end the task while flux_convergence decides.
   !===============================================================================
   SUBROUTINE rt_patch_pre_update (self)
     class(rt_patch_t), target :: self
-    logical :: conv
-    integer :: i
     !-----------------------------------------------------------------------------
     call m3d_patch_pre_update(self)
-    if (self%has_atom .and. self%do_full_sp) then
-      conv = all([(self%atoms(i)%data%converged, i=1, self%natom)])
-      if (premature_finish .and. conv) then
-        self%static_mem = .true.
-      endif
-    endif
+    if (self%is_finished() .or. .not. (self%has_atom .and. self%do_full_sp)) return
+    self%static_mem = self%settled .and. premature_finish .and. .not. flux_convergence &
+      .and. self%iter > rt_out%maxiter-1
   END SUBROUTINE rt_patch_pre_update
 
   !===============================================================================
@@ -790,18 +798,8 @@ contains
 
     call deallocate_arrays()
 
-    if (self%has_atom .and. self%iter > rt_out%maxiter-1) then
-      ! per-atom population convergence (convmax) is an early-exit shortcut for
-      ! the population-governed case only -- it must not terminate the task
-      ! ahead of the flux metric when flux_convergence is what's authoritative,
-      ! or a run can wind down (reach do_final) with flux nowhere near convlim
-      ! and no "Converged!" ever printed, simply because a single NG-accelerated
-      ! level snapped its local population error below the (very tight) convmax.
-      if (all([(self%atoms(i)%data%converged, i=1, self%natom)]) .and. premature_finish &
-        .and. .not. flux_convergence) then
-        call self%finish()
-      endif
-    endif
+    ! a frozen slab has made its last sweep (rt_patch_pre_update)
+    if (self%static_mem) call self%finish()
 
     call trace%end(itimer)
 
@@ -819,7 +817,10 @@ contains
       if (self%split_rates) then
         allocate(self%split_opac(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
         allocate(self%split_id(fs:fe,self%nx,self%ny,self%nz), source=0)
+        allocate(self%split_chi(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
+        allocate(self%split_chi_id(fs:fe,self%nx,self%ny,self%nz), source=0)
         allocate(self%Irem(fs:fe,self%nx,self%ny,self%nz), source=0.)
+        allocate(self%escape(fs:fe,self%nx,self%ny,self%nz), source=1.)
         allocate(self%split_offset(self%natom))
         nrad = 0
         do i=1, self%natom
@@ -827,7 +828,9 @@ contains
           nrad = nrad + size(self%trans(i)%line)
         end do
         call mem_register(self%split_opac, label='split_opac')
+        call mem_register(self%split_chi, label='split_chi')
         call mem_register(self%Irem, label='Irem')
+        call mem_register(self%escape, label='escape')
       endif
       allocate(self%twohnu3_c2(fs:fe))
       allocate(vproj(self%nx,self%ny,self%nz))
@@ -874,7 +877,7 @@ contains
         ! scattering ALI needs it to survive to the next iteration's twin
         ! combine, like Jnu.  Allocate-if-absent here plus the per-set reset in
         ! background() covers both uses; deallocate_arrays frees it only when
-        ! Jnu_to_file, where persistence goes through the file instead.
+        ! rt_to_file, where persistence goes through the file instead.
         if (self%bound_free .or. self%do_scat_precond) then
           if (.not. allocated(self%PsiJ)) then
             allocate(self%PsiJ(fs:fe,self%nx,self%ny,self%nz,self%n_set), source=0.)
@@ -905,8 +908,11 @@ contains
     subroutine deallocate_arrays()
       if (allocated(self%split_opac)) then
         call mem_unregister(self%split_opac, label='split_opac')
+        call mem_unregister(self%split_chi, label='split_chi')
         call mem_unregister(self%Irem, label='Irem')
-        deallocate(self%split_opac, self%split_id, self%split_offset, self%Irem)
+        call mem_unregister(self%escape, label='escape')
+        deallocate(self%split_opac, self%split_id, self%split_chi, self%split_chi_id, &
+                   self%split_offset, self%Irem, self%escape)
       endif
       call mem_unregister(self%work     , label='self%work')
       call mem_unregister(self%chi_cont , label='self%chi_cont')
@@ -933,7 +939,7 @@ contains
         call mem_unregister(self%dJnu, label='self%dJnu')
         deallocate(self%chi_scat, self%one_m_eps, self%dJnu)
       endif
-      if (allocated(self%Jnu) .and. Jnu_to_file) then
+      if (allocated(self%Jnu) .and. rt_to_file) then
         call mem_unregister(self%Jnu, label='Jnu')
         deallocate(self%Jnu)
       endif
@@ -942,14 +948,14 @@ contains
         deallocate(self%Psi)
         ! PsiJ and Jali mirror the Jnu lifecycle: when the scattering ALI carries
         ! them to the next iteration's twin combine through memory they must stay
-        ! alive across the execute; with Jnu_to_file persistence goes through the
+        ! alive across the execute; with rt_to_file persistence goes through the
         ! file instead, and without the ALI they are freed exactly as before.
-        if (allocated(self%PsiJ) .and. .not. (self%do_scat_precond .and. .not. Jnu_to_file)) then
+        if (allocated(self%PsiJ) .and. .not. (self%do_scat_precond .and. .not. rt_to_file)) then
           call mem_unregister(self%PsiJ, label='PsiJ')
           deallocate(self%PsiJ)
         endif
       endif
-      if (allocated(self%Jali) .and. Jnu_to_file) then
+      if (allocated(self%Jali) .and. rt_to_file) then
         call mem_unregister(self%Jali, label='Jali')
         deallocate(self%Jali)
       endif
@@ -1130,6 +1136,10 @@ contains
               self%split_opac(f,x,y,z,1) = self%work(f,x,y,z,2)*self%beta(f,x,y,z)
               self%split_opac(f,x,y,z,2) = 0.
               self%split_id(f,x,y,z) = 0
+              self%split_chi(f,x,y,z,1) = self%work(f,x,y,z,1) &
+                                        - self%work(f,x,y,z,2)*self%beta(f,x,y,z)
+              self%split_chi(f,x,y,z,2) = 0.
+              self%split_chi_id(f,x,y,z) = 0
             end do
           end do
         end do
@@ -1435,7 +1445,7 @@ contains
   !> Every iteration therefore reads the previous iteration's full-sphere values
   !> only, whatever the thread count or schedule.
   !>
-  !> With Jnu_to_file each twin saves its hemisphere before announcing it, and
+  !> With rt_to_file each twin saves its hemisphere before announcing it, and
   !> the last one averages the two files and writes the result back to both.
   !> Jali is per patch and needs no exchange; it is saved alongside.
   !===============================================================================
@@ -1455,7 +1465,7 @@ contains
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
     ! add2meta=.false.: PsiJ and Jali are scratch, deleted again in finish(), and
     ! the readers pass mem= (never alloc=), so nothing consults the meta file.
-    if (Jnu_to_file) then
+    if (rt_to_file) then
       call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=.false.)
       if (self%do_scat_precond) then
         call self%save5(self%PsiJ, 'PsiJ', key=self%key(1:3), add2meta=.false.)
@@ -1470,7 +1480,7 @@ contains
     !$omp end critical (twin_hemisphere_combine)
     if (last) then
       with_PsiJ = self%do_scat_precond .and. twin%do_scat_precond
-      if (Jnu_to_file) then
+      if (rt_to_file) then
         allocate(other, mold=self%Jnu)
         call twin%load5(trim(Jnu_label), key=twin%key(1:3), mem=other)
         call average(self%Jnu, other)
@@ -1518,7 +1528,7 @@ contains
 
   !===============================================================================
   !> Before a twin's next iteration, check that the pair's combine has happened
-  !> (see combine_twin_hemispheres) and, with Jnu_to_file, load the combined
+  !> (see combine_twin_hemispheres) and, with rt_to_file, load the combined
   !> state for all sets at once.  Each set then reads its previous value before
   !> overwriting it, whether it lives in memory or came from the file.
   !===============================================================================
@@ -1533,7 +1543,7 @@ contains
       call console_error (msg)
       call shared%abort ('rt_patch_t%restore_combined_state: twin exchange out of step')
     endif
-    if (Jnu_to_file) then
+    if (rt_to_file) then
       Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
       call self%load5(trim(Jnu_label), key=self%key(1:3), mem=self%Jnu)
       if (self%do_scat_precond) then
@@ -1750,7 +1760,7 @@ contains
       ! holds the combined Jnu in both halves.
       !-------------------------------------------------------------------------
       if (self%do_final) then
-        if (Jnu_to_file) then
+        if (rt_to_file) then
           Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
           allocate(Jup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
           allocate(Jdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
@@ -2371,6 +2381,9 @@ contains
                   call add_largest(vphi(f)*eta_fac*self%beta(f,x,y,z), index, &
                     self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
                     self%split_id(f,x,y,z))
+                  call add_largest(vphi(f)*(chi_fac - eta_fac*self%beta(f,x,y,z)), index, &
+                    self%split_chi(f,x,y,z,1), self%split_chi(f,x,y,z,2), &
+                    self%split_chi_id(f,x,y,z))
                 end do
               endif
 
@@ -2412,7 +2425,7 @@ contains
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef, vpr2
-    real(4) :: psi, eta_t, chi_t, other, up, spont
+    real(4) :: psi, eta_t, chi_t, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe, index
@@ -2562,7 +2575,10 @@ contains
             ! solution without its own local term, so adding back the other
             ! contributions' share of it never forms Inu - Psi*eta_t as a
             ! difference of two nearly equal numbers.  The spontaneous factor
-            ! stays between zero and one and needs no such care.  Where Psi is
+            ! 1 - Psi*chi_t is built the same way, as (chi_other + escape*chi_t)/chi
+            ! with escape = 1 - Psi*chi from the solver: in the core of a very
+            ! thick line both 1 - Psi*chi and 1 - chi_t/chi are near the fp32
+            ! rounding of one, and so is their true value, 1/dtau.  Where Psi is
             ! zero (fixed_Jnu) the unpreconditioned integrands are taken.
             if (split_rates .and. preconditioning) then
               index = self%split_offset(iatom) + i
@@ -2572,8 +2588,11 @@ contains
                 chi_t = vph(f)*abs_coef - eta_t
                 other = other_contribution(eta_t, index, self%split_opac(f,x,y,z,1), &
                   self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
+                chi_other = other_contribution(chi_t, index, self%split_chi(f,x,y,z,1), &
+                  self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z))
                 up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
-                spont = merge(1.0, 1.0 - psi*chi_t, psi == 0.)
+                spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
+                                   / self%work(f,x,y,z,1), psi == 0.)
                 vvv = vph(f) * wmunu(f)
                 sum_I = sum_I + vvv*up
                 sum_A = sum_A + vvv*spont
@@ -3256,7 +3275,7 @@ contains
       endif
       !$omp end critical (twin_Jnu_cleanup)
       if (cleanup) then
-        if (Jnu_to_file) then
+        if (rt_to_file) then
           if (.not. save_Jnu) then
             Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
             call self%up_twin%remove(Jnu_label, key=self%up_twin%key(1:3))
@@ -3303,6 +3322,46 @@ contains
     class(rt_patch_t) :: self
     integer, intent(in), optional :: m_in(6)
   END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  !> Keep the exit plane of a frozen slab's last sweep (rt_patch_pre_update) for
+  !> the active slab after it: in mem, or with rt_to_file in a file, freeing mem.
+  !===============================================================================
+  SUBROUTINE retain_exit_plane (self)
+    class(rt_patch_t) :: self
+    !-----------------------------------------------------------------------------
+    if (.not. rt_to_file) return
+    call self%save6(self%mem, 'exit_plane', key=self%key(1:3), add2meta=.false.)
+    call self%deallocate_mem()
+  END SUBROUTINE retain_exit_plane
+
+  !===============================================================================
+  !> Give the next slab of the column, nxt, a copy of the retained exit plane.
+  !===============================================================================
+  SUBROUTINE restore_exit_plane (self, nxt)
+    class(rt_patch_t) :: self
+    class(rt_patch_t) :: nxt
+    !-----------------------------------------------------------------------------
+    call nxt%allocate_boundary()
+    if (rt_to_file) then
+      call self%load6('exit_plane', key=self%key(1:3), mem=nxt%mem)
+    else
+      nxt%mem = self%mem
+    endif
+  END SUBROUTINE restore_exit_plane
+
+  !===============================================================================
+  !> Free the retained exit plane once no slab reads it.  Repeated calls do nothing.
+  !===============================================================================
+  SUBROUTINE release_exit_plane (self)
+    class(rt_patch_t) :: self
+    !-----------------------------------------------------------------------------
+    if (rt_to_file) then
+      call self%remove('exit_plane', key=self%key(1:3))
+    elseif (associated(self%mem)) then
+      call self%deallocate_mem()
+    endif
+  END SUBROUTINE release_exit_plane
 
   !===============================================================================
   !> The boundary buffer: the exit plane (chi, S, I) of every ray and set.

@@ -573,7 +573,7 @@ contains
     ! locally_converged is population/convmax-based (premature_finish shortcut);
     ! it must not terminate the task ahead of the flux metric when
     ! flux_convergence is the authoritative one (see the matching guard in
-    ! rt_patch_t%execute's premature_finish check)
+    ! rt_patch_pre_update)
     if (locally_converged .and. .not. flux_convergence) then
       call self%finish()
     endif

@@ -75,7 +75,8 @@ persistent allocation plus the largest of the three phases. The EOS phase grows 
 the cells of the composition patches that run at the same time. In the RT phases each
 busy thread sweeps one column (a frequency window and ray direction through all depth
 slabs) and holds the workspace of one slab and the column's boundary buffer; with
-`Jnu_to_file=F` the radiation fields of every slab are held as well. Raising `n_nu`
+`rt_to_file=F` the radiation fields of every slab, and the exit plane each up-going column keeps
+once its deepest slabs have converged, are held as well. Raising `n_nu`
 splits the frequencies over more columns and shrinks both per-thread terms.
 
 At completion, `Memory comparison rank ...` gives the estimate, the registered peak and

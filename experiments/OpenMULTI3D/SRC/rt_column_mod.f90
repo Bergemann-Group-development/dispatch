@@ -7,9 +7,11 @@
 !>
 !> Within a slab the column runs the update sequence a slab task had
 !> (pre_update, update, rotate), so each slab keeps its own iteration count,
-!> time and files.  A slab whose atoms have converged (premature_finish) keeps
-!> its last exit plane when it finishes, and the column passes that frozen
-!> plane on in place of a new one.  The column finishes with its last slab.
+!> time and files.  With premature_finish, slabs freeze from the bottom once
+!> their atoms and those of all deeper slabs have converged.  In an up column
+!> the highest frozen slab retains its last exit plane, in memory or with
+!> rt_to_file on disk, and the column passes that plane on in place of a new
+!> one.  The column finishes with its last slab.
 !===============================================================================
 MODULE rt_column_mod
   USE io_mod
@@ -179,76 +181,83 @@ FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
 END FUNCTION hash_key
 
 !===============================================================================
-!> Sweep the slabs.  plane is the exit plane of the slab before s: either the
-!> buffer that slab handed on (frozen false), or its own retained plane
-!> (frozen true), which a converged slab keeps for the slabs after it.
+!> Sweep the slabs.  plane is the exit plane handed on by the slab before s.
+!> Before the sweep, mark the slabs that may freeze (settled, see
+!> rt_patch_pre_update): those whose atoms, and those of every deeper slab, have
+!> converged.  The populations of this iteration are final, so both columns of
+!> a window mark the same slabs.  A slab that freezes hands its exit plane on
+!> as usual if the slab after it freezes too, and otherwise retains it for the
+!> sweeps to come, in which the slab after it receives a copy.
 !===============================================================================
 SUBROUTINE execute (self)
   class(rt_column_t) :: self
   class(rt_patch_t), pointer :: s, prev
   real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane
-  logical :: frozen
-  integer :: j
+  logical :: settled
+  integer :: i, j, k, n
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_column_t%execute', itimer=itimer)
+  n = size(self%slab)
+  settled = .true.
+  do k=1, n
+    j = merge(k, n+1-k, self%dir > 0)
+    s => self%slab(j)%p
+    if (s%has_atom) settled = settled .and. all([(s%atoms(i)%data%converged, i=1, s%natom)])
+    s%settled = settled .and. s%has_atom
+  end do
   nullify (plane, prev)
-  frozen = .false.
-  do j=1, size(self%slab)
+  do j=1, n
     s => self%slab(j)%p
     if (s%is_finished()) then
       ! a finished slab no longer reads the plane before it
-      call release (plane, frozen, prev)
+      call free (plane, prev)
+      if (associated(prev)) then
+        if (prev%static_mem) call prev%release_exit_plane()
+      endif
     else
-      if (j > 1 .and. .not. associated(plane)) &
-        call shared%abort ('rt_column_t%execute: no boundary for a slab inside the column')
-      call receive (s, plane, frozen)
+      if (associated(plane)) then
+        s%mem => plane
+        nullify (plane)
+      elseif (associated(prev)) then
+        if (.not. prev%static_mem) &
+          call shared%abort ('rt_column_t%execute: no boundary for a slab inside the column')
+        call prev%restore_exit_plane(s)
+      endif
       s%upstream => prev
       call s%pre_update()
       call s%update()
       call s%rotate()
+      if (s%static_mem .and. j < n) then
+        if (self%slab(j+1)%p%settled) then
+          plane => s%mem
+          nullify (s%mem)
+        else
+          call s%retain_exit_plane()
+        endif
+      else
+        plane => s%mem
+        nullify (s%mem)
+      endif
     endif
-    plane => s%mem
-    frozen = s%static_mem
-    if (.not. frozen) nullify (s%mem)
     prev => s
   end do
-  call release (plane, frozen, prev)
-  if (all([(self%slab(j)%p%is_finished(), j=1, size(self%slab))])) call self%finish()
+  call free (plane, prev)
+  if (all([(self%slab(j)%p%is_finished(), j=1, n)])) call self%finish()
   call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------
-  !> Give s the incoming plane: the buffer itself, or a copy of a frozen one.
-  !> A plane s kept from an earlier sweep is superseded.
-  !-----------------------------------------------------------------------------
-  subroutine receive (s, plane, frozen)
-    class(rt_patch_t), pointer :: s
-    real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane
-    logical, intent(in) :: frozen
-    !---------------------------------------------------------------------------
-    if (.not. associated(plane)) return
-    if (associated(s%mem)) call s%deallocate_mem()
-    if (frozen) then
-      call s%allocate_boundary()
-      s%mem = plane
-    else
-      s%mem => plane
-    endif
-    nullify (plane)
-  end subroutine receive
-  !-----------------------------------------------------------------------------
   !> Free a plane that no slab reads any more, through the slab that made it.
   !-----------------------------------------------------------------------------
-  subroutine release (plane, frozen, prev)
+  subroutine free (plane, prev)
     real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane
-    logical, intent(in) :: frozen
     class(rt_patch_t), pointer :: prev
     !---------------------------------------------------------------------------
     if (.not. associated(plane)) return
-    if (.not. frozen) prev%mem => plane
+    prev%mem => plane
     call prev%deallocate_mem()
     nullify (plane)
-  end subroutine release
+  end subroutine free
 END SUBROUTINE execute
 
 !===============================================================================
@@ -264,6 +273,7 @@ SUBROUTINE finish (self)
   call self%m3d_patch_t%finish()
   do j=1, size(self%slab)
     if (.not. self%slab(j)%p%is_finished()) call self%slab(j)%p%finish()
+    if (self%slab(j)%p%static_mem) call self%slab(j)%p%release_exit_plane()
   end do
 END SUBROUTINE finish
 
@@ -341,8 +351,9 @@ END SUBROUTINE init_nbors_hash
 !> EOS species plus the largest phase.  A phase holds, per busy thread, the
 !> workspace of one slab and the boundary buffer of its column, plus the
 !> retained RT fields of all slabs.  Allocations outside Dispatch's registry,
-!> opacity caches, solver temporaries and the exit planes kept by converged
-!> slabs are excluded, so this is an estimate, not an upper bound.  Slabs
+!> opacity caches, solver temporaries and, without rt_to_file, the exit plane
+!> an up column's frozen slabs retain are excluded, so this is an estimate, not an
+!> upper bound.  Slabs
 !> allocate u_phase when they first execute and keep it, so both RT phases
 !> count it for every slab.
 !===============================================================================

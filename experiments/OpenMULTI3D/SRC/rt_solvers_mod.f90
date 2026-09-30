@@ -13,7 +13,7 @@ contains
     type(ray_type) :: ray, amr_ray
     real(8), intent(in) :: vec(3)
     real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin
-    real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, Psi, kx, ky, Irem, dt, E, W
+    real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, Psi, kx, ky, Irem, dt, E, W, Esc
     real(8) :: ds(3)
     real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
     real(4), dimension(:), pointer, contiguous :: xkern, ykern
@@ -136,17 +136,19 @@ contains
               ss = self%work(f,x,y,z,2)
               dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
               dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi)
+              call linear_weights(dt, E, W, Psi, Esc)
               Inu = Inuup*E + W*ssup + Psi*ss
-              ! Hold the non-local part on its own as well: the preconditioned
-              ! rates need it, and Inu - Psi*ss would cancel.  Psi=0 switches the
-              ! preconditioning off at a point, so Irem then carries the whole
-              ! (clamped) intensity.
+              ! Hold the non-local part and the escape factor 1-Psi on their own
+              ! as well: the preconditioned rates need them, and both Inu - Psi*ss
+              ! and 1 - Psi would cancel in an optically thick interval.  Psi=0
+              ! switches the preconditioning off at a point, so Irem then carries
+              ! the whole (clamped) intensity.
               off = dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)
               Irem = Inuup*E + W*ssup
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               Psi = merge(0., Psi, off)
               self%Irem(f,x,y,z) = merge(Inu, Irem, off)
+              self%escape(f,x,y,z) = merge(1., Esc, off)
               self%work(f,x,y,z,3) = Inu
               if (get_rates) then
                 ! 0<=Psi<=1 fails for dt<0/chi<0; no preconditioning there
@@ -162,7 +164,7 @@ contains
               ss = self%work(f,x,y,z,2)
               dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
               dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi)
+              call linear_weights(dt, E, W, Psi, Esc)
               Inu = Inuup*E + W*ssup + Psi*ss
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               self%work(f,x,y,z,3) = Inu
@@ -182,7 +184,7 @@ contains
   module subroutine long_char_linear (self, vec)
     class(rt_patch_t) :: self
     real(8) :: vec(3)
-    real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, Psi, Irem
+    real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, Psi, Irem, Esc
     real(4) :: dt, E, W
     integer :: dx, dy, zs, ze, zup
     logical :: amr_boundary, get_rates, split_rates, off
@@ -228,17 +230,19 @@ contains
               ss = self%work(f,x,y,z,2)
               dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
               dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi)
+              call linear_weights(dt, E, W, Psi, Esc)
               Inu = Inuup*E + W*ssup + Psi*ss
-              ! Hold the non-local part on its own as well: the preconditioned
-              ! rates need it, and Inu - Psi*ss would cancel.  Psi=0 switches the
-              ! preconditioning off at a point, so Irem then carries the whole
-              ! (clamped) intensity.
+              ! Hold the non-local part and the escape factor 1-Psi on their own
+              ! as well: the preconditioned rates need them, and both Inu - Psi*ss
+              ! and 1 - Psi would cancel in an optically thick interval.  Psi=0
+              ! switches the preconditioning off at a point, so Irem then carries
+              ! the whole (clamped) intensity.
               off = dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)
               Irem = Inuup*E + W*ssup
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               Psi = merge(0., Psi, off)
               self%Irem(f,x,y,z) = merge(Inu, Irem, off)
+              self%escape(f,x,y,z) = merge(1., Esc, off)
               self%work(f,x,y,z,3) = Inu
               if (get_rates) then
                 ! 0<=Psi<=1 fails for dt<0/chi<0; no preconditioning there
@@ -254,7 +258,7 @@ contains
               ss = self%work(f,x,y,z,2)
               dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
               dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi)
+              call linear_weights(dt, E, W, Psi, Esc)
               Inu = Inuup*E + W*ssup + Psi*ss
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               self%work(f,x,y,z,3) = Inu
@@ -281,7 +285,9 @@ contains
   !> field and m = 1-exp(-r) = r*q(r), so neither is formed as 1 - exp(-t).  Psi and W
   !> still cancel as t -> 0, so for |t| <= 1 Psi = t*P(t) and W = u0 - Psi; above
   !> that Psi = 1 - u0/t and W = u0/t - E, which keeps W ~ 1/t at large t from being
-  !> formed as 1 - Psi.  q and P are relative-error minimax fits of degree 5 on
+  !> formed as 1 - Psi.  Esc = 1 - Psi is returned for the same reason: it is u0/t
+  !> above t = 1, and the preconditioned rates need it where Psi rounds to 1 in fp32.
+  !> q and P are relative-error minimax fits of degree 5 on
   !> |r| <= ln2/2 and degree 7 on |t| <= 1; every output is within 4 fp32 ulp of the
   !> exact value over -2 <= t <= 90.  Only the exponential sees the clamp at t = 87,
   !> past which exp(-t) is below every quantity it multiplies.
@@ -293,9 +299,9 @@ contains
   !> and lw_select so that each piece, and then linear_weights, stays under
   !> gfortran's inlining limits even in short_char and short_char_hermite.
   !===============================================================================
-  pure subroutine linear_weights (t, E, W, Psi)
+  pure subroutine linear_weights (t, E, W, Psi, Esc)
     real(4), intent(in) :: t
-    real(4), intent(out) :: E, W, Psi
+    real(4), intent(out) :: E, W, Psi, Esc
     real(4) :: u0, ut, ps
     logical :: thin
     !-----------------------------------------------------------------------------
@@ -304,6 +310,7 @@ contains
     ps = lw_series(t)
     thin = abs(t) <= 1.0
     Psi = lw_select(ps, 1.0 - ut, thin)
+    Esc = lw_select(1.0 - ps, ut, thin)
     W = lw_select(u0 - ps, ut - E, thin)
   end subroutine linear_weights
 
@@ -1427,7 +1434,7 @@ contains
     type(ray_type) :: ray, amr_ray
     real(8), intent(in) :: vec(3)
     real(4) :: Inuup, xxup, ssup, xx, ss, Inu, kx, ky, betc, bet, rpe
-    real(4) :: dsup1, dsup2, dsup05, rpath, dsc2, Psi4, Irem, dtl, El, Wl
+    real(4) :: dsup1, dsup2, dsup05, rpath, dsc2, Psi4, Irem, dtl, El, Wl, Esc4
     real(4) :: v1, v2, v3, gpe, aT, pec, rpec, rxpc, rxpup
     real(4) :: dchi, t1, sgn, mc, r1mbc, Bc, kf, dsdtau, dss
     real(4) :: rhou, rhoc, gc, t1s, sgns, rdt4, srem, Psi_loc
@@ -1437,7 +1444,7 @@ contains
     real(4), dimension(:,:), allocatable :: work_up, work_min
     real(4), dimension(:,:,:,:), allocatable :: plane_r
     real(4), dimension(:,:,:,:), allocatable :: row_red
-    real(4), dimension(:), allocatable :: hknu, rem
+    real(4), dimension(:), allocatable :: hknu, rem, esc
     real(4), parameter :: dtmin=1e-20
     integer :: xup_t(4,self%nx), yup_t(4,self%ny)
     integer :: zs, ze, xup, yup, zup, i, ii, jj, upo1, upo2
@@ -1453,7 +1460,7 @@ contains
     allocate(row_red(self%fs:self%fe, 5, self%nx, self%ny))
     allocate(plane_r(self%fs:self%fe, self%nx, self%ny, 4:5))
     allocate(hknu(self%fs:self%fe))
-    allocate(rem(self%fs:self%fe))
+    allocate(rem(self%fs:self%fe), esc(self%fs:self%fe))
     hknu = real(h_k * self%nu(self%fs:self%fe), 4)
     get_rates = self%compute_psi
     split_rates = self%split_rates
@@ -1679,17 +1686,21 @@ contains
                     .and. abs(Inu) < real(maser_Inu_max)) then
                   self%Psi(f,x,y,z) = Psi_loc / xx
                   rem(f) = Inuup*real(ex,4) + real(A,4)*ssup + real(C,4)*srem
+                  ! 1 - Psi_loc, formed from the real(8) weights before rounding
+                  esc(f) = real(1d0 - (B + C*dble(kf)), 4)
                 else
                   ! Psi=0 switches the preconditioning off at this point, so Irem
                   ! then has to carry the whole (clamped) intensity.
                   self%Psi(f,x,y,z) = 0
                   rem(f) = Inu
+                  esc(f) = 1.
                 endif
               endif
             end do ! f-loop
             if (get_rates .and. split_rates) then
               do f=self%fs, self%fe
                 self%Irem(f,x,y,z) = rem(f)
+                self%escape(f,x,y,z) = esc(f)
               end do
             endif
           else
@@ -1705,17 +1716,19 @@ contains
                 ss = self%work(f,x,y,z,2)
                 dtl = dsup05 * ( xxup + xx )     ! upwind optical pathlength
                 dtl = max(dtl, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dtl<0)
-                call linear_weights(dtl, El, Wl, Psi4)
+                call linear_weights(dtl, El, Wl, Psi4, Esc4)
                 Inu = Inuup*El + Wl*ssup + Psi4*ss
-                ! Hold the non-local part on its own as well: the preconditioned
-                ! rates need it, and Inu - Psi4*ss would cancel.  Psi4=0 switches the
-                ! preconditioning off at a point, so Irem then carries the whole
-                ! (clamped) intensity.
+                ! Hold the non-local part and the escape factor 1-Psi4 on their own
+                ! as well: the preconditioned rates need them, and both Inu - Psi4*ss
+                ! and 1 - Psi4 would cancel in an optically thick interval.  Psi4=0
+                ! switches the preconditioning off at a point, so Irem then carries
+                ! the whole (clamped) intensity.
                 off = dtl <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)
                 Irem = Inuup*El + Wl*ssup
                 Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
                 Psi4 = merge(0., Psi4, off)
                 self%Irem(f,x,y,z) = merge(Inu, Irem, off)
+                self%escape(f,x,y,z) = merge(1., Esc4, off)
                 self%work(f,x,y,z,3) = Inu
                 if (get_rates) then
                   ! 0<=Psi4<=1 fails for dtl<0/chi<0; no preconditioning there
@@ -1731,7 +1744,7 @@ contains
                 ss = self%work(f,x,y,z,2)
                 dtl = dsup05 * ( xxup + xx )     ! upwind optical pathlength
                 dtl = max(dtl, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dtl<0)
-                call linear_weights(dtl, El, Wl, Psi4)
+                call linear_weights(dtl, El, Wl, Psi4, Esc4)
                 Inu = Inuup*El + Wl*ssup + Psi4*ss
                 Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
                 self%work(f,x,y,z,3) = Inu
