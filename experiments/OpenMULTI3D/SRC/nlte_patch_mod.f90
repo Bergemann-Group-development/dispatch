@@ -51,6 +51,7 @@ MODULE nlte_patch_mod
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
+    procedure :: estimate_atom_memory
     procedure :: finish
     procedure :: project_populations
     procedure :: nbor_relations => nlte_patch_nbor_relations
@@ -617,6 +618,36 @@ contains
     endif
     call trace%end(itimer)
   END SUBROUTINE execute
+
+  !===============================================================================
+  !> Bytes of the per-atom arrays this patch holds while the NLTE iteration runs
+  !> and while the output pass runs.  The populations, their history and the
+  !> Doppler factor stay to the end; the radiative rate accumulators, one
+  !> per radiative transition, exist only during the iteration.  Only the
+  !> iterated atoms carry departure coefficients, and the profile integrals of
+  !> the lines that window edges cut are left out (a few lines per window edge).
+  !===============================================================================
+  SUBROUTINE estimate_atom_memory (self, nlte, output)
+    class(nlte_patch_t), intent(in) :: self
+    real(8), intent(out) :: nlte, output
+    real(8) :: cell, bytes
+    integer :: i, nl
+    !-----------------------------------------------------------------------------
+    cell = product(real(self%n,8))
+    nlte = 0d0
+    output = 0d0
+    do i=1, self%natom
+      nl = self%atoms(i)%nlevel
+      bytes = 8d0*nl + 8d0 + 4d0
+      if (self%maxiter > 0) then
+        bytes = bytes + 8d0*nl
+        if (ng_step >= 0) bytes = bytes + 3*8d0*nl
+      endif
+      output = output + cell*bytes
+      if (self%maxiter > 0) bytes = bytes + 2*4d0*self%atoms(i)%nrad
+      nlte = nlte + cell*bytes
+    end do
+  END SUBROUTINE estimate_atom_memory
 
   !===============================================================================
   SUBROUTINE finish (self)

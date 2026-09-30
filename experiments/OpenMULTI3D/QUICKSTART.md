@@ -77,7 +77,13 @@ busy thread sweeps one column (a frequency window and ray direction through all 
 slabs) and holds the workspace of one slab and the column's boundary buffer; with
 `rt_to_file=F` the radiation fields of every slab, and the exit plane each up-going column keeps
 once its deepest slabs have converged, are held as well. Raising `n_nu`
-splits the frequencies over more columns and shrinks both per-thread terms.
+splits the frequencies over more columns and shrinks both per-thread terms. The atom
+arrays over the whole atmosphere (populations, their history and the radiative rate
+accumulators) do not shrink with `n_nu` and set the floor of the NLTE phase.
+
+If the estimate exceeds the physical memory of the machine, the run stops before the
+dispatcher starts. `mem_limit_gb` in `&run_params` replaces that limit with a value in
+GiB, and a negative value skips the check.
 
 At completion, `Memory comparison rank ...` gives the estimate, the registered peak and
 their difference. Opacity caches, solver temporaries and allocations Dispatch does not

@@ -25,10 +25,11 @@ MODULE rt_column_mod
   USE list_mod, only: list_t
   USE shared_mod
   USE console_mod
-  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos
+  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos, mem_limit_gb
   USE rt_params_mod, only: rt_out
   USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t
   USE composition_patch_mod, only: composition_patch_t
+  USE nlte_patch_mod, only: nlte_patch_t
   implicit none
   private
 
@@ -42,7 +43,7 @@ MODULE rt_column_mod
     procedure :: init_nbors_hash
   end type rt_column_t
 
-  public :: init_rt_columns, report_memory_estimate
+  public :: init_rt_columns, report_memory_estimate, check_memory_limit
 
 contains
 
@@ -363,13 +364,13 @@ SUBROUTINE report_memory_estimate (list, estimate)
   class(link_t), pointer :: link
   real(8), parameter :: gib=1024d0**3
   real(8) :: work, retained, boundary, persistent, transient, eos_retained, eos_work, rt_persistent
-  real(8) :: max_work(2), sum_retained(2), max_boundary(2), phase(3)
+  real(8) :: max_work(2), sum_retained(2), max_boundary(2), phase(3), atom(2), atom_nlte, atom_out
   integer :: n_column(2), n_comp, workers(2), eos_workers, j, k
   character(len=6), parameter :: label(2) = ['NLTE  ', 'output']
   !-----------------------------------------------------------------------------
   n_column = 0; n_comp = 0
   max_work = 0d0; sum_retained = 0d0; max_boundary = 0d0
-  eos_work = 0d0; eos_retained = 0d0; rt_persistent = 0d0
+  eos_work = 0d0; eos_retained = 0d0; rt_persistent = 0d0; atom = 0d0
   link => list%head
   do while (associated(link))
     if (link%task%is_clear(bits%remove+bits%external+bits%virtual)) then
@@ -390,6 +391,9 @@ SUBROUTINE report_memory_estimate (list, estimate)
         ! the patch being loaded holds its own retained arrays inside transient
         eos_work = max(eos_work, transient - retained/merge(1+task%n_out, 1, rotate_atmos))
         eos_retained = eos_retained + retained
+      class is (nlte_patch_t)
+        call task%estimate_atom_memory(atom_nlte, atom_out)
+        atom = atom + [atom_nlte, atom_out]
       end select
     endif
     link => link%next
@@ -397,7 +401,7 @@ SUBROUTINE report_memory_estimate (list, estimate)
   workers = min(omp%nthreads, n_column)
   eos_workers = min(omp%nthreads, n_comp)
   phase(1) = eos_workers*eos_work
-  phase(2:3) = workers*(max_work + max_boundary) + sum_retained + rt_persistent
+  phase(2:3) = workers*(max_work + max_boundary) + sum_retained + rt_persistent + atom
   estimate = os%gb + (eos_retained + maxval(phase))/gib
   if (.not. console_on(ch_m3d, 1, all_ranks=.true.)) return
   write(console_unit,'(a,i0,a)') 'Memory estimate rank ', mpi%rank, ' [GiB]:'
@@ -407,13 +411,72 @@ SUBROUTINE report_memory_estimate (list, estimate)
     '  (', eos_workers, ' concurrent composition patches)'
   do k=1, 2
     if (n_column(k) == 0) cycle
-    write(console_unit,'(2x,a6,a,f10.4,a,i0,a,i0,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a)') label(k), &
+    write(console_unit,'(2x,a6,a,f10.4,a,i0,a,i0,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a)') label(k), &
       ' phase                  ', phase(k+1)/gib, '  (', workers(k), ' of ', n_column(k), &
       ' columns x (', max_work(k)/gib, ' work + ', max_boundary(k)/gib, ' buffer), ', &
-      sum_retained(k)/gib, ' retained, ', rt_persistent/gib, ' u_phase)'
+      sum_retained(k)/gib, ' retained, ', rt_persistent/gib, ' u_phase, ', atom(k)/gib, ' atom arrays)'
   end do
   write(console_unit,'(a,f10.4)') '  estimated peak allocation     ', estimate
   flush(console_unit)
 END SUBROUTINE report_memory_estimate
+
+!===============================================================================
+!> Stop before the dispatcher starts when the estimated peak exceeds the memory
+!> the run may use: mem_limit_gb if positive, else the physical memory of the
+!> machine.  The estimate leaves out some allocations, so a run that passes may
+!> still run out of memory, but one that fails would have.
+!===============================================================================
+SUBROUTINE check_memory_limit (estimate)
+  real(8), intent(in) :: estimate
+  real(8) :: limit
+  character(len=160) :: msg
+  !-----------------------------------------------------------------------------
+  if (mem_limit_gb < 0d0) return
+  limit = mem_limit_gb
+  if (limit == 0d0) limit = physical_memory_gib()
+  if (limit <= 0d0) then
+    call console_error ('Physical memory unknown; set mem_limit_gb in &run_params to enable the memory check')
+    return
+  endif
+  if (estimate <= limit) return
+  write(msg,'(a,f0.1,a,f0.1,a)') 'Estimated peak memory ', estimate, ' GiB exceeds the limit of ', &
+    limit, ' GiB (mem_limit_gb in &run_params; a negative value skips the check)'
+  call console_error (trim(msg))
+  error stop 'insufficient memory'
+END SUBROUTINE check_memory_limit
+
+!===============================================================================
+!> Physical memory of this machine [GiB], 0 if it cannot be determined.  Linux
+!> lists it in /proc/meminfo; elsewhere sysctl hw.memsize gives it in bytes.
+!===============================================================================
+FUNCTION physical_memory_gib () RESULT (gib)
+  real(8) :: gib
+  character(len=128) :: line
+  integer(8) :: value
+  integer :: unit, iostat
+  !-----------------------------------------------------------------------------
+  gib = 0d0
+  open (newunit=unit, file='/proc/meminfo', status='old', action='read', iostat=iostat)
+  if (iostat == 0) then
+    do
+      read (unit, '(a)', iostat=iostat) line
+      if (iostat /= 0) exit
+      if (line(1:9) == 'MemTotal:') then
+        read (line(10:), *) value             ! kB
+        gib = real(value,8)/1024d0**2
+        exit
+      endif
+    end do
+    close (unit)
+    return
+  endif
+  call execute_command_line ('sysctl -n hw.memsize > .hw_memsize 2> /dev/null', exitstat=iostat)
+  if (iostat /= 0) return
+  open (newunit=unit, file='.hw_memsize', status='old', action='read', iostat=iostat)
+  if (iostat /= 0) return
+  read (unit, *, iostat=iostat) value
+  if (iostat == 0) gib = real(value,8)/1024d0**3
+  close (unit, status='delete')
+END FUNCTION physical_memory_gib
 
 END MODULE rt_column_mod

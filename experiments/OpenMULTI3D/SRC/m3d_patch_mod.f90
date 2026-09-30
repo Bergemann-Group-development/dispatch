@@ -172,6 +172,9 @@ MODULE m3d_patch_mod
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
+    ! Largest memory estimate [GiB] the run may start with: 0 takes the physical
+    ! memory of the machine, a negative value switches the check off
+    real(8), public, save :: mem_limit_gb=0
     integer, public, save :: n_nu_out=0   ! output frequency patch count, set in composition_pre_init
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
@@ -291,7 +294,7 @@ MODULE m3d_patch_mod
     diag_pops, diag_db, diag_no_scat_loop
 
     namelist /run_params/ n_nu, make_eos, rotate_atmos, &
-    column_by_column, lam_tolerance
+    column_by_column, lam_tolerance, mem_limit_gb
 
   contains
   

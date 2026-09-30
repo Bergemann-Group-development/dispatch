@@ -24,7 +24,7 @@ PROGRAM dispatch
   USE timer_mod
   USE mpi_debug_mod
   USE m3d_patch_mod, only: write_linelist_out
-  USE rt_column_mod, only: report_memory_estimate
+  USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
   real(8):: memory_estimate
   !.............................................................................
@@ -33,6 +33,7 @@ PROGRAM dispatch
   call check_mpi_debug()
   call read_external%init (task_list)           ! Initialize task_list
   call report_memory_estimate (task_list, memory_estimate)
+  call check_memory_limit (memory_estimate)
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
   call write_linelist_out()                     ! Line-list diagnostics, if collected
   if (timer%verbose > 0) call timer%print() 
