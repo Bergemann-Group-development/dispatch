@@ -487,6 +487,7 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   class(atomic_spectrum_type), intent(in), pointer :: sp
   type(atom_type), intent(in), pointer, optional :: atoms(:)
   class(rt_patch_t), pointer :: rt_patch
+  type(rt_patch_ptr_t), allocatable :: grown(:)
   integer :: n, m
   logical :: new_nlte
   !-----------------------------------------------------------------------------
@@ -497,7 +498,9 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
     do n=nu(1), nu(2)
       allocate(rt_patch)
       call rt_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atoms=atoms)
-      self%rt_slabs = [self%rt_slabs, rt_patch_ptr_t(rt_patch)]
+      ! explicit reallocation: the optimized builds use -assume norealloc_lhs
+      allocate(grown, source=[self%rt_slabs, rt_patch_ptr_t(rt_patch)])
+      call move_alloc(grown, self%rt_slabs)
     end do
   end do
 END SUBROUTINE create_sub_patches

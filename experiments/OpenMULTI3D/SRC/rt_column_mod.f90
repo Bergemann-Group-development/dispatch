@@ -55,13 +55,15 @@ contains
 SUBROUTINE init_rt_columns (task_list)
   class(list_t) :: task_list
   class(link_t), pointer :: link
-  type(rt_patch_ptr_t), allocatable :: slabs(:)
+  type(rt_patch_ptr_t), allocatable :: slabs(:), grown(:)
   class(rt_column_t), pointer :: column
   logical, allocatable :: grouped(:)
   integer, allocatable :: member(:)
   integer :: i, j, k, tmp
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_column_mod%init_rt_columns')
+  ! slabs and member are reallocated explicitly: the optimized builds use
+  ! -assume norealloc_lhs
   allocate(slabs(0))
   link => task_list%head
   do while (associated(link))
@@ -69,7 +71,8 @@ SUBROUTINE init_rt_columns (task_list)
     class is (composition_patch_t)
       if (allocated(task%rt_slabs)) then
         call set_twins(task%rt_slabs)
-        slabs = [slabs, task%rt_slabs]
+        allocate(grown, source=[slabs, task%rt_slabs])
+        call move_alloc(grown, slabs)
       endif
     end select
     link => link%next
@@ -83,8 +86,9 @@ SUBROUTINE init_rt_columns (task_list)
   do i=1, size(slabs)
     call slabs(i)%p%init_unique (same=.true.)
     if (grouped(i)) cycle
-    member = pack([(j, j=1, size(slabs))], [(slabs(j)%p%i_nu == slabs(i)%p%i_nu .and. &
-                                             slabs(j)%p%i_mu == slabs(i)%p%i_mu, j=1, size(slabs))])
+    if (allocated(member)) deallocate(member)
+    allocate(member, source=pack([(j, j=1, size(slabs))], [(slabs(j)%p%i_nu == slabs(i)%p%i_nu .and. &
+                                 slabs(j)%p%i_mu == slabs(i)%p%i_mu, j=1, size(slabs))]))
     grouped(member) = .true.
     ! sweep order: along the rays, from the slab where they enter
     do j=2, size(member)
