@@ -2286,7 +2286,7 @@ contains
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, ih, fs, fe
-    logical :: LTE, do_LTE, get_wphi
+    logical :: LTE, do_LTE, get_wphi, sum_wphi
     integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, save :: itimer=0, itimer1=0
@@ -2317,6 +2317,7 @@ contains
       if (line%hydrogen) hline = hydrogen_line(line%i, line%j, line%nu0)
       fs = line%iblue
       fe = line%ired
+      sum_wphi = get_wphi .and. sums_over_windows(self, line)
 
       lower_off = line%lower_ev - atom%ev(line%i)
       upper_off = line%upper_ev - atom%ev(line%j)
@@ -2387,7 +2388,7 @@ contains
                 end do
               endif
 
-              if (get_wphi) then
+              if (sum_wphi) then
                 wphi(x,y,z) = sum(phi * line%wq(fs:fe))
               endif
             end associate
@@ -2395,16 +2396,32 @@ contains
         end do
       end do
 
-      if (get_wphi) then
+      if (sum_wphi) then
         call lock_mem(self%m3d_parent, 'wphi')
-        associate(sum_wphi => adata%wphi(:,:,:,line%ntrans))
-          sum_wphi = sum_wphi + wmu * wphi
+        associate(total => adata%wphi(line%ntrans))
+          if (.not. allocated(total%w)) &
+            call os%allocate(total%w, shape(wphi), label='wphi', zero=.true.)
+          total%w = total%w + wmu * wphi
         end associate
         call unlock_mem(self%m3d_parent, 'wphi')
       endif
     end do
     call trace%end(itimer)
   END SUBROUTINE add_bound_bound_opacities
+
+  !===============================================================================
+  !> Does the profile integral of this line have to be summed over wavelength
+  !> windows?  It does when a window edge cuts the line (it then reaches the edge
+  !> of this window).  Hydrogen lines and lines with several components keep the
+  !> summed integral as well, since their rates are not normalised per direction.
+  !===============================================================================
+  LOGICAL FUNCTION sums_over_windows (self, line)
+    class(rt_patch_t), intent(in) :: self
+    class(line_type), intent(in) :: line
+    !-----------------------------------------------------------------------------
+    sums_over_windows = line%iblue <= self%fs .or. line%ired >= self%fe &
+                        .or. line%hydrogen .or. line%io > 1
+  END FUNCTION sums_over_windows
 
   !===============================================================================
   SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, iatom)
@@ -2429,13 +2446,18 @@ contains
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe, index
-    logical :: get_wphi, split_rates
+    logical :: get_wphi, split_rates, per_direction, own_norm
+    real(4), dimension(:), allocatable :: wqf
+    real(4) :: sum_w, wtot
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     split_rates = self%split_rates
-    allocate(wmunu(self%fs:self%fe), vph(self%fs:self%fe))
+    ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
+    per_direction = .not. (self%do_full_sp .and. fixed_Jnu > 0)
+    wtot = sum(rt_iter%wmu)
+    allocate(wmunu(self%fs:self%fe), vph(self%fs:self%fe), wqf(self%fs:self%fe))
     ! The preconditioning correction has to subtract the same local term the formal
     ! solver added, so it is built from the emissivity coefficient that
     ! add_bound_bound_opacities used, pop_ratio included.
@@ -2459,6 +2481,11 @@ contains
       fs = line%iblue
       fe = line%ired
       wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
+      ! A line inside one window is normalised by its own profile integral in this
+      ! direction, which differs from the direction-summed wphi only by the
+      ! variation of the quadrature error between directions.
+      own_norm = per_direction .and. .not. sums_over_windows(self, line)
+      if (own_norm) wqf(fs:fe) = line%wq(fs:fe)
       lower_off = line%lower_ev - atom%ev(line%i)
       upper_off = line%upper_ev - atom%ev(line%j)
 
@@ -2498,6 +2525,7 @@ contains
             sum_A = 0.0
             sum_I = 0.0
             sum_P = 0.0
+            sum_w = 0.0
             ! One f-loop per rate formulation and profile kind, so that none
             ! carries the rate_formulation branch.
             if (line%hydrogen) then
@@ -2561,6 +2589,7 @@ contains
                   associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                     phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                     vvv = phi * wmunu(f)
+                    if (own_norm) sum_w = sum_w + phi * wqf(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
@@ -2610,6 +2639,14 @@ contains
             if (preconditioning .and. .not. split_rates) then
               g_ij = g_ij - sum_P * eta_coef
               g_ji = g_ji - sum_P * eta_coef * g_ratio
+            endif
+            if (own_norm) then
+              if (split_rates) sum_w = sum(vph(fs:fe) * wqf(fs:fe))
+              ! lines below the strength cutoff have no profile weight and no rate
+              if (sum_w > 0.0) then
+                g_ij = g_ij / (sum_w * wtot)
+                g_ji = g_ji / (sum_w * wtot)
+              endif
             endif
 
             trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
@@ -3106,7 +3143,7 @@ contains
   SUBROUTINE set_fixed_Jnu (self)
     class(rt_patch_t) :: self
     real(4) :: Bnu
-    integer :: nl, i, j
+    integer :: i, j
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -3125,17 +3162,11 @@ contains
     end do
     do i=1, size(self%atoms, 1)
       associate(adata => self%atoms(i)%data)
-        nl = size(adata%wphi, 4)
-        if (.not. allocated(adata%wphi)) nl = 0
-        do j=1, nl
-          do z=1, self%nz
-            do y=1, self%ny
-              do x=1, self%nx
-                adata%wphi(x,y,z,j) = 1
-              end do
-            end do
+        if (allocated(adata%wphi)) then
+          do j=1, size(adata%wphi)
+            if (allocated(adata%wphi(j)%w)) adata%wphi(j)%w = 1
           end do
-        end do
+        endif
       end associate
     end do
     call trace%end(itimer)

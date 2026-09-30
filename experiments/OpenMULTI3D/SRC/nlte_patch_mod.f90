@@ -520,7 +520,8 @@ contains
             memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),linecheck)
             memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),linecheck)
             if (linecheck<=atom%nline) then
-              memcheck(4) = adata%wphi(p(1),p(2),p(3),linecheck)
+              memcheck(4) = 1
+              if (allocated(adata%wphi(linecheck)%w)) memcheck(4) = adata%wphi(linecheck)%w(p(1),p(2),p(3))
             endif
           endif
         else
@@ -606,7 +607,12 @@ contains
 
     if (self%is_finished() .or. self%iter==self%maxiter) then
       do i=1, self%natom
-        call os%deallocate(self%atoms(i)%data%wphi, label='wphi')
+        if (.not. allocated(self%atoms(i)%data%wphi)) cycle
+        do j=1, size(self%atoms(i)%data%wphi)
+          if (allocated(self%atoms(i)%data%wphi(j)%w)) &
+            call os%deallocate(self%atoms(i)%data%wphi(j)%w, label='wphi')
+        end do
+        deallocate(self%atoms(i)%data%wphi)
       end do
     endif
     call trace%end(itimer)

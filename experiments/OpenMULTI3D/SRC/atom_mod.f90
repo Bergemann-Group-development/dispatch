@@ -49,6 +49,12 @@ MODULE atom_mod
     !---------------------------------------------------------------------
 
     !---------------------------------------------------------------------
+    type, public :: profile_sum_t
+      real(4), dimension(:,:,:), allocatable :: w
+    end type profile_sum_t
+    !---------------------------------------------------------------------
+
+    !---------------------------------------------------------------------
     type, public :: atom_data_t
       ! LTE, NLTE and total population of active atom
       real(8), dimension(:,:,:),   allocatable :: totn
@@ -59,7 +65,11 @@ MODULE atom_mod
       ! suffices: each window's contribution is already a real(4) sum
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
       real(4), dimension(:,:,:,:), allocatable :: gamma_ji
-      real(4), dimension(:,:,:,:), allocatable :: wphi
+      ! Profile integral of the lines that a wavelength window edge cuts, summed
+      ! over windows and directions in the first iteration.  It is allocated for
+      ! such a line when the first window reaches it.  Every other line lies
+      ! inside one window and is normalised per direction by bound_bound_rates.
+      type(profile_sum_t), dimension(:), allocatable :: wphi
       real(4), dimension(:,:,:),   allocatable :: inv_df
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
@@ -292,7 +302,7 @@ MODULE atom_mod
       call os%allocate(adata%W, [nl, nl])
       call os%allocate(adata%e, nl)
       call os%allocate(adata%lvlerr, nl)
-      call os%allocate(adata%wphi, [m(1:3), self%nline], label='wphi', zero=.true.)
+      allocate(adata%wphi(self%nline))
       call os%allocate(adata%b, m, label='b')
       do i=1, self%nlevel
         adata%b(:,:,:,i) = 1.d0
@@ -313,12 +323,11 @@ MODULE atom_mod
     class(transition_type), pointer :: line, cont
     integer, intent(in) :: iter
     real(8), dimension(:,:,:,:), pointer, contiguous :: nstar
-    real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, wphi
+    real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(8) :: gij
     integer :: i
     ! ----------------------------------------------------------------------------
     adata => self%data
-    wphi => adata%wphi
     nstar => adata%nstar
     gamma_ij => adata%gamma_ij
     gamma_ji => adata%gamma_ji
@@ -329,10 +338,11 @@ MODULE atom_mod
       ! the zero radiative rates pass through instead of producing 0*Inf
       do i=1, self%nline
         if (.not. self%trans%line(i)%active) cycle
-        where (wphi(:,:,:,i) > 0.)
-          wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
+        if (.not. allocated(adata%wphi(i)%w)) cycle
+        where (adata%wphi(i)%w > 0.)
+          adata%wphi(i)%w = 1 / adata%wphi(i)%w
         elsewhere
-          wphi(:,:,:,i) = 1.
+          adata%wphi(i)%w = 1.
         end where
       end do
     endif
@@ -341,8 +351,10 @@ MODULE atom_mod
       line => self%trans%line(i)
       if (.not. line%active) cycle
       gij = self%g(line%i) / self%g(line%j)
-      gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
-      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
+      if (allocated(adata%wphi(i)%w)) then
+        gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * adata%wphi(i)%w
+        gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * adata%wphi(i)%w
+      endif
       gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
     end do
     
