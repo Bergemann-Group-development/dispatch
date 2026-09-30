@@ -1,0 +1,11 @@
+! Convergence of the h20 departures in the MARCS model p4000_g4.5_m0.0 (mdw); see README.md.
+&io_params           datadir='data' do_trace=F /
+&timer_params        sec_per_report=1e8 verbose=2 /
+&atmos_params        atmos_format='marcs'
+                     atmos_file='input/atmos/p4000_g+4.5_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod' /
+&atom_params         atom_file='input/atoms/public/atom.h20' relative_abundance=T /
+&composition_params  abund_file='input/abund/abund_magg22' /
+&opac_table_params   absmet_file='input/absmet_files/absmet' /
+&nlte_params         convlim=1d-5 ng_step=-1 /
+&rt_iteration_params maxiter=400 /
+&rt_output_params    maxiter=0 /

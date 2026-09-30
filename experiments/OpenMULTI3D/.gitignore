@@ -57,9 +57,18 @@ TumultStudio2/
 bin/*
 !bin/tpy
 
-# Reusable, input-agnostic API benchmark drivers. Native outputs stay under data/.
+# Reusable, input-agnostic API benchmark drivers and the convergence namelists.
+# Native outputs stay under data/.
 !benchmarks/
 benchmarks/*
 !benchmarks/api/
 !benchmarks/api/*.py
 !benchmarks/api/README.md
+!benchmarks/convergence/
+!benchmarks/convergence/*.nml
+!benchmarks/convergence/README.md
+
+# Project skills; local Claude settings and worktrees stay ignored.
+!.claude/
+.claude/*
+!.claude/skills/
