@@ -1,0 +1,7 @@
+! -- Parameters defining the run -----------------------------------------------
+&io_params          datadir='data' gb_step=6.0 do_trace=F /
+&timer_params       sec_per_report=1e8 verbose=2 /
+&atmos_params       nz=96 atmos_format='Marcs' atmos_file='input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod' /
+&linelist_params    linelist_file='./input/linelists/sed_benchmark.txt' /
+&spectrum_params    R=1e5 aa_blue=4000 aa_red=9000 /
+&m3d_debug_params   verbose=2 /

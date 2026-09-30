@@ -1,0 +1,21 @@
+\begin{table}[ht]
+\centering
+\caption{Performance benchmarks for various synthesis tasks.}
+\label{tab:benchmarks_comparison}
+% Reduce global padding slightly, or handle specifically in the preamble
+\begin{tabularx}{\linewidth}{l l @{\hspace{5pt}} r l @{\hspace{5pt}} r}
+\toprule
+& \multicolumn{2}{X}{Laptop (M1)} & \multicolumn{2}{X}{Node (32 CPUs)} \\
+\cmidrule(lr){2-3} \cmidrule(l){4-5}
+% Using @{\hspace{2em}} or similar between groups to create visual breathing room
+Task & Time & \hspace{-1em}Storage & Time & \hspace{-1em}Storage \\
+\midrule
+Hi-res optical 1D   & 3.4 s   & 0.2 GB & 5.3 s   & 0.2 GB \\
+Hi-res optical 3D   & ---     & ---    & 19 min  & 37 GB  \\
+Dep. coeff. 1D (O)  & 0.3 s   & 0.1 GB & 1.5 s   & 0.2 GB \\
+Dep. coeff. 1D (Fe) & 31 s    & 1.0 GB & 44 s    & 1.3 GB \\
+Dep. coeff. 3D (O)  & 9.8 min & 1.9 GB & 4.9 min & 2.1 GB \\
+Dep. coeff. 3D (Fe) & ---     & ---    & 6.5 h   & 82 GB  \\
+\bottomrule
+\end{tabularx}
+\end{table}
