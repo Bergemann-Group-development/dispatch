@@ -110,8 +110,13 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *padded window*: the synth window widened again by `abundance.SYNTH_PAD_AA`, which is what
   dispatch is asked to compute so a feature's wings are calculated rather than extrapolated
   from the window edge. The two paddings are successive and calibrated apart.
+- *sampling resolving power*: `R_sampling` in `&spectrum_params`, the ratio lambda/dlambda of
+  the synthetic spectrum's wavelength grid, whose steps are lambda/`R_sampling`. It fixes the
+  spacing of the output samples and broadens nothing. Not the *instrumental resolving power*
+  (`res` in `tumult.convolutions`), which sets the width of the kernel an observation or a
+  comparison is convolved with.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
-  constant-resolution *segment* per window. Output patches never span two segments; with
+  constant-`R_sampling` *segment* per window. Output patches never span two segments; with
   fewer windows than `n_nu`, each window is split into `n_nu` output patches.
 - *line window*: the span `[lam_min, lam_max]` of the shared frequency grid an NLTE run
   integrates one bound-bound transition's rates over; set by the model atom's `qmax` (in
@@ -227,4 +232,4 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   2.0 dwarfs and giants, M3DIS PLATO) and the registered-grid record each yields; a fetched
   folder carries a `grid_manifest.json` naming its catalogue entry and fetched snapshots.
 - *resolution*: the destination mesh `(nx, ny, nz)` a snapshot is sampled onto, which is
-  independent of the cube's own. Not spectral resolving power, which is `R`.
+  independent of the cube's own. Not a resolving power.

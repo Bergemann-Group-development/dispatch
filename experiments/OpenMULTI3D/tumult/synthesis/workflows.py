@@ -603,7 +603,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
         if set_spectrum:
             sampling = settings.setdefault("spectrum_params", {})
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
-                sampling["R"] = R
+                sampling["R_sampling"] = R
         settings_list.append(settings)
     defaults = [str(_PRESETS / "base.nml")]
     if nlte:
@@ -890,8 +890,8 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
     # spectrum grid without supplying its bounds, which DISPATCH cannot construct.
     atom_grid = not request.windows and (values.get('atom_lines') or values.get('only_atom'))
     if not atom_grid:
-        settings.setdefault('spectrum_params', {}).setdefault('R', config.resolving_power)
-    if settings.get('spectrum_params', {}).get('R', _DEFAULT_R) <= 0:
+        settings.setdefault('spectrum_params', {}).setdefault('R_sampling', config.resolving_power)
+    if settings.get('spectrum_params', {}).get('R_sampling', _DEFAULT_R) <= 0:
         raise ValueError('Resolving power must be positive.')
     windows = request.windows
     padded = tuple((window[0] - SYNTH_PAD_AA, window[1] + SYNTH_PAD_AA)
@@ -919,7 +919,7 @@ def _prepare_artifact(resolved, cancel_token=None):
     settings = resolved.settings.get('composition_params', {}) or {}
     return prepare_linelist(preparation_root(prefs),
                             resolved.preparation_references, prefs['linelist'], windows,
-                            R=float(resolved.settings['spectrum_params']['R']), dlam=skirt,
+                            R=float(resolved.settings['spectrum_params']['R_sampling']), dlam=skirt,
                             vmic=float(values.get('vmic', 1.0)),
                             feh=float(values.get('feh', 0.0)),
                             abundances=settings.get('abundances', ''),

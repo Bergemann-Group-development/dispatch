@@ -138,7 +138,7 @@ def _prune_digest(base, windows, prune):
     first's cache.
     """
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
-    R = (base.get('spectrum_params') or {}).get('R')
+    R = (base.get('spectrum_params') or {}).get('R_sampling')
     return hashlib.sha1(json.dumps(
         [[str(f) for f in files], [[float(min(w)), float(max(w))] for w in windows], prune,
          None if R is None else float(R)],     # one identity whether R came as int or float
@@ -205,7 +205,7 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
         return None
     if not prune or not float(prune.get('skirt') or 0.0) > 0.0:
         return None                   # nothing to select per node; every run shares the list
-    R = float((base.get('spectrum_params') or {}).get('R') or 0.0)
+    R = float((base.get('spectrum_params') or {}).get('R_sampling') or 0.0)
     if R <= 0:
         return None
     from .. import prune as hop_prune
@@ -344,14 +344,14 @@ def _dep_bucket(top, settings):
 def _interp_crop(grid, xmin, xmax, method):
     """Interpolate a node grid at its target point and crop to the window — the shared tail
     of ``compute_spectrum``/``compute_spectra``."""
-    # a run can finish yet emit no spectrum (e.g. no R/daa/nnu/lam_file set, or
+    # a run can finish yet emit no spectrum (e.g. no R_sampling/daa/nnu/lam_file set, or
     # angle_quad='none'); flag it clearly instead of failing later on a missing attribute.
     no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
     if no_spec:
         folders = ', '.join(str(getattr(s, 'folder', '?')) for s in no_spec)
         raise RuntimeError(
             f"Synthesis produced no spectrum for: {folders}. Check the spectrum "
-            f"settings (R / wavelength range) and the synthesis line list.")
+            f"settings (R_sampling / wavelength range) and the synthesis line list.")
     # pass LTE explicitly so an LTE run yields its (only) LTE spectrum without the "Cannot
     # get NLTE spectrum" warning Run.get_spectrum prints on the NLTE default
     lte = all(getattr(s, 'mode', 'LTE') == 'LTE' for s in grid.spectra)
@@ -829,7 +829,7 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
     # alone would let two different window sets share a digest.
     text = window_file_text(merged)
     sp = settings.setdefault('spectrum_params', {})
-    sp['R'] = float(R)
+    sp['R_sampling'] = float(R)
     digest = hashlib.sha1(json.dumps(
         [settings, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
     window_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
@@ -1030,7 +1030,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     for settings in settings_list:
         item = copy.deepcopy(settings or {})
         sp = item.setdefault('spectrum_params', {})
-        sp['R'] = float(R)
+        sp['R_sampling'] = float(R)
         prepared.append(item)
     nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in prepared]
 

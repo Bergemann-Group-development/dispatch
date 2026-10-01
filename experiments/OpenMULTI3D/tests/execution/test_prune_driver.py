@@ -25,7 +25,7 @@ def test_prune_namelist_carries_the_runs_settings_and_the_node_overrides(tmp_pat
             # a screen's element-only arm: its switch is that variant's, not the node's
             'linelist_params': {'linelist_folder': 'lists/', 'tolerance': 1e-3, 'dlam': 100.0,
                                 'only_elements': 'Fe'},
-            'spectrum_params': {'R': 1e5, 'aa_blue': 5000.0, 'in_air': False}}
+            'spectrum_params': {'R_sampling': 1e5, 'aa_blue': 5000.0, 'in_air': False}}
     nml = prune.prune_namelist(tmp_path / 'o.txt', 'a.mod', ['m.txt'], tmp_path / 'w.txt',
                                R=R, dlam=DLAM, vmic=1.0, feh=-0.5, abundances='Fe=+0.4',
                                relative_abundances=True, base=base, use_abnd=True)
@@ -37,7 +37,7 @@ def test_prune_namelist_carries_the_runs_settings_and_the_node_overrides(tmp_pat
     assert nml['opac_table_params'] == {'opac_table_vmic': 1.5}
     assert nml['linelist_params'] == {'tolerance': 1e-3, 'linelist_file': ['m.txt'],
                                       'dlam': DLAM}
-    assert nml['spectrum_params'] == {'R': R, 'window_file': str(tmp_path / 'w.txt'),
+    assert nml['spectrum_params'] == {'R_sampling': R, 'window_file': str(tmp_path / 'w.txt'),
                                       'in_air': False}
     assert nml['prune_params'] == {'output_file': str(tmp_path / 'o.txt'),
                                    'sample_count': prune.SAMPLE_COUNT}

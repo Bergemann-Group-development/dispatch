@@ -286,7 +286,7 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 &nlte_params         convlim=1.0d-2 ng_step=20 /
 &rt_iteration_params maxiter=99 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
-!&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /
+!&spectrum_params    R_sampling=5e5 aa_blue=4840 aa_red=4880 /
 \end{minted}
 
 \subsection{NLTE iterations}
@@ -297,7 +297,7 @@ Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the conve
 
 \subsection{Output spectrum}
 
-The output pass is configured in \fort{rt_output_params} (angles, solver) and \fort{spectrum_params} (wavelengths). Without \fort{spectrum_params}, the spectrum is evaluated on the wavelength grid of the model atom. To synthesise a continuous window with the line list, uncomment the last two lines of the example above. The atom is then in NLTE and every line-list transition is in LTE. A window with an explicit grid lists wavelengths (\fort{daa}, \fort{nnu} or constant resolving power \fort{R}) and, for several windows, a \fort{window_file}.
+The output pass is configured in \fort{rt_output_params} (angles, solver) and \fort{spectrum_params} (wavelengths). Without \fort{spectrum_params}, the spectrum is evaluated on the wavelength grid of the model atom. To synthesise a continuous window with the line list, uncomment the last two lines of the example above. The atom is then in NLTE and every line-list transition is in LTE. A window with an explicit grid lists wavelengths (\fort{daa}, \fort{nnu} or constant sampling resolving power \fort{R_sampling}, the grid step being $\lambda/R_\mathrm{sampling}$) and, for several windows, a \fort{window_file}.
 
 \subsection{Saving time and memory}
 

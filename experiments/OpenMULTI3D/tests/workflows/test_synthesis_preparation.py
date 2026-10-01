@@ -117,7 +117,7 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     from tumult.synthesis import api
 
     base = {'linelist_params': {'linelist_file': ['master.txt']},
-            'spectrum_params': {'R': 300000.}}
+            'spectrum_params': {'R_sampling': 300000.}}
     windows = [(5000., 5002.)]
     prune = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
     nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]

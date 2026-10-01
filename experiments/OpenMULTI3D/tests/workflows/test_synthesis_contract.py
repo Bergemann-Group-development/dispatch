@@ -317,14 +317,14 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
         atmosphere='cube.atmos', resolution=(20, 20, 64),
         settings=snapshot.departure_settings(resolved.settings, 'cube.atmos'))
     formal = snapshot.spectrum_settings(field, resolved.settings)
-    assert not formal.get('spectrum_params', {}).get('R')
+    assert not formal.get('spectrum_params', {}).get('R_sampling')
     assert formal['atom_params']['line_grid_file'] == str(line_grid)
     assert formal['atmos_params']['read_departures']
     assert formal['rt_iteration_params']['maxiter'] == 0
 
     # A user-selected wavelength window still needs the requested sampling.
     windowed = workflows.resolve_request(request.update(windows=[(4552, 4556)]), run_values)
-    assert windowed.settings['spectrum_params']['R'] == 1e6
+    assert windowed.settings['spectrum_params']['R_sampling'] == 1e6
 
 
 def test_snapshot_sampled_opacity_defaults_allow_expert_override(tmp_path):

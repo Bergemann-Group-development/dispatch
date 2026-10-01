@@ -1430,7 +1430,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
         x = base_x + a
         return round(float(x if relative else xfe_to_abund(x, symbol, feh, solar)), 4)
 
-    # set_spectrum=False leaves spectrum_params without R/daa and no window is given, so
+    # set_spectrum=False leaves spectrum_params without R_sampling/daa and no window is given, so
     # every rung is the atom's whole range on its own frequency grid (the reference's
     # sampling); each rung is a run, and a departure solve, of its own.
     store = NodeStore()

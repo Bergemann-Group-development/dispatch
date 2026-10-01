@@ -721,17 +721,17 @@ def freq_split(nnu, i, n_nu):
     return (j - 1) * nv + min(md, j - 1), j * nv + min(md, j)
 
 
-def wavelength_grid(aa_blue, aa_red, R=0, daa=0, nnu=0, in_air=True):
+def wavelength_grid(aa_blue, aa_red, R_sampling=0, daa=0, nnu=0, in_air=True):
     """The &spectrum_params output wavelength grid, in vacuum Angstrom.
 
-    Mirrors spectrum_type%init: with R, a geometric (constant-R) grid built
+    Mirrors spectrum_type%init: with R_sampling, a geometric (constant-R) grid built
     between the air->vacuum converted end points; otherwise an arithmetic grid
     from daa or nnu, converted to vacuum afterwards.
     """
     from .physics import air2vac
-    if R:
+    if R_sampling:
         blue, red = (air2vac(aa_blue), air2vac(aa_red)) if in_air else (aa_blue, aa_red)
-        fac = 1.0 + 1.0 / R
+        fac = 1.0 + 1.0 / R_sampling
         n = int(np.ceil(np.log(red / blue) / np.log(fac))) + 1
         # accumulate rather than blue*fac**k: the Fortran recurrence is
         # lam(i) = lam(i-1)*fac, and the two differ in the last bits
@@ -743,6 +743,6 @@ def wavelength_grid(aa_blue, aa_red, R=0, daa=0, nnu=0, in_air=True):
     elif nnu:
         daa = (aa_red - aa_blue) / (nnu - 1)
     else:
-        raise HopError('give R, daa or nnu together with aa_blue/aa_red')
+        raise HopError('give R_sampling, daa or nnu together with aa_blue/aa_red')
     lam = aa_blue + daa * np.arange(nnu)
     return air2vac(lam) if in_air else lam

@@ -64,7 +64,7 @@ PREF_PAGES = {
     "synthengine": [  # "Engine" page — paths + runtime knobs
         ("dispatch_cwd", "Dispatch run directory", "text", REPO_DIR),
         ("synth_output_dir", "Output directory", "text", "synth"),
-        ("R", "Resolving power R", "number", 300000),
+        ("R", "Sampling resolving power R", "number", 300000),
         # The mesh a 3D snapshot is sampled onto; nx/ny are horizontal columns and only nz
         # is depth. A 1D atmosphere ignores nx/ny (read_external_mod forces them to 1).
         ("nx", "Atmosphere columns nx", "number", 30),

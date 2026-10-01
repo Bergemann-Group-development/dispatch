@@ -785,7 +785,7 @@ def test_snapshot_phases_split_the_settings():
 
     settings = {'atom_params': {'atom_file': 'mg.txt'},
                 'linelist_params': {'linelist_file': ['master.txt']},
-                'spectrum_params': {'R': 60000},
+                'spectrum_params': {'R_sampling': 60000},
                 'rt_iteration_params': {'maxiter': 3}}
 
     dep = snapshot.departure_settings(settings, '/snap', (30, 30, 128), 'MUST')

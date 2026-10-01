@@ -31,7 +31,7 @@ def hop_wavelengths():
     """The vacuum wavelength grid [AA] of the opacity reference."""
     from tumult.hop import wavelength_grid
 
-    return wavelength_grid(5160.0, 5170.0, R=20000)
+    return wavelength_grid(5160.0, 5170.0, R_sampling=20000)
 
 
 def hop_eos_reference():

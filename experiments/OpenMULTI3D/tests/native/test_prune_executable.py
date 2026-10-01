@@ -69,7 +69,7 @@ def test_executable_selects_what_the_in_process_crop_selects(tmp_path):
     sampled = _prune(tmp_path, 'sampled', base={'atmos_params': {'use_ne': False}})
     every = _prune(tmp_path, 'every', base={'atmos_params': {'use_ne': False}},
                    sample_count=0)
-    lam = np.concatenate([wavelength_grid(lo, hi, R=R) for lo, hi in WINDOWS])
+    lam = np.concatenate([wavelength_grid(lo, hi, R_sampling=R) for lo, hi in WINDOWS])
     vac = [(float(air2vac(lo)), float(air2vac(hi))) for lo, hi in WINDOWS]
     temp, rho = read_marcs(MARCS)
     with tm.HopEOS(feh=0.0) as hop:
@@ -84,7 +84,7 @@ def test_executable_selects_what_the_in_process_crop_selects(tmp_path):
     assert result['ntransitions'] == len(a) and record['prune_params']['sample_count'] == 8
     assert result['sampled_depths'][0] == 1 and result['sampled_depths'][-1] == result['nz_model']
     assert len(result['blue_vac']) == 2 and record['linelist_params']['dlam'] == DLAM
-    assert record['spectrum_params']['r'] == R
+    assert record['spectrum_params']['r_sampling'] == R
     assert result['use_rho_used'] is True and result['use_ne_used'] is False
     # boundary transitions: the wing contributors outside the windows are kept, nothing
     # farther than dlam from a window is

@@ -110,7 +110,7 @@ def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, d
     if exclude_elements:
         linelist['exclude_elements'] = str(exclude_elements)
     nml['linelist_params'] = linelist
-    spectrum = {'R': float(R), 'window_file': str(window_file)}
+    spectrum = {'R_sampling': float(R), 'window_file': str(window_file)}
     if 'in_air' in (base.get('spectrum_params') or {}):
         spectrum['in_air'] = base['spectrum_params']['in_air']
     nml['spectrum_params'] = spectrum
