@@ -10,6 +10,10 @@ docs/*
 !docs/FAQ.md
 !docs/GLOSSARY.md
 !docs/GUIWorkflow.md
+!docs/manual/
+docs/manual/*
+!docs/manual/main.tex
+!docs/manual/figs/
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
