@@ -20,11 +20,16 @@ MODULE rt_params_mod
   ! &rt_output_params additionally has custom_mu, ray_offset and pivot_z, which
   ! only apply to the inclined output rays, and save_linelist, which controls the
   ! linelist_out.txt dump written at the end of the output pass.
+  ! For the iteration pass, maxiter is the NLTE iteration limit and is unset by default.
   ! For the output pass, maxiter is the number of fixed-population ("Lambda")
   ! iterations appended after the rt_iter%maxiter NLTE iterations (was ilambd).
   ! Defaults differ per pass: include_linelist is F/T and include_absmet T/F
   ! for rt_iter/rt_out (see rt_params_nml).
   !-----------------------------------------------------------------------------
+  ! Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
+  ! iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
+  integer, parameter, public :: maxiter_unset = -1
+
   type, public :: rt_params_t
     character(len=128) :: solver = 'linear'
     character(len=32)  :: angle_quad = ''
@@ -89,7 +94,8 @@ CONTAINS
     else
       ! iteration-pass defaults
       call to_locals (rt_params_t(angle_quad='radau', ntheta=2, nphi=4, &
-        solver='linear', include_linelist=.false., include_absmet=.true.))
+        solver='linear', include_linelist=.false., include_absmet=.true., &
+        maxiter=maxiter_unset))
       rewind (io%input)
       read (io%input, rt_iteration_params, iostat=iostat)
       if (iostat > 0) then

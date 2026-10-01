@@ -77,8 +77,9 @@ def departure_settings(settings, snapshot, resolution=None, atmos_format=None):
         'atmos_params': atmos,
         'rt_output_params': {'angle_quad': 'none'},
     })
-    # Preserve an expert's explicit solver limit. Ninety-nine is only the default.
-    nml.setdefault('rt_iteration_params', {}).setdefault('maxiter', 99)
+    # The populations are only worth saving from an NLTE solve; an expert's explicit
+    # convlim and iteration limit are kept.
+    nml.setdefault('nlte_params', {}).setdefault('convlim', 1e-3)
     return nml
 
 

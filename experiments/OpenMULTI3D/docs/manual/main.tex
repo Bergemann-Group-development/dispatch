@@ -284,14 +284,13 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 &atmos_params        atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_....mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
 &nlte_params         convlim=1.0d-2 ng_step=20 /
-&rt_iteration_params maxiter=99 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    R_sampling=5e5 aa_blue=4840 aa_red=4880 /
 \end{minted}
 
 \subsection{NLTE iterations}
 
-\Code{rt\_iteration\_params\%maxiter} is the maximum number of NLTE iterations. The iteration stops earlier when the largest relative population change over all levels and grid points falls below \Code{nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence. With \fort{maxiter=0}, the default, no NLTE iterations are done and the atom stays in LTE. \fort{ng_step=20} (Sec.~\ref{sec:numerics}) accelerates convergence.
+Setting \Code{nlte\_params\%convlim} to a positive value requests NLTE iterations, up to \Code{rt\_iteration\_params\%maxiter} of them (99 unless set). The iteration stops earlier when the largest relative population change over all levels and grid points falls below \Code{nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence.
 
 Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the convergence of every level in the file \File{convergence\_report\_NNN.txt} in the run directory.
 
@@ -409,7 +408,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
-\fort{convlim} & Convergence limit of the relative population change (default $10^{-3}$).\\
+\fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
 \fort{preconditioning} & Preconditioned rates of Rybicki \& Hummer (1992) (default \fort{T}); \fort{rate_formulation='largest'} or \fort{'original'}.\\
 \fort{scattering_preconditioning} & Local approximate operator for continuum scattering (default \fort{F}), limited by \fort{scat_op_max}.\\
@@ -435,7 +434,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 \fort{ntheta}, \fort{nphi} & 2, 4 & 4, 4\\
 \fort{include_linelist} & \fort{F} & \fort{T}\\
 \fort{include_absmet} & \fort{T} & \fort{F}\\
-\fort{maxiter} & 0 & 0\\
+\fort{maxiter} & 99 if \fort{convlim}$>0$, else 0 & 0\\
 \bottomrule
 \end{tabular}
 \end{center}

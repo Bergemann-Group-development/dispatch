@@ -4,6 +4,5 @@
 &atmos_params        atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
 &nlte_params         convlim=1d-2 ng_step=20 /
-&rt_iteration_params maxiter=99 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    R_sampling=5e5 aa_blue=4840 aa_red=4880 /

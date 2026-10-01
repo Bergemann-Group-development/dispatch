@@ -40,8 +40,10 @@ def _is_nlte(settings):
     """True when ``settings`` describe an NLTE solve (an atom plus iterations)."""
     if 'atom_params' not in (settings or {}):
         return False
+    # an unset iteration limit follows nlte_params%convlim, as in the Fortran
+    convlim = (settings.get('nlte_params', {}) or {}).get('convlim', 0)
     maxiter = (settings.get('rt_iteration_params', {}) or {}).get(
-        'maxiter', (settings.get('m3d_params', {}) or {}).get('maxiter', 0))
+        'maxiter', (settings.get('m3d_params', {}) or {}).get('maxiter', 99 if convlim > 0 else 0))
     return maxiter > 0
 
 

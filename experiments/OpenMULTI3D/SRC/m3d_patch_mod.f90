@@ -34,7 +34,7 @@ MODULE m3d_patch_mod
     USE composition_mod, only: composition_type, departure_pointer_t
     USE ray_mod, only: one_dimensional
     USE rt_params_mod, only: rt_iter, rt_out, read_rt_params, echo_rt_params, &
-                             setup_quadrature, ray_offset, pivot_z
+                             setup_quadrature, ray_offset, pivot_z, maxiter_unset
     USE m3d_debug_mod
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
@@ -176,7 +176,8 @@ MODULE m3d_patch_mod
     ! memory of the machine, a negative value switches the check off
     real(8), public, save :: mem_limit_gb=0
     integer, public, save :: n_nu_out=0   ! output frequency patch count, set in composition_pre_init
-    real(8), public:: convlim=1d-3, convmax=tiny(1.0)
+    ! convlim <= 0 requests no NLTE iterations (see resolve_nlte_iterations)
+    real(8), public:: convlim=0d0, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     ! Number of nlte_patches created on this rank, and whether all of them have
     ! converged.  Defaults to "nothing to wait for", so that a run without atoms,
@@ -347,6 +348,7 @@ MODULE m3d_patch_mod
       end if
       call io%namelist_warning ('run_params', iostat)
       call read_rt_params ()
+      call resolve_nlte_iterations ()
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
@@ -587,6 +589,21 @@ MODULE m3d_patch_mod
 
     call trace%end()
   END SUBROUTINE set_initial_time
+
+  !===============================================================================
+  !> NLTE iterations are requested by nlte_params%convlim > 0.  An unset
+  !> rt_iteration_params%maxiter then becomes the default limit and otherwise 0.
+  !> A positive maxiter without convlim is rejected rather than run in LTE.
+  !===============================================================================
+  SUBROUTINE resolve_nlte_iterations ()
+    integer, parameter :: default_maxiter = 99
+    !-----------------------------------------------------------------------------
+    if (rt_iter%maxiter == maxiter_unset) then
+      rt_iter%maxiter = merge(default_maxiter, 0, convlim > 0d0)
+    else if (rt_iter%maxiter > 0 .and. convlim <= 0d0) then
+      error stop 'rt_iteration_params%maxiter > 0 requires nlte_params%convlim > 0'
+    end if
+  END SUBROUTINE resolve_nlte_iterations
 
   !===============================================================================
   SUBROUTINE set_maxiter (self)
