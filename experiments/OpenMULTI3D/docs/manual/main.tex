@@ -232,7 +232,7 @@ python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
 OMP_STACKSIZE=256M ./dispatch.x demo.nml
 \end{minted}
 
-On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated normally.} Results are written to \File{data/demo/}. Read them with \Code{tumult.read}, never by parsing the binary files in \File{save/} (Sec.~\ref{sec:python}).
+On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated normally.} Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
 
 Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path: a long absolute path overflows a fixed-length buffer in the I/O layer and aborts with \Code{Fortran runtime error: End of record}. \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
