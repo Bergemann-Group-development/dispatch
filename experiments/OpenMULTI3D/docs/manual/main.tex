@@ -245,7 +245,7 @@ python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
 OMP_STACKSIZE=256M ./dispatch.x demo.nml
 \end{minted}
 
-On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated normally.} Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
+On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated successfully.} An NLTE run that used up \fort{maxiter} without meeting \fort{convlim} instead ends with a warning that gives the last relative change. Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
 
 Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
@@ -622,7 +622,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
     \item \textbf{NLTE iterations}: the NLTE patches update the populations from the rates of the previous iteration. Then the RT columns of the internal spectrum compute background opacity, line opacity, source function and formal solution, and accumulate the radiative rates. Convergence is judged once per iteration. Once the change falls below \fort{convlim}, every patch performs one more solution against the converged radiation field.
     \item \textbf{Write populations and departures}, then release the output tasks.
     \item \textbf{Output pass}: \Code{rt\_output\_params\%maxiter} scattering iterations at fixed populations, followed by the final solution along each output ray, which writes intensities and flux.
-    \item \textbf{Finish}: write \File{linelist\_out.txt}, print memory and timing summaries and \Code{OpenMULTI3D terminated normally.}
+    \item \textbf{Finish}: write \File{linelist\_out.txt}, print memory and timing summaries and \Code{OpenMULTI3D terminated successfully.} (LTE, or NLTE converged) or the non-convergence warning
 \end{enumerate}
 
 \subsection{HOP}\label{sec:hop}

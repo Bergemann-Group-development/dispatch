@@ -23,12 +23,13 @@ PROGRAM dispatch
   USE read_external_mod
   USE timer_mod
   USE mpi_debug_mod
-  USE m3d_patch_mod, only: write_linelist_out
+  USE m3d_patch_mod, only: write_linelist_out, n_nlte_patches, converged, convlim, nlte_last_change
+  USE rt_params_mod, only: rt_iter
   USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
   real(8):: memory_estimate
   character(len=160):: text
-  character(len=16):: peak, estimate
+  character(len=16):: peak, estimate, nit, change, limit
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
@@ -51,7 +52,20 @@ PROGRAM dispatch
     endif
     write(console_unit,'(a)') trim(text)
   endif
-  if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated normally.'
+  ! Success is an LTE run or NLTE iterations that met convlim.  A run that used up
+  ! its iterations says so with the change it ended on.
+  if (n_nlte_patches == 0 .or. rt_iter%maxiter == 0 .or. converged .or. &
+      (nlte_last_change /= 0d0 .and. abs(nlte_last_change) < convlim)) then
+    if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated successfully.'
+  else
+    write(nit,'(i0)') rt_iter%maxiter
+    write(change,'(f10.2)') abs(nlte_last_change)*100
+    write(limit,'(f10.2)') convlim*100
+    text = 'OpenMULTI3D terminated, but the NLTE iterations did not converge: after ' // trim(nit) // &
+      ' iterations the largest relative change was ' // trim(adjustl(change)) // ' % (convlim ' // &
+      trim(adjustl(limit)) // ' %)'
+    call console_warn (ch_m3d, trim(text))
+  endif
   call setup%end                                ! End setup
 !===============================================================================
 END PROGRAM dispatch

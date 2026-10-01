@@ -122,7 +122,7 @@ on eight cores). `tumult.launch` sets the same `OMP_STACKSIZE` for every run it 
 The run succeeded when the last line of the output is
 
 ```
-OpenMULTI3D terminated normally.
+OpenMULTI3D terminated successfully.
 ```
 
 and `data/demo/` holds the run. Then read the result from Python:

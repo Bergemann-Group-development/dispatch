@@ -25,7 +25,7 @@ MODULE nlte_patch_mod
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, n_nu_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
-    flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks, &
+    flux_final_counter, nlte_finished, nlte_last_change, n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates
   USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
@@ -578,6 +578,7 @@ contains
       if (abs(self%maxerr) > abs(sweep_maxerr)) sweep_maxerr = self%maxerr
       sweep_updates = sweep_updates + 1
       last = sweep_updates == sweep_active
+      if (last) nlte_last_change = last_maxerr
       !$omp end critical (nlte_sweep)
       self%global = last_maxerr
       if (last .and. abs(self%global) > 0 .and. abs(self%global) < convlim &

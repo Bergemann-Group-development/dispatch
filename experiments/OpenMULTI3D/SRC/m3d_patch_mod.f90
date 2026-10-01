@@ -184,6 +184,9 @@ MODULE m3d_patch_mod
     ! which creates no nlte_patch at all, is not held up (see is_ahead_of).
     integer, public, save :: n_nlte_patches=0
     logical, public, save :: nlte_finished=.true.
+    ! Largest relative population change of the last NLTE iteration reported in the
+    ! iteration table, for the verdict printed at the end of the run
+    real(8), public, save :: nlte_last_change=0d0
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
     ! Which preconditioning the bound-bound rates use.  'original' subtracts the

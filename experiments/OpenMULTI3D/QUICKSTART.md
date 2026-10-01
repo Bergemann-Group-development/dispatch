@@ -61,7 +61,7 @@ below `convlim` (0.01 in `demo.nml`), every depth patch completes the current it
 and the solve stops. The run ends with
 
 ```
-OpenMULTI3D terminated normally.
+OpenMULTI3D terminated successfully.
 ```
 
 after about one second on eight cores. The installation check created the same run;

@@ -57,7 +57,7 @@ def _run(tmp_path, threads):
     env = dict(os.environ, OMP_NUM_THREADS=str(threads))
     result = subprocess.run([str(EXECUTABLE), 'r.nml'], cwd=work, env=env,
                             capture_output=True, text=True, timeout=600)
-    assert result.returncode == 0 and 'terminated normally' in result.stdout, result.stdout[-2000:]
+    assert result.returncode == 0 and 'OpenMULTI3D terminated' in result.stdout, result.stdout[-2000:]
     return work / 'data' / 'r'
 
 
