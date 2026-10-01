@@ -324,7 +324,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsection{Namelist groups}
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \textbf{Group} & \textbf{Purpose}\\
 \midrule
@@ -347,7 +347,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \end{longtblr}
 
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \fort{&atmos_params} & Meaning\\
 \midrule
@@ -376,7 +376,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
     \item \fort{in_air=T} (default) states that all wavelengths are air wavelengths.
 \end{itemize}
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \fort{&atom_params} & Meaning\\
 \midrule
@@ -392,7 +392,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \bottomrule
 \end{longtblr}
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \fort{&nlte_params} & Meaning\\
 \midrule
@@ -412,7 +412,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \fort{linelist_file} or \fort{linelist_folder} name the line list. \fort{dlam} (default \SI{100}{\angstrom}) is the distance from a window up to which line wings are followed. \fort{tolerance} (default $10^{-4}$) keeps a transition as long as its opacity exceeds that fraction of the continuum. \fort{only_elements} and \fort{exclude_elements} take space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions. \fort{line_scattering} (default \fort{F}) treats part of the line opacity as scattering. This partitions the line extinction rather than adding to it.
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \fort{&composition_params} and \fort{&opac_table_params} & Meaning\\
 \midrule
@@ -467,7 +467,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 The format is chosen by \fort{atmos_format} (case-insensitive), or, if it is \fort{'unknown'}, from the file name.
 
 \begin{center}
-\begin{tblr}{colspec={Q[l,wd=2.3cm]Q[l,wd=4.1cm]Q[l,wd=8.2cm]}, row{even}={bg=rowshade}}
+\begin{tblr}{colspec={Q[l]Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
 \toprule
 Format & Inferred from & Contents\\
 \midrule
@@ -637,7 +637,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
 HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled into \File{dispatch.x} and, without the framework, into \File{libhop.so} and \File{hop\_prune.x} (\File{HOP/standalone/}).
 
 \begin{center}
-\begin{tblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.4cm]}, row{even}={bg=rowshade}}
+\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
 \toprule
 Module & Role\\
 \midrule
@@ -772,7 +772,7 @@ It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was d
 \subsection{Higher-level modules}
 
 \begin{center}
-\begin{tblr}{colspec={Q[l,wd=4.6cm]Q[l,wd=10.3cm]}, row{even}={bg=rowshade}}
+\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
 \toprule
 Module & Purpose\\
 \midrule
@@ -803,7 +803,7 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 \section{Trouble Shooting}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\begin{longtblr}{colspec={Q[l,wd=5.4cm]Q[l,wd=9.7cm]}, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \textbf{Symptom} & \textbf{Remedy}\\
 \midrule
