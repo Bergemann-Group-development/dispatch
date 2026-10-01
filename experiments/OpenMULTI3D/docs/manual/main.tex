@@ -351,10 +351,10 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \fort{datadir='data'} is the directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist. \fort{gb_step} is the memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}). \Code{console\_params\%level} sets the console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace). The \fort{verbose} keys of \fort{atmos_params}, \fort{composition_params} and \fort{m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
 
-\subsubsection*{atmos\_params}
-
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
+\fort{atmos_params} & Meaning\\
+\midrule
 \fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
 \fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
 \fort{FeH} & [Fe/H]. Scales all elements except H, He and Li. Default: take the value from the model, or 0.\\
@@ -370,10 +370,10 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \bottomrule
 \end{longtblr}
 
-\subsubsection*{composition\_params and opac\_table\_params}
-
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
+\fort{composition_params}, \fort{opac_table_params} & Meaning\\
+\midrule
 \fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
 \fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
 \fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
@@ -395,10 +395,10 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \fort{linelist_file} or \fort{linelist_folder} name the line list. \fort{dlam} (default \SI{100}{\angstrom}) is the distance from a window up to which line wings are followed. \fort{tolerance} (default $10^{-4}$) keeps a transition as long as its opacity exceeds that fraction of the continuum. \fort{only_elements} and \fort{exclude_elements} take space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions. \fort{line_scattering} (default \fort{F}) treats part of the line opacity as scattering. This partitions the line extinction rather than adding to it.
 
-\subsubsection*{atom\_params}
-
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
+\fort{atom_params} & Meaning\\
+\midrule
 \fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
 \fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
 \fort{abundance} & Explicit abundance per atom, overriding both. $-99.9$ means unset.\\
@@ -411,10 +411,10 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \bottomrule
 \end{longtblr}
 
-\subsubsection*{nlte\_params}
-
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
+\fort{nlte_params} & Meaning\\
+\midrule
 \fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
 \fort{preconditioning} & Preconditioned rates of Rybicki \& Hummer (1992) (default \fort{T}); \fort{rate_formulation='largest'} or \fort{'original'}.\\
