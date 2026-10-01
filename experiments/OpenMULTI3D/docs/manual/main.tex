@@ -328,20 +328,20 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \toprule
 \textbf{Group} & \textbf{Purpose}\\
 \midrule
-\Code{\&io\_params} & Run directory and memory reporting.\\
-\Code{\&timer\_params} & Timer table of the DISPATCH framework.\\
-\Code{\&console\_params} & Verbosity.\\
 \Code{\&atmos\_params} & Model atmosphere, [Fe/H], microturbulence, z-decomposition.\\
-\Code{\&composition\_params} & Abundances, equation-of-state switches, hydrogen line physics.\\
-\Code{\&opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
-\Code{\&linelist\_params} & Line list and its selection.\\
+\Code{\&spectrum\_params} & Output wavelength grid.\\
 \Code{\&atom\_params} & Model atoms, their abundances and line sampling.\\
 \Code{\&nlte\_params} & NLTE convergence, preconditioning, statistical equilibrium, Ng acceleration.\\
-\Code{\&rt\_iteration\_params} & Radiative transfer in the NLTE iterations.\\
+\Code{\&linelist\_params} & Line list and its selection.\\
+\Code{\&composition\_params} & Abundances, equation-of-state switches, hydrogen line physics.\\
 \Code{\&rt\_output\_params} & Radiative transfer in the final output pass.\\
+\Code{\&rt\_iteration\_params} & Radiative transfer in the NLTE iterations.\\
 \Code{\&output\_params} & What is saved.\\
 \Code{\&run\_params} & Frequency splitting, memory limit, rotation.\\
-\Code{\&spectrum\_params} & Output wavelength grid.\\
+\Code{\&io\_params} & Run directory and memory reporting.\\
+\Code{\&console\_params} & Verbosity.\\
+\Code{\&timer\_params} & Timer table of the DISPATCH framework.\\
+\Code{\&opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
 \Code{\&m3d\_debug\_params} & Internal debugging switches (\fort{check_NaN}, \fort{pcheck}, \fort{fcheck}, \fort{linecheck}, \fort{lvlcheck}, \dots).\\
 \bottomrule
 \end{longtblr}
