@@ -29,7 +29,7 @@ MODULE composition_patch_mod
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, disable_ga, disable_stark, disable_vdw
+  USE bbtrans_mod, only: tolerance, disable_rad, disable_stk, disable_vdw
   USE linelist_mod, only: ll_profile, voigt_kernel
   USE op_math_mod, only: interval_t, merge_intervals
   USE qlg, only: qlg_init
@@ -95,7 +95,7 @@ SUBROUTINE read_composition_params ()
   mhd_eos, debye_shield, &
   tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw, helium_scattering, hydrogen_BPO, &
+  disable_rad, disable_stk, disable_vdw, helium_scattering, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   ldne, ldrho, ldtemp, absmet_file

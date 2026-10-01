@@ -7,9 +7,9 @@ from .physics import vac2air
 from .auxfuncs import get_qmax
 from .atom import AtomClass
 
-formatters = {'ga':'{:.3e}'.format,
-                            'gv':'{:.8g}'.format,
-                            'gq':'{:.3g}'.format,
+formatters = {'grad':'{:.3e}'.format,
+                            'gvdw':'{:.8g}'.format,
+                            'gstk':'{:.3g}'.format,
                             'ev':'{:.6f}'.format,
                             'evi':'{:.6f}'.format,
                             'lam_air':'{:.3f}'.format,
@@ -41,7 +41,7 @@ class FastAtom(object):
       
         names = ['ecm', 'g', 'label', 'ion']
         levels = read_table(atom_file, header=2, nrows=self.nk, names=names)
-        names = ['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'ga', 'gv', 'gq', 'profile']
+        names = ['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'grad', 'gvdw', 'gstk', 'profile']
         dtype = [int, int, float, int, float, float, int, float, float, float, str]
         dtype = {k:v for k, v in zip(names, dtype)}
         bb     = read_table(atom_file, header=2+self.nk, nrows=self.nline, names=names, dtype=dtype)
@@ -142,7 +142,7 @@ class PandasAtom(object):
             bb['lam0'] = [line.c_lam0 for line in atom.trans[:atom.nline]]
 
         bb['evi'] = self.lvl.ev[bb.i].values
-        bb = bb[['i', 'j', 'lam0', 'evi', 'loggf', 'ga', 'gv', 'gq', 'nq', 'qmax', 'q0', 'profile']]
+        bb = bb[['i', 'j', 'lam0', 'evi', 'loggf', 'grad', 'gvdw', 'gstk', 'nq', 'qmax', 'q0', 'profile']]
         bb.i = bb.i
         bb.j = bb.j
         self.bbt = bb
@@ -260,10 +260,10 @@ class PandasAtom(object):
                 ll['lam0'] = bb['lam0']
                 ll['evi'] = bb['evi'] - ev0
                 ll['loggf'] = bb['loggf']
-                ll['gv'] = bb['gv']
+                ll['gvdw'] = bb['gvdw']
                 ll['g_j'] = self.lvl.g[bb.j].values
-                ll['ga'] = bb['ga']
-                ll['gq'] = bb['gq']
+                ll['grad'] = bb['grad']
+                ll['gstk'] = bb['gstk']
                 ll['lower_orb'] = 'x'
                 ll['upper_orb'] = 'x'
                 ll['ent8'] = 0

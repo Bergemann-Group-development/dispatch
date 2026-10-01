@@ -80,9 +80,9 @@ class BBTransition:
         self.qmax = 4.0
         self.q0 = 0.0
         self.iw = 0  # if > 0 then hyperfine structure is included
-        self.ga = 0.0
-        self.gv = 1.0
-        self.gq = 0
+        self.grad = 0.0
+        self.gvdw = 1.0
+        self.gstk = 0
         self.line_profile = "VOIGT"
 
         # hypefine
@@ -90,9 +90,9 @@ class BBTransition:
         self.hyperfine_delta_ec = []
         self.hyperfine_weight = []
         self.hyperfine_f_value = []
-        self.hyperfine_ga = []
+        self.hyperfine_grad = []
         self.hyperfine_gw = []
-        self.hyperfine_gq = []
+        self.hyperfine_gstk = []
         self.hyperfine_line_profile = []
 
     def find_level_id(self, ec_levels, tolerance=0.1):
@@ -154,10 +154,10 @@ class BBTransition:
                 * (lower_g_value / upper_g_value)
             )
 
-            self.ga = einstein_coefficient
-            self.ga = 0
+            self.grad = einstein_coefficient
+            self.grad = 0
         else:
-            self.ga = 0
+            self.grad = 0
 
     def __str__(self):
         return f"BBTransition({self.wavelength_aa}, {self.loggf}, {self.lower_level_id}, {self.upper_level_id})"
@@ -177,13 +177,13 @@ class BBTransition:
             )
         file.write(
             f"{self.upper_level_id:>4} {self.lower_level_id:>4}{self.f_value:>12.3E}{self.nq:>6}{self.qmax:>6.1f}{self.q0:>6.1f}"
-            f"{self.iw:>5}{self.ga:>11.3E}{self.gv:>10.3f}{self.gq:>10.2e}{self.line_profile:>12}\n"
+            f"{self.iw:>5}{self.grad:>11.3E}{self.gvdw:>10.3f}{self.gstk:>10.2e}{self.line_profile:>12}\n"
         )
         if self.hyperfine:
             for i in range(len(self.hyperfine_delta_ec)):
                 file.write(
                     f"{self.hyperfine_delta_ec[i]:>9.3f} {self.hyperfine_weight[i]:>6.3f} {self.hyperfine_f_value[i]:>11.3E}"
-                    f" {self.hyperfine_ga[i]:>27.3E} {self.hyperfine_gw[i]:>9.3f} {self.hyperfine_gq[i]:>9.3e}"
+                    f" {self.hyperfine_grad[i]:>27.3E} {self.hyperfine_gw[i]:>9.3f} {self.hyperfine_gstk[i]:>9.3e}"
                     f" {self.hyperfine_line_profile[i]:>11}\n"
                 )
 
@@ -693,9 +693,9 @@ class ModelAtom:
                     qmax = float(fields[4])
                     q0 = float(fields[5])
                     iw = int(fields[6])
-                    ga = float(fields[7])
-                    gv = float(fields[8])
-                    gq = float(fields[9])
+                    grad = float(fields[7])
+                    gvdw = float(fields[8])
+                    gstk = float(fields[9])
                     line_profile = fields[10]
 
                     # find the ec of the lower and upper level
@@ -718,9 +718,9 @@ class ModelAtom:
                     bb_transition.qmax = qmax
                     bb_transition.q0 = q0
                     bb_transition.iw = iw
-                    bb_transition.ga = ga
-                    bb_transition.gv = gv
-                    bb_transition.gq = gq
+                    bb_transition.grad = grad
+                    bb_transition.gvdw = gvdw
+                    bb_transition.gstk = gstk
                     bb_transition.line_profile = line_profile
                     bb_transition.lower_level_label = lower_level_label
                     bb_transition.upper_level_label = upper_level_label
@@ -735,9 +735,9 @@ class ModelAtom:
                             delta_ec = float(line_split[0])
                             weight = float(line_split[1])
                             f_value = float(line_split[2])
-                            ga = float(line_split[3])
+                            grad = float(line_split[3])
                             gw = float(line_split[4])
-                            gq = float(line_split[5])
+                            gstk = float(line_split[5])
                             if len(line_split) == 7:
                                 line_profile = line_split[6]
                             else:
@@ -745,9 +745,9 @@ class ModelAtom:
                             bb_transition.hyperfine_delta_ec.append(delta_ec)
                             bb_transition.hyperfine_weight.append(weight)
                             bb_transition.hyperfine_f_value.append(f_value)
-                            bb_transition.hyperfine_ga.append(ga)
+                            bb_transition.hyperfine_grad.append(grad)
                             bb_transition.hyperfine_gw.append(gw)
-                            bb_transition.hyperfine_gq.append(gq)
+                            bb_transition.hyperfine_gstk.append(gstk)
                             bb_transition.hyperfine_line_profile.append(line_profile)
 
                     self.bb_transitions.append(bb_transition)
@@ -925,9 +925,9 @@ class ModelAtom:
                 qmax = float(fields[4])
                 q0 = float(fields[5])
                 iw = int(fields[6])
-                ga = float(fields[7])
-                gv = float(fields[8])
-                gq = float(fields[9])
+                grad = float(fields[7])
+                gvdw = float(fields[8])
+                gstk = float(fields[9])
 
                 # sometimes there is no line profile
                 try:
@@ -964,9 +964,9 @@ class ModelAtom:
                 bb_transition.qmax = qmax
                 bb_transition.q0 = q0
                 bb_transition.iw = iw
-                bb_transition.ga = ga
-                bb_transition.gv = gv
-                bb_transition.gq = gq
+                bb_transition.grad = grad
+                bb_transition.gvdw = gvdw
+                bb_transition.gstk = gstk
                 bb_transition.line_profile = line_profile
                 bb_transition.lower_level_label = self.ec_levels[
                     lower_level_id - 1
@@ -985,9 +985,9 @@ class ModelAtom:
                         delta_ec = float(line_split[0])
                         weight = float(line_split[1])
                         f_value = float(line_split[2])
-                        ga = float(line_split[3])
+                        grad = float(line_split[3])
                         gw = float(line_split[4])
-                        gq = float(line_split[5])
+                        gstk = float(line_split[5])
                         if len(line_split) == 7:
                             line_profile = line_split[6]
                         else:
@@ -995,9 +995,9 @@ class ModelAtom:
                         bb_transition.hyperfine_delta_ec.append(delta_ec)
                         bb_transition.hyperfine_weight.append(weight)
                         bb_transition.hyperfine_f_value.append(f_value)
-                        bb_transition.hyperfine_ga.append(ga)
+                        bb_transition.hyperfine_grad.append(grad)
                         bb_transition.hyperfine_gw.append(gw)
-                        bb_transition.hyperfine_gq.append(gq)
+                        bb_transition.hyperfine_gstk.append(gstk)
                         bb_transition.hyperfine_line_profile.append(line_profile)
 
                 self.bb_transitions.append(bb_transition)
@@ -1136,12 +1136,12 @@ if __name__ == '__main__':
 
     wavelength, ion_transition, loggf = 5528.411, 1, -0.498
     lower_level_ec, upper_level_ec = 35051.36, 53134.70
-    ga = 0
-    gv = 0
+    grad = 0
+    gvdw = 0
 
     new_line = BBTransition(wavelength, ion_transition, loggf, lower_level_ec, upper_level_ec)
     new_line.find_level_id(atom.ec_levels)
-    new_line.ga = ga
-    new_line.gv = gv
+    new_line.grad = grad
+    new_line.gvdw = gvdw
     atom.add_bb_transition(new_line)
     atom.write_model_atom("atom.mg2")

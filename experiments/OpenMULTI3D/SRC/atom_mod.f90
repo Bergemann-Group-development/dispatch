@@ -935,7 +935,7 @@ MODULE atom_mod
     integer, pointer, contiguous, dimension(:) :: icont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
-    real(8) :: gv, cnt_ev, nu_max, alpha0, thresh_aa, dlam
+    real(8) :: gvdw, cnt_ev, nu_max, alpha0, thresh_aa, dlam
     real(8) :: gij, vbar2e4, loggf
     character(512) :: dummy_string, text
     character(8) :: key, str1, str2, str3
@@ -998,7 +998,7 @@ MODULE atom_mod
 
       read(latom, '(A)') text
       read(text, *, iostat=iostat) idx, lin%i, lin%j, lin%lam_air, lin%lower_ev, loggf, &
-            lin%ga_in, lin%gv_in, lin%gq_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
+            lin%grad_in, lin%gv_in, lin%gstk_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
 
       if (iostat > 0) then
         write(msg,'(a,i0,a)') 'read_atom: cannot parse line (iostat=', iostat, '):'
@@ -1244,7 +1244,7 @@ MODULE atom_mod
     type(coll_type), pointer :: col => null()
     logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-    real(8) :: gv, cnt_ev, lam_min, alpha0, thresh_aa, dlam
+    real(8) :: gvdw, cnt_ev, lam_min, alpha0, thresh_aa, dlam
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4
     integer :: ncont, nnu
     character(len=20) :: txt
@@ -1317,7 +1317,7 @@ MODULE atom_mod
       ! whether a line is wide or not. In the RH formulation all lines are wide
 
       read(latom,*,iostat=ios) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
-            lin%ga_in, lin%gv_in, lin%gq_in, lin%profile_type
+            lin%grad_in, lin%gv_in, lin%gstk_in, lin%profile_type
       call print_failed_line(latom, ios)
 
       lin%i = min(ii, jj)
@@ -1387,7 +1387,7 @@ MODULE atom_mod
         end do
 
         lin%dq = lin%lam0 * AA_TO_CM * lin%dq
-        lin%da = (lin%da - lin%ga_in) * over_4pi / lin%nu0
+        lin%da = (lin%da - lin%grad_in) * over_4pi / lin%nu0
       end if
 
       ! in gfortran the size of an unallocated allocatable array can be larger than 0
@@ -1861,7 +1861,7 @@ MODULE atom_mod
       if (line%hydrogen) then
         call prepare_hydrogen_damping(line)
       else
-        call line%prepare_Radiative(line%ga_in)
+        call line%prepare_Radiative(line%grad_in)
         vbar2e4 = self%compute_vbar2(10000.)
         ! the following commented section is generally more correct, but not backwards compatible.
         ! mul23 uses the ionisation threshold from the atom, not from the EOS.
@@ -1877,7 +1877,7 @@ MODULE atom_mod
         ic = findloc(self%ion, j+1, 1)
         cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         !endif
-        call line%prepare_Stark(line%gq_in, self%ion(line%i), cnt_ev)
+        call line%prepare_Stark(line%gstk_in, self%ion(line%i), cnt_ev)
         call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4, is_mol=is_molecule)
       endif
     end do
@@ -1947,15 +1947,15 @@ MODULE atom_mod
           wt = line%wt(ih)
           if (wt <= 0) cycle
           call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
-            gpref0 + log(wt), line%ga + line%da(ih), line%gw1, line%gw2, line%gq, &
+            gpref0 + log(wt), line%grad + line%da(ih), line%gw1, line%gw2, line%gstk, &
             line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
-            line%iso, loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
+            line%iso, loggf + log10(wt), line%gv_in, line%grad_in, line%gstk_in)
         end do
       else
         call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
-          dble(line%ga), dble(line%gw1), dble(line%gw2), dble(line%gq), line%unsold, &
+          dble(line%grad), dble(line%gw1), dble(line%gw2), dble(line%gstk), line%unsold, &
           line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
-          loggf, line%gv_in, line%ga_in, line%gq_in)
+          loggf, line%gv_in, line%grad_in, line%gstk_in)
       endif
     end do
 

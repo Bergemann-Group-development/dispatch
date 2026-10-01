@@ -7,7 +7,7 @@ from .plotting_scripts import set_legend, set_title
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
 
-hfs_names = ['de', 'w', 'f', 'ga', 'gv', 'gq']
+hfs_names = ['de', 'w', 'f', 'grad', 'gvdw', 'gstk']
 usecols = lambda col: col is None or col < len(hfs_names)
 
 class Transition(object):
@@ -20,10 +20,10 @@ class Transition(object):
             try:
                 pos = self.atom.f.tell()
                 data = self._read()
-                j, i, fosc, nq, qmax, q0, iw, ga, gv, gq = data[:10]
+                j, i, fosc, nq, qmax, q0, iw, grad, gvdw, gstk = data[:10]
                 if (len(data) > 10): self.profile = data[10]
                 self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-                self.fosc, self.qmax, self.q0, self.ga, self.gv, self.gq = map(float, [fosc, qmax, q0, ga, gv, gq])
+                self.fosc, self.qmax, self.q0, self.grad, self.gvdw, self.gstk = map(float, [fosc, qmax, q0, grad, gvdw, gstk])
             except:
                 self.atom.f.seek(pos)
                 data = self._read()

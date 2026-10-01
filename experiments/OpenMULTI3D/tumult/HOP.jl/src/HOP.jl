@@ -57,7 +57,7 @@ Allocate and initialise the HOP composition. Data-file paths default to the
 standard files under `<OpenMULTI3D>/input/`. `options` are module-level HOP
 settings applied *before* `hop_init` (the `case` labels of
 `hop_set_option_{str,real,int}`), e.g. `hydrogen_vcs_table=false`,
-`vcs_data_dir="…"`, `abundances="…"`, `disable_stark=true`.
+`vcs_data_dir="…"`, `abundances="…"`, `disable_stk=true`.
 
 One live instance per process; use `close!` (or let the finalizer run).
 """

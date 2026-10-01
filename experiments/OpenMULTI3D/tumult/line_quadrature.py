@@ -51,7 +51,7 @@ class ClassicAtom:
     ev_cm: np.ndarray            # level energies [cm^-1]
     g: np.ndarray
     ion: np.ndarray              # ionisation stage per level (1 = neutral)
-    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, ga, gv, gq
+    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, grad, gvdw, gstk
     text: list[str]
     records: dict[int, int]      # text line index -> bb line index
 
@@ -95,7 +95,7 @@ def read_classic_atom(path):
         ion[n] = int(w[-1])
 
     dtype = [('i', int), ('j', int), ('f', float), ('nq', int), ('qmax', float),
-             ('q0', float), ('iw', int), ('ga', float), ('gv', float), ('gq', float)]
+             ('q0', float), ('iw', int), ('grad', float), ('gvdw', float), ('gstk', float)]
     lines = np.empty(nline, dtype=dtype)
     records = {}
     for n in range(nline):
@@ -113,7 +113,7 @@ def read_classic_atom(path):
 def write_atom_linelist(atom, path):
     """Write the atom's lines as an input line list, one block per ionisation stage.
 
-    The record layout is the one linelist_out.txt uses (``lam_air evi loggf gv ga gq i
+    The record layout is the one linelist_out.txt uses (``lam_air evi loggf gvdw grad gstk i
     j``): the lower-level energy is relative to the ground level of the line's ionisation
     stage, and the broadening columns are the atom's own, since atom_mod and the line-list
     reader feed them to the same prepare_* routines.
@@ -132,8 +132,8 @@ def write_atom_linelist(atom, path):
             f.write(f"'{atom.element} {ROMAN[s - 1]}'\n'0' {sel.size}\n")
             for n in sel:
                 f.write(f"{lam_air[n]:12.4f}{evi[n]:10.4f}{loggf[n]:9.3f}"
-                        f"{atom.lines['gv'][n]:14.6f}{atom.lines['ga'][n]:12.3E}"
-                        f"{atom.lines['gq'][n]:12.3E}{i[n] + 1:6d}{j[n] + 1:6d}\n")
+                        f"{atom.lines['gvdw'][n]:14.6f}{atom.lines['grad'][n]:12.3E}"
+                        f"{atom.lines['gstk'][n]:12.3E}{i[n] + 1:6d}{j[n] + 1:6d}\n")
     return path
 
 

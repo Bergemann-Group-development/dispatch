@@ -31,9 +31,9 @@ mol_dict = {101:'H2', 106:'CH', 107:'NH', 108:'OH',
             606:'C2', 707:'N2', 808:'O2', 607:'CN',
             708:'NO', 608:'CO', 10108:'H2O'}
 
-formatters = {'ga':'{:.3e}'.format,
-              'gv':'{:.8g}'.format,
-              'gq':'{:.3g}'.format,
+formatters = {'grad':'{:.3e}'.format,
+              'gvdw':'{:.8g}'.format,
+              'gstk':'{:.3g}'.format,
               'ev':'{:.6f}'.format,
               'evi':'{:.3f}'.format,
               'lam_air':'{:.3f}'.format,
@@ -81,7 +81,7 @@ class LineList(pd.DataFrame):
     llist = pd.DataFrame()
     with open(filename) as f:
       lines = f.readlines()
-      names = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+      names = ['lam0', 'evi', 'loggf', 'gvdw', 'upper_g', 'grad', 'gstk']
       levels = ['levlo', 'levup']
       df_dict = {}
 
@@ -112,7 +112,7 @@ class LineList(pd.DataFrame):
             except ValueError:
               return False
 
-          # gq (gamst) is optional, so the designations sit in column 6 or 7
+          # gstk (gamst) is optional, so the designations sit in column 6 or 7
           ncore = 0
           for tok in rows[0][:len(names)]:
             if not isnum(tok):
@@ -161,7 +161,7 @@ class LineList(pd.DataFrame):
         # strength and reach [Angstrom] are the trailing columns linelist_out.txt and
         # hop_prune.x write: the line's peak over continuum extinction, and the half-width
         # out to which its extinction exceeds HOP's tolerance times the continuum
-        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'strength', 'reach']
+        names = ['lam0', 'evi', 'loggf', 'gvdw', 'grad', 'gstk', 'i', 'j', 'strength', 'reach']
         df_dict = {}
         usecols = lambda col: col is None or col < len(names)
 
@@ -242,7 +242,7 @@ class LineList(pd.DataFrame):
   
   @classmethod
   def from_vald_format(cls, filename):
-    names = ['ion', 'lam0', 'evi', 'loggf', 'ga', 'gq', 'gv', 'lande', 'label']
+    names = ['ion', 'lam0', 'evi', 'loggf', 'grad', 'gstk', 'gvdw', 'lande', 'label']
     df = pd.read_csv(filename, skiprows=2, header=None, names=names, quotechar="'")
     eid, j = df.ion.str.split(expand=True).values.T
     df['ion'] = [f'{e} {ion_dict[int(i)]}' for e, i in zip(eid, j)]
@@ -251,7 +251,7 @@ class LineList(pd.DataFrame):
   
   @classmethod
   def from_abslin_format(cls, filename):
-    df = pd.DataFrame(columns=['ion', 'lam0', 'evi', 'loggf', 'ga', 'gw', 'gq'])
+    df = pd.DataFrame(columns=['ion', 'lam0', 'evi', 'loggf', 'grad', 'gvdw', 'gstk'])
 
     with open(filename) as f:
       lines = f.readlines()
@@ -266,12 +266,12 @@ class LineList(pd.DataFrame):
         jj, ecmj, gj = [float(x) for x in lines.pop(0).split()]
         # line data
         lam0, lams, lame = [float(x) for x in lines.pop(0).split()]
-        fosc, ga, gw, gq = [float(x) for x in lines.pop(0).split()]
+        fosc, grad, gvdw, gstk = [float(x) for x in lines.pop(0).split()]
         
         evi = (ecmi * u.cm**-1).to(u.eV, equivalencies=u.spectral())
         loggf = np.log10(gi * fosc)
 
-        df.loc[len(df)] = [idi, lam0, evi.value, loggf, ga, gj, gq]
+        df.loc[len(df)] = [idi, lam0, evi.value, loggf, grad, gvdw, gstk]
 
     df.ion = df.ion.str.split().apply(lambda x: x[0].lower().capitalize() + ' ' + x[1])
     df['iso'] = 0
@@ -280,7 +280,7 @@ class LineList(pd.DataFrame):
   def write_to_tumult_format(self, filename, label=None):
     # work with a copy so slice/view issues don't matter
     df = self.copy()
-    head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'label']
+    head = ['lam0', 'evi', 'loggf', 'gvdw', 'grad', 'gstk', 'i', 'j', 'label']
     present = [col for col in head if col in df.columns]
     head = head[:head.index(present[-1]) + 1]
     df = df.reindex(columns=df.columns.union(head), fill_value=0)
@@ -303,7 +303,7 @@ class LineList(pd.DataFrame):
     df = self.copy()
 
     # ensure all required columns exist (fill missing with 0)
-    head = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+    head = ['lam0', 'evi', 'loggf', 'gvdw', 'upper_g', 'grad', 'gstk']
     df = df.reindex(columns=df.columns.union(head), fill_value=0)
     df['upper_g'] = np.maximum(df.upper_g, 1.0)  # avoid zero upper_g
 
@@ -433,7 +433,7 @@ HLINEDATA_NAME = "Hlinedata"   # HOP's dedicated hydrogen file (composition_mod 
 def _read_hlinedata(path):
     """The dedicated hydrogen file in the frame layout of :meth:`LineList.from_tumult_format`.
 
-    Its columns are ``lam_air, i, j, lower_ev, upper_ev, loggf, label, ga``; HOP selects
+    Its columns are ``lam_air, i, j, lower_ev, upper_ev, loggf, label, grad``; HOP selects
     this layout by the file name, so the generic reader must not see it.
     """
     with Path(path).open() as stream:
@@ -441,9 +441,9 @@ def _read_hlinedata(path):
         nlines = int(split_words(stream.readline())[1])
         table = "".join(stream.readline() for _ in range(nlines))
     df = pd.read_csv(StringIO(table), header=None, sep=r"\s+", quotechar="'",
-                     names=["lam0", "i", "j", "evi", "eup", "loggf", "label", "ga"])
+                     names=["lam0", "i", "j", "evi", "eup", "loggf", "label", "grad"])
     df["ion"], df["iso"] = "H I", 0
-    return df[["ion", "iso", "lam0", "evi", "loggf", "i", "j", "ga"]]
+    return df[["ion", "iso", "lam0", "evi", "loggf", "i", "j", "grad"]]
 
 
 def _read_list(path):

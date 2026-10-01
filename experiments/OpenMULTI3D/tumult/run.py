@@ -586,7 +586,7 @@ class Run(object):
                 mask = (llist.lam0 > xmin) & (llist.lam0 < xmax)
                 llist = llist[mask]
             else:
-                df = self.llist.reset_index()[['ion', 'lam0', 'strength', 'loggf', 'ga']]
+                df = self.llist.reset_index()[['ion', 'lam0', 'strength', 'loggf', 'grad']]
                 mask = (df.lam0 > xmin) & (df.lam0 < xmax)
                 df = df[mask]
                 df = df.sort_values(by=['ion', 'lam0']).reset_index(drop=True)
@@ -621,7 +621,7 @@ class Run(object):
 
         if show_atom:
             for atom in self.atoms:
-                bbt = atom.bbt[['lam0', 'loggf', 'ga']].copy().reset_index(drop=True)
+                bbt = atom.bbt[['lam0', 'loggf', 'grad']].copy().reset_index(drop=True)
                 mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
                 bbt = bbt[mask]
                 bbt['ion'] = atom.id

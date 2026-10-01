@@ -54,8 +54,8 @@ def vbar2(temp, awgt):
 
 
 #=====================================================================
-def convert_broadening(ion, gv, ga, gq):
-    """One line list record's ``(gv, ga, gq)`` as Korg's ``(gamma_rad, gamma_stark, vdW)``.
+def convert_broadening(ion, gvdw, grad, gstk):
+    """One line list record's ``(gvdw, grad, gstk)`` as Korg's ``(gamma_rad, gamma_stark, vdW)``.
 
     HOP and Korg both descend from Turbospectrum and share the ABO packing, the
     T^(1/6) Stark scaling and the T^0.3 van der Waals scaling about 10,000 K, so most
@@ -63,7 +63,7 @@ def convert_broadening(ion, gv, ga, gq):
     ``prepare_vanderwaals`` in ``HOP/linelist_mod.f90``. NaN asks Korg to apply its own
     approximation, which is what HOP does for the corresponding zero code.
 
-    One code does not map exactly. ``-20 < gv < 0`` is Turbospectrum's 'W' recipe, which
+    One code does not map exactly. ``-20 < gvdw < 0`` is Turbospectrum's 'W' recipe, which
     HOP makes temperature independent by dividing out the ``vbar2**0.3`` it applies
     later, while Korg scales it as T^0.3; the value returned matches HOP at 10,000 K and
     drifts from it elsewhere. It is rare: in a 200 A extract of `master_line.txt` it
@@ -72,31 +72,31 @@ def convert_broadening(ion, gv, ga, gq):
     is_mol = ion in molecule_dict
     awgt = get_particle_weight(ion if is_mol else ion.split()[0])
 
-    if gq < -10.0:                       # recipe c4 SIU: gq is log10(C4)
-        gamma_stark = BK * 10.0 ** (C19 + (2.0 / 3.0) * gq) * 1e4 ** (1.0 / 6.0)
-    elif gq < 0.0:                       # log10(gamma_stark) per electron at 1e4 K
-        gamma_stark = 10.0 ** gq
-    elif gq == 0.0:
+    if gstk < -10.0:                       # recipe c4 SIU: gstk is log10(C4)
+        gamma_stark = BK * 10.0 ** (C19 + (2.0 / 3.0) * gstk) * 1e4 ** (1.0 / 6.0)
+    elif gstk < 0.0:                       # log10(gamma_stark) per electron at 1e4 K
+        gamma_stark = 10.0 ** gstk
+    elif gstk == 0.0:
         gamma_stark = float('nan')       # HOP uses its Cowley-like branch, Korg its own
     else:
-        gamma_stark = gq
+        gamma_stark = gstk
 
-    if gv >= 20.0:                       # ABO, packed identically in both codes
-        vdw = gv
+    if gvdw >= 20.0:                       # ABO, packed identically in both codes
+        vdw = gvdw
     elif is_mol:                         # HOP applies no Unsold to molecules
         vdw = 0.0
-    elif gv < -20.0:                     # recipe c6 SIU: gv is log10(C6)
-        vdw = math.log10(17.0) + 0.4 * gv + 0.3 * math.log10(vbar2(1e4, awgt))
-    elif gv < 0.0:                       # Turbospectrum 'W'; matched at 1e4 K only
-        vdw = gv - 0.3 * math.log10(vbar2(1e4, awgt))
-    elif gv == 0.0:
+    elif gvdw < -20.0:                     # recipe c6 SIU: gvdw is log10(C6)
+        vdw = math.log10(17.0) + 0.4 * gvdw + 0.3 * math.log10(vbar2(1e4, awgt))
+    elif gvdw < 0.0:                       # Turbospectrum 'W'; matched at 1e4 K only
+        vdw = gvdw - 0.3 * math.log10(vbar2(1e4, awgt))
+    elif gvdw == 0.0:
         vdw = 0.0
-    else:                                # 0 < gv < 20: Unsold fudge factor, verbatim
-        vdw = gv
+    else:                                # 0 < gvdw < 20: Unsold fudge factor, verbatim
+        vdw = gvdw
 
-    # ga passes through as HOP reads it: prepare_radiative treats a non-zero value as a
+    # grad passes through as HOP reads it: prepare_radiative treats a non-zero value as a
     # rate in s^-1 and falls back to the classical width when it is zero.
-    return (ga if ga != 0.0 else float('nan')), gamma_stark, vdw
+    return (grad if grad != 0.0 else float('nan')), gamma_stark, vdw
 
 
 #=====================================================================
@@ -110,11 +110,11 @@ def write_linelist(llist, filename):
     df = llist.copy()
     if isinstance(df.index, pd.MultiIndex) or 'ion' not in df.columns:
         df = df.reset_index()
-    for col in ('gv', 'ga', 'gq'):
+    for col in ('gvdw', 'grad', 'gstk'):
         if col not in df.columns:
             df[col] = 0.0
 
-    broadening = [convert_broadening(row.ion, row.gv, row.ga, row.gq)
+    broadening = [convert_broadening(row.ion, row.gvdw, row.grad, row.gstk)
                   for row in df.itertuples()]
     out = pd.DataFrame({'lam0': df.lam0.values,
                         'ion': df.ion.values,

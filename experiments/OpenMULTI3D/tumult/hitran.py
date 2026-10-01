@@ -19,12 +19,12 @@ contain, essentially not at all.  At 3.3 um and 4000 K the Doppler width is
 nine orders of magnitude smaller -- and van der Waals broadening at
 photospheric densities (~1e9 1/s) is another seven orders above that.  Even a
 gamma wrong by 1e4 could not move the profile.  The classical fallback that
-ga = 0 selects, f_conv * gf * nu^2, is likewise tiny for a weak line (it scales
+grad = 0 selects, f_conv * gf * nu^2, is likewise tiny for a weak line (it scales
 with gf: ~0.06 1/s at gf = 1e-8), so it is not a hazard either.
 
 The reason to do this properly anyway is electronic transitions, where
 gamma_rad ~ 1e8 1/s genuinely shapes the wings.  For a HITEMP rovibrational
-list, treat the ga column as cosmetic and spend the effort on --strength-cut,
+list, treat the grad column as cosmetic and spend the effort on --strength-cut,
 which controls the line count and therefore the actual cost.
 
 Usage
@@ -50,7 +50,7 @@ Two builders share the same physics:
                               HITEMP files.  Selected automatically by file
                               size; --stream/--no-stream overrides.
 
-Both agree bit-for-bit on lam0/evi/loggf (ga differs at ~1e-15 relative, from
+Both agree bit-for-bit on lam0/evi/loggf (grad differs at ~1e-15 relative, from
 summation order in the level accumulation).
 
 --iso selects one HITRAN isotopologue and the result is written with iso tag
@@ -77,9 +77,9 @@ GF_CONST = 1.499193e-16
 # E[eV] = CM1_TO_EV * E[cm^-1]
 CM1_TO_EV = 1.2398419843320026e-4
 
-# linelist_mod.f90 reads the ga column as: 0 -> classical estimate f_conv*gf*nu^2,
+# linelist_mod.f90 reads the grad column as: 0 -> classical estimate f_conv*gf*nu^2,
 # nonzero -> the radiative damping rate in 1/s, used verbatim.  So write gamma
-# straight through.  (An earlier revision of the reader rescaled 0 < ga < 100 by
+# straight through.  (An earlier revision of the reader rescaled 0 < grad < 100 by
 # 1e8; that branch has been removed, since no real line list used it and it
 # clashed with molecular gamma values that legitimately fall in that range.)
 GA_ENCODE = 1.0
@@ -410,9 +410,9 @@ def build_linelist(df, tref=4000.0, strength_cut=None, lam_min=None,
         'lam0': lam_air,
         'evi': evi,
         'loggf': loggf,
-        'gv': 0.0,
-        'ga': np.where(gamma > 0, gamma * GA_ENCODE, 0.0),
-        'gq': 0.0,
+        'gvdw': 0.0,
+        'grad': np.where(gamma > 0, gamma * GA_ENCODE, 0.0),
+        'gstk': 0.0,
     })
     out = out[np.isfinite(out['loggf'])]
 
@@ -539,8 +539,8 @@ def build_linelist_streaming(filename, iso=None, tref=4000.0, strength_cut=None,
 
     lam, evi, loggf, gamma = (np.concatenate(c) for c in zip(*keep_cols))
     out = pd.DataFrame({
-        'lam0': lam, 'evi': evi, 'loggf': loggf, 'gv': 0.0,
-        'ga': np.where(gamma > 0, gamma * GA_ENCODE, 0.0), 'gq': 0.0,
+        'lam0': lam, 'evi': evi, 'loggf': loggf, 'gvdw': 0.0,
+        'grad': np.where(gamma > 0, gamma * GA_ENCODE, 0.0), 'gstk': 0.0,
     })
     # input is nu-ascending, so this is wavelength-descending; reversing is
     # enough, but verify rather than assume -- the reader bisects on order.
@@ -567,7 +567,7 @@ def write_linelist(out, filename, species, comment, iso='0'):
         fh.write(f"'{iso}' {len(out)}\n")
         for r in out.itertuples(index=False):
             fh.write(f"{r.lam0:12.3f} {r.evi:7.3f} {r.loggf:8.3f} "
-                     f"{r.gv:.0f} {r.ga:9.3e} {r.gq:.0f} 0 0\n")
+                     f"{r.gvdw:.0f} {r.grad:9.3e} {r.gstk:.0f} 0 0\n")
 
 
 # ---------------------------------------------------------------------------

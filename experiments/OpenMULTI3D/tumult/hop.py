@@ -517,7 +517,7 @@ class HopEOS:
 
         The same records :meth:`line_strengths` reports, but emitted by HOP itself so no
         broadening data has to survive a round trip through Python: the frame that method
-        returns carries no gv/ga/gq, while the file carries every column a run reads.
+        returns carries no gvdw/grad/gstk, while the file carries every column a run reads.
 
         What it is for: a curve of growth repeats one atmosphere at many abundances, and
         each rung otherwise re-reads and re-selects the whole master list. Selecting once
