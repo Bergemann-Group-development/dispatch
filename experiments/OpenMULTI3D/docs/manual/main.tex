@@ -298,19 +298,19 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 
 \subsection{NLTE iterations}
 
-Setting \Code{nlte\_params\%convlim} to a positive value requests NLTE iterations, up to \Code{rt\_iteration\_params\%maxiter} of them (99 unless set). The iteration stops earlier when the largest relative population change over all levels and grid points falls below \Code{nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence.
+Setting \Code{\&nlte\_params\%convlim} to a positive value requests NLTE iterations, up to \Code{\&rt\_iteration\_params\%maxiter} of them (99 unless set). The iteration stops earlier when the largest relative population change over all levels and grid points falls below \Code{\&nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence.
 
 Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the convergence of every level in the file \File{convergence\_report\_NNN.txt} in the run directory.
 
 \subsection{Output spectrum}
 
-The output pass is configured in \fort{rt_output_params} (angles, solver) and \fort{spectrum_params} (wavelengths). Without \fort{spectrum_params}, the spectrum is evaluated on the wavelength grid of the model atom. To synthesise a continuous window with the line list, uncomment the last two lines of the example above. The atom is then in NLTE and every line-list transition is in LTE. A window with an explicit grid lists wavelengths (\fort{daa}, \fort{nnu} or constant sampling resolving power \fort{R_sampling}, the grid step being $\lambda/R_\mathrm{sampling}$) and, for several windows, a \fort{window_file}.
+The output pass is configured in \fort{&rt_output_params} (angles, solver) and \fort{&spectrum_params} (wavelengths). Without \fort{&spectrum_params}, the spectrum is evaluated on the wavelength grid of the model atom. To synthesise a continuous window with the line list, uncomment the last two lines of the example above. The atom is then in NLTE and every line-list transition is in LTE. A window with an explicit grid lists wavelengths (\fort{daa}, \fort{nnu} or constant sampling resolving power \fort{R_sampling}, the grid step being $\lambda/R_\mathrm{sampling}$) and, for several windows, a \fort{window_file}.
 
 \subsection{Saving time and memory}
 
 \begin{itemize}
     \item \fort{daa} or the line-profile sampling controls how many wavelength points a run has. Memory grows with the point count and the number of lines.
-    \item \Code{run\_params\%n\_nu} splits the wavelength grid into that many independent tasks. The default (\fort{-1}) equals the number of OpenMP threads. Larger values reduce the memory per task and improve load balance (Sec.~\ref{sec:Memory}).
+    \item \Code{\&run\_params\%n\_nu} splits the wavelength grid into that many independent tasks. The default (\fort{-1}) equals the number of OpenMP threads. Larger values reduce the memory per task and improve load balance (Sec.~\ref{sec:Memory}).
     \item Use fewer threads, or a smaller \fort{nz} for 1D atmospheres, for exploratory runs.
     \item Prune the line list to the windows of interest with \Code{hop\_prune.x} (Sec.~\ref{sec:hop}) before 3D runs.
     \item Avoid large angular grids: \fort{ntheta=4, nphi=4} in the output pass and \fort{radau} with \fort{ntheta=2} in the iteration pass are the defaults and are adequate for most work.
@@ -328,32 +328,32 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \toprule
 \textbf{Group} & \textbf{Purpose}\\
 \midrule
-\Code{io\_params} & Run directory and memory reporting.\\
-\Code{timer\_params} & Timer table of the DISPATCH framework.\\
-\Code{console\_params} & Verbosity.\\
-\Code{atmos\_params} & Model atmosphere, [Fe/H], microturbulence, z-decomposition.\\
-\Code{composition\_params} & Abundances, equation-of-state switches, hydrogen line physics.\\
-\Code{opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
-\Code{linelist\_params} & Line list and its selection.\\
-\Code{atom\_params} & Model atoms, their abundances and line sampling.\\
-\Code{nlte\_params} & NLTE convergence, preconditioning, statistical equilibrium, Ng acceleration.\\
-\Code{rt\_iteration\_params} & Radiative transfer in the NLTE iterations.\\
-\Code{rt\_output\_params} & Radiative transfer in the final output pass.\\
-\Code{output\_params} & What is saved.\\
-\Code{run\_params} & Frequency splitting, memory limit, rotation.\\
-\Code{spectrum\_params} & Output wavelength grid.\\
-\Code{m3d\_debug\_params} & Internal debugging switches (\fort{check_NaN}, \fort{pcheck}, \fort{fcheck}, \fort{linecheck}, \fort{lvlcheck}, \dots).\\
+\Code{\&io\_params} & Run directory and memory reporting.\\
+\Code{\&timer\_params} & Timer table of the DISPATCH framework.\\
+\Code{\&console\_params} & Verbosity.\\
+\Code{\&atmos\_params} & Model atmosphere, [Fe/H], microturbulence, z-decomposition.\\
+\Code{\&composition\_params} & Abundances, equation-of-state switches, hydrogen line physics.\\
+\Code{\&opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
+\Code{\&linelist\_params} & Line list and its selection.\\
+\Code{\&atom\_params} & Model atoms, their abundances and line sampling.\\
+\Code{\&nlte\_params} & NLTE convergence, preconditioning, statistical equilibrium, Ng acceleration.\\
+\Code{\&rt\_iteration\_params} & Radiative transfer in the NLTE iterations.\\
+\Code{\&rt\_output\_params} & Radiative transfer in the final output pass.\\
+\Code{\&output\_params} & What is saved.\\
+\Code{\&run\_params} & Frequency splitting, memory limit, rotation.\\
+\Code{\&spectrum\_params} & Output wavelength grid.\\
+\Code{\&m3d\_debug\_params} & Internal debugging switches (\fort{check_NaN}, \fort{pcheck}, \fort{fcheck}, \fort{linecheck}, \fort{lvlcheck}, \dots).\\
 \bottomrule
 \end{longtblr}
 
 
-\subsubsection*{io\_params and console\_params}
+\subsubsection*{\&io\_params and \&console\_params}
 
-\fort{datadir='data'} is the directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist. \fort{gb_step} is the memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}). \Code{console\_params\%level} sets the console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace). The \fort{verbose} keys of \fort{atmos_params}, \fort{composition_params} and \fort{m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
+\fort{datadir='data'} is the directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist. \fort{gb_step} is the memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}). \Code{\&console\_params\%level} sets the console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace). The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and \fort{&m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
 
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
-\fort{atmos_params} & Meaning\\
+\fort{&atmos_params} & Meaning\\
 \midrule
 \fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
 \fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
@@ -372,7 +372,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
-\fort{composition_params}, \fort{opac_table_params} & Meaning\\
+\fort{&composition_params} and \fort{&opac_table_params} & Meaning\\
 \midrule
 \fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
 \fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
@@ -384,20 +384,20 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
 \fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
 \fort{disable_ga}, \fort{disable_stark}, \fort{disable_vdw} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
-\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{opac_table_params}).\\
+\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{&opac_table_params}).\\
 \fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
 \bottomrule
 \end{longtblr}
 
-Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
+Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
 
-\subsubsection*{linelist\_params}
+\subsubsection*{\&linelist\_params}
 
 \fort{linelist_file} or \fort{linelist_folder} name the line list. \fort{dlam} (default \SI{100}{\angstrom}) is the distance from a window up to which line wings are followed. \fort{tolerance} (default $10^{-4}$) keeps a transition as long as its opacity exceeds that fraction of the continuum. \fort{only_elements} and \fort{exclude_elements} take space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions. \fort{line_scattering} (default \fort{F}) treats part of the line opacity as scattering. This partitions the line extinction rather than adding to it.
 
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
-\fort{atom_params} & Meaning\\
+\fort{&atom_params} & Meaning\\
 \midrule
 \fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
 \fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
@@ -413,7 +413,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
-\fort{nlte_params} & Meaning\\
+\fort{&nlte_params} & Meaning\\
 \midrule
 \fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
@@ -427,14 +427,14 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \bottomrule
 \end{longtblr}
 
-\subsubsection*{rt\_iteration\_params and rt\_output\_params}
+\subsubsection*{\&rt\_iteration\_params and \&rt\_output\_params}
 
 Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, \fort{maxiter}, \fort{include_linelist}, \fort{include_absmet} and the switches \fort{sample_back_opac} and \fort{sample_linelist}, but with different defaults for the two passes.
 
 \begin{center}
 \begin{tblr}{colspec={lll}, row{even}={bg=rowshade}}
 \toprule
- & \fort{rt_iteration_params} & \fort{rt_output_params}\\
+ & \fort{&rt_iteration_params} & \fort{&rt_output_params}\\
 \midrule
 \fort{solver} & \fort{linear} & \fort{quadratic}\\
 \fort{angle_quad} & \fort{radau} & \fort{lobatto}\\
@@ -446,13 +446,13 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 \end{tblr}
 \end{center}
 
-\fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
+\fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
 
-\subsubsection*{output\_params and run\_params}
+\subsubsection*{\&output\_params and \&run\_params}
 
-\fort{save_populations} (default \fort{T}), \fort{save_rates}, \fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu} and \fort{save_cntrbf} control which fields are written (Sec.~\ref{sec:output}). \fort{rt_to_file} (default \fort{T}) keeps the exit planes of frozen columns on disk. \fort{set_file} lists abundance sets for ladders of calculations in one process. In \fort{run_params}, \fort{n_nu} is the number of frequency tasks, \fort{lam_tolerance} (default $0.001$ {\AA}) merges wavelength points closer than that, \fort{rotate_atmos} rotates the atmosphere for each ray (required by the Hermite solvers in 3D), and \fort{mem_limit_gb} sets the limit of the pre-run memory check (0: physical memory of the machine, negative: no check).
+\fort{save_populations} (default \fort{T}), \fort{save_rates}, \fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu} and \fort{save_cntrbf} control which fields are written (Sec.~\ref{sec:output}). \fort{rt_to_file} (default \fort{T}) keeps the exit planes of frozen columns on disk. \fort{set_file} lists abundance sets for ladders of calculations in one process. In \fort{&run_params}, \fort{n_nu} is the number of frequency tasks, \fort{lam_tolerance} (default $0.001$ {\AA}) merges wavelength points closer than that, \fort{rotate_atmos} rotates the atmosphere for each ray (required by the Hermite solvers in 3D), and \fort{mem_limit_gb} sets the limit of the pre-run memory check (0: physical memory of the machine, negative: no check).
 
-\subsubsection*{spectrum\_params}
+\subsubsection*{\&spectrum\_params}
 
 \begin{itemize}
     \item \fort{aa_blue}, \fort{aa_red} give the window in {\AA}. With no other key the atom's own grid is cropped to it.
@@ -628,7 +628,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
     \item \textbf{Equation of state and opacity} (iteration 0): interpolate onto the slab mesh with PCHIP and compute equilibrium and opacities with HOP.
     \item \textbf{NLTE iterations}: the NLTE patches update the populations from the rates of the previous iteration. Then the RT columns of the internal spectrum compute background opacity, line opacity, source function and formal solution, and accumulate the radiative rates. Convergence is judged once per iteration. Once the change falls below \fort{convlim}, every patch performs one more solution against the converged radiation field.
     \item \textbf{Write populations and departures}, then release the output tasks.
-    \item \textbf{Output pass}: \Code{rt\_output\_params\%maxiter} scattering iterations at fixed populations, followed by the final solution along each output ray, which writes intensities and flux.
+    \item \textbf{Output pass}: \Code{\&rt\_output\_params\%maxiter} scattering iterations at fixed populations, followed by the final solution along each output ray, which writes intensities and flux.
     \item \textbf{Finish}: write \File{linelist\_out.txt}, print memory and timing summaries and \Code{OpenMULTI3D terminated successfully.} (LTE, or NLTE converged) or the non-convergence warning
 \end{enumerate}
 
@@ -660,12 +660,12 @@ Module & Role\\
 \subsection{Numerical options}\label{sec:numerics}
 
 \begin{itemize}
-    \item \textbf{Formal solvers.} Iteration pass (\Code{rt\_iteration\_params\%solver}): \fort{linear}, short characteristics in 3D and long characteristics in 1D, or \fort{hermite} (3D). Output pass: \fort{linear}, \fort{quadratic} (default), \fort{hermite} and \fort{hermite2}. The Hermite solvers require \fort{pchip_interpolation=T} and, in 3D, \fort{rotate_atmos=T}. Only solvers that provide the approximate operator $\Psi$ can be used in the iterations.
+    \item \textbf{Formal solvers.} Iteration pass (\Code{\&rt\_iteration\_params\%solver}): \fort{linear}, short characteristics in 3D and long characteristics in 1D, or \fort{hermite} (3D). Output pass: \fort{linear}, \fort{quadratic} (default), \fort{hermite} and \fort{hermite2}. The Hermite solvers require \fort{pchip_interpolation=T} and, in 3D, \fort{rotate_atmos=T}. Only solvers that provide the approximate operator $\Psi$ can be used in the iterations.
     \item \textbf{Approximate lambda iteration.} The preconditioned rate equations of Rybicki \& Hummer (1992) are the default (\fort{preconditioning=T}). Plain lambda iteration (\fort{preconditioning=F}) converges slowly and is useful only for diagnostics.
     \item \textbf{Ng acceleration.} The default \fort{ng_step=0} is an automatic acceleration gate, \fort{ng_step=n}$>0$ a fixed schedule and \fort{ng_step=-1} switches it off. Iterations that were accelerated carry an asterisk after the iteration number in the console table. The acceleration is global (\fort{ng_global=T}).
     \item \textbf{Frozen columns.} \fort{premature_finish=T} stops iterating the columns whose atoms and those of all deeper columns have converged; their exit planes are kept in memory or, with \fort{rt_to_file}, on disk.
     \item \textbf{Frequency sampling.} \fort{qnorm}, \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} and \fort{line_grid_file} control the points over each NLTE line profile. \fort{overlapping_bb} merges the grids of overlapping lines.
-    \item \textbf{Scattering.} Continuum scattering is part of the HOP opacity. In the output pass, fixed-population scattering iterations are set with \Code{rt\_output\_params\%maxiter}.
+    \item \textbf{Scattering.} Continuum scattering is part of the HOP opacity. In the output pass, fixed-population scattering iterations are set with \Code{\&rt\_output\_params\%maxiter}.
     \item \textbf{Hydrogen lines.} Stark broadening with the tabulated profiles of Lemke (1997) (\fort{hydrogen_vcs_table}) and self-broadening (\fort{hydrogen_BPO}). A NLTE hydrogen atom (for example \File{input/atoms/atom.h20}) is treated like any other model atom.
 \end{itemize}
 
@@ -673,7 +673,7 @@ Module & Role\\
 \section{Memory Profiling} \label{sec:Memory}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_nu} lowers the estimate, down to a floor set by the model atoms. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
+\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_nu} lowers the estimate, down to a floor set by the model atoms. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
 
 \textbf{Registered arrays.} Every time the allocated memory crosses a multiple of \fort{gb_step} (GB), the code prints a line
 
@@ -699,7 +699,7 @@ The columns are the array label, the number of arrays with that label and their 
 
 Console output is divided into channels (atmosphere, m3d, hop) with levels $-1$ to 3 (Sec.~\ref{sec:input}). At level 0 and above the NLTE iteration table is printed; each row gives the iteration number, the largest relative population change, the level and the position where it occurs.
 
-DISPATCH's timer lists the procedures that take more than \Code{timer\_params\%min\_fraction} (default 1\%) of the thread time:
+DISPATCH's timer lists the procedures that take more than \Code{\&timer\_params\%min\_fraction} (default 1\%) of the thread time:
 
 \begin{minted}[fontsize=\scriptsize]{Text}
                     procedure       calls          time       time(%)      s/call  locks(%)
@@ -710,7 +710,7 @@ DISPATCH's timer lists the procedures that take more than \Code{timer\_params\%m
  TOTAL updates, thread time           1.00         65.8         100.
 \end{minted}
 
-The table is printed by the task list around the task loop and at the end of the run when \Code{timer\_params\%verbose}$>0$; \fort{sec_per_report} sets the interval of periodic reports. The rows are the instrumented procedures of the radiative transfer, which show where a configuration spends its time (line opacities, rates, formal solutions).
+The table is printed by the task list around the task loop and at the end of the run when \Code{\&timer\_params\%verbose}$>0$; \fort{sec_per_report} sets the interval of periodic reports. The rows are the instrumented procedures of the radiative transfer, which show where a configuration spends its time (line opacities, rates, formal solutions).
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Python and TumultStudio} \label{sec:python}
