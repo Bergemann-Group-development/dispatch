@@ -1,0 +1,14 @@
+\begin{center}
+\begin{tblr}{colspec={lll}, row{even}={bg=rowshade}}
+\toprule
+Key & \fort{&rt_iteration_params} & \fort{&rt_output_params}\\
+\midrule
+\fort{solver} & \fort{linear} & \fort{quadratic}\\
+\fort{angle_quad} & \fort{radau} & \fort{lobatto}\\
+\fort{ntheta}, \fort{nphi} & 2, 4 & 4, 4\\
+\fort{include_linelist} & \fort{F} & \fort{T}\\
+\fort{include_absmet} & \fort{T} & \fort{F}\\
+\fort{maxiter} & 99 if \fort{convlim}$>0$, else 0 & 0\\
+\bottomrule
+\end{tblr}
+\end{center}

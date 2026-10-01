@@ -1,0 +1,17 @@
+\begin{center}
+\begin{tblr}{colspec={Q[l]Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
+\toprule
+Format & Inferred from & Contents\\
+\midrule
+\fort{marcs} & \File{.mod} & 1D MARCS model; Teff, microturbulence, [Fe/H], abundances\\
+\fort{text} & \File{.txt} & 1D text table (below)\\
+\fort{multi1d} & \File{atmos.} & 1D MULTI model, rows $z,T,n_\mathrm{e},v_z,v_\mathrm{mic}$\\
+\fort{siu_bin} & \File{.dat} & SIU binary\\
+\fort{stagger} & \File{stagger} in name & Stagger 3D snapshot, selected by \fort{snap}\\
+\fort{stagger2} & \File{stagger\_grid2} & Stagger grid snapshot (\File{atm3d.})\\
+\fort{multi}, \fort{m3dis} & \File{.atmos} & 3D: text \File{.mesh} plus stream-binary \File{.atmos}\\
+\fort{co5bold} & not inferred & CO5BOLD stream binary\\
+\fort{save} & \File{data/} & atmosphere saved by an earlier run\\
+\bottomrule
+\end{tblr}
+\end{center}

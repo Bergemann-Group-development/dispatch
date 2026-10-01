@@ -1,0 +1,20 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&atom_params} & Meaning\\
+\midrule
+\fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
+\fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
+\fort{abundance} & Explicit abundance per atom, overriding both. $-99.9$ means unset.\\
+\fort{qnorm} & Doppler width in \si{\km\per\s} that the frequency units \fort{QMAX} and \fort{Q0} of the atom file refer to (default 10).\\
+\fort{exclude_trace_cont} & Remove bound-free transitions of the atom from the LTE background to avoid double counting (default \fort{T}).\\
+\fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
+\fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
+{\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
+\fort{use_classic_col} & Add approximate collision rates for transitions that have no electron or hydrogen rate in the atom file: Seaton ionisation and van Regemorter excitation by electrons, and Drawin rates for collisions with neutral hydrogen (default \fort{F}).\\
+\fort{colscale} & Factor applied to all collision rates (default 1).\\
+\fort{cbbesc} & \textbf{C}ollision \textbf{b}ound-\textbf{b}ound \textbf{e}lectron \textbf{sc}aling: factor on excitation by electron collisions between bound levels (default 1). Acts on the van Regemorter rates and on \Code{CE} records of the atom file.\\
+\fort{cbfesc} & Same for bound-free transitions, i.e. ionisation by electron collisions (Seaton rates and \Code{CI} records).\\
+\fort{cbbhsc} & Same for bound-bound collisions with neutral hydrogen (Drawin rates and \Code{CH} records).\\
+\fort{cbfhsc} & Same for bound-free collisions with neutral hydrogen (Drawin rates, \Code{CHI} and \Code{CH0} records).\\
+\bottomrule
+\end{longtblr}

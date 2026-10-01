@@ -1,0 +1,15 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&nlte_params} & Meaning\\
+\midrule
+\fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
+\fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
+\fort{preconditioning} & Preconditioned rates of Rybicki \& Hummer (1992) (default \fort{T}); \fort{rate_formulation='largest'} or \fort{'original'}.\\
+\fort{scattering_preconditioning} & Local approximate operator for continuum scattering (default \fort{F}), limited by \fort{scat_op_max}.\\
+\fort{decouple_continuum} & Use separate frequency sets for bound-bound and bound-free radiation (default \fort{T}).\\
+\fort{initial_Jnu}, \fort{fixed_Jnu} & Initial radiation field (\fort{'Planck'}) or a fixed value.\\
+{\fort{lse_solver},\\\fort{sor_w},\\\fort{cswitch},\\\fort{max_update},\\\fort{min_pop_frac}} & Statistical-equilibrium solver and its damping and safeguards.\\
+\fort{ng_step} & Ng acceleration: $-1$ off, 0 automatic gate (default), $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
+{\fort{maser_chi_floor},\\\fort{suppress_masers}, \dots} & Guards against inverted populations.\\
+\bottomrule
+\end{longtblr}

@@ -1,0 +1,12 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&linelist_params} & Meaning\\
+\midrule
+\fort{linelist_file} & Name the line list. Can also take multiple values. \\
+\fort{linelist_folder} & Name a folder containing all line lists to be read.\\
+\fort{dlam} & Distance from a window up to which line wings are followed (default \SI{100}{\angstrom}).\\
+\fort{tolerance} & Keep a transition as long as its opacity exceeds this fraction of the continuum (default $10^{-4}$).\\
+{\fort{only_elements},\\\fort{exclude_elements}} & Space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions.\\
+\fort{line_scattering} & Treat part of the line opacity as scattering (default \fort{F}). This partitions the line extinction rather than adding to it.\\
+\bottomrule
+\end{longtblr}

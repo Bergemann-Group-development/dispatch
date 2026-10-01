@@ -1,0 +1,18 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&atmos_params} & Meaning\\
+\midrule
+\fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
+\fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
+\fort{FeH} & [Fe/H]. Scales all elements except H, He and Li. Default: take the value from the model, or 0.\\
+\fort{vmic} & Microturbulence in \si{\km\per\s}. Default $-1$ keeps the model's value.\\
+\fort{use_rho}, \fort{use_ne} & Use density and electron density from the model (default \fort{T}). If the model lacks one it is computed by the equation of state.\\
+\fort{use_abnd} & Adopt the abundances stored in a MARCS file (default \fort{F}).\\
+\fort{nx}, \fort{ny}, \fort{nz} & Number of mesh cells in each direction. Default $-1$ takes the number of points of the model (1 horizontally for 1D models). The model is always interpolated onto the mesh, which is graded according to \fort{amr}; the interpolation is set by \fort{pchip_interpolation} and \fort{log_interpolation}.\\
+\fort{snap} & Snapshot number for Stagger models.\\
+\fort{dims} & Number of vertical subdomains (slabs) the atmosphere is divided into (Sec.~\ref{sec:code}).\\
+\fort{amr} & How the z-slabs are graded: \fort{'P'} (default) equal steps of accumulated $|\Delta\log P_\mathrm{e}|$, \fort{'T'} equal steps of temperature, \fort{'Z'} equal index steps, \fort{''} no grading. Grading raises \fort{dims} to at least 8.\\
+{\fort{pchip_interpolation},\\\fort{log_interpolation}} & Interpolation of the model onto the mesh: PCHIP instead of linear in the vertical direction, and interpolation of $\ln T$, $\ln\rho$ and $\ln P_\mathrm{e}$ instead of the linear quantities (default \fort{T} for both).\\
+\fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
+\bottomrule
+\end{longtblr}

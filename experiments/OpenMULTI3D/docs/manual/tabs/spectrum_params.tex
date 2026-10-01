@@ -1,0 +1,14 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&spectrum_params} & Meaning\\
+\midrule
+\fort{aa_blue}, \fort{aa_red} & Window in {\AA}. With no other key the atom's own grid is cropped to it.\\
+\fort{daa} & Constant spacing in {\AA}.\\
+\fort{nnu} & Number of points.\\
+\fort{R_sampling} & Constant resolving power (geometric grid).\\
+\fort{in_log} & Space the points logarithmically.\\
+\fort{lam_file}, \fort{give_lam} & Specify wavelengths explicitly.\\
+\fort{window_file} & Several windows with constant resolving power (requires \fort{R}$>0$).\\
+\fort{in_air} & \fort{T} (default) states that all wavelengths are air wavelengths.\\
+\bottomrule
+\end{longtblr}

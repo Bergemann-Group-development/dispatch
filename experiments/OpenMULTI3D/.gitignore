@@ -13,6 +13,8 @@ docs/*
 !docs/manual/
 docs/manual/*
 !docs/manual/main.tex
+!docs/manual/ref.bib
+!docs/manual/tabs/
 !docs/manual/figs/
 !docs/PythonNamingConventions.md
 !tests/

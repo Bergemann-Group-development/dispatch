@@ -1,0 +1,18 @@
+\begin{center}
+\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
+\toprule
+Module & Role\\
+\midrule
+\File{composition\_mod} & Ionisation and molecular equilibrium, continuum opacity, line-list opacity, abundance sets\\
+\File{element\_mod}, \File{ion\_mod}, \File{molecule\_mod}, \File{level\_mod} & Chemistry data and partition functions\\
+\File{bbtrans\_mod}, \File{bftrans\_mod}, \File{trans\_mod} & Bound-bound and bound-free transition types, broadening recipes\\
+\File{linelist\_reader\_mod}, \File{linelist\_mod} & Line-list reading by window; per-species line opacity\\
+\File{qlg\_mod} & Voigt profile kernel (QLG)\\
+\File{hprofl\_mod}, \File{hvcs\_mod} & Hydrogen line profiles\\
+\File{osmet\_mod}, \File{optab\_mod} & Sampled metal opacity and binned opacity tables\\
+\File{spectrum\_mod} & Output wavelength grid and windows\\
+\File{atmos\_reader\_mod} & Atmosphere readers shared with \File{hop\_prune.x}\\
+\File{console\_mod} & Console channels (atmos, m3d, hop) and verbosity\\
+\bottomrule
+\end{tblr}
+\end{center}

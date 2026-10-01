@@ -1,0 +1,16 @@
+\begin{center}
+\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
+\toprule
+Module & Purpose\\
+\midrule
+\Code{tumult.synthesis} & Headless workflow layer shared with TumultStudio: \Code{SynthRequest} describes a calculation, \Code{synthesize}, \Code{fit} and \Code{check\_fit} perform it, \Code{submit\_operation} runs it as a durable workflow in a per-user daemon. Also grid and line-list catalogues.\\
+\Code{tumult.abundance} & Abundances from equivalent widths (curve-of-growth inversion on shared abundance rungs) or direct profile fits; NLTE corrections.\\
+\Code{tumult.departures} & Departure coefficients for a model atmosphere from NLTE solutions, and the departure-grid interface.\\
+\Code{tumult.sparams} & Stellar parameters by ionisation balance.\\
+\Code{tumult.hop} & \Code{HopEOS}: equation of state, opacities and line strengths from \File{libhop.so}.\\
+\Code{tumult.prune} & Pruned line lists through \File{hop\_prune.x}.\\
+\Code{tumult.linelist}, \Code{tumult.linemask} & Line-list readers (TS, VALD, linemake, MOOG and native formats) and line masks.\\
+\Code{tumult.korg} & Comparison with Korg.jl.\\
+\bottomrule
+\end{tblr}
+\end{center}

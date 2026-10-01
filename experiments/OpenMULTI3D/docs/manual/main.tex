@@ -20,6 +20,27 @@
 %%% Custom sectioning
 \usepackage{natbib}
 \bibliographystyle{unsrtnat}
+% Journal abbreviations used by ref.bib.
+\providecommand{\aap}{A\&A}
+\providecommand{\aapr}{A\&A Rev.}
+\providecommand{\aaps}{A\&AS}
+\providecommand{\aj}{AJ}
+\providecommand{\apj}{ApJ}
+\providecommand{\apjl}{ApJ}
+\providecommand{\apjs}{ApJS}
+\providecommand{\araa}{ARA\&A}
+\providecommand{\jcp}{J. Chem. Phys.}
+\providecommand{\jqsrt}{JQSRT}
+\providecommand{\memras}{MmRAS}
+\providecommand{\mnras}{MNRAS}
+\providecommand{\nat}{Nature}
+\providecommand{\pasa}{PASA}
+\providecommand{\physscr}{Phys. Scr.}
+\providecommand{\prd}{Phys. Rev. D}
+\providecommand{\prl}{Phys. Rev. Lett.}
+\providecommand{\solphys}{Sol. Phys.}
+\providecommand{\ssr}{Space Sci. Rev.}
+
 
 \usepackage{sectsty}
 \allsectionsfont{\centering \normalfont\scshape}
@@ -221,19 +242,7 @@ The editable install makes \Code{tumult} and \Code{TumultStudio} importable from
 
 The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
-\begin{center}
-\begin{tblr}{colspec={llll}, row{even}={bg=rowshade}}
-\toprule
-Data & Size & TumultStudio page & Dataset\\
-\midrule
-Master line lists & about 1 GB & Line lists & \Code{linelists}\\
-Public model atoms & 81 MB & Model atoms & \Code{atoms}\\
-Metal-opacity tables & 4 $\times$ 182 MB & Opacity tables & \Code{absmet}\\
-MARCS grid & about 400 MB & Atmosphere grids & \Code{marcs}\\
-Stagger and M3D-IS 3D grids & per model & Atmosphere grids & \Code{stagger-dwarfs}, \dots\\
-\bottomrule
-\end{tblr}
-\end{center}
+\input{tabs/input_data}
 
 The first three datasets are fetched with
 \begin{minted}{bash}
@@ -324,196 +333,36 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsection{Namelist groups}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\textbf{Group} & \textbf{Purpose}\\
-\midrule
-\Code{\&atmos\_params} & Model atmosphere, [Fe/H], microturbulence, z-decomposition.\\
-\Code{\&spectrum\_params} & Output wavelength grid.\\
-\Code{\&atom\_params} & Model atoms, their abundances and line sampling.\\
-\Code{\&nlte\_params} & NLTE convergence, preconditioning, statistical equilibrium, Ng acceleration.\\
-\Code{\&linelist\_params} & Line list and its selection.\\
-\Code{\&composition\_params} & Abundances, equation-of-state switches, hydrogen line physics.\\
-\Code{\&rt\_output\_params} & Radiative transfer in the final output pass.\\
-\Code{\&rt\_iteration\_params} & Radiative transfer in the NLTE iterations.\\
-\Code{\&output\_params} & What is saved.\\
-\Code{\&run\_params} & Frequency splitting, memory limit, rotation.\\
-\Code{\&io\_params} & Run directory and memory reporting.\\
-\Code{\&console\_params} & Verbosity.\\
-\Code{\&timer\_params} & Timer table of the DISPATCH framework.\\
-\Code{\&opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
-\Code{\&m3d\_debug\_params} & Internal debugging switches.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/namelist_groups}
 
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&atmos_params} & Meaning\\
-\midrule
-\fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
-\fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
-\fort{FeH} & [Fe/H]. Scales all elements except H, He and Li. Default: take the value from the model, or 0.\\
-\fort{vmic} & Microturbulence in \si{\km\per\s}. Default $-1$ keeps the model's value.\\
-\fort{use_rho}, \fort{use_ne} & Use density and electron density from the model (default \fort{T}). If the model lacks one it is computed by the equation of state.\\
-\fort{use_abnd} & Adopt the abundances stored in a MARCS file (default \fort{F}).\\
-\fort{nx}, \fort{ny}, \fort{nz} & Number of mesh cells in each direction. Default $-1$ takes the number of points of the model (1 horizontally for 1D models). The model is always interpolated onto the mesh, which is graded according to \fort{amr}; the interpolation is set by \fort{pchip_interpolation} and \fort{log_interpolation}.\\
-\fort{snap} & Snapshot number for Stagger models.\\
-\fort{dims} & Number of vertical subdomains (slabs) the atmosphere is divided into (Sec.~\ref{sec:code}).\\
-\fort{amr} & How the z-slabs are graded: \fort{'P'} (default) equal steps of accumulated $|\Delta\log P_\mathrm{e}|$, \fort{'T'} equal steps of temperature, \fort{'Z'} equal index steps, \fort{''} no grading. Grading raises \fort{dims} to at least 8.\\
-{\fort{pchip_interpolation},\\\fort{log_interpolation}} & Interpolation of the model onto the mesh: PCHIP instead of linear in the vertical direction, and interpolation of $\ln T$, $\ln\rho$ and $\ln P_\mathrm{e}$ instead of the linear quantities (default \fort{T} for both).\\
-\fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
-\bottomrule
-\end{longtblr}
+\input{tabs/atmos_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&spectrum_params} & Meaning\\
-\midrule
-\fort{aa_blue}, \fort{aa_red} & Window in {\AA}. With no other key the atom's own grid is cropped to it.\\
-\fort{daa} & Constant spacing in {\AA}.\\
-\fort{nnu} & Number of points.\\
-\fort{R_sampling} & Constant resolving power (geometric grid).\\
-\fort{in_log} & Space the points logarithmically.\\
-\fort{lam_file}, \fort{give_lam} & Specify wavelengths explicitly.\\
-\fort{window_file} & Several windows with constant resolving power (requires \fort{R}$>0$).\\
-\fort{in_air} & \fort{T} (default) states that all wavelengths are air wavelengths.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/spectrum_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&atom_params} & Meaning\\
-\midrule
-\fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
-\fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
-\fort{abundance} & Explicit abundance per atom, overriding both. $-99.9$ means unset.\\
-\fort{qnorm} & Doppler width in \si{\km\per\s} that the frequency units \fort{QMAX} and \fort{Q0} of the atom file refer to (default 10).\\
-\fort{exclude_trace_cont} & Remove bound-free transitions of the atom from the LTE background to avoid double counting (default \fort{T}).\\
-\fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
-\fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
-{\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
-\fort{use_classic_col} & Add approximate collision rates for transitions that have no electron or hydrogen rate in the atom file: Seaton ionisation and van Regemorter excitation by electrons, and Drawin rates for collisions with neutral hydrogen (default \fort{F}).\\
-\fort{colscale} & Factor applied to all collision rates (default 1).\\
-\fort{cbbesc} & \textbf{C}ollision \textbf{b}ound-\textbf{b}ound \textbf{e}lectron \textbf{sc}aling: factor on excitation by electron collisions between bound levels (default 1). Acts on the van Regemorter rates and on \Code{CE} records of the atom file.\\
-\fort{cbfesc} & Same for bound-free transitions, i.e. ionisation by electron collisions (Seaton rates and \Code{CI} records).\\
-\fort{cbbhsc} & Same for bound-bound collisions with neutral hydrogen (Drawin rates and \Code{CH} records).\\
-\fort{cbfhsc} & Same for bound-free collisions with neutral hydrogen (Drawin rates, \Code{CHI} and \Code{CH0} records).\\
-\bottomrule
-\end{longtblr}
+\input{tabs/atom_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&nlte_params} & Meaning\\
-\midrule
-\fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
-\fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
-\fort{preconditioning} & Preconditioned rates of Rybicki \& Hummer (1992) (default \fort{T}); \fort{rate_formulation='largest'} or \fort{'original'}.\\
-\fort{scattering_preconditioning} & Local approximate operator for continuum scattering (default \fort{F}), limited by \fort{scat_op_max}.\\
-\fort{decouple_continuum} & Use separate frequency sets for bound-bound and bound-free radiation (default \fort{T}).\\
-\fort{initial_Jnu}, \fort{fixed_Jnu} & Initial radiation field (\fort{'Planck'}) or a fixed value.\\
-{\fort{lse_solver},\\\fort{sor_w},\\\fort{cswitch},\\\fort{max_update},\\\fort{min_pop_frac}} & Statistical-equilibrium solver and its damping and safeguards.\\
-\fort{ng_step} & Ng acceleration: $-1$ off, 0 automatic gate (default), $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
-{\fort{maser_chi_floor},\\\fort{suppress_masers}, \dots} & Guards against inverted populations.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/nlte_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&linelist_params} & Meaning\\
-\midrule
-\fort{linelist_file} & Name the line list. Can also take multiple values. \\
-\fort{linelist_folder} & Name a folder containing all line lists to be read.\\
-\fort{dlam} & Distance from a window up to which line wings are followed (default \SI{100}{\angstrom}).\\
-\fort{tolerance} & Keep a transition as long as its opacity exceeds this fraction of the continuum (default $10^{-4}$).\\
-{\fort{only_elements},\\\fort{exclude_elements}} & Space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions.\\
-\fort{line_scattering} & Treat part of the line opacity as scattering (default \fort{F}). This partitions the line extinction rather than adding to it.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/linelist_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&composition_params} & Meaning\\
-\midrule
-\fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
-\fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
-\fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
-\fort{molec_file} & Molecular data (default \File{input/molec\_data\_BC.txt}).\\
-\fort{abundances} & Per-element overrides as a string, e.g. \fort{'Mg=7.6 Eu=0.5'}: $\log\epsilon$, or an offset when \fort{relative_abundances=T}.\\
-{\fort{alpha_enhancement},\\\fort{r_process_enhancement}} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U.\\
-\fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for hydrogen lines (default \fort{T}).\\
-\fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
-\fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
-{\fort{disable_rad},\\\fort{disable_stk},\\\fort{disable_vdw}} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/composition_params}
 
 Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&opac_table_params} & Meaning\\
-\midrule
-\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations.\\
-\fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/opac_table_params}
 
-\begin{center}
-\begin{tblr}{colspec={lll}, row{even}={bg=rowshade}}
-\toprule
-Key & \fort{&rt_iteration_params} & \fort{&rt_output_params}\\
-\midrule
-\fort{solver} & \fort{linear} & \fort{quadratic}\\
-\fort{angle_quad} & \fort{radau} & \fort{lobatto}\\
-\fort{ntheta}, \fort{nphi} & 2, 4 & 4, 4\\
-\fort{include_linelist} & \fort{F} & \fort{T}\\
-\fort{include_absmet} & \fort{T} & \fort{F}\\
-\fort{maxiter} & 99 if \fort{convlim}$>0$, else 0 & 0\\
-\bottomrule
-\end{tblr}
-\end{center}
+\input{tabs/rt_params}
 
 Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes. \fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&output_params} & Meaning\\
-\midrule
-\fort{save_populations} & Write the level populations (default \fort{T}).\\
-{\fort{save_rates},\\\fort{save_resolved},\\\fort{save_Inu},\\\fort{save_chi},\\\fort{save_Snu},\\\fort{save_Jnu},\\\fort{save_cntrbf}} & Which further fields are written (Sec.~\ref{sec:output}).\\
-\fort{rt_to_file} & Keep the exit planes of frozen columns on disk (default \fort{T}).\\
-\fort{set_file} & Abundance sets for ladders of calculations in one process.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/output_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&run_params} & Meaning\\
-\midrule
-\fort{n_nu} & Number of frequency tasks.\\
-\fort{lam_tolerance} & Merge wavelength points closer than this (default $0.001$ {\AA}).\\
-\fort{rotate_atmos} & Rotate the atmosphere for each ray (required by the Hermite solvers in 3D).\\
-\fort{mem_limit_gb} & Limit of the pre-run memory check (0: physical memory of the machine, negative: no check).\\
-\bottomrule
-\end{longtblr}
+\input{tabs/run_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&io_params} & Meaning\\
-\midrule
-\fort{datadir='data'} & Directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist.\\
-\fort{gb_step} & Memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}).\\
-\bottomrule
-\end{longtblr}
+\input{tabs/io_params}
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&console_params} & Meaning\\
-\midrule
-\fort{level} & Console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace).\\
-\bottomrule
-\end{longtblr}
+\input{tabs/console_params}
 
 The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and \fort{&m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
 
@@ -521,23 +370,7 @@ The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and 
 
 The format is chosen by \fort{atmos_format} (case-insensitive), or, if it is \fort{'unknown'}, from the file name.
 
-\begin{center}
-\begin{tblr}{colspec={Q[l]Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
-\toprule
-Format & Inferred from & Contents\\
-\midrule
-\fort{marcs} & \File{.mod} & 1D MARCS model; Teff, microturbulence, [Fe/H], abundances\\
-\fort{text} & \File{.txt} & 1D text table (below)\\
-\fort{multi1d} & \File{atmos.} & 1D MULTI model, rows $z,T,n_\mathrm{e},v_z,v_\mathrm{mic}$\\
-\fort{siu_bin} & \File{.dat} & SIU binary\\
-\fort{stagger} & \File{stagger} in name & Stagger 3D snapshot, selected by \fort{snap}\\
-\fort{stagger2} & \File{stagger\_grid2} & Stagger grid snapshot (\File{atm3d.})\\
-\fort{multi}, \fort{m3dis} & \File{.atmos} & 3D: text \File{.mesh} plus stream-binary \File{.atmos}\\
-\fort{co5bold} & not inferred & CO5BOLD stream binary\\
-\fort{save} & \File{data/} & atmosphere saved by an earlier run\\
-\bottomrule
-\end{tblr}
-\end{center}
+\input{tabs/atmos_formats}
 
 The 1D text format has the model name in the first line, the number of depth points (optionally followed by [Fe/H]) in the second, and a row per depth point:
 
@@ -596,13 +429,20 @@ The line list holds transitions that are treated in LTE (the NLTE atoms are excl
 
 The first line is the quoted species label (an element and a Roman numeral for the ionisation stage, or a molecule such as \fort{'CH'}), the second the isotope label and the number of records. Each record contains the air wavelength in {\AA}, the lower-level energy in eV, $\log gf$, and the broadening parameters \fort{gvdw}, \fort{grad} and \fort{gstk}, optionally followed by the level indices \fort{i j}. Between 3 and 10 numbers are accepted; missing trailing columns are zero. The isotope label \fort{'0'} stands for the natural mixture; a positive value selects an isotope defined in \fort{isotope_file}. A line list written by a run or by \File{hop\_prune.x} carries two more columns, \fort{strength} and \fort{reach} (in {\AA}), which a later run reads back to visit each patch only with the transitions that reach it. A hydrogen block (\fort{'H I'}) is read in one piece and uses hydrogen Stark profiles.
 
-The broadening parameters follow these conventions:
+The three broadening parameters \fort{grad}, \fort{gvdw} and \fort{gstk}, written $\gamma_\mathrm{rad}$, $\gamma_\mathrm{vdw}$ and $\gamma_\mathrm{stk}$ below, select a recipe by their value (table below), so line lists from different sources can be combined without conversion. The widths $\Gamma$ are full widths at half maximum in angular frequency (\si{\radian\per\s}), evaluated in every cell from the local temperature $T$, electron density $N_e$ and neutral hydrogen density $N_\mathrm{H\,I}$. Units are cgs and energies in eV.
 
-\begin{itemize}
-    \item \fort{grad} (radiative damping): 0 computes the rate from $\log gf$; otherwise the rate in \si{\per\s}.
-    \item \fort{gstk} (Stark): 0 selects the Cowley (1971) recipe at \SI{e4}{\kelvin}; between $-10$ and 0 it is $\log\gamma_4$; below $-10$ the SIU recipe; positive values are used directly.
-    \item \fort{gvdw} (van der Waals): $\ge 20$ is the Barklem form (the integer part is the cross-section $\sigma$ in atomic units, the fractional part the velocity exponent $\alpha$); between $0$ and $20$ a multiplicative enhancement of the Uns\"old approximation; between $-20$ and $0$ the decadic logarithm of the width; below $-20$ the SIU recipe; 0 is the plain Uns\"old approximation (no van der Waals broadening for molecules).
-\end{itemize}
+\input{tabs/damping_recipes}
+
+\begin{description}\small
+    \item[a] $g_j A_{ji}$ \citep{WheelerAbruzzo2023}, which needs only $g_i f_{ij}$.
+    \item[b] \citet{BarklemPiskunov2000}. The integer part is the cross-section $\sigma$ in units of $a_0^2$, the fractional part the velocity exponent $\alpha$. $K_\alpha=(4/\pi)^{\alpha/2}\,\Gamma_\mathrm{f}(2-\alpha/2)$ with the gamma function $\Gamma_\mathrm{f}$, and $v_0=\SI{e4}{\metre\per\s}$. $\Gamma$ is twice the half width given by these authors. $\bar v=[8kT/\pi\,(1/m_\mathrm{H}+1/m)]^{1/2}$ is the mean relative speed of a hydrogen atom and the absorber of mass $m$.
+    \item[c] \citet{Unsold1955}; for $\log_{10}C_6$ also \citet{Gray2005}. $C_6=C_\mathrm{U}Z^2[(E_\mathrm{ion}-E_j)^{-2}-(E_\mathrm{ion}-E_i)^{-2}]$ with $C_\mathrm{U}=\SI{3.22e-31}{\centi\metre\tothe{6}\per\s\electronvolt\squared}$, where $E_i$ and $E_j$ are the lower and upper excitation energies, $E_\mathrm{ion}$ the ionisation energy and $Z$ the ionisation stage (1 for neutrals).
+    \item[d] The temperature scaling follows from the impact widths $\Gamma_\mathrm{vdw}\propto\bar v^{3/5}$ and $\Gamma_\mathrm{stark}\propto v_e^{1/3}$ \citep{Unsold1955}. Line lists such as VALD \citep{RyabchikovaPiskunov2015} tabulate the damping in this form.
+    \item[e] \citet{Unsold1955,Gray2005}. $v_e=(8kT/\pi m_e)^{1/2}$ is the mean electron speed.
+    \item[f] \citet{Cowley1971}. $n^*=Z[E_\mathrm{H}/(E_\mathrm{ion}-E_j)]^{1/2}$ with $E_\mathrm{H}=\SI{13.6}{eV}$. $c_Z=\SI{2.26e-7}{\radian\centi\metre\cubed\per\s}$ for $Z=1$ and $\SI{5.42e-7}{\radian\centi\metre\cubed\per\s}\,(Z+1)^{-2}$ for $Z>1$ (his value at \SI{e4}{K}, which he recommends at all temperatures). $\Gamma=0$ for $E_i\ge E_\mathrm{ion}$.
+\end{description}
+
+Molecules receive no van der Waals broadening for $\gamma_\mathrm{vdw}=0$.
 
 \fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 
@@ -691,24 +531,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
 
 HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled into \File{dispatch.x} and, without the framework, into \File{libhop.so} and \File{hop\_prune.x} (\File{HOP/standalone/}).
 
-\begin{center}
-\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
-\toprule
-Module & Role\\
-\midrule
-\File{composition\_mod} & Ionisation and molecular equilibrium, continuum opacity, line-list opacity, abundance sets\\
-\File{element\_mod}, \File{ion\_mod}, \File{molecule\_mod}, \File{level\_mod} & Chemistry data and partition functions\\
-\File{bbtrans\_mod}, \File{bftrans\_mod}, \File{trans\_mod} & Bound-bound and bound-free transition types, broadening recipes\\
-\File{linelist\_reader\_mod}, \File{linelist\_mod} & Line-list reading by window; per-species line opacity\\
-\File{qlg\_mod} & Voigt profile kernel (QLG)\\
-\File{hprofl\_mod}, \File{hvcs\_mod} & Hydrogen line profiles\\
-\File{osmet\_mod}, \File{optab\_mod} & Sampled metal opacity and binned opacity tables\\
-\File{spectrum\_mod} & Output wavelength grid and windows\\
-\File{atmos\_reader\_mod} & Atmosphere readers shared with \File{hop\_prune.x}\\
-\File{console\_mod} & Console channels (atmos, m3d, hop) and verbosity\\
-\bottomrule
-\end{tblr}
-\end{center}
+\input{tabs/hop_modules}
 
 \Code{tumult.hop.HopEOS} calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
 
@@ -826,22 +649,7 @@ It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was d
 
 \subsection{Higher-level modules}
 
-\begin{center}
-\begin{tblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
-\toprule
-Module & Purpose\\
-\midrule
-\Code{tumult.synthesis} & Headless workflow layer shared with TumultStudio: \Code{SynthRequest} describes a calculation, \Code{synthesize}, \Code{fit} and \Code{check\_fit} perform it, \Code{submit\_operation} runs it as a durable workflow in a per-user daemon. Also grid and line-list catalogues.\\
-\Code{tumult.abundance} & Abundances from equivalent widths (curve-of-growth inversion on shared abundance rungs) or direct profile fits; NLTE corrections.\\
-\Code{tumult.departures} & Departure coefficients for a model atmosphere from NLTE solutions, and the departure-grid interface.\\
-\Code{tumult.sparams} & Stellar parameters by ionisation balance.\\
-\Code{tumult.hop} & \Code{HopEOS}: equation of state, opacities and line strengths from \File{libhop.so}.\\
-\Code{tumult.prune} & Pruned line lists through \File{hop\_prune.x}.\\
-\Code{tumult.linelist}, \Code{tumult.linemask} & Line-list readers (TS, VALD, linemake, MOOG and native formats) and line masks.\\
-\Code{tumult.korg} & Comparison with Korg.jl.\\
-\bottomrule
-\end{tblr}
-\end{center}
+\input{tabs/python_modules}
 
 \File{docs/FAQ.md} contains worked examples. Names of concepts follow \File{docs/GLOSSARY.md}.
 
@@ -858,23 +666,8 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 \section{Trouble Shooting}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\textbf{Symptom} & \textbf{Remedy}\\
-\midrule
-\Code{No Fortran compiler found} & Install \Code{gfortran}, or pass \Code{COMPILER=}.\\
-\Code{No rule to make target '/Makefile.dep'} & The parent DISPATCH checkout is missing; clone the whole repository.\\
-\Code{Fortran runtime error: End of record} at start & The namelist path is too long. Use a short relative path (\fort{datadir} may be absolute).\\
-Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_nu}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
-Run aborts while reading the line list & HOP aborts on an unreadable list. The first line of each block must be a quoted species label (Sec.~\ref{sec:linelist}).\\
-\Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}.\\
-\Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Deactivate conda or call \File{.venv/bin/python}.\\
-\Code{No module named 'tumult'} & Activate the virtual environment where \Code{pip install -e .} was run.\\
-\Code{CERTIFICATE\_VERIFY\_FAILED} on macOS & Run the installer's certificate script, or use the virtual environment.\\
-Port 5006 in use & Start TumultStudio with \Code{--port}.\\
-Population updates alternate in sign, no convergence & Check \fort{preconditioning}, lower \fort{ng_step} or switch it off, and read \File{convergence\_report\_NNN.txt} for the offending level.\\
-Workflow reports \Code{interrupted} & The daemon was restarted. Resubmit; the daemon log is in \File{/tmp/tumult-<uid>/daemon.log}.\\
-\bottomrule
-\end{longtblr}
+\input{tabs/troubleshooting}
+
+\bibliography{ref}
 
 \end{document}

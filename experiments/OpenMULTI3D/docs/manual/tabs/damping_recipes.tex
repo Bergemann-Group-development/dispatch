@@ -1,0 +1,24 @@
+\begin{center}
+\begin{tblr}{colspec={Q[l]Q[l]X[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}}
+\toprule
+Entry & Value & Meaning & Width $\Gamma$\\
+\midrule
+\SetCell[c=4]{l}{\textit{Radiative}} \\
+$\gamma_\mathrm{rad}$ & $>0$ & damping rate in \si{\per\s} & $\gamma_\mathrm{rad}$\\
+ & $=0$ & classical estimate from $\log gf$ (note a) & $8\pi^2 e^2\nu_0^2\, g_i f_{ij}/(m_e c^3)$\\
+\midrule
+\SetCell[c=4]{l}{\textit{Van der Waals}} \\
+$\gamma_\mathrm{vdw}$ & $\ge 20$ & packed $\sigma.\alpha$ (note b) & $N_\mathrm{H\,I}\, 2K_\alpha v_0\sigma(\bar v/v_0)^{1-\alpha}$\\
+ & $0$ to $20$ & Uns\"old enhancement factor (note c) & $N_\mathrm{H\,I}\,\gamma_\mathrm{vdw}\,17\,C_6^{2/5}\bar v^{3/5}$\\
+ & $-20$ to $0$ & $\log_{10}(\Gamma/N_\mathrm{H\,I})$ at \SI{e4}{K} (note d) & $N_\mathrm{H\,I}\,10^{\gamma_\mathrm{vdw}}(T/\SI{e4}{K})^{0.3}$\\
+ & $<-20$ & $\log_{10}C_6$ (note c) & $N_\mathrm{H\,I}\,17\,C_6^{2/5}\bar v^{3/5}$\\
+ & $=0$ & plain Uns\"old & as for the enhancement factor, $\gamma_\mathrm{vdw}=1$\\
+\midrule
+\SetCell[c=4]{l}{\textit{Quadratic Stark}} \\
+$\gamma_\mathrm{stk}$ & $>0$ & $\Gamma/N_e$ & $N_e\,\gamma_\mathrm{stk}$\\
+ & $-10$ to $0$ & $\log_{10}(\Gamma/N_e)$ at \SI{e4}{K} (note d) & $N_e\,10^{\gamma_\mathrm{stk}}(T/\SI{e4}{K})^{1/6}$\\
+ & $<-10$ & $\log_{10}C_4$ (note e) & $N_e\,39\,v_e^{1/3}C_4^{2/3}$\\
+ & $=0$ & Cowley approximation (note f) & $N_e\,c_Z(n^*)^4$\\
+\bottomrule
+\end{tblr}
+\end{center}
