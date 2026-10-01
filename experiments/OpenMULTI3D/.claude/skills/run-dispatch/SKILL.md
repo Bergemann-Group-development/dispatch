@@ -75,8 +75,9 @@ stops after 52 iterations in 2 s at 4 threads.
 ## Check the run
 
 - **Termination:** the run ended if the output contains `OpenMULTI3D terminated
-  normally.` The memory estimate is printed before execution. The actual peak comes at
-  the end, as `maximum memory on rank 0 was ... Gb`.
+  normally.` The memory estimate is printed before execution (level 1; the breakdown by
+  phase at level 2). The registered peak comes at the end, as
+  `Peak memory: ... GiB (rank 0)`, with the estimate appended from level 1 on.
 - **The iteration table** is printed at console level 0 and above:
   `iter/maxiter  global %  lvl  [x y z]`. It gives the largest relative population change
   in percent (so `convlim=1d-5` is 0.001 %), its level and its global cell index. In 1D

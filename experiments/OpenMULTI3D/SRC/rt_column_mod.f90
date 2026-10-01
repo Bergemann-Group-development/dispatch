@@ -371,6 +371,7 @@ SUBROUTINE report_memory_estimate (list, estimate)
   real(8) :: max_work(2), sum_retained(2), max_boundary(2), phase(3), atom(2), atom_nlte, atom_out
   integer :: n_column(2), n_comp, workers(2), eos_workers, j, k
   character(len=6), parameter :: label(2) = ['NLTE  ', 'output']
+  character(len=16) :: text
   !-----------------------------------------------------------------------------
   n_column = 0; n_comp = 0
   max_work = 0d0; sum_retained = 0d0; max_boundary = 0d0
@@ -408,7 +409,10 @@ SUBROUTINE report_memory_estimate (list, estimate)
   phase(2:3) = workers*(max_work + max_boundary) + sum_retained + rt_persistent + atom
   estimate = os%gb + (eos_retained + maxval(phase))/gib
   if (.not. console_on(ch_m3d, 1, all_ranks=.true.)) return
-  write(console_unit,'(a,i0,a)') 'Memory estimate rank ', mpi%rank, ' [GiB]:'
+  write(text,'(f10.4)') estimate
+  write(console_unit,'(a,a,a,i0,a)') 'Memory estimate: peak ', trim(adjustl(text)), ' GiB (rank ', mpi%rank, ')'
+  if (.not. console_on(ch_m3d, 2, all_ranks=.true.)) return
+  write(console_unit,'(a)') '  by phase [GiB]:'
   write(console_unit,'(a,f10.4)') '  startup registered allocation ', os%gb
   write(console_unit,'(a,f10.4)') '  retained EOS species          ', eos_retained/gib
   write(console_unit,'(a,f10.4,a,i0,a)') '  EOS phase                     ', phase(1)/gib, &

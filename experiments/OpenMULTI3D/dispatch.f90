@@ -27,6 +27,8 @@ PROGRAM dispatch
   USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
   real(8):: memory_estimate
+  character(len=160):: text
+  character(len=16):: peak, estimate
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
@@ -38,12 +40,17 @@ PROGRAM dispatch
   call write_linelist_out()                     ! Line-list diagnostics, if collected
   if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
-  if (console_on(ch_m3d, 0, all_ranks=.true.)) &
-    write(console_unit,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  if (console_on(ch_m3d, 1, all_ranks=.true.)) &
-    write(console_unit,'(a,i0,3(a,f12.6))') 'Memory comparison rank ', mpi%rank, &
-      ': estimated [GiB]=', memory_estimate, ': registered peak [GiB]=', os%max_mem, &
-      ': peak - estimate [GiB]=', os%max_mem-memory_estimate
+  ! The registered peak at level 0; from level 1 on it is set against the estimate printed
+  ! before the run.
+  if (console_on(ch_m3d, 0, all_ranks=.true.)) then
+    write(peak,'(f10.3)') os%max_mem
+    write(text,'(a,a,a,i0,a)') 'Peak memory: ', trim(adjustl(peak)), ' GiB (rank ', mpi%rank, ')'
+    if (console_on(ch_m3d, 1, all_ranks=.true.)) then
+      write(estimate,'(f10.3)') memory_estimate
+      text = trim(text) // ', estimate ' // trim(adjustl(estimate)) // ' GiB'
+    endif
+    write(console_unit,'(a)') trim(text)
+  endif
   if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated normally.'
   call setup%end                                ! End setup
 !===============================================================================

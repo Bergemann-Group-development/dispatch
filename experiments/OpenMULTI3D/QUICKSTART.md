@@ -68,7 +68,7 @@ after about one second on eight cores. The installation check created the same r
 running it again overwrites it. `OMP_STACKSIZE` gives the OpenMP threads the stack the
 solver needs; the Python launcher used in step 6 sets it for you.
 
-Before execution, `Memory estimate rank ...` reports the expected peak of the memory
+Before execution, `Memory estimate: peak ...` reports the expected peak of the memory
 Dispatch registers on each MPI rank, in GiB (2³⁰ bytes). The equation-of-state setup,
 the NLTE iteration and the output pass run one after the other, so the estimate is the
 persistent allocation plus the largest of the three phases. The EOS phase grows with
@@ -83,10 +83,10 @@ accumulators) do not shrink with `n_nu` and set the floor of the NLTE phase.
 
 If the estimate exceeds the physical memory of the machine, the run stops before the
 dispatcher starts. `mem_limit_gb` in `&run_params` replaces that limit with a value in
-GiB, and a negative value skips the check.
+GiB, and a negative value skips the check. Console level 2 adds the estimate per phase.
 
-At completion, `Memory comparison rank ...` gives the estimate, the registered peak and
-their difference. Opacity caches, solver temporaries and allocations Dispatch does not
+At completion, `Peak memory: ...` gives the registered peak, followed by the estimate at
+console level 1 and above. Opacity caches, solver temporaries and allocations Dispatch does not
 register are left out, and the process RSS is correspondingly higher.
 
 ## 3. Load the output

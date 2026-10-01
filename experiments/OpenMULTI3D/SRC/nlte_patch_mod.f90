@@ -386,8 +386,15 @@ contains
       logical, intent(in) :: bb, bf, sort, set_active
       logical, intent(in), optional :: crop
       integer :: i
+      character(len=160) :: text, detail
+      character(len=24) :: what
       !-----------------------------------------------------------------------------
       sp%name = name
+      select case (name)
+      case ('bf');  what = 'bound-free'
+      case ('bb');  what = 'bound-bound'
+      case default; what = 'bound-bound and bound-free'
+      end select
       ! allocate list of active continua and lines
       do i=1, size(atoms)
         call atoms(i)%trans%append_transitions(sp, bb=bb, bf=bf)
@@ -410,8 +417,15 @@ contains
         call sp%save(name)
       endif
       if (set_active .and. console_on(ch_m3d, 1)) then
-        write(console_unit,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-        write(console_unit,'(a,I0,a)') 'sp_from_atom: ', sum(nac+nal), ' active transition-frequency points'
+        write(text,'(a,a,a,I0,a)') 'NLTE frequency grid (', trim(what), '): ', sp%nnu, ' frequencies'
+        ! how many transition-frequency pairs the rate sums run over, and the largest
+        ! number of transitions sharing a frequency
+        if (console_on(ch_m3d, 2)) then
+          write(detail,'(a,I0,a,I0,a)') ', ', sum(nac+nal), ' active transition-frequency pairs, at most ', &
+            maxval(sum(nac+nal, dim=2)), ' at one frequency'
+          text = trim(text) // trim(detail)
+        endif
+        write(console_unit,'(a)') trim(text)
       endif
       call os%deallocate(nac)
       call os%deallocate(nal)
