@@ -379,7 +379,7 @@ that produces the spectrum; the LTE request skips the solve.
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
 interpolated at the star (`AtmosphereGrid("input/atmos/MARCS")`, after
-`fetch_input_data.py`), on a 3D snapshot (`Snapshot`), and as the input of the
+`python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (`Snapshot`), and as the input of the
 abundance and stellar-parameter workflows; [docs/FAQ.md](docs/FAQ.md) has the
 recipes. `rm -rf quickstart_synth data/quickstart_synth` removes this example's cache.
 

@@ -1,23 +1,26 @@
-"""Line lists, the Preferences page of that name.
+"""Downloadable input data, the Preferences pages of that kind.
 
-The page lists the master line lists :mod:`tumult.synthesis.linelist_catalog` publishes
-(one file per species on the OpenMULTI3D Keeper share, the only source for now): a head
-row with what is on disk and *Download all* / *Delete downloaded*, then one row per file
-with its size and a download or delete button, each shown only while it has something to
-do. While a download runs, the rows it covers show a progress ring in place of their
-buttons; the other rows keep theirs, so downloads queue up on the pool.
+Three pages share this manager: the master line lists, the public model atoms and the
+metal-opacity tables, each a folder of the OpenMULTI3D Keeper share
+(:mod:`tumult.synthesis.input_data`). A page has a head row with what is on disk and
+*Download all* / *Delete downloaded*, then one row per file with its size and a download
+or delete button, each shown only while it has something to do. While a download runs, the
+rows it covers show a progress ring in place of their buttons; the other rows keep theirs,
+so downloads queue up on the pool.
 
-Downloads go where the synthesis reads its line list from: the folder the *Line list*
-preference of the Synthesis page names. When that preference names a single file
-instead, the page falls back to ``<working directory>/input/linelists/master_linelists``
-and says so, since a list downloaded there is not read until the preference points at
-the folder. Deleting removes only files the share lists; the user's own files stay.
+Where files go is the page's :class:`Page`: the line-list and opacity-table pages follow
+the *Line list* and *Absmet* preferences when these name a folder, and otherwise use the
+stock folder under ``<working directory>/input``, saying so, since files downloaded there
+are not read until the preference points at the folder. The atom page always uses
+``input/atoms/public``, where the atom picker starts. Deleting removes only files the
+share lists; the user's own files stay.
 
 The share is listed when the page is opened (the ``list`` action) and every download runs
 as a document job on the IO pool (``ctx.submit_io``); progress lands, as a percentage per
 ring, in the progress bridge, and outcomes in the footer through ``ctx.notify``. Same
 construction as :class:`gridmanager.GridManager`: a server-rendered page pushed through
-an ``html_bridge`` and a hidden ``TextInput`` action channel for delegated clicks.
+an ``html_bridge`` and a hidden ``TextInput`` action channel for delegated clicks. The
+DOM ids and button classes carry the page's ``key`` (``linelist``, ``atom``, ``absmet``).
 """
 from __future__ import annotations
 
@@ -28,7 +31,10 @@ import time
 
 from bokeh.models import CustomJS, TextInput
 
-from tumult.synthesis import linelist_catalog
+from dataclasses import dataclass
+from typing import Callable
+
+from tumult.synthesis import input_data, linelist_catalog
 from tumult.synthesis.cancel import CancelledError
 from tumult.synthesis.grid_catalog import human
 from ..ui.htmlbridge import html_bridge
@@ -39,48 +45,95 @@ from .synthprefs import REPO_DIR, _resolve_path, load_prefs
 ALL = "all"          # the ring key of the head row
 
 
-def destination(prefs):
-    """``(folder, from_preference)``: where downloads go. The *Line list* preference when
-    it names a folder (existing, or not yet created and without a file suffix); otherwise
-    the stock ``input/linelists/master_linelists`` under the working directory."""
-    pref = str(prefs.get("linelist") or "").strip()
-    if pref:
-        path = _resolve_path(prefs, pref)
+def destination(prefs, dataset, pref=None):
+    """``(folder, from_preference)``: where downloads of ``dataset`` go. The preference
+    ``pref`` when it names a folder (existing, or not yet created and without a file
+    suffix); otherwise the dataset's stock folder under ``<working directory>/input``."""
+    value = str(prefs.get(pref) or "").strip() if pref else ""
+    if value:
+        path = _resolve_path(prefs, value)
         if path.is_dir() or not (path.exists() or path.suffix):
             return path, True
     root = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
-    return root / "input" / "linelists" / "master_linelists", False
+    return root / "input" / dataset.folder, False
 
 
-class LineListManager:
-    """Owns the line-list page: the share listing, the rows, the download jobs.
+@dataclass(frozen=True)
+class Page:
+    """One downloadable-data page: its DOM ``key``, the :class:`~input_data.Dataset`,
+    the preference naming its folder (None: always the stock folder), the ``noun`` for one
+    file and a ``blurb`` for the head of the page."""
+    key: str
+    dataset: input_data.Dataset
+    pref: str | None
+    noun: str
+    blurb: str
+    where: Callable   # (folder, from_preference) -> html sentence on where files go
+
+
+def _lists_where(folder, from_pref):
+    if from_pref:
+        return (f'Downloads go to <b>{html.escape(str(folder))}</b>, the line list of the '
+                'Synthesis page.')
+    return (f'Downloads go to <b>{html.escape(str(folder))}</b>. The line list of the '
+            'Synthesis page names a single file; point it at this folder to synthesise '
+            'with the downloaded lists.')
+
+
+def _atoms_where(folder, from_pref):
+    return (f'Downloads go to <b>{html.escape(str(folder))}</b>, where the model-atom '
+            'picker of a calculation setup starts.')
+
+
+def _absmet_where(folder, from_pref):
+    if from_pref:
+        return (f'Downloads go to <b>{html.escape(str(folder))}</b>, the absmet location '
+                'of the Synthesis page.')
+    return (f'Downloads go to <b>{html.escape(str(folder))}</b>. The absmet preference of '
+            'the Synthesis page does not name a folder; point it at a table here to use it.')
+
+
+PAGES = {p.key: p for p in (
+    Page("linelist", input_data.DATASETS["linelists"], "linelist", "line list",
+         "Per-species master line lists", _lists_where),
+    Page("atom", input_data.DATASETS["atoms"], None, "model atom",
+         "Public model atoms", _atoms_where),
+    Page("absmet", input_data.DATASETS["absmet"], "absmet", "opacity table",
+         "Metal-opacity (absmet) tables", _absmet_where),
+)}
+
+
+class ShareManager:
+    """Owns one data page (:class:`Page`): the share listing, the rows, the download jobs.
 
     ``on_change`` (optional) is called with the destination folder after files were
     added or removed there. ``ctx`` supplies ``submit_io`` / ``schedule`` / ``notify``
     (without it the page renders but cannot list or download).
     """
 
-    def __init__(self, on_change=None, ctx=None, source=linelist_catalog.SOURCE):
+    def __init__(self, page, on_change=None, ctx=None, source=None):
+        self.page = page
+        self.key = page.key
         self.on_change = on_change
         self.ctx = ctx
-        self.source = source
+        self.source = source or page.dataset.source
         self._listing = None       # Listing, once the share was listed this session
         self._listing_job = False  # a listing is in flight
         self._failed = None        # why the last listing failed
         self._running = []         # the _Job of each running download
         self._sort = SortState({"name": True, "size": False, "held": False}, "name")
 
-        self.list_bridge = html_bridge("linelist-list", name="linelist-list-render")
+        self.list_bridge = html_bridge(f"{self.key}-list", name=f"{self.key}-list-render")
         # "{ring key: percent}" -> the --p of every progress ring the page shows; a ring's
         # key is ALL for the head row, or the file name
         self.progress_bridge = TextInput(value="", visible=False)
-        self.progress_bridge.js_on_change("value", CustomJS(code="""
+        self.progress_bridge.js_on_change("value", CustomJS(args=dict(list_id=f"{self.key}-list"), code="""
             const pct = JSON.parse(cb_obj.value || '{}');
-            document.querySelectorAll('#linelist-list .grid-progress').forEach(function (el) {
+            document.querySelectorAll('#' + list_id + ' .grid-progress').forEach(function (el) {
                 if (el.dataset.key in pct) el.style.setProperty('--p', pct[el.dataset.key]);
             });
         """))
-        self.actions = TextInput(value="", visible=False, name="linelist-actions")
+        self.actions = TextInput(value="", visible=False, name=f"{self.key}-actions")
         self.actions.on_change("value", self._on_action)
 
     # --- doc wiring -------------------------------------------------------
@@ -90,22 +143,19 @@ class LineListManager:
 
     @property
     def folder(self):
-        return destination(load_prefs())[0]
+        return self._destination()[0]
+
+    def _destination(self):
+        return destination(load_prefs(), self.page.dataset, self.page.pref)
 
     # --- rendering --------------------------------------------------------
     def render(self):
         self.list_bridge.value = self.list_html()
 
     def list_html(self):
-        folder, from_pref = destination(load_prefs())
-        if from_pref:
-            where = (f'Downloads go to <b>{html.escape(str(folder))}</b>, the line list '
-                     'of the Synthesis page.')
-        else:
-            where = (f'Downloads go to <b>{html.escape(str(folder))}</b>. The line list of '
-                     'the Synthesis page names a single file; point it at this folder to '
-                     'synthesise with the downloaded lists.')
-        head = (f'<div class="hint">Per-species master line lists from the OpenMULTI3D '
+        folder, from_pref = self._destination()
+        where = self.page.where(folder, from_pref)
+        head = (f'<div class="hint">{html.escape(self.page.blurb)} from the OpenMULTI3D '
                 f'data share (<a href="{html.escape(self.source.page)}" target="_blank" '
                 f'rel="noopener">MPCDF Keeper</a>). {where}</div>')
         return head + self._source_html(folder) + self._files_html(folder)
@@ -116,7 +166,7 @@ class LineListManager:
         if listing is None:
             if self._failed is not None:
                 state = f"could not list the share: {self._failed}"
-                buttons = ('<button class="icon-btn linelist-relist" title="Retry">'
+                buttons = (f'<button class="icon-btn {self.key}-relist" title="Retry">'
                            '<i class="ti ti-refresh"></i></button>')
             else:
                 state = "listing the share…" if self._listing_job else "not listed"
@@ -130,11 +180,11 @@ class LineListManager:
             else:
                 buttons = ""
                 if len(held) < len(listing.files):
-                    buttons += ('<button class="icon-btn linelist-fetch-all" '
+                    buttons += (f'<button class="icon-btn {self.key}-fetch-all" '
                                 'title="Download all files"><i class="ti ti-download"></i>'
                                 '</button>')
                 if held:
-                    buttons += ('<button class="icon-btn linelist-del-all" '
+                    buttons += (f'<button class="icon-btn {self.key}-del-all" '
                                 'title="Delete the downloaded files">'
                                 '<i class="ti ti-trash"></i></button>')
         return (f'<div class="grid-row"><div class="grid-row-meta">'
@@ -160,10 +210,10 @@ class LineListManager:
             if job is not None:
                 buttons = progress_ring(f.name, job.percent(f.name))
             elif held[f.name]:
-                buttons = (f'<button class="icon-btn linelist-del" data-name="{name}" '
+                buttons = (f'<button class="icon-btn {self.key}-del" data-name="{name}" '
                            f'title="Delete"><i class="ti ti-trash"></i></button>')
             else:
-                buttons = (f'<button class="icon-btn linelist-fetch" data-name="{name}" '
+                buttons = (f'<button class="icon-btn {self.key}-fetch" data-name="{name}" '
                            f'title="Download"><i class="ti ti-download"></i></button>')
             mark = '<i class="ti ti-check"></i>' if held[f.name] else ""
             rows.append(
@@ -236,7 +286,7 @@ class LineListManager:
             self.render()
             if then is not None:
                 then(listing)
-        if self.ctx.submit_io(f"list-lines {self.source.name}", work, done) is None:
+        if self.ctx.submit_io(f"list-{self.key} {self.source.name}", work, done) is None:
             self._list_failed("not started")
 
     def _list_failed(self, exc):
@@ -288,7 +338,7 @@ class LineListManager:
 
         def done(_folder):
             self._notify(f"{what} downloaded", "success")
-        if self.ctx.submit_io(f"download-lines {what}", work, done) is None:
+        if self.ctx.submit_io(f"download-{self.key} {what}", work, done) is None:
             self._settled(job, folder)
 
     def _show_progress(self):

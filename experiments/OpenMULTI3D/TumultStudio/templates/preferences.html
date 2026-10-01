@@ -1,5 +1,5 @@
 {#- The Preferences modal: a category rail and one page per settings owner
-    (preferences/page.py, gridmanager.py, linelistmanager.py, refstarspage.py). -#}
+    (preferences/page.py, gridmanager.py, sharemanager.py, refstarspage.py). -#}
 {% macro pref_picker(key, root, hint='', hidden=False) -%}
         <div id="pref-{{ key }}-block" class="field-group pref-path{{ ' field-warn' if key in pref_missing }}{{ ' off' if hidden }}">
           <label>{{ pref_labels[key] }}</label>
@@ -22,6 +22,8 @@
       <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
       <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
       <button class="settings-nav-item" data-page="linelists">Line lists</button>
+      <button class="settings-nav-item" data-page="atoms">Model atoms</button>
+      <button class="settings-nav-item" data-page="absmet">Opacity tables</button>
       <button class="settings-nav-item" data-page="refstars">Reference stars</button>
       <button class="settings-nav-item" data-page="engine">Engine</button>
       <button class="settings-nav-item" data-page="cache">Run cache</button>
@@ -65,10 +67,16 @@
         </div>
       </div>
 
-      <!-- the published master line lists (linelistmanager.LineListManager): listed from
-           the share when the page is opened, downloaded per file into the line-list folder -->
+      <!-- the published input data (sharemanager.ShareManager): listed from the share
+           when the page is opened, downloaded per file -->
       <div class="settings-page" data-page="linelists">
-        <div id="linelist-list" class="grid-list">{{ linelist_list_html|safe }}</div>
+        <div id="linelist-list" class="grid-list">{{ share_list_html['linelist']|safe }}</div>
+      </div>
+      <div class="settings-page" data-page="atoms">
+        <div id="atom-list" class="grid-list">{{ share_list_html['atom']|safe }}</div>
+      </div>
+      <div class="settings-page" data-page="absmet">
+        <div id="absmet-list" class="grid-list">{{ share_list_html['absmet']|safe }}</div>
       </div>
 
       <div class="settings-page" data-page="synthesis">

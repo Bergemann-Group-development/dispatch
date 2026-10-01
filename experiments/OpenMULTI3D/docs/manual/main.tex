@@ -190,7 +190,7 @@ The build takes a few minutes. The compiler is \Code{gfortran} if it is on the \
 \begin{minted}{bash}
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .          # core: numpy, scipy, astropy, ...
+pip install -e .          # core: numpy, scipy, pandas, astropy, ...
 pip install -e ".[gui]"   # additionally Bokeh, for TumultStudio
 \end{minted}
 
@@ -198,13 +198,23 @@ The editable install makes \Code{tumult} and \Code{TumultStudio} importable from
 
 \subsection{Input data}
 
-The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. Larger inputs are fetched with
+The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
-\begin{minted}{bash}
-python fetch_input_data.py            # about 1.9 GB download; --dry-run to preview
-\end{minted}
+\begin{center}
+\begin{tabular}{@{}llp{6.3cm}@{}}
+\toprule
+Data & TumultStudio page & Command\\
+\midrule
+Master line lists (about 1 GB) & Line lists & \Code{input\_data fetch linelists}\\
+Public model atoms (81 MB) & Model atoms & \Code{input\_data fetch atoms}\\
+Metal-opacity tables (4 $\times$ 182 MB) & Opacity tables & \Code{input\_data fetch absmet}\\
+MARCS grid (about 400 MB) & Atmosphere grids & \Code{grid\_catalog fetch marcs input/atmos/MARCS}\\
+Stagger and M3D-IS 3D grids & Atmosphere grids & \Code{grid\_catalog fetch GRID DEST --snapshots N}\\
+\bottomrule
+\end{tabular}
+\end{center}
 
-which retrieves the standard MARCS grid, the metal-opacity (absmet) tables, public model atoms and the master line lists from MPCDF Keeper. The script is resumable and its downloads are not tracked by git. Single line lists and 3D grids (Stagger, M3D-IS) are available through \Code{python -m tumult.synthesis.linelist\_catalog} and \Code{tumult.synthesis.grid\_catalog}.
+In the table, \Code{input\_data} stands for \Code{python -m tumult.synthesis.input\_data} and \Code{grid\_catalog} for \Code{python -m tumult.synthesis.grid\_catalog}. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code reads it from (\File{input/linelists/master\_linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}). \Code{list} shows the files, \Code{--file NAME} selects single files and \Code{--dry-run} prints the plan. \Code{grid\_catalog list} names the available grids; the 3D grids are fetched per model and snapshot. The first three datasets come from one MPCDF Keeper share. Downloaded files are not tracked by git.
 
 \subsection{First run}
 
@@ -761,7 +771,7 @@ python -m TumultStudio              # landing page at http://localhost:5006
 python -m TumultStudio --port 5010 --no-show
 \end{minted}
 
-TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences configure grids, the line list and reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}. Restart the workflow daemon after editing operation code. \File{docs/GUIWorkflow.md} describes the intended workflow.
+TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences download and configure grids, line lists, model atoms and opacity tables, and manage reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}. Restart the workflow daemon after editing operation code. \File{docs/GUIWorkflow.md} describes the intended workflow.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Trouble Shooting}

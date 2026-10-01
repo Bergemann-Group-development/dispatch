@@ -10,17 +10,12 @@ resumable transfer per file. Downloading into the folder the synthesis reads its
 list from makes each list available as soon as it is complete: the readers take a
 folder's direct children, and a transfer is a ``.part`` file until it is whole.
 
-Command line::
-
-    python -m tumult.synthesis.linelist_catalog list
-    python -m tumult.synthesis.linelist_catalog fetch DEST --file 12C16O.txt --file Hlinedata
+The command line is :mod:`.input_data`, which serves this and the other share folders.
 """
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
-import sys
 import urllib.parse
 
 from .grid_catalog import human
@@ -164,38 +159,3 @@ def delete(listing, dest, names=None):
                                                     if f.name in set(names)]:
         (dest / f.name).unlink(missing_ok=True)
         (dest / (f.name + ".part")).unlink(missing_ok=True)
-
-
-# --- command line -----------------------------------------------------------------------
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="fetch the published master line lists")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("list", help="list the files of the share folder")
-    f = sub.add_parser("fetch", help="download files into DEST")
-    f.add_argument("dest", type=Path)
-    f.add_argument("--file", action="append", help="a file name; default: every file")
-    f.add_argument("--dry-run", action="store_true", help="print the plan only")
-    args = ap.parse_args(argv)
-
-    listing = list_files()
-    if args.cmd == "list":
-        for entry in listing.files:
-            print(f"{human(entry.size):>10}  {entry.name}")
-        print(f"{human(listing.size):>10}  total, {len(listing.files)} files")
-        return 0
-    p = plan(listing, args.dest, args.file)
-    print(p.summary())
-    if args.dry_run:
-        return 0
-
-    def progress(done, total, name):
-        sys.stdout.write(f"\r{100 * done / total:5.1f}%  {name:<40}")
-        sys.stdout.flush()
-    fetch(p, progress=progress)
-    print()
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

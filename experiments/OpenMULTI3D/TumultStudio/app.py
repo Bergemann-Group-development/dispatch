@@ -612,7 +612,7 @@ def build():
         pref_missing=set(prefs_page.missing),
         pref_show_slurm=load_prefs().get("workflow_runner") == "slurm",
         grid_list_html=prefs_page.grids.list_html(),
-        linelist_list_html=prefs_page.linelists.list_html(),
+        share_list_html={key: share.list_html() for key, share in prefs_page.shares.items()},
         refstars_html=refstars_page.list_html(),
         grid_results_name=prefs_page.grids.results_name,
         synth_grid_html=synth_modal.grid_ui_html(),

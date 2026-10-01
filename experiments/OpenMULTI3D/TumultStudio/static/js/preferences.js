@@ -16,7 +16,9 @@
 
   wireNav('#settings-modal', function (page) {
     if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
-    if (page === 'linelists') linelistAction('list');  // list the share once, when opened
+    // list the share once, when its page is opened
+    var key = { linelists: 'linelist', atoms: 'atom', absmet: 'absmet' }[page];
+    if (key) shareAction(key, 'list');
   });
 
   // clear-all + per-row delete (rows are rendered dynamically into #synth-cache)
@@ -122,27 +124,30 @@
     }
   });
 
-  // line lists (Preferences → Line lists): the head row and the file rows (rendered
-  // dynamically into #linelist-list) -> "linelist-actions" as "<kind> [<file>]"; deleting
-  // files asks first
-  function linelistAction(kind, arg) {
-    var m = model('linelist-actions');
+  // downloadable input data (Preferences → Line lists, Model atoms, Opacity tables): the
+  // head row and the file rows (rendered dynamically into #<key>-list) ->
+  // "<key>-actions" as "<kind> [<file>]"; deleting files asks first
+  var SHARES = { linelist: 'line list', atom: 'model atom', absmet: 'opacity table' };
+  function shareAction(key, kind, arg) {
+    var m = model(key + '-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
   }
   document.addEventListener('click', function (ev) {
-    var sortth = ev.target.closest('#linelist-list .line-sort');
-    if (sortth) { linelistAction('sort', sortth.dataset.sortcol); return; }
-    var btn = ev.target.closest('#linelist-list button');
-    if (!btn || btn.disabled) return;
-    var name = btn.dataset.name || '';
-    if (btn.classList.contains('linelist-relist')) linelistAction('list');
-    else if (btn.classList.contains('linelist-fetch-all')) linelistAction('fetch-all');
-    else if (btn.classList.contains('linelist-fetch')) linelistAction('fetch', name);
-    else if (btn.classList.contains('linelist-del-all')) {
-      if (confirm('Delete every downloaded master line list?')) linelistAction('del-all');
-    } else if (btn.classList.contains('linelist-del')) {
-      if (confirm('Delete the downloaded line list ' + name + '?')) linelistAction('del', name);
-    }
+    Object.keys(SHARES).forEach(function (key) {
+      var sortth = ev.target.closest('#' + key + '-list .line-sort');
+      if (sortth) { shareAction(key, 'sort', sortth.dataset.sortcol); return; }
+      var btn = ev.target.closest('#' + key + '-list button');
+      if (!btn || btn.disabled) return;
+      var name = btn.dataset.name || '', noun = SHARES[key];
+      if (btn.classList.contains(key + '-relist')) shareAction(key, 'list');
+      else if (btn.classList.contains(key + '-fetch-all')) shareAction(key, 'fetch-all');
+      else if (btn.classList.contains(key + '-fetch')) shareAction(key, 'fetch', name);
+      else if (btn.classList.contains(key + '-del-all')) {
+        if (confirm('Delete every downloaded ' + noun + '?')) shareAction(key, 'del-all');
+      } else if (btn.classList.contains(key + '-del')) {
+        if (confirm('Delete the downloaded ' + noun + ' ' + name + '?')) shareAction(key, 'del', name);
+      }
+    });
   });
 
   // reference stars (Preferences → Reference stars): edits of a row's inputs report

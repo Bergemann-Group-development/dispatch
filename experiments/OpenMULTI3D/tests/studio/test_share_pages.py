@@ -1,4 +1,4 @@
-"""The Line lists preferences page.
+"""The downloadable-data Preferences pages: line lists, model atoms, opacity tables.
 
 What matters: the page lists the share once when opened, shows per file whether it is
 on disk, downloads exactly the file (or all files) the user asks for into the folder
@@ -34,13 +34,13 @@ class _SyncContext:
         fn()
 
 
-def _manager(server, token, ctx, changes):
+def _manager(server, token, ctx, changes, key="linelist", path="/linelists/master_linelists/",
+             name="Test lists"):
     from tumult.synthesis import linelist_catalog
-    from TumultStudio.preferences.linelistmanager import LineListManager
+    from TumultStudio.preferences.sharemanager import PAGES, ShareManager
     source = linelist_catalog.ShareFolder(
-        id="test", name="Test lists", server=server, token=token,
-        path="/linelists/master_linelists/", citation="test")
-    return LineListManager(on_change=changes.append, ctx=ctx, source=source)
+        id="test", name=name, server=server, token=token, path=path, citation="test")
+    return ShareManager(PAGES[key], on_change=changes.append, ctx=ctx, source=source)
 
 
 def test_page_lists_downloads_and_deletes_into_the_preference_folder(tmp_path, studio_config):
@@ -59,7 +59,7 @@ def test_page_lists_downloads_and_deletes_into_the_preference_folder(tmp_path, s
         # opening the page lists the share once; every file offers a download
         lm.actions.value = "list 1"
         lm.actions.value = "list 2"
-        assert ctx.jobs == ["list-lines Test lists"]
+        assert ctx.jobs == ["list-linelist Test lists"]
         page = lm.list_html()
         assert "0 of 3 files on disk" in page and "linelist-fetch-all" in page
         assert _FETCH_BTN.findall(page) == sorted(files) and not _DEL_BTN.findall(page)
@@ -99,10 +99,10 @@ def test_page_lists_downloads_and_deletes_into_the_preference_folder(tmp_path, s
 
 def test_page_names_the_fallback_folder_when_the_preference_is_a_file(tmp_path, studio_config):
     from TumultStudio.workspace import store
-    from TumultStudio.preferences.linelistmanager import LineListManager
+    from TumultStudio.preferences.sharemanager import PAGES, ShareManager
     (tmp_path / "sun.txt").write_text("'Fe I' 1\n")
     store.set_section("synthesis", {"dispatch_cwd": str(tmp_path), "linelist": "sun.txt"})
-    lm = LineListManager()
+    lm = ShareManager(PAGES["linelist"])
     page = lm.list_html()
     fallback = tmp_path / "input" / "linelists" / "master_linelists"
     assert f"Downloads go to <b>{fallback}</b>. The line list of the Synthesis page names a single file" in page
@@ -127,3 +127,26 @@ def test_listing_failure_is_shown_with_a_retry(tmp_path, studio_config, monkeypa
     page = lm.list_html()
     assert "could not list the share: 127.0.0.1 is not responding" in page
     assert "linelist-relist" in page and ctx.notes[0].startswith("Could not list Test lists")
+
+
+def test_atoms_and_opacity_pages_use_their_own_folders(tmp_path, studio_config):
+    from TumultStudio.workspace import store
+    atoms = write_lists(tmp_path / "www", folder="atoms/public")
+    absmet = write_lists(tmp_path / "www", folder="absmet_files")
+    work = tmp_path / "work"
+    store.set_section("synthesis", {"dispatch_cwd": str(work), "absmet": "tables"})
+    ctx, changes = _SyncContext(), []
+    with serve_share(tmp_path / "www") as (server, token):
+        am = _manager(server, token, ctx, changes, "atom", "/atoms/public/", "Test atoms")
+        # always the stock folder, whatever the preferences say
+        assert am.folder == work / "input" / "atoms" / "public"
+        am.actions.value = "fetch-all 1"
+        assert sorted(p.name for p in am.folder.iterdir()) == sorted(atoms)
+        assert 'class="icon-btn atom-del-all"' in am.list_html()
+
+        # the opacity page follows the absmet preference when it names a folder
+        om = _manager(server, token, ctx, changes, "absmet", "/absmet_files/", "Test tables")
+        assert om.folder == work / "tables"
+        om.actions.value = "fetch Hlinedata 1"
+        assert [p.name for p in om.folder.iterdir()] == ["Hlinedata"]
+        assert 'absmet-del" data-name="Hlinedata"' in om.list_html()

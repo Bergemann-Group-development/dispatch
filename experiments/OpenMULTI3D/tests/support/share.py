@@ -1,7 +1,7 @@
 """A local stand-in for the Seafile share that publishes the master line lists.
 
 :func:`serve_share` runs a threaded HTTP server over a folder of files and answers the
-two requests :mod:`tumult.synthesis.linelist_catalog` makes of a share link: the
+two requests :mod:`tumult.synthesis.linelist_catalog` (and :mod:`.input_data`) makes of a share link: the
 ``dirents`` listing of a folder as Seafile's share-link API shapes it (``dirent_list`` of
 ``file_name`` / ``size`` / ``is_dir`` entries), and a file download through the
 ``/d/<token>/files/?p=<path>&dl=1`` form, served with single byte ranges as Keeper does.

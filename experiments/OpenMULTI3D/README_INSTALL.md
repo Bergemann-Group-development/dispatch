@@ -80,30 +80,32 @@ The repository tracks the inputs the verification below needs: one MARCS solar m
 four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data
 and the atomic line list `input/linelists/master_line.txt`.
 
-The larger inputs are hosted on MPCDF Keeper,
-<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>, in a layout that mirrors
-`input/`: the standard-composition MARCS grid (`input/atmos/MARCS/`, 142 MB zipped,
-394 MB unpacked), the sampled metal-line background opacity tables
-(`input/absmet_files/`, four files of 182 MB), further model atoms (`input/atoms/public/`)
-and the per-species master line lists (`input/linelists/master_linelists/`, about 1 GB).
-The download is 1.9 GB and occupies about 2.5 GB after unpacking. TumultStudio and the
-synthesis workflows read the MARCS grid, the absmet tables and the line lists; the
-verification below does not need them.
+The larger inputs are not in git. They can be fetched from TumultStudio's Preferences
+or from the command line, whichever suits; both use the same code and skip files that are
+already complete, so an interrupted download resumes.
 
-```bash
-python fetch_input_data.py            # download, unpack and merge into ./input
-python fetch_input_data.py --dry-run  # list what would be downloaded
-```
+| Data | Size | TumultStudio page | Command line |
+|---|---|---|---|
+| Per-species master line lists | about 1 GB | Preferences → Line lists | `python -m tumult.synthesis.input_data fetch linelists` |
+| Public model atoms (17 atoms) | 81 MB | Preferences → Model atoms | `python -m tumult.synthesis.input_data fetch atoms` |
+| Metal-opacity (absmet) tables | four files of 182 MB | Preferences → Opacity tables | `python -m tumult.synthesis.input_data fetch absmet` |
+| MARCS grid, standard composition | about 400 MB | Preferences → Atmosphere grids | `python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS` |
+| Stagger and M3DIS 3D grids | per model and snapshot | Preferences → Atmosphere grids | `python -m tumult.synthesis.grid_catalog fetch <grid> <dest> --snapshots N` |
 
-The script uses only the standard library, skips files that are already present with the
-right size and unpacks each archive once, so it can be re-run after an interruption.
-`--clean-zips` deletes the archives after unpacking. Downloaded files are git-ignored.
+The line lists, atoms and tables come from one MPCDF Keeper share
+(<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>). Without `--dest`, `input_data`
+puts each dataset where the code looks for it: `input/linelists/master_linelists/`,
+`input/atoms/public/` and `input/absmet_files/`. `list` shows the files and sizes, `fetch`
+takes `--file NAME` (repeatable) to download only some, and `--dry-run` prints the plan.
+`python -m tumult.synthesis.grid_catalog list` names the grids; its module docstring
+describes the model and snapshot selection. Downloaded files are git-ignored. The
+verification below needs none of them.
 
-Individual line lists can be fetched later, from TumultStudio's Preferences → Line lists
-page or with `python -m tumult.synthesis.linelist_catalog list` and
-`fetch DEST --file <name>`. The published 3D grids (Stagger, M3DIS) are fetched per model
-and snapshot by `tumult.synthesis.grid_catalog` (module docstring) or from Preferences →
-Atmosphere grids.
+In TumultStudio each page lists the share when opened and offers a download or delete
+button per file, or for all files. The Line lists and Opacity tables pages download into
+the folder their Synthesis preference (*Line list*, *Absmet*) names, and into the stock
+folder above when that preference is a single file. The Model atoms page always uses
+`input/atoms/public/`, where the atom picker of a calculation setup starts.
 
 ## 5. Verify the installation
 
@@ -178,12 +180,11 @@ is missing, so `../../config/Makefile` was not found. Build inside
 `dispatch/experiments/OpenMULTI3D` of a full clone (section 1).
 
 **`CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`** from
-`fetch_input_data.py` on macOS: the python.org framework Python ships without a CA trust
-store. Run the installer's certificate step once, for example
-`/Applications/Python\ 3.12/Install\ Certificates.command`, or run the script with the
-virtual environment active: `pip install -e .` installs the `certifi` bundle and the
-script uses it whenever it is importable. `--insecure` skips certificate verification as
-a last resort.
+when downloading input data on macOS: the python.org framework Python ships without a CA
+trust store. Run the installer's certificate step once, for example
+`/Applications/Python\ 3.12/Install\ Certificates.command`, or run with the virtual
+environment active: `pip install -e .` installs the `certifi` bundle, which the downloads
+use whenever it is importable.
 
 **`ModuleNotFoundError: No module named 'numba'`** (or another installed package) when
 running a script: a conda environment prefixed onto `PATH` shadows `.venv` with an

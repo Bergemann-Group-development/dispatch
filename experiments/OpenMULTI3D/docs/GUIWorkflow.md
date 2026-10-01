@@ -502,9 +502,12 @@ atom's **Departure coefficients…**, and a finished solve fills the **Saved dep
 field from its own panel (see below). NLTE abundance corrections start from a model atom too. Atmosphere
 grids (downloading the published ones, custom folders, the 1D LTE reference) are the
 Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
-Preferences → Line lists downloads the published per-species master line lists
-(`tumult.synthesis.linelist_catalog`, hosted on the Keeper share) one file or all at
-once into the folder the Synthesis line-list preference names, and deletes them again.
+Preferences → Line lists, Model atoms and Opacity tables download the published input
+files of that kind (`tumult.synthesis.input_data`, hosted on the Keeper share) one file or
+all at once, and delete them again. Line lists and opacity tables go into the folder the
+Synthesis *Line list* and *Absmet* preferences name, and atoms into `input/atoms/public`.
+The same downloads are available without the GUI as
+`python -m tumult.synthesis.input_data fetch linelists|atoms|absmet`.
 Preferences → Reference stars edits the one catalogue of named stellar parameters
 (`tumult.refstars`): every setup's Preset dropdown, the ionisation balance's entry
 point and the line-strength ranking read it, and the line strengths take the atmosphere

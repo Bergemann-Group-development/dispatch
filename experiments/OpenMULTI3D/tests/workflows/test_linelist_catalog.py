@@ -68,3 +68,20 @@ def test_share_urls_address_the_folder_and_its_files():
         "https://keeper.mpdl.mpg.de/d/3191475aebe340638422/files/"
         "?p=%2Flinelists%2Fmaster_linelists%2FHlinedata&dl=1")
     assert source.page.startswith("https://keeper.mpdl.mpg.de/d/3191475aebe340638422/")
+
+
+def test_command_line_fetches_a_dataset_into_the_chosen_folder(tmp_path, capsys, monkeypatch):
+    from tumult.synthesis import input_data
+    files = write_lists(tmp_path / "www")
+    dest = tmp_path / "dest"
+    with serve_share(tmp_path / "www") as (server, token):
+        monkeypatch.setitem(input_data.DATASETS, "atoms", input_data.Dataset(
+            "atoms", _source(server, token), "atoms/public"))
+        assert input_data.main(["list", "atoms"]) == 0
+        assert "Hlinedata" in capsys.readouterr().out
+        assert input_data.main(["fetch", "atoms", "--dest", str(dest), "--file", "Hlinedata",
+                                "--dry-run"]) == 0
+        assert not dest.exists()
+        assert input_data.main(["fetch", "atoms", "--dest", str(dest), "--file", "Hlinedata"]) == 0
+        assert [p.name for p in dest.iterdir()] == ["Hlinedata"]
+        assert (dest / "Hlinedata").read_bytes() == files["Hlinedata"]
