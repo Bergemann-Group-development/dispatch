@@ -2,9 +2,8 @@
 # --- Log file and error file names ---
 # --- Job name and working directory ---
 #SBATCH -D ./
-# Slurm opens the log before the script runs, so it cannot live in a directory the script
-# would create; it goes to the submission directory.
-#SBATCH --output ./slurm-%j.out
+# Slurm opens the log before the script runs, so slurm/ must exist; the repository tracks it.
+#SBATCH --output ./slurm/slurm-%j.out
 #SBATCH -J M3D_DIS
 # --- CPU and node logistics ---
 #SBATCH --partition=four-wks

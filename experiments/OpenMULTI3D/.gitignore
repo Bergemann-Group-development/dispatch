@@ -49,6 +49,9 @@ tests/**/*.pyc
 
 # The parent repository ignores *.txt as data; these are source.
 !pyproject.toml
+!slurm/
+slurm/*
+!slurm/.gitkeep
 !pytest.ini
 
 # Local reports, helper scripts and the retired GUI are not repository source.

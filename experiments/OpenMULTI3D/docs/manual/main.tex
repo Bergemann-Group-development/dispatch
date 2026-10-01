@@ -263,7 +263,7 @@ If local changes conflict, commit them or use \Code{git stash} before pulling.
 \section{Running on a Cluster}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\File{dispatch.slurm} is a Slurm script for the MPIA cluster (partition, node list and memory are site-specific and must be adapted). It requests one exclusive node with 32 cores and \Code{--mem=120G}, sets \Code{OMP\_NUM\_THREADS=\$SLURM\_CPUS\_PER\_TASK} and \Code{KMP\_STACKSIZE=256M}, and runs \Code{./dispatch.x} once per namelist argument. The Slurm log is written to \File{slurm-<jobid>.out} in the directory the job is submitted from.
+\File{dispatch.slurm} is a Slurm script for the MPIA cluster (partition, node list and memory are site-specific and must be adapted). It requests one exclusive node with 32 cores and \Code{--mem=120G}, sets \Code{OMP\_NUM\_THREADS=\$SLURM\_CPUS\_PER\_TASK} and \Code{KMP\_STACKSIZE=256M}, and runs \Code{./dispatch.x} once per namelist argument. The Slurm log is written to \File{slurm/slurm-<jobid>.out}; the \File{slurm/} directory is part of the repository, so submit from the experiment directory.
 
 \begin{minted}{bash}
 sbatch dispatch.slurm a.nml b.nml
