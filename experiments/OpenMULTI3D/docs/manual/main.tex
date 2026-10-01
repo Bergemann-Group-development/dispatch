@@ -109,8 +109,7 @@
 
 % Every other table row is shaded; \rowcolors applies to all tables that follow.
 \definecolor{rowshade}{gray}{0.94}
-\definecolor{headshade}{gray}{0.85}
-\rowcolors{1}{rowshade}{white}
+\rowcolors{1}{white}{rowshade}
 
 \usemintedstyle{abap}
 \setminted{bgcolor=backcolour,
@@ -222,7 +221,7 @@ The repository tracks a minimal data set in \File{input/}: one MARCS solar model
 \begin{center}
 \begin{tabular}{llll}
 \toprule
-\rowcolor{headshade}Data & Size & TumultStudio page & Dataset\\
+Data & Size & TumultStudio page & Dataset\\
 \midrule
 Master line lists & about 1 GB & Line lists & \Code{linelists}\\
 Public model atoms & 81 MB & Model atoms & \Code{atoms}\\
@@ -324,7 +323,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
 \toprule
-\rowcolor{headshade}\textbf{Group} & \textbf{Purpose}\\
+\textbf{Group} & \textbf{Purpose}\\
 \midrule
 \endhead
 \Code{io\_params} & Run directory and memory reporting.\\
@@ -433,7 +432,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 \begin{center}
 \begin{tabular}{lll}
 \toprule
-\rowcolor{headshade} & \fort{rt_iteration_params} & \fort{rt_output_params}\\
+ & \fort{rt_iteration_params} & \fort{rt_output_params}\\
 \midrule
 \fort{solver} & \fort{linear} & \fort{quadratic}\\
 \fort{angle_quad} & \fort{radau} & \fort{lobatto}\\
@@ -468,7 +467,7 @@ The format is chosen by \fort{atmos_format} (case-insensitive), or, if it is \fo
 \begin{center}
 \begin{tabular}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{4.1cm}p{8.2cm}}
 \toprule
-\rowcolor{headshade}Format & Inferred from & Contents\\
+Format & Inferred from & Contents\\
 \midrule
 \fort{marcs} & \File{.mod} & 1D MARCS model; Teff, microturbulence, [Fe/H], abundances\\
 \fort{text} & \File{.txt} & 1D text table (below)\\
@@ -638,7 +637,7 @@ HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled in
 \begin{center}
 \begin{tabular}{>{\raggedright\arraybackslash}p{5.6cm}p{9.4cm}}
 \toprule
-\rowcolor{headshade}Module & Role\\
+Module & Role\\
 \midrule
 \File{composition\_mod} & Ionisation and molecular equilibrium, continuum opacity, line-list opacity, abundance sets\\
 \File{element\_mod}, \File{ion\_mod}, \File{molecule\_mod}, \File{level\_mod} & Chemistry data and partition functions\\
@@ -773,7 +772,7 @@ It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was d
 \begin{center}
 \begin{tabular}{>{\raggedright\arraybackslash}p{4.6cm}p{10.3cm}}
 \toprule
-\rowcolor{headshade}Module & Purpose\\
+Module & Purpose\\
 \midrule
 \Code{tumult.synthesis} & Headless workflow layer shared with TumultStudio: \Code{SynthRequest} describes a calculation, \Code{synthesize}, \Code{fit} and \Code{check\_fit} perform it, \Code{submit\_operation} runs it as a durable workflow in a per-user daemon. Also grid and line-list catalogues.\\
 \Code{tumult.abundance} & Abundances from equivalent widths (curve-of-growth inversion on shared abundance rungs) or direct profile fits; NLTE corrections.\\
@@ -804,7 +803,7 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 
 \begin{longtable}{>{\raggedright\arraybackslash}p{5.4cm} p{9.7cm}}
 \toprule
-\rowcolor{headshade}\textbf{Symptom} & \textbf{Remedy}\\
+\textbf{Symptom} & \textbf{Remedy}\\
 \midrule
 \endhead
 \Code{No Fortran compiler found} & Install \Code{gfortran}, or pass \Code{COMPILER=}.\\
