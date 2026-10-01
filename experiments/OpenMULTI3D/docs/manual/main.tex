@@ -70,6 +70,7 @@
 \setlength{\hoffset}{-0.5cm}
 \setlength{\textheight}{24.5cm}
 \setlength{\textwidth}{16cm}
+\emergencystretch=4em   % lets the break points inside \File, \Code, \Text actually be used
 %\usepackage{lmodern}    % Latin modern fontfamily
 
 %%%%%%%%%%%%%%%% COLORIZING %%%%%%%%%%%%%%%%%%%%%
@@ -80,9 +81,17 @@
 \newcommand{\cmdcolor}{\color{ForestGreen}}
 \newcommand{\git}[1]{\texttt{\cmdcolor git #1}}
 \newcommand{\filecolor}{\color{NavyBlue}}
-\newcommand{\File}[1]{{\filecolor\texttt{#1}}}
-\newcommand{\Text}[1]{{\txtcolor\texttt{#1}}}
-\newcommand{\Code}[1]{{\codecolor\texttt{#1}}}
+% Typewriter names may break after _ / . and - (without a hyphen) instead of running
+% into the margin; \brk is the shared body of \File, \Text, \Code and \Cmd.
+\usepackage{xstring}
+\newcommand{\brk}[1]{\begingroup\ttfamily
+  \def\_{\textunderscore\allowbreak}%
+  \StrSubstitute{#1}{/}{/\allowbreak}[\brkA]%
+  \StrSubstitute{\brkA}{.}{.\allowbreak}[\brkA]%
+  \brkA\endgroup}
+\newcommand{\File}[1]{{\filecolor\brk{#1}}}
+\newcommand{\Text}[1]{{\txtcolor\brk{#1}}}
+\newcommand{\Code}[1]{{\codecolor\brk{#1}}}
 \newcommand{\Cmd}[1]{{\cmdcolor\texttt{#1}}}
 \newcommand*{\FormatDigit}[1]{\textcolor{blue}{#1}}
 
@@ -305,7 +314,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsection{Namelist groups}
 
-\begin{longtable}{@{}l p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
 \textbf{Group} & \textbf{Purpose}\\
 \midrule
@@ -335,7 +344,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsubsection*{atmos\_params}
 
-\begin{longtable}{@{}l p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
 \fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
 \fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
@@ -354,7 +363,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsubsection*{composition\_params and opac\_table\_params}
 
-\begin{longtable}{@{}l p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
 \fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
 \fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
@@ -379,7 +388,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \subsubsection*{atom\_params}
 
-\begin{longtable}{@{}l p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
 \fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
 \fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
@@ -395,7 +404,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \subsubsection*{nlte\_params}
 
-\begin{longtable}{@{}l p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.6cm} p{9.9cm}@{}}
 \toprule
 \fort{convlim} & Convergence limit of the relative population change (default $10^{-3}$).\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
@@ -785,7 +794,7 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 \section{Trouble Shooting}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\begin{longtable}{@{}p{5.5cm} p{10.3cm}@{}}
+\begin{longtable}{@{}p{5.4cm} p{10.0cm}@{}}
 \toprule
 \textbf{Symptom} & \textbf{Remedy}\\
 \midrule
