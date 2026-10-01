@@ -1,4 +1,5 @@
 %%% Preamble
+\PassOptionsToPackage{table}{xcolor}
 \documentclass[paper=a4, fontsize=11pt]{scrartcl}
 \usepackage[T1]{fontenc}
 \usepackage{fourier}
@@ -105,6 +106,10 @@
 % Links are coloured text, without boxes; teal is not used for anything else.
 \definecolor{linkteal}{RGB}{0,128,128}
 \hypersetup{colorlinks=true, linkcolor=linkteal, citecolor=linkteal, urlcolor=linkteal}
+
+% Every other table row is shaded; \rowcolors applies to all tables that follow.
+\definecolor{rowshade}{gray}{0.94}
+\rowcolors{1}{white}{rowshade}
 
 \usemintedstyle{abap}
 \setminted{bgcolor=backcolour,
