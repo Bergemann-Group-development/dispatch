@@ -1,4 +1,0 @@
-# TumultStudio and notebook extras. The headless API only needs requirements.txt.
--r requirements.txt
-bokeh>=3.4
-ipykernel>=6.29

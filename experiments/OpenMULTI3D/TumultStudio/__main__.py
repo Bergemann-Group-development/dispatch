@@ -1,4 +1,4 @@
-"""Serve TumultStudio behind a landing page:  bin/tpy -m TumultStudio [--port N] [--no-show]
+"""Serve TumultStudio behind a landing page:  python -m TumultStudio [--port N] [--no-show]
 
 A session's document is built on the server before the first byte of the page is sent,
 so a browser opening the app route sees nothing for the whole build. This launcher

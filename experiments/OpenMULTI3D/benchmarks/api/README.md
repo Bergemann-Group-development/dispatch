@@ -24,10 +24,10 @@ from the scientific outcome (termination, convergence, exclusions by flag). The 
 is not in this repository, so provide its path:
 
 ```sh
-bin/tpy -m benchmarks.api.run_reference_benchmarks \
+python -m benchmarks.api.run_reference_benchmarks \
   --target-spectrum /path/to/KPNO_4000_9000.txt --preflight
 
-bin/tpy -m benchmarks.api.run_reference_benchmarks \
+python -m benchmarks.api.run_reference_benchmarks \
   --target-spectrum /path/to/KPNO_4000_9000.txt --only single_lte --wavelength 5160 5190
 ```
 

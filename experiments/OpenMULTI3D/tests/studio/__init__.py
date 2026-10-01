@@ -1,4 +1,4 @@
 """TumultStudio components and a few real Bokeh documents.
 
-Selected explicitly by path; needs requirements-gui.txt.
+Selected explicitly by path; needs the gui extra (pip install -e ".[gui]").
 """

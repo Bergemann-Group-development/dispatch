@@ -4,13 +4,13 @@ The layout follows [reports/tests.md](../reports/tests.md). Directories are exec
 boundaries first, and within a boundary files are grouped by scientific or application
 concern.
 
-| Directory | Contents | Prerequisites beyond `requirements-test.txt` |
+| Directory | Contents | Prerequisites beyond the `test` extra |
 | --- | --- | --- |
 | `science/` | Analytic and invariant checks of the headless calculations. | none |
 | `io/` | File formats, units, records and readers. | none |
 | `workflows/` | Public operations with the native boundary under the test's control. | none |
 | `execution/` | Scheduler, subprocess, daemon, cancellation, restart. | a POSIX process environment |
-| `studio/` | TumultStudio components and real Bokeh documents. | `requirements-gui.txt` |
+| `studio/` | TumultStudio components and real Bokeh documents. | the `gui` extra |
 | `browser/` | Short journeys through the real TumultStudio app. | `node` with the `playwright` package and its Chromium |
 | `native/` | HOP ABI, EOS and opacity, small real Dispatch workflows, and tests of files in the local input bundle. | a built `libhop`/`dispatch.x`/`hop_prune.x`, and the input bundle (`input/linemasks/` is not tracked) |
 
@@ -22,18 +22,17 @@ from `conftest.py` or from another test module.
 ## Running
 
 ```bash
-pip install -r requirements-test.txt
+pip install -e ".[test]"
 python -m pytest                                  # default headless gate
 python -m pytest tests/execution                  # real processes
-python -m pytest tests/studio                     # needs requirements-gui.txt
+python -m pytest tests/studio                     # needs the gui extra
 python -m pytest tests/browser                    # needs node + playwright
 python -m pytest tests/native                     # needs the built library and data
 ```
 
 Run from the project directory. `pytest.ini` sets `testpaths` to the three headless
 directories, so a bare `python -m pytest` is the default gate and every other suite is
-selected by path. `bin/tpy -m pytest ...` runs the same commands on the interpreter that
-carries the dependencies when no virtual environment is active.
+selected by path.
 
 Markers are checked strictly. Only capability markers exist, for prerequisites that cut
 across the directories: `slow`, and `requires_input_data` for a test needing a model

@@ -48,8 +48,7 @@ tests/**/*.pyc
 # are visible.
 
 # The parent repository ignores *.txt as data; these are source.
-!requirements-gui.txt
-!requirements-test.txt
+!pyproject.toml
 !pytest.ini
 
 # Local reports, helper scripts and the retired GUI are not repository source.
@@ -59,7 +58,6 @@ TumultStudio2/
 # Helper scripts are source; everything else that lands in bin/ is not.
 !bin/
 bin/*
-!bin/tpy
 
 # Reusable, input-agnostic API benchmark drivers, the convergence namelists
 # and the paper benchmark runs.

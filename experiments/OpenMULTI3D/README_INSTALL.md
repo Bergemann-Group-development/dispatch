@@ -48,16 +48,13 @@ gfortran --version          # check it is on PATH
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt        # headless use: the tumult package
-pip install -r requirements-gui.txt    # adds TumultStudio (Bokeh) and notebook support
+pip install -e .          # headless use: the tumult package
+pip install -e ".[gui]"   # adds TumultStudio (Bokeh) and notebook support
 ```
 
-`requirements-gui.txt` includes `requirements.txt`, so the second command alone gives the
-full setup.
-
-`tumult` is imported from this checkout rather than installed, so keep the environment
-activated and start Python here: an interactive `python` session, a notebook or a script
-saved in this directory all import `tumult` when started from this directory.
+The editable install (`pyproject.toml`) makes `tumult` and `TumultStudio` importable from
+any directory while the environment is active. They still read `libhop.so`, `dispatch.x`
+and `input/` from this checkout, so do not move it.
 
 ## 3. Build the native code
 
@@ -184,7 +181,7 @@ is missing, so `../../config/Makefile` was not found. Build inside
 `fetch_input_data.py` on macOS: the python.org framework Python ships without a CA trust
 store. Run the installer's certificate step once, for example
 `/Applications/Python\ 3.12/Install\ Certificates.command`, or run the script with the
-virtual environment active: `requirements.txt` installs the `certifi` bundle and the
+virtual environment active: `pip install -e .` installs the `certifi` bundle and the
 script uses it whenever it is importable. `--insecure` skips certificate verification as
 a last resort.
 
@@ -193,8 +190,8 @@ running a script: a conda environment prefixed onto `PATH` shadows `.venv` with 
 interpreter that carries none of the dependencies. Run `.venv/bin/python` explicitly, or
 deactivate conda before activating `.venv`.
 
-**`ModuleNotFoundError: No module named 'tumult'`**: the checkout is not importable from
-where Python was started. Start it from this directory (section 2).
+**`ModuleNotFoundError: No module named 'tumult'`**: the environment with the editable
+install is not active. Activate `.venv` (section 2).
 
 **`libhop.so not found at HOP/standalone/build/libhop.so`**: the standalone library was
 not built, or was built into another directory. Run `make -C HOP/standalone`, or point

@@ -1,6 +1,6 @@
 """TumultStudio document construction, callable by Bokeh and local harnesses.
 
-Run with:   bin/tpy -m TumultStudio   (or bokeh serve --show TumultStudio, without the landing page)
+Run with:   python -m TumultStudio   (or bokeh serve --show TumultStudio, without the landing page)
 
 :func:`build` composes one document: the :class:`~.context.AppContext` with its services
 (delivery, workflows, persistence), the workspace and the canvas over it, the tools and

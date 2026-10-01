@@ -7,7 +7,7 @@ description: Build and run OpenMULTI3D's dispatch.x directly from a namelist, re
 
 Everything here runs from the OpenMULTI3D directory. Setup is in `README_INSTALL.md`, a
 first run in `QUICKSTART.md`, and printing and reading outputs in `docs/FAQ.md`. Python
-goes through `bin/tpy`.
+runs in the activated `.venv`.
 
 ## Build
 

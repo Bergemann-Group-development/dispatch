@@ -190,11 +190,11 @@ The build takes a few minutes. The compiler is \Code{gfortran} if it is on the \
 \begin{minted}{bash}
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt        # core: numpy, scipy, pandas, numba, astropy, ...
-pip install -r requirements-gui.txt    # additionally Bokeh, for TumultStudio
+pip install -e .          # core: numpy, scipy, astropy, ...
+pip install -e ".[gui]"   # additionally Bokeh, for TumultStudio
 \end{minted}
 
-\Code{tumult} is imported from the checkout, not installed, so Python must be started from the experiment directory. The wrapper \File{bin/tpy} runs Python with the checkout importable and selects, in this order, \Code{\$TUMULT\_PYTHON}, \File{.venv}, the conda environment \Code{\$TUMULT\_ENV} (default \Code{tumult\_studio}) and \Code{python3}. A conda prefix on \Code{PATH} can shadow \File{.venv}. If \Code{numba} cannot be imported, call \File{bin/tpy} or \File{.venv/bin/python} explicitly.
+The editable install makes \Code{tumult} and \Code{TumultStudio} importable from any directory while the environment is active. They still read \File{libhop.so}, \File{dispatch.x} and \File{input/} from the checkout, so the checkout must not be moved. If \Code{numba} cannot be imported, a conda prefix on \Code{PATH} is shadowing \File{.venv}; deactivate conda or call \File{.venv/bin/python} explicitly.
 
 \subsection{Input data}
 
@@ -223,7 +223,7 @@ Three rules apply to every invocation. The namelist argument is mandatory (there
 \begin{minted}{bash}
 git pull
 make -j
-pip install -r requirements.txt
+pip install -e .
 \end{minted}
 
 If local changes conflict, commit them or use \Code{git stash} before pulling. When \File{HOP/standalone/libhop.h} changes, rebuild so that library and Python bindings agree.
@@ -680,7 +680,7 @@ The table is printed by the task list around the task loop and at the end of the
 \section{Python and TumultStudio} \label{sec:python}
 %%%%%%%%%%%%%%%%%%%%%%
 
-All Python entry points live in the package \Code{tumult}. Start Python from the experiment directory, for instance with \File{bin/tpy} or inside a Jupyter notebook started there.
+All Python entry points live in the package \Code{tumult}. Activate the virtual environment first; scripts and notebooks may live anywhere.
 
 \subsection{Reading a run}
 
@@ -757,8 +757,8 @@ Module & Purpose\\
 \subsection{TumultStudio}
 
 \begin{minted}{bash}
-bin/tpy -m TumultStudio              # landing page at http://localhost:5006
-bin/tpy -m TumultStudio --port 5010 --no-show
+python -m TumultStudio              # landing page at http://localhost:5006
+python -m TumultStudio --port 5010 --no-show
 \end{minted}
 
 TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences configure grids, the line list and reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}. Restart the workflow daemon after editing operation code. \File{docs/GUIWorkflow.md} describes the intended workflow.
@@ -778,8 +778,8 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_nu}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
 Run aborts while reading the line list & HOP aborts on an unreadable list. The first line of each block must be a quoted species label (Sec.~\ref{sec:linelist}).\\
 \Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}.\\
-\Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Use \File{bin/tpy}.\\
-\Code{No module named 'tumult'} & Start Python from the experiment directory.\\
+\Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Deactivate conda or call \File{.venv/bin/python}.\\
+\Code{No module named 'tumult'} & Activate the virtual environment where \Code{pip install -e .} was run.\\
 \Code{CERTIFICATE\_VERIFY\_FAILED} on macOS & Run the installer's certificate script, or use the virtual environment.\\
 Port 5006 in use & Start TumultStudio with \Code{--port}.\\
 Population updates alternate in sign, no convergence & Check \fort{preconditioning}, lower \fort{ng_step} or switch it off, and read \File{convergence\_report\_NNN.txt} for the offending level.\\

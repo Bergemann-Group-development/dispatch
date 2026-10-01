@@ -3,15 +3,14 @@
 This tutorial runs one small spectrum synthesis, reads its output in Python, plots it,
 compares LTE with NLTE, changes an input and opens the result in TumultStudio. It needs
 the verified installation from [README_INSTALL.md](README_INSTALL.md): the built
-`dispatch.x`, the Python environment with `requirements-gui.txt` installed and the
+`dispatch.x`, the Python environment with `.[gui]` installed and the
 tracked input data. No download is required until the optional 3D example.
 
 ## Where to work
 
 Every command and code block runs in this directory (`dispatch/experiments/OpenMULTI3D`),
 with the Python environment activated; all paths are relative to it. A script or notebook
-saved here imports `tumult` directly; one kept elsewhere needs this directory on its
-Python path, for example through `PYTHONPATH`. New files here and the outputs under
+kept anywhere imports `tumult` while the environment is active. New files here and the outputs under
 `data/` are ignored by Git, so following the tutorial leaves the tracked files unchanged.
 
 Shell commands are shown with a `$` prompt; everything else is Python.
