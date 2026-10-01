@@ -1,5 +1,4 @@
 %%% Preamble
-\PassOptionsToPackage{table}{xcolor}
 \documentclass[paper=a4, fontsize=11pt]{scrartcl}
 \usepackage[T1]{fontenc}
 \usepackage{fourier}
@@ -13,7 +12,6 @@
 \usepackage{siunitx}
 \usepackage{esdiff}
 \usepackage{booktabs}
-\usepackage{longtable}
 
 %%% Code snippets
 \usepackage{listings}
@@ -107,9 +105,14 @@
 \definecolor{linkteal}{RGB}{0,128,128}
 \hypersetup{colorlinks=true, linkcolor=linkteal, citecolor=linkteal, urlcolor=linkteal}
 
-% Every other table row is shaded; \rowcolors applies to all tables that follow.
+% Tables use tabularray: every other data row is shaded (\tblshade), and the shading
+% spans the same width as the booktabs rules.
+\usepackage{tabularray}
+\UseTblrLibrary{booktabs}
+\DefTblrTemplate{caption}{default}{}   % tables are untitled: no "Table n.m:" line
+\DefTblrTemplate{conthead}{default}{}
+\DefTblrTemplate{contfoot}{default}{}
 \definecolor{rowshade}{gray}{0.94}
-\rowcolors{1}{white}{rowshade}
 
 \usemintedstyle{abap}
 \setminted{bgcolor=backcolour,
@@ -219,7 +222,7 @@ The editable install makes \Code{tumult} and \Code{TumultStudio} importable from
 The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \begin{center}
-\begin{tabular}{llll}
+\begin{tblr}{colspec={llll}, row{even}={bg=rowshade}}
 \toprule
 Data & Size & TumultStudio page & Dataset\\
 \midrule
@@ -229,7 +232,7 @@ Metal-opacity tables & 4 $\times$ 182 MB & Opacity tables & \Code{absmet}\\
 MARCS grid & about 400 MB & Atmosphere grids & \Code{marcs}\\
 Stagger and M3D-IS 3D grids & per model & Atmosphere grids & \Code{stagger-dwarfs}, \dots\\
 \bottomrule
-\end{tabular}
+\end{tblr}
 \end{center}
 
 The first three datasets are fetched with
@@ -321,11 +324,10 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsection{Namelist groups}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \textbf{Group} & \textbf{Purpose}\\
 \midrule
-\endhead
 \Code{io\_params} & Run directory and memory reporting.\\
 \Code{timer\_params} & Timer table of the DISPATCH framework.\\
 \Code{console\_params} & Verbosity.\\
@@ -342,7 +344,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \Code{spectrum\_params} & Output wavelength grid.\\
 \Code{m3d\_debug\_params} & Internal debugging switches (\fort{check_NaN}, \fort{pcheck}, \fort{fcheck}, \fort{linecheck}, \fort{lvlcheck}, \dots).\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 
 \subsubsection*{io\_params and console\_params}
@@ -351,7 +353,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 
 \subsubsection*{atmos\_params}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
 \toprule
 \fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
 \fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
@@ -366,11 +368,11 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{pchip_interpolation}, \fort{log_interpolation} & Interpolation of the model onto the slab mesh (default \fort{T}).\\
 \fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 \subsubsection*{composition\_params and opac\_table\_params}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
 \toprule
 \fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
 \fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
@@ -385,7 +387,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{opac_table_params}).\\
 \fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
 
@@ -395,7 +397,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \subsubsection*{atom\_params}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
 \toprule
 \fort{atom_file} & Model atom(s) (Sec.~\ref{sec:atom}). \fort{atom_root} is prepended.\\
 \fort{use_atom_abnd} & Use the abundance given in the atom file (default \fort{F}: use the abundance table plus [Fe/H]).\\
@@ -407,11 +409,11 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \fort{overlapping_bb}, \fort{overlapping_bf} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
 \fort{use_classic_col}, \fort{colscale}, \fort{cbbesc}, \dots & Collision treatment and scaling factors.\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 \subsubsection*{nlte\_params}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.6cm} p{9.5cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{odd}={bg=rowshade}}
 \toprule
 \fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have converged (default \fort{T}).\\
@@ -423,14 +425,14 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \fort{ng_step} & Ng acceleration: $-1$ off, 0 automatic gate (default), $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
 \fort{maser_chi_floor}, \fort{suppress_masers}, \dots & Guards against inverted populations.\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 \subsubsection*{rt\_iteration\_params and rt\_output\_params}
 
 Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, \fort{maxiter}, \fort{include_linelist}, \fort{include_absmet} and the switches \fort{sample_back_opac} and \fort{sample_linelist}, but with different defaults for the two passes.
 
 \begin{center}
-\begin{tabular}{lll}
+\begin{tblr}{colspec={lll}, row{even}={bg=rowshade}}
 \toprule
  & \fort{rt_iteration_params} & \fort{rt_output_params}\\
 \midrule
@@ -441,7 +443,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 \fort{include_absmet} & \fort{T} & \fort{F}\\
 \fort{maxiter} & 99 if \fort{convlim}$>0$, else 0 & 0\\
 \bottomrule
-\end{tabular}
+\end{tblr}
 \end{center}
 
 \fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
@@ -465,7 +467,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 The format is chosen by \fort{atmos_format} (case-insensitive), or, if it is \fort{'unknown'}, from the file name.
 
 \begin{center}
-\begin{tabular}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{4.1cm}p{8.2cm}}
+\begin{tblr}{colspec={Q[l,wd=2.3cm]Q[l,wd=4.1cm]Q[l,wd=8.2cm]}, row{even}={bg=rowshade}}
 \toprule
 Format & Inferred from & Contents\\
 \midrule
@@ -479,7 +481,7 @@ Format & Inferred from & Contents\\
 \fort{co5bold} & not inferred & CO5BOLD stream binary\\
 \fort{save} & \File{data/} & atmosphere saved by an earlier run\\
 \bottomrule
-\end{tabular}
+\end{tblr}
 \end{center}
 
 The 1D text format has the model name in the first line, the number of depth points (optionally followed by [Fe/H]) in the second, and a row per depth point:
@@ -635,7 +637,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
 HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled into \File{dispatch.x} and, without the framework, into \File{libhop.so} and \File{hop\_prune.x} (\File{HOP/standalone/}).
 
 \begin{center}
-\begin{tabular}{>{\raggedright\arraybackslash}p{5.6cm}p{9.4cm}}
+\begin{tblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.4cm]}, row{even}={bg=rowshade}}
 \toprule
 Module & Role\\
 \midrule
@@ -650,7 +652,7 @@ Module & Role\\
 \File{atmos\_reader\_mod} & Atmosphere readers shared with \File{hop\_prune.x}\\
 \File{console\_mod} & Console channels (atmos, m3d, hop) and verbosity\\
 \bottomrule
-\end{tabular}
+\end{tblr}
 \end{center}
 
 \Code{tumult.hop.HopEOS} calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
@@ -770,7 +772,7 @@ It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was d
 \subsection{Higher-level modules}
 
 \begin{center}
-\begin{tabular}{>{\raggedright\arraybackslash}p{4.6cm}p{10.3cm}}
+\begin{tblr}{colspec={Q[l,wd=4.6cm]Q[l,wd=10.3cm]}, row{even}={bg=rowshade}}
 \toprule
 Module & Purpose\\
 \midrule
@@ -783,7 +785,7 @@ Module & Purpose\\
 \Code{tumult.linelist}, \Code{tumult.linemask} & Line-list readers (TS, VALD, linemake, MOOG and native formats) and line masks.\\
 \Code{tumult.korg} & Comparison with Korg.jl.\\
 \bottomrule
-\end{tabular}
+\end{tblr}
 \end{center}
 
 \File{docs/FAQ.md} contains worked examples. Names of concepts follow \File{docs/GLOSSARY.md}.
@@ -801,11 +803,10 @@ TumultStudio opens spectra, runs and atoms; displays them on a canvas with a ran
 \section{Trouble Shooting}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{5.4cm} p{9.7cm}}
+\begin{longtblr}{colspec={Q[l,wd=5.4cm]Q[l,wd=9.7cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \textbf{Symptom} & \textbf{Remedy}\\
 \midrule
-\endhead
 \Code{No Fortran compiler found} & Install \Code{gfortran}, or pass \Code{COMPILER=}.\\
 \Code{No rule to make target '/Makefile.dep'} & The parent DISPATCH checkout is missing; clone the whole repository.\\
 \Code{Fortran runtime error: End of record} at start & The namelist path is too long. Use a short relative path (\fort{datadir} may be absolute).\\
@@ -819,6 +820,6 @@ Port 5006 in use & Start TumultStudio with \Code{--port}.\\
 Population updates alternate in sign, no convergence & Check \fort{preconditioning}, lower \fort{ng_step} or switch it off, and read \File{convergence\_report\_NNN.txt} for the offending level.\\
 Workflow reports \Code{interrupted} & The daemon was restarted. Resubmit; the daemon log is in \File{/tmp/tumult-<uid>/daemon.log}.\\
 \bottomrule
-\end{longtable}
+\end{longtblr}
 
 \end{document}
