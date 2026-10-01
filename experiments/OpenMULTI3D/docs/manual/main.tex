@@ -422,17 +422,18 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \toprule
 \fort{&linelist_params} & Meaning\\
 \midrule
-\fort{linelist_file}, \fort{linelist_folder} & Name the line list.\\
+\fort{linelist_file} & Name the line list. Can also take multiple values. \\
+\fort{linelist_folder} & Name a folder containing all line lists to be read.\\
 \fort{dlam} & Distance from a window up to which line wings are followed (default \SI{100}{\angstrom}).\\
 \fort{tolerance} & Keep a transition as long as its opacity exceeds this fraction of the continuum (default $10^{-4}$).\\
-\fort{only_elements}, \fort{exclude_elements} & Space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions.\\
+{\fort{only_elements},\\\fort{exclude_elements}} & Space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions.\\
 \fort{line_scattering} & Treat part of the line opacity as scattering (default \fort{F}). This partitions the line extinction rather than adding to it.\\
 \bottomrule
 \end{longtblr}
 
 \begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
-\fort{&composition_params} and \fort{&opac_table_params} & Meaning\\
+\fort{&composition_params} & Meaning\\
 \midrule
 \fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
 \fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
@@ -443,13 +444,20 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for hydrogen lines (default \fort{T}).\\
 \fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
 \fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
-{\fort{disable_ga},\\\fort{disable_stark},\\\fort{disable_vdw}} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
-\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{&opac_table_params}).\\
-\fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
+{\fort{disable_rad},\\\fort{disable_stk},\\\fort{disable_vdw}} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
 \bottomrule
 \end{longtblr}
 
 Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
+
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&opac_table_params} & Meaning\\
+\midrule
+\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations.\\
+\fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
+\bottomrule
+\end{longtblr}
 
 \begin{center}
 \begin{tblr}{colspec={lll}, row{even}={bg=rowshade}}
@@ -556,8 +564,8 @@ NK, NLINE, NCONT, NRFIX
 # NK levels:
     ecm, g, 'label', ion
 # NLINE bound-bound transitions:
-    J, I, F, NQ, QMAX, Q0, IW, GA, GW, GS, PROFILE
-    (dq, wgt, f, ga, gw, gs)         # IW lines if IW > 1
+    J, I, F, NQ, QMAX, Q0, IW, GRAD, GVDW, GSTK, PROFILE
+    (dq, wgt, f, grad, gw, gs)         # IW lines if IW > 1
 # NCONT bound-free transitions:
     J, I, A0, NQ, LMAX
     (XL, ALPHA)                      # if LMAX < 0
@@ -572,7 +580,7 @@ END
 
 \fort{ecm} is the level energy in \si{\per\cm}, \fort{g} the statistical weight, \fort{ion} the ionisation stage (1 for neutral). For a transition, \fort{J} and \fort{I} are the upper and lower level (counted from 1), \fort{F} the oscillator strength, \fort{NQ} the number of frequency points, \fort{QMAX} the outermost point and \fort{Q0} the point where the profile changes from the Doppler core to the wings, both in units of the Doppler width \fort{qnorm}. \fort{IW} is the number of hyperfine or isotopic components. \fort{GA} is the radiative damping rate, \fort{GW} the van der Waals parameter (below 20: factor on the classical value; above 20: Anstee--Barklem--O'Mara form) and \fort{GS} the Stark parameter. The final word \fort{PROFILE} selects \fort{VOIGT} or \fort{HLINOP} (a hydrogen profile); anything else falls back to \fort{VOIGT}. For a bound-free transition, \fort{A0} is the cross-section at the edge in cgs units and \fort{LMAX} the edge wavelength in {\AA}. A positive \fort{LMAX} selects the hydrogenic wavelength dependence. A negative value means tabulated pairs (\fort{XL} in {\AA}, decreasing; \fort{ALPHA} in cgs units) follow. The collision block starts with the word \fort{GENCOL} (or \fort{END} for none). Keys are \fort{TEMP} (temperature grid), \fort{OHM}/\fort{OHMEGA} (collision strengths), \fort{CE} and \fort{CI} (excitation and ionisation by electrons), \fort{CH} (neutral hydrogen collisions), \fort{CHI} and \fort{CH0}; the details are in \File{SRC/atom\_mod.f90}.
 
-\textbf{Table format.} Same header lines, then tables of levels (\fort{idx ev g ion label}, energies in eV, indices from 0), transitions (\fort{idx i j lam_air lower_ev loggf ga gv gq nnu qmax q0 profile iso}, wavelengths in air {\AA}), bound-free data (\fort{icont lam alpha}) and collisions (a temperature header followed by \fort{idx key l u values}). This format is convenient to produce from Python (\Code{tumult.model\_atom\_class}).
+\textbf{Table format.} Same header lines, then tables of levels (\fort{idx ev g ion label}, energies in eV, indices from 0), transitions (\fort{idx i j lam_air lower_ev loggf grad gvdw gstk nnu qmax q0 profile iso}, wavelengths in air {\AA}), bound-free data (\fort{icont lam alpha}) and collisions (a temperature header followed by \fort{idx key l u values}). This format is convenient to produce from Python (\Code{tumult.model\_atom\_class}).
 
 \subsection{Line list and isotope formats}\label{sec:linelist}
 
@@ -586,17 +594,17 @@ The line list holds transitions that are treated in LTE (the NLTE atoms are excl
   ...
 \end{minted}
 
-The first line is the quoted species label (an element and a Roman numeral for the ionisation stage, or a molecule such as \fort{'CH'}), the second the isotope label and the number of records. Each record contains the air wavelength in {\AA}, the lower-level energy in eV, $\log gf$, and the broadening parameters \fort{gv}, \fort{ga} and \fort{gq}, optionally followed by the level indices \fort{i j}. Between 3 and 10 numbers are accepted; missing trailing columns are zero. The isotope label \fort{'0'} stands for the natural mixture; a positive value selects an isotope defined in \fort{isotope_file}. A line list written by a run or by \File{hop\_prune.x} carries two more columns, \fort{strength} and \fort{reach} (in {\AA}), which a later run reads back to visit each patch only with the transitions that reach it. A hydrogen block (\fort{'H I'}) is read in one piece and uses hydrogen Stark profiles.
+The first line is the quoted species label (an element and a Roman numeral for the ionisation stage, or a molecule such as \fort{'CH'}), the second the isotope label and the number of records. Each record contains the air wavelength in {\AA}, the lower-level energy in eV, $\log gf$, and the broadening parameters \fort{gvdw}, \fort{grad} and \fort{gstk}, optionally followed by the level indices \fort{i j}. Between 3 and 10 numbers are accepted; missing trailing columns are zero. The isotope label \fort{'0'} stands for the natural mixture; a positive value selects an isotope defined in \fort{isotope_file}. A line list written by a run or by \File{hop\_prune.x} carries two more columns, \fort{strength} and \fort{reach} (in {\AA}), which a later run reads back to visit each patch only with the transitions that reach it. A hydrogen block (\fort{'H I'}) is read in one piece and uses hydrogen Stark profiles.
 
 The broadening parameters follow these conventions:
 
 \begin{itemize}
-    \item \fort{ga} (radiative damping): 0 computes the rate from $\log gf$; otherwise the rate in \si{\per\s}.
-    \item \fort{gq} (Stark): 0 selects the Cowley (1971) recipe at \SI{e4}{\kelvin}; between $-10$ and 0 it is $\log\gamma_4$; below $-10$ the SIU recipe; positive values are used directly.
-    \item \fort{gv} (van der Waals): $\ge 20$ is the Barklem form (the integer part is the cross-section $\sigma$ in atomic units, the fractional part the velocity exponent $\alpha$); between $0$ and $20$ a multiplicative enhancement of the Uns\"old approximation; between $-20$ and $0$ the decadic logarithm of the width; below $-20$ the SIU recipe; 0 is the plain Uns\"old approximation (no van der Waals broadening for molecules).
+    \item \fort{grad} (radiative damping): 0 computes the rate from $\log gf$; otherwise the rate in \si{\per\s}.
+    \item \fort{gstk} (Stark): 0 selects the Cowley (1971) recipe at \SI{e4}{\kelvin}; between $-10$ and 0 it is $\log\gamma_4$; below $-10$ the SIU recipe; positive values are used directly.
+    \item \fort{gvdw} (van der Waals): $\ge 20$ is the Barklem form (the integer part is the cross-section $\sigma$ in atomic units, the fractional part the velocity exponent $\alpha$); between $0$ and $20$ a multiplicative enhancement of the Uns\"old approximation; between $-20$ and $0$ the decadic logarithm of the width; below $-20$ the SIU recipe; 0 is the plain Uns\"old approximation (no van der Waals broadening for molecules).
 \end{itemize}
 
-\fort{disable_ga}, \fort{disable_stark} and \fort{disable_vdw} switch these contributions off.
+\fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 
 The isotope file starts each element with a line \fort{Symbol niso}, followed by \fort{niso} lines \fort{iso mass fraction}; lines starting with \texttt{!} are comments:
 
