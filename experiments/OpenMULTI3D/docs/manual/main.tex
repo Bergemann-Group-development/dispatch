@@ -342,7 +342,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \Code{\&console\_params} & Verbosity.\\
 \Code{\&timer\_params} & Timer table of the DISPATCH framework.\\
 \Code{\&opac\_table\_params} & Binned or sampled opacity tables and metal opacities (absmet).\\
-\Code{\&m3d\_debug\_params} & Internal debugging switches (\fort{check_NaN}, \fort{pcheck}, \fort{fcheck}, \fort{linecheck}, \fort{lvlcheck}, \dots).\\
+\Code{\&m3d\_debug\_params} & Internal debugging switches.\\
 \bottomrule
 \end{longtblr}
 
@@ -361,7 +361,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{snap} & Snapshot number for Stagger models.\\
 \fort{dims} & Number of vertical subdomains (slabs) the atmosphere is divided into (Sec.~\ref{sec:code}).\\
 \fort{amr} & How the z-slabs are graded: \fort{'P'} (default) equal steps of accumulated $|\Delta\log P_\mathrm{e}|$, \fort{'T'} equal steps of temperature, \fort{'Z'} equal index steps, \fort{''} no grading. Grading raises \fort{dims} to at least 8.\\
-\fort{pchip_interpolation}, \fort{log_interpolation} & Interpolation of the model onto the slab mesh (default \fort{T}).\\
+{\fort{pchip_interpolation},\\\fort{log_interpolation}} & Interpolation of the model onto the slab mesh (default \fort{T}).\\
 \fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
 \bottomrule
 \end{longtblr}
@@ -387,8 +387,8 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{exclude_trace_cont} & Remove bound-free transitions of the atom from the LTE background to avoid double counting (default \fort{T}).\\
 \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
 \fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
-\fort{overlapping_bb}, \fort{overlapping_bf} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
-\fort{use_classic_col}, \fort{colscale}, \fort{cbbesc}, \dots & Collision treatment and scaling factors.\\
+{\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
+{\fort{use_classic_col},\\\fort{colscale},\\\fort{cbbesc}, \dots} & Collision treatment and scaling factors.\\
 \bottomrule
 \end{longtblr}
 
@@ -402,9 +402,9 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{scattering_preconditioning} & Local approximate operator for continuum scattering (default \fort{F}), limited by \fort{scat_op_max}.\\
 \fort{decouple_continuum} & Use separate frequency sets for bound-bound and bound-free radiation (default \fort{T}).\\
 \fort{initial_Jnu}, \fort{fixed_Jnu} & Initial radiation field (\fort{'Planck'}) or a fixed value.\\
-\fort{lse_solver}, \fort{sor_w}, \fort{cswitch}, \fort{max_update}, \fort{min_pop_frac} & Statistical-equilibrium solver and its damping and safeguards.\\
+{\fort{lse_solver},\\\fort{sor_w},\\\fort{cswitch},\\\fort{max_update},\\\fort{min_pop_frac}} & Statistical-equilibrium solver and its damping and safeguards.\\
 \fort{ng_step} & Ng acceleration: $-1$ off, 0 automatic gate (default), $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
-\fort{maser_chi_floor}, \fort{suppress_masers}, \dots & Guards against inverted populations.\\
+{\fort{maser_chi_floor},\\\fort{suppress_masers}, \dots} & Guards against inverted populations.\\
 \bottomrule
 \end{longtblr}
 
@@ -421,11 +421,11 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
 \fort{molec_file} & Molecular data (default \File{input/molec\_data\_BC.txt}).\\
 \fort{abundances} & Per-element overrides as a string, e.g. \fort{'Mg=7.6 Eu=0.5'}: $\log\epsilon$, or an offset when \fort{relative_abundances=T}.\\
-\fort{alpha_enhancement}, \fort{r_process_enhancement} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U.\\
+{\fort{alpha_enhancement},\\\fort{r_process_enhancement}} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U.\\
 \fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for hydrogen lines (default \fort{T}).\\
 \fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
 \fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
-\fort{disable_ga}, \fort{disable_stark}, \fort{disable_vdw} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
+{\fort{disable_ga},\\\fort{disable_stark},\\\fort{disable_vdw}} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
 \fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{&opac_table_params}).\\
 \fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
 \bottomrule
