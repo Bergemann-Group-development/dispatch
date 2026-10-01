@@ -283,7 +283,7 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
 &atmos_params        atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_....mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
-&nlte_params         convlim=1d-2 ng_step=20 /
+&nlte_params         convlim=1.0d-2 ng_step=20 /
 &rt_iteration_params maxiter=99 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /
