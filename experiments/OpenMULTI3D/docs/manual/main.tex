@@ -201,20 +201,28 @@ The editable install makes \Code{tumult} and \Code{TumultStudio} importable from
 The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \begin{center}
-\begin{tabular}{@{}llp{6.3cm}@{}}
+\begin{tabular}{@{}llll@{}}
 \toprule
-Data & TumultStudio page & Command\\
+Data & Size & TumultStudio page & Dataset\\
 \midrule
-Master line lists (about 1 GB) & Line lists & \Code{input\_data fetch linelists}\\
-Public model atoms (81 MB) & Model atoms & \Code{input\_data fetch atoms}\\
-Metal-opacity tables (4 $\times$ 182 MB) & Opacity tables & \Code{input\_data fetch absmet}\\
-MARCS grid (about 400 MB) & Atmosphere grids & \Code{grid\_catalog fetch marcs input/atmos/MARCS}\\
-Stagger and M3D-IS 3D grids & Atmosphere grids & \Code{grid\_catalog fetch GRID DEST --snapshots N}\\
+Master line lists & about 1 GB & Line lists & \Code{linelists}\\
+Public model atoms & 81 MB & Model atoms & \Code{atoms}\\
+Metal-opacity tables & 4 $\times$ 182 MB & Opacity tables & \Code{absmet}\\
+MARCS grid & about 400 MB & Atmosphere grids & \Code{marcs}\\
+Stagger and M3D-IS 3D grids & per model & Atmosphere grids & \Code{stagger-dwarfs}, \dots\\
 \bottomrule
 \end{tabular}
 \end{center}
 
-In the table, \Code{input\_data} stands for \Code{python -m tumult.synthesis.input\_data} and \Code{grid\_catalog} for \Code{python -m tumult.synthesis.grid\_catalog}. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code reads it from (\File{input/linelists/master\_linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}). \Code{list} shows the files, \Code{--file NAME} selects single files and \Code{--dry-run} prints the plan. \Code{grid\_catalog list} names the available grids; the 3D grids are fetched per model and snapshot. The first three datasets come from one MPCDF Keeper share. Downloaded files are not tracked by git.
+The first three datasets are fetched with
+\begin{minted}{bash}
+python -m tumult.synthesis.input_data fetch linelists atoms absmet
+\end{minted}
+and the grids with
+\begin{minted}{bash}
+python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
+\end{minted}
+(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The first three datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code reads it from (\File{input/linelists/master\_linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}). \Code{list} shows the files, \Code{--file NAME} selects single files and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
 
 \subsection{First run}
 
