@@ -991,6 +991,7 @@ contains
     class(nlte_patch_t):: self
     class(atom_data_t), pointer :: adata
     character(len=64) :: text
+    character(len=1) :: ng_mark
     integer :: i, flux_pos
     real(8) :: global
     logical, save :: first_time = .true.
@@ -1018,8 +1019,13 @@ contains
           first_time = .false.
           write(console_unit, '(A8, A10, A5, A14)') 'iter', 'global', 'lvl', 'pos'
         endif
-        write(console_unit, '(I4, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
-          self%iter, self%maxiter, abs(self%global*100), elvl, epos
+        ! an asterisk after the iteration number marks an Ng-accelerated iteration
+        ng_mark = ' '
+        do i=1, self%natom
+          if (self%atoms(i)%ng_applied(self%iter)) ng_mark = '*'
+        end do
+        write(console_unit, '(I3, A1, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
+          self%iter, ng_mark, self%maxiter, abs(self%global*100), elvl, epos
       else
         write(console_unit,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
           '  local =', self%local,  ', global =', self%global, &

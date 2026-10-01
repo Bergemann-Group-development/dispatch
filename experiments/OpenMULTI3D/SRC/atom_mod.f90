@@ -165,6 +165,7 @@ MODULE atom_mod
       procedure :: gencol
       procedure :: set_colliders
       procedure :: ng_acceleration
+      procedure :: ng_applied
     end type atom_type
     !---------------------------------------------------------------------
 
@@ -230,14 +231,14 @@ MODULE atom_mod
     real(8), dimension(:), allocatable, private, save :: line_grid
     integer, public :: cswitch=1
     ! Ng acceleration schedule:
-    !   < 0  off (default)
-    !   = 0  automatic -- accumulate every iteration and let the gate in ng_mod
+    !   < 0  off
+    !   = 0  automatic (default) -- accumulate every iteration and let the gate in ng_mod
     !        decide, using the contraction rate, its stationarity, the fraction
     !        of corrections at the update limiter, and the conditioning of the
     !        least-squares fit.  ng_start is then unused.
     !   > 0  fixed schedule, applying on the iteration after each
     !        mod(iter-ng_start, ng_step)==0.
-    integer, public :: ng_step=-1, ng_start=8
+    integer, public :: ng_step=0, ng_start=8
     logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
 
@@ -2733,6 +2734,18 @@ MODULE atom_mod
     end associate
     call trace%end(itimer)
   END SUBROUTINE ng_acceleration
+
+  !===============================================================================
+  !> True when the Ng extrapolation was applied to this atom's populations in
+  !> iteration iter.
+  !===============================================================================
+  LOGICAL FUNCTION ng_applied (self, iter)
+    class(atom_type), intent(in) :: self
+    integer, intent(in) :: iter
+    !-----------------------------------------------------------------------------
+    ng_applied = .false.
+    if (associated(self%ng)) ng_applied = self%ng%coeff_valid .and. self%ng%iter_fired == iter
+  END FUNCTION ng_applied
 
 END MODULE atom_mod
   

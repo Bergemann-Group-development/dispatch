@@ -283,7 +283,7 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
 &atmos_params        atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_....mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
-&nlte_params         convlim=1.0d-2 ng_step=20 /
+&nlte_params         convlim=1.0d-2 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    R_sampling=5e5 aa_blue=4840 aa_red=4880 /
 \end{minted}
@@ -415,7 +415,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \fort{decouple_continuum} & Use separate frequency sets for bound-bound and bound-free radiation (default \fort{T}).\\
 \fort{initial_Jnu}, \fort{fixed_Jnu} & Initial radiation field (\fort{'Planck'}) or a fixed value.\\
 \fort{lse_solver}, \fort{sor_w}, \fort{cswitch}, \fort{max_update}, \fort{min_pop_frac} & Statistical-equilibrium solver and its damping and safeguards.\\
-\fort{ng_step} & Ng acceleration: $-1$ off (default), 0 automatic gate, $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
+\fort{ng_step} & Ng acceleration: $-1$ off, 0 automatic gate (default), $>0$ fixed schedule starting at \fort{ng_start} (default 8).\\
 \fort{maser_chi_floor}, \fort{suppress_masers}, \dots & Guards against inverted populations.\\
 \bottomrule
 \end{longtable}
@@ -655,7 +655,7 @@ Module & Role\\
 \begin{itemize}
     \item \textbf{Formal solvers.} Iteration pass (\Code{rt\_iteration\_params\%solver}): \fort{linear}, short characteristics in 3D and long characteristics in 1D, or \fort{hermite} (3D). Output pass: \fort{linear}, \fort{quadratic} (default), \fort{hermite} and \fort{hermite2}. The Hermite solvers require \fort{pchip_interpolation=T} and, in 3D, \fort{rotate_atmos=T}. Only solvers that provide the approximate operator $\Psi$ can be used in the iterations.
     \item \textbf{Approximate lambda iteration.} The preconditioned rate equations of Rybicki \& Hummer (1992) are the default (\fort{preconditioning=T}). Plain lambda iteration (\fort{preconditioning=F}) converges slowly and is useful only for diagnostics.
-    \item \textbf{Ng acceleration.} \fort{ng_step=0} enables an automatic acceleration gate, \fort{ng_step=n}$>0$ a fixed schedule. The acceleration is global (\fort{ng_global=T}).
+    \item \textbf{Ng acceleration.} The default \fort{ng_step=0} is an automatic acceleration gate, \fort{ng_step=n}$>0$ a fixed schedule and \fort{ng_step=-1} switches it off. Iterations that were accelerated carry an asterisk after the iteration number in the console table. The acceleration is global (\fort{ng_global=T}).
     \item \textbf{Frozen columns.} \fort{premature_finish=T} stops iterating the columns whose atoms and those of all deeper columns have converged; their exit planes are kept in memory or, with \fort{rt_to_file}, on disk.
     \item \textbf{Frequency sampling.} \fort{qnorm}, \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} and \fort{line_grid_file} control the points over each NLTE line profile. \fort{overlapping_bb} merges the grids of overlapping lines.
     \item \textbf{Scattering.} Continuum scattering is part of the HOP opacity. In the output pass, fixed-population scattering iterations are set with \Code{rt\_output\_params\%maxiter}.
