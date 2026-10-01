@@ -132,11 +132,9 @@ OpenMULTI3D is an \emph{experiment} inside the DISPATCH repository: it reuses DI
     \item \File{TumultStudio/} is a Bokeh application for interactive spectroscopic analysis, built on the same headless workflow layer as the Python API.
 \end{itemize}
 
-\subsection*{Lineage}
+\subsection*{Origins}
 
-The non-LTE radiative transfer in OpenMULTI3D descends from the MULTI code of Mats Carlsson (Rosseland Centre for Solar Physics, Oslo), a one-dimensional non-LTE code that uses complete linearisation (Scharmer \& Carlsson, 1985). Andreas Botnen turned it into the three-dimensional Multi3D in 1997. Jorrit Leenaarts (Stockholm University) later parallelised it with MPI and replaced complete linearisation with the multilevel approximate lambda iteration of Rybicki \& Hummer (1992), as in Han Uitenbroek's RH code. Multi3D was passed to Maria Bergemann's group at the Max Planck Institute for Astronomy (MPIA) in 2015, where Andy Gallagher added hyperfine splitting. In 2021 development of a version inside the DISPATCH framework began. DISPATCH is a task-based hybrid OpenMP/MPI framework for 3D simulations maintained by {\AA}ke Nordlund (Niels Bohr Institute) and Andrius Popovas. The code was restructured considerably to fit the task-based design. Equation of state, ionisation balance, molecule formation and background opacities, which Multi3D took from the Uppsala Opacity Package, are now provided by HOP.
-
-The code was formerly called DISPATCH-MULTI3D (and \Code{m3dis}). Some artefacts of that name remain, for example the \Code{M3D\_DIS} job name in \File{dispatch.slurm} and the \Code{m3dis} atmosphere format name.
+The non-LTE radiative transfer builds on the MULTI and Multi3D codes of Mats Carlsson and Jorrit Leenaarts, with multilevel approximate lambda iteration after Rybicki \& Hummer (1992). DISPATCH is maintained by {\AA}ke Nordlund and Andrius Popovas. HOP provides the equation of state, ionisation balance, molecule formation and background opacities.
 
 \subsection*{Conventions in this manual}
 
@@ -218,7 +216,7 @@ OMP_STACKSIZE=256M ./dispatch.x demo.nml
 
 On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated normally.} Results are written to \File{data/demo/}. Read them with \Code{tumult.read}, never by parsing the binary files in \File{save/} (Sec.~\ref{sec:python}).
 
-Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path: a long absolute path overflows a fixed-length buffer in the I/O layer and aborts with \Code{Fortran runtime error: End of record}. \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it for you). Output goes to \File{<datadir>/<namelist name>/}.
+Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path: a long absolute path overflows a fixed-length buffer in the I/O layer and aborts with \Code{Fortran runtime error: End of record}. \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
 \subsection{Updating}
 
@@ -312,7 +310,6 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \bottomrule
 \end{longtable}
 
-Keys that earlier versions of this manual placed in other groups have moved. \fort{quad_scheme} and \fort{long_scheme} are now \fort{angle_quad} in \fort{rt_iteration_params} and \fort{rt_output_params}. \fort{maxiter} (NLTE iterations) is \Code{rt\_iteration\_params\%maxiter}, and \fort{ilambd} (extra iterations at fixed populations) is \Code{rt\_output\_params\%maxiter}. \fort{convlim} is in \fort{nlte_params}, \fort{n_nu} in \fort{run_params}, \fort{absmet_file} in \fort{opac_table_params}, \fort{isotope_file} in \fort{composition_params}. There is no \fort{m3d_params} group. \fort{exclude_from_line_list} is still read but has no effect. \fort{voigt_kernel} is read and ignored: a single Voigt kernel is built in.
 
 \subsubsection*{io\_params and console\_params}
 
@@ -578,13 +575,13 @@ The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded 
     \item \textbf{Geometry patch} (\Code{experiment\_t}, kind \Code{mhd\_patch}; \File{experiment\_mod.f90}). One per slab. It carries the geometry only.
     \item \textbf{Composition patch} (\File{composition\_patch\_mod.f90}). It interpolates the model onto its slab and passes temperature, density, electron density, velocity and microturbulence to HOP, which solves the ionisation and molecular equilibrium. It creates the NLTE patch and the RT slabs of its slab.
     \item \textbf{NLTE patch} (\File{nlte\_patch\_mod.f90}). It holds the atoms of its slab, computes LTE populations and, in each iteration, solves the statistical equilibrium from the accumulated rates. It writes populations and departure coefficients.
-    \item \textbf{RT slab} (\Code{rt\_patch\_t}, \File{rt\_patch\_mod.f90}). The state of one combination of frequency window, ray and z-slab: background and line opacities, source functions, the formal solution and rate accumulation. It is no longer scheduled as a task of its own.
+    \item \textbf{RT slab} (\Code{rt\_patch\_t}, \File{rt\_patch\_mod.f90}). The state of one combination of frequency window, ray and z-slab: background and line opacities, source functions, the formal solution and rate accumulation. It is not scheduled as a task of its own.
     \item \textbf{RT column} (\Code{rt\_column\_t}, \File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
 \end{itemize}
 
 A run is split in frequency with \fort{n_nu}: the internal spectrum has \fort{n_nu} windows (with \fort{decouple_continuum=T} a second set of \fort{n_nu} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads and with \fort{n_nu}.
 
-MPI is not used for the current column scheduler: the program stops with an error if started with more than one MPI rank. The message-passing routines that remain from the earlier patch scheme are not used.
+The column scheduler does not use MPI: the program stops with an error if started with more than one MPI rank.
 
 \subsection{Flow of a run}
 
@@ -658,7 +655,7 @@ and, when the total is a new maximum, a table such as the following (the numbers
               total          1.0350
 \end{minted}
 
-The columns are the array label, the number of arrays with that label and their total size in GB. Only arrays registered with a label are listed, and only those above 0.5\% of the total. \Code{rest\_mem} is the unlabelled remainder. Current labels include \Code{atom\%line}, \Code{atom\%cont}, \Code{nstar}, \Code{b}, \Code{gamma\_ij}, \Code{gamma\_ji}, \Code{Jnu}, \Code{Psi} and \Code{split\_opac}. (The numbers above illustrate the layout.)
+The columns are the array label, the number of arrays with that label and their total size in GB. Only arrays registered with a label are listed, and only those above 0.5\% of the total. \Code{rest\_mem} is the unlabelled remainder. Labels include \Code{atom\%line}, \Code{atom\%cont}, \Code{nstar}, \Code{b}, \Code{gamma\_ij}, \Code{gamma\_ji}, \Code{Jnu}, \Code{Psi} and \Code{split\_opac}.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Console Output and Timing} \label{sec:Time}
