@@ -393,7 +393,12 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
 \fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
 {\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
-{\fort{use_classic_col},\\\fort{colscale},\\\fort{cbbesc}, \dots} & Collision treatment and scaling factors.\\
+\fort{use_classic_col} & Add approximate collision rates for transitions that have no electron or hydrogen rate in the atom file: Seaton ionisation and van Regemorter excitation by electrons, and Drawin rates for collisions with neutral hydrogen (default \fort{F}).\\
+\fort{colscale} & Factor applied to all collision rates (default 1).\\
+\fort{cbbesc} & \textbf{C}ollision \textbf{b}ound-\textbf{b}ound \textbf{e}lectron \textbf{sc}aling: factor on excitation by electron collisions between bound levels (default 1). Acts on the van Regemorter rates and on \Code{CE} records of the atom file.\\
+\fort{cbfesc} & Same for bound-free transitions, i.e. ionisation by electron collisions (Seaton rates and \Code{CI} records).\\
+\fort{cbbhsc} & Same for bound-bound collisions with neutral hydrogen (Drawin rates and \Code{CH} records).\\
+\fort{cbfhsc} & Same for bound-free collisions with neutral hydrogen (Drawin rates, \Code{CHI} and \Code{CH0} records).\\
 \bottomrule
 \end{longtblr}
 
