@@ -347,10 +347,6 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \end{longtblr}
 
 
-\subsubsection*{\&io\_params and \&console\_params}
-
-\fort{datadir='data'} is the directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist. \fort{gb_step} is the memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}). \Code{\&console\_params\%level} sets the console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace). The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and \fort{&m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
-
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \fort{&atmos_params} & Meaning\\
@@ -370,30 +366,15 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \bottomrule
 \end{longtblr}
 
-\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
-\toprule
-\fort{&composition_params} and \fort{&opac_table_params} & Meaning\\
-\midrule
-\fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
-\fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
-\fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
-\fort{molec_file} & Molecular data (default \File{input/molec\_data\_BC.txt}).\\
-\fort{abundances} & Per-element overrides as a string, e.g. \fort{'Mg=7.6 Eu=0.5'}: $\log\epsilon$, or an offset when \fort{relative_abundances=T}.\\
-\fort{alpha_enhancement}, \fort{r_process_enhancement} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U.\\
-\fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for hydrogen lines (default \fort{T}).\\
-\fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
-\fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
-\fort{disable_ga}, \fort{disable_stark}, \fort{disable_vdw} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
-\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{&opac_table_params}).\\
-\fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
-\bottomrule
-\end{longtblr}
+\subsubsection*{\&spectrum\_params}
 
-Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
-
-\subsubsection*{\&linelist\_params}
-
-\fort{linelist_file} or \fort{linelist_folder} name the line list. \fort{dlam} (default \SI{100}{\angstrom}) is the distance from a window up to which line wings are followed. \fort{tolerance} (default $10^{-4}$) keeps a transition as long as its opacity exceeds that fraction of the continuum. \fort{only_elements} and \fort{exclude_elements} take space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions. \fort{line_scattering} (default \fort{F}) treats part of the line opacity as scattering. This partitions the line extinction rather than adding to it.
+\begin{itemize}
+    \item \fort{aa_blue}, \fort{aa_red} give the window in {\AA}. With no other key the atom's own grid is cropped to it.
+    \item \fort{daa} is a constant spacing in {\AA}, \fort{nnu} the number of points and \fort{R} a constant resolving power (geometric grid); \fort{in_log} spaces points logarithmically.
+    \item \fort{lam_file} and \fort{give_lam} specify wavelengths explicitly.
+    \item \fort{window_file} defines several windows with constant resolving power (requires \fort{R}$>0$).
+    \item \fort{in_air=T} (default) states that all wavelengths are air wavelengths.
+\end{itemize}
 
 \begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
 \toprule
@@ -427,6 +408,31 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 \bottomrule
 \end{longtblr}
 
+\subsubsection*{\&linelist\_params}
+
+\fort{linelist_file} or \fort{linelist_folder} name the line list. \fort{dlam} (default \SI{100}{\angstrom}) is the distance from a window up to which line wings are followed. \fort{tolerance} (default $10^{-4}$) keeps a transition as long as its opacity exceeds that fraction of the continuum. \fort{only_elements} and \fort{exclude_elements} take space-separated element or molecule identifiers. Exclude the NLTE element from the list to avoid duplicated transitions. \fort{line_scattering} (default \fort{F}) treats part of the line opacity as scattering. This partitions the line extinction rather than adding to it.
+
+\begin{longtblr}{colspec={Q[l,wd=5.6cm]Q[l,wd=9.5cm]}, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\fort{&composition_params} and \fort{&opac_table_params} & Meaning\\
+\midrule
+\fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
+\fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
+\fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
+\fort{molec_file} & Molecular data (default \File{input/molec\_data\_BC.txt}).\\
+\fort{abundances} & Per-element overrides as a string, e.g. \fort{'Mg=7.6 Eu=0.5'}: $\log\epsilon$, or an offset when \fort{relative_abundances=T}.\\
+\fort{alpha_enhancement}, \fort{r_process_enhancement} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U.\\
+\fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for hydrogen lines (default \fort{T}).\\
+\fort{hydrogen_vcs_table} & Tabulated Stark profiles of Lemke (1997) for Balmer, Paschen and Brackett lines (default \fort{T}). Inert without a hydrogen line list. Tables in \fort{vcs_data_dir}.\\
+\fort{H_occupation_probability} & Occupation probability of hydrogen levels (default \fort{T}).\\
+\fort{disable_ga}, \fort{disable_stark}, \fort{disable_vdw} & Switch off radiative, Stark or van der Waals broadening of line-list transitions.\\
+\fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations (\fort{&opac_table_params}).\\
+\fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
+\bottomrule
+\end{longtblr}
+
+Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
+
 \subsubsection*{\&rt\_iteration\_params and \&rt\_output\_params}
 
 Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, \fort{maxiter}, \fort{include_linelist}, \fort{include_absmet} and the switches \fort{sample_back_opac} and \fort{sample_linelist}, but with different defaults for the two passes.
@@ -452,15 +458,9 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
 
 \fort{save_populations} (default \fort{T}), \fort{save_rates}, \fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu} and \fort{save_cntrbf} control which fields are written (Sec.~\ref{sec:output}). \fort{rt_to_file} (default \fort{T}) keeps the exit planes of frozen columns on disk. \fort{set_file} lists abundance sets for ladders of calculations in one process. In \fort{&run_params}, \fort{n_nu} is the number of frequency tasks, \fort{lam_tolerance} (default $0.001$ {\AA}) merges wavelength points closer than that, \fort{rotate_atmos} rotates the atmosphere for each ray (required by the Hermite solvers in 3D), and \fort{mem_limit_gb} sets the limit of the pre-run memory check (0: physical memory of the machine, negative: no check).
 
-\subsubsection*{\&spectrum\_params}
+\subsubsection*{\&io\_params and \&console\_params}
 
-\begin{itemize}
-    \item \fort{aa_blue}, \fort{aa_red} give the window in {\AA}. With no other key the atom's own grid is cropped to it.
-    \item \fort{daa} is a constant spacing in {\AA}, \fort{nnu} the number of points and \fort{R} a constant resolving power (geometric grid); \fort{in_log} spaces points logarithmically.
-    \item \fort{lam_file} and \fort{give_lam} specify wavelengths explicitly.
-    \item \fort{window_file} defines several windows with constant resolving power (requires \fort{R}$>0$).
-    \item \fort{in_air=T} (default) states that all wavelengths are air wavelengths.
-\end{itemize}
+\fort{datadir='data'} is the directory under which the run directory \File{<datadir>/<namelist name>/} is created. The parent directory must exist. \fort{gb_step} is the memory step in GB at which allocated memory is reported (Sec.~\ref{sec:Memory}). \Code{\&console\_params\%level} sets the console verbosity from $-1$ (errors only) over 0 (warnings and the NLTE iteration table), 1 (default; setup summaries) and 2 (per-patch diagnostics) to 3 (trace). The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and \fort{&m3d_debug_params} override the level for one channel. Errors go to \Code{stderr}; everything else is written by the master rank to \Code{stdout}.
 
 \subsection{Atmosphere formats}\label{sec:atmosformats}
 
