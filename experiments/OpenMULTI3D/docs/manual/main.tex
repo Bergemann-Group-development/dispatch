@@ -124,12 +124,12 @@
 \section{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-OpenMULTI3D is an \emph{experiment} inside the DISPATCH repository: it reuses DISPATCH's build configuration, input/output layer, timers, task lists and dispatcher, and adds the radiative transfer and atomic physics needed for spectrum synthesis. It has three parts.
+OpenMULTI3D is an \emph{experiment} inside the DISPATCH repository: it reuses DISPATCH's build system and task-based parallelisation, and adds the radiative transfer and atomic physics needed for spectrum synthesis. It has three parts.
 
 \begin{itemize}
-    \item \File{SRC/} and \File{HOP/} hold the Fortran application. \File{dispatch.x} is built from both. \File{HOP/} contains the equation of state, ionisation and molecular equilibrium, continuum and line opacities and the spectrum grid. It is also built without DISPATCH as the shared library \File{libhop.so} and as the line-list pruner \File{hop\_prune.x} (Sec.~\ref{sec:hop}).
+    \item \File{SRC/} and \File{HOP/} hold the Fortran application. \File{dispatch.x} is built from both. \File{HOP/} contains the equation of state, ionisation and molecular equilibrium, continuum and line opacities and the spectrum grid. HOP is also available as a library and as a line-list pruning tool (Sec.~\ref{sec:hop}).
     \item \File{tumult/} is the Python API. It reads and visualises run output, builds namelists, launches runs and implements higher-level analyses (equivalent-width and profile abundance fits, departure coefficients, line strengths).
-    \item \File{TumultStudio/} is a Bokeh application for interactive spectroscopic analysis, built on the same headless workflow layer as the Python API.
+    \item \File{TumultStudio/} is a Bokeh application for interactive spectroscopic analysis.
 \end{itemize}
 
 \subsection*{Origins}
@@ -150,8 +150,8 @@ Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. W
 
 \begin{itemize}
     \item macOS or Linux. The build was verified on macOS 15 with Homebrew GCC 15; Linux x86-64 uses the same commands.
-    \item A Fortran compiler: \Code{gfortran}, \Code{ifort} or \Code{ifx}. On Apple silicon use \Code{gfortran}: Intel compilers produce x86-64 code there, and an x86-64 \File{libhop.so} cannot be loaded into an arm64 Python.
-    \item \Code{make} and \Code{perl} (the build runs \File{config/deps.pl}).
+    \item A Fortran compiler: \Code{gfortran}, \Code{ifort} or \Code{ifx}. On Apple silicon use \Code{gfortran}.
+    \item \Code{make} and \Code{perl}.
     \item Python 3.11 or later with \Code{venv} and \Code{pip}, for \File{tumult} and TumultStudio.
 \end{itemize}
 
@@ -179,11 +179,11 @@ The build takes a few minutes. The compiler is \Code{gfortran} if it is on the \
 
 \begin{itemize}
     \item \File{dispatch.x}, the main program, in the experiment directory;
-    \item \File{HOP/standalone/build/libhop.so}, loaded by \Code{tumult.hop} through the header \File{libhop.h};
-    \item \File{HOP/standalone/build/hop\_prune.x}, the line-list pruner.
+    \item \File{HOP/standalone/build/libhop.so}, the library that the Python package uses to call HOP;
+    \item \File{HOP/standalone/build/hop\_prune.x}, the tool that prunes line lists (Sec.~\ref{sec:hop}).
 \end{itemize}
 
-\Code{make clean \&\& make -j} rebuilds everything, and \Code{make -C HOP/standalone} rebuilds only HOP. The \File{Makefile} selects the compiler option group \Code{OPTS = hoppe}, which exists for \Code{gfortran}. Other compilers need an existing option group passed as \Code{OPTS=...} (see \File{../../config/compiler/}). Host-specific settings are in \File{../../config/host/}.
+\Code{make clean \&\& make -j} rebuilds everything, and \Code{make -C HOP/standalone} rebuilds only HOP. Compiler settings are in \File{../../config/compiler/}.
 
 \subsection{Python environment}
 
@@ -194,7 +194,7 @@ pip install -e .          # core: numpy, scipy, pandas, astropy, ...
 pip install -e ".[gui]"   # additionally Bokeh, for TumultStudio
 \end{minted}
 
-The editable install makes \Code{tumult} and \Code{TumultStudio} importable from any directory while the environment is active. They still read \File{libhop.so}, \File{dispatch.x} and \File{input/} from the checkout, so the checkout must not be moved. If \Code{numba} cannot be imported, a conda prefix on \Code{PATH} is shadowing \File{.venv}; deactivate conda or call \File{.venv/bin/python} explicitly.
+The editable install makes \Code{tumult} and \Code{TumultStudio} importable from any directory while the environment is active. They read \File{dispatch.x}, the HOP library and \File{input/} from the checkout, so the checkout must not be moved.
 
 \subsection{Input data}
 
@@ -234,7 +234,7 @@ OMP_STACKSIZE=256M ./dispatch.x demo.nml
 
 On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated normally.} Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
 
-Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path: a long absolute path overflows a fixed-length buffer in the I/O layer and aborts with \Code{Fortran runtime error: End of record}. \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
+Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
 \subsection{Updating}
 
@@ -244,7 +244,7 @@ make -j
 pip install -e .
 \end{minted}
 
-If local changes conflict, commit them or use \Code{git stash} before pulling. When \File{HOP/standalone/libhop.h} changes, rebuild so that library and Python bindings agree.
+If local changes conflict, commit them or use \Code{git stash} before pulling.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Running on a Cluster}
@@ -257,9 +257,9 @@ mkdir -p slurm
 sbatch dispatch.slurm a.nml b.nml
 \end{minted}
 
-The parallelisation is shared-memory (OpenMP). The current column scheduler (Sec.~\ref{sec:code}) stops with an error when started with more than one MPI rank, so a run occupies one node. Choose the node by its memory: the pre-run memory estimate (Sec.~\ref{sec:Memory}) tells how much a run needs.
+The parallelisation is shared-memory (OpenMP), so a run occupies one node. Choose the node by its memory: the pre-run memory estimate (Sec.~\ref{sec:Memory}) tells how much a run needs.
 
-From Python, \Code{tumult.launch(..., slurm\_script=...)} submits a namelist, and \Code{submit\_operation(..., detach='slurm', slurm\_script=...)} submits a workflow. The script given to the latter must run \Code{python -m tumult.synthesis.driver "\$1"}; see \File{docs/FAQ.md}.
+From Python, \Code{tumult.launch(..., slurm\_script=...)} submits a namelist; see \File{docs/FAQ.md} for submitting workflows.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Quick Guide to LTE and NLTE Runs}\label{sec:quick}
@@ -279,9 +279,9 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 
 \subsection{NLTE iterations}
 
-\Code{rt\_iteration\_params\%maxiter} is the maximum number of NLTE iterations. The iteration stops earlier when the largest relative population change over all levels, depths and columns falls below \Code{nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence. With \fort{maxiter=0}, the default, no NLTE iterations are done and the atom stays in LTE. \fort{ng_step=20} (Sec.~\ref{sec:numerics}) accelerates convergence.
+\Code{rt\_iteration\_params\%maxiter} is the maximum number of NLTE iterations. The iteration stops earlier when the largest relative population change over all levels and grid points falls below \Code{nlte\_params\%convlim}. For diagnostic lines of a single element, \fort{convlim=1e-2} is usually sufficient; tighten it to test convergence. With \fort{maxiter=0}, the default, no NLTE iterations are done and the atom stays in LTE. \fort{ng_step=20} (Sec.~\ref{sec:numerics}) accelerates convergence.
 
-Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the convergence of every level in the file \File{convergence\_report\_NNN.txt} in the run directory. A population update that flips sign from one iteration to the next signals an unstable solution, for example from switching off preconditioning with \fort{preconditioning=F}.
+Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the convergence of every level in the file \File{convergence\_report\_NNN.txt} in the run directory.
 
 \subsection{Output spectrum}
 
@@ -293,7 +293,7 @@ The output pass is configured in \fort{rt_output_params} (angles, solver) and \f
     \item \fort{daa} or the line-profile sampling controls how many wavelength points a run has. Memory grows with the point count and the number of lines.
     \item \Code{run\_params\%n\_nu} splits the wavelength grid into that many independent tasks. The default (\fort{-1}) equals the number of OpenMP threads. Larger values reduce the memory per task and improve load balance (Sec.~\ref{sec:Memory}).
     \item Use fewer threads, or a smaller \fort{nz} for 1D atmospheres, for exploratory runs.
-    \item Prune the line list to the windows of interest with \Code{hop\_prune.x} (Sec.~\ref{sec:hop}) before 3D runs; the run then visits only transitions whose reach touches a patch.
+    \item Prune the line list to the windows of interest with \Code{hop\_prune.x} (Sec.~\ref{sec:hop}) before 3D runs.
     \item Avoid large angular grids: \fort{ntheta=4, nphi=4} in the output pass and \fort{radau} with \fort{ntheta=2} in the iteration pass are the defaults and are adequate for most work.
 \end{itemize}
 
@@ -345,7 +345,7 @@ Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. 
 \fort{use_abnd} & Adopt the abundances stored in a MARCS file (default \fort{F}).\\
 \fort{nx}, \fort{ny}, \fort{nz} & Horizontal and vertical resolution. Default $-1$ keeps the model's grid; otherwise the atmosphere is interpolated.\\
 \fort{snap} & Snapshot number for Stagger models.\\
-\fort{dims}, \fort{patches_per_mpi} & Number of z-slabs (patches). Only one of them may be set.\\
+\fort{dims} & Number of vertical subdomains (slabs) the atmosphere is divided into (Sec.~\ref{sec:code}).\\
 \fort{amr} & How the z-slabs are graded: \fort{'P'} (default) equal steps of accumulated $|\Delta\log P_\mathrm{e}|$, \fort{'T'} equal steps of temperature, \fort{'Z'} equal index steps, \fort{''} no grading. Grading raises \fort{dims} to at least 8.\\
 \fort{pchip_interpolation}, \fort{log_interpolation} & Interpolation of the model onto the slab mesh (default \fort{T}).\\
 \fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
@@ -440,7 +440,7 @@ Both groups share \fort{solver}, \fort{angle_quad}, \fort{ntheta}, \fort{nphi}, 
     \item \fort{aa_blue}, \fort{aa_red} give the window in {\AA}. With no other key the atom's own grid is cropped to it.
     \item \fort{daa} is a constant spacing in {\AA}, \fort{nnu} the number of points and \fort{R} a constant resolving power (geometric grid); \fort{in_log} spaces points logarithmically.
     \item \fort{lam_file} and \fort{give_lam} specify wavelengths explicitly.
-    \item \fort{window_file} defines several windows with constant resolving power (requires \fort{R}$>0$). No output patch spans a gap between windows.
+    \item \fort{window_file} defines several windows with constant resolving power (requires \fort{R}$>0$).
     \item \fort{in_air=T} (default) states that all wavelengths are air wavelengths.
 \end{itemize}
 
@@ -543,7 +543,7 @@ Li    2
 
 \subsection{Angle quadrature}\label{sec:angles}
 
-The NLTE iterations need the mean intensity at every point, the output pass the emergent intensity along a set of directions that is integrated to the flux. \fort{angle_quad} selects the rays; \File{SRC/ray\_mod.f90} and \File{SRC/rt\_params\_mod.f90} define them.
+The NLTE iterations need the mean intensity at every point, the output pass the emergent intensity along a set of directions that is integrated to the flux. \fort{angle_quad} selects the rays.
 
 \begin{figure}[ht]
     \centering
@@ -563,16 +563,16 @@ Rays that include $\mu=1$ are counted once: an output pass with \fort{ntheta=4} 
 \section{Output}\label{sec:output}
 %%%%%%%%%%%%%%%%%%%%%%
 
-All files of a run are in \File{<datadir>/<name>/}. Use \Code{tumult.read} to access them (Sec.~\ref{sec:python}); the binary formats are internal.
+All files of a run are in \File{<datadir>/<name>/}. Use \Code{tumult.read} to access them (Sec.~\ref{sec:python}).
 
 \begin{itemize}
     \item \File{params.nml}, \File{job.nml}: the namelists of the run and the job record. \File{abund.txt}, \File{angle\_quadrature.txt}, \File{atmos\_mesh.txt}, \File{sets.txt}: the abundances used, the output rays, the z-slab mesh and the list of spectrum sets.
     \item \File{rank\_NNNNN.log}: the console log of the run.
     \item \File{convergence\_report\_NNN.txt}: the maximum population change of each level.
     \item \File{linelist\_out.txt}: with \fort{save_linelist}, the transitions used in the run with their strength and reach.
-    \item \File{save/atmos\_*.bin}: the atmosphere on the slab mesh (14 variable slots: density, temperature, electron density, velocity, a continuum extinction, microturbulence, gradients) with \File{atmos\_meta.txt}.
+    \item \File{save/atmos\_*.bin}: the atmosphere on the slab mesh.
     \item \File{save/pop\_<atom>\_*.bin}: LTE populations and departure coefficients for each level.
-    \item \File{save/flux\_*.bin}, \File{save/ie\_*.bin}, \File{save/out\_lam.bin}: flux, intensities and the output wavelengths; \File{flux\_meta.txt} has one row per output patch with its point count.
+    \item \File{save/flux\_*.bin}, \File{save/ie\_*.bin}, \File{save/out\_lam.bin}: flux, intensities and the output wavelengths.
 \end{itemize}
 
 The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (two for an LTE run), or the abundance sets of a \fort{set_file}. Optional fields (\fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu}, \fort{save_rates}, \fort{save_cntrbf}) are large; enable them only when needed.
@@ -583,14 +583,14 @@ The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (
 
 \subsection{DISPATCH tasks}
 
-DISPATCH represents the work as \emph{tasks} that a dispatcher executes. Each task is an object with a life cycle (\Code{pre\_init}, \Code{init}, \Code{pre\_update}, \Code{update}, \Code{rotate}, \Code{finish}). All tasks are kept in a task list. Each task owns a list of neighbour tasks it depends on and tasks that depend on it. The dispatcher scans the list for tasks whose dependences are fulfilled and runs them on the available OpenMP threads. A task that is a \emph{patch} works on a geometric subregion of a 3D domain; in the framework a patch has a six-dimensional array \Code{mem} (three space dimensions, a frequency or variable dimension, time, and variable index). In OpenMULTI3D, \Code{mem} only exists where data are passed between tasks.
+DISPATCH represents the work as \emph{tasks} that a dispatcher executes. All tasks are kept in a task list. Each task owns a list of neighbour tasks it depends on and tasks that depend on it. The dispatcher scans the list for tasks whose dependences are fulfilled and runs them on the available OpenMP threads. A task that is a \emph{patch} works on a geometric subregion of a 3D domain.
 
 \subsection{Tasks in OpenMULTI3D}
 
 The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded by \fort{amr}). The horizontal directions are never split, so no guard zones are needed. Five kinds of objects exist.
 
 \begin{itemize}
-    \item \textbf{Geometry patch} (\Code{experiment\_t}, kind \Code{mhd\_patch}; \File{experiment\_mod.f90}). One per slab. It carries the geometry only.
+    \item \textbf{Geometry patch} (\File{experiment\_mod.f90}). One per slab. It carries the geometry only.
     \item \textbf{Composition patch} (\File{composition\_patch\_mod.f90}). It interpolates the model onto its slab and passes temperature, density, electron density, velocity and microturbulence to HOP, which solves the ionisation and molecular equilibrium. It creates the NLTE patch and the RT slabs of its slab.
     \item \textbf{NLTE patch} (\File{nlte\_patch\_mod.f90}). It holds the atoms of its slab, computes LTE populations and, in each iteration, solves the statistical equilibrium from the accumulated rates. It writes populations and departure coefficients.
     \item \textbf{RT slab} (\Code{rt\_patch\_t}, \File{rt\_patch\_mod.f90}). The state of one combination of frequency window, ray and z-slab: background and line opacities, source functions, the formal solution and rate accumulation. It is not scheduled as a task of its own.
@@ -655,7 +655,7 @@ Module & Role\\
 \section{Memory Profiling} \label{sec:Memory}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\textbf{Estimate and limit.} Before the dispatcher starts, the code prints a memory estimate (at console level 1 or higher): the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Atom arrays set a floor that \fort{n_nu} cannot lower; \fort{n_nu} shrinks the per-column terms. At the end the code prints the maximum memory of each rank and compares it to the estimate. Opacity caches and solver temporaries are not part of the estimate.
+\textbf{Estimate and limit.} Before the dispatcher starts, the code prints a memory estimate (at console level 1 or higher): the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_nu} lowers the estimate, down to a floor set by the model atoms. At the end of the run the code prints the maximum memory used. Opacity caches and solver temporaries are not part of the estimate.
 
 \textbf{Registered arrays.} Every time the allocated memory crosses a multiple of \fort{gb_step} (GB), the code prints a line
 
@@ -673,7 +673,7 @@ and, when the total is a new maximum, a table such as the following (the numbers
               total          1.0350
 \end{minted}
 
-The columns are the array label, the number of arrays with that label and their total size in GB. Only arrays registered with a label are listed, and only those above 0.5\% of the total. \Code{rest\_mem} is the unlabelled remainder. Labels include \Code{atom\%line}, \Code{atom\%cont}, \Code{nstar}, \Code{b}, \Code{gamma\_ij}, \Code{gamma\_ji}, \Code{Jnu}, \Code{Psi} and \Code{split\_opac}.
+The columns are the array label, the number of arrays with that label and their total size in GB. Only arrays registered with a label are listed, and only those above 0.5\% of the total. \Code{rest\_mem} is the unlabelled remainder.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Console Output and Timing} \label{sec:Time}
