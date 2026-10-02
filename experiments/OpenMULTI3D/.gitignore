@@ -16,6 +16,10 @@ docs/manual/*
 !docs/manual/ref.bib
 !docs/manual/tabs/
 !docs/manual/figs/
+!docs/notes/
+docs/notes/*
+!docs/notes/*.tex
+!docs/notes/*.pdf
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
