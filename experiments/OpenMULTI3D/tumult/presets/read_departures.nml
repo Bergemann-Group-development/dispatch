@@ -1,0 +1,5 @@
+! Spectrum on the departure coefficients of another run: set atmos_file to that run's
+! folder. Its saved mesh and populations are read and no NLTE iteration is done.
+&atmos_params        atmos_format='save' read_departures=.true. /
+&rt_iteration_params maxiter=0 /
+&rt_output_params    maxiter=3 /

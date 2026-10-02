@@ -1,0 +1,6 @@
+! Workflow layer under every run that tumult launches; not a user preset.
+! relative_abundance makes an atom_params abundance an offset, as the abundance ladders
+! state it. It has no effect while no abundance is given.
+&atmos_params    save_atmos=.false. /
+&atom_params     relative_abundance=.true. /
+&timer_params    sec_per_report=1e8 verbose=2 /

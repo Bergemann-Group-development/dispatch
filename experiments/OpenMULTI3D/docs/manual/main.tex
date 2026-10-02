@@ -329,7 +329,17 @@ The output pass is configured in \fort{&rt_output_params} (angles, solver) and \
 \section{Input Files}\label{sec:input}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key triggers a warning, so misspelled keys are not silently ignored. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory. The presets in \File{tumult/presets/} (\File{base.nml}, \File{nlte.nml}, \File{departures.nml}, \dots) are reasonable starting points.
+Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key triggers a warning, so misspelled keys are not silently ignored. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
+
+\subsection{Presets}\label{sec:presets}
+
+A preset is a namelist file holding the settings of one kind of calculation. The table below lists those shipped in \File{tumult/presets/}; the leading \texttt{!} comment lines of each file describe it. A file of the same name in \File{\textasciitilde/.config/tumult/presets/} replaces the shipped one everywhere, and further files there become presets of their own.
+
+Presets combine: applied in order, a later one overrides the keys an earlier one set, and a warning names every key that two of them set differently. The settings of the run itself override all presets. The synthesis workflows of \Code{tumult} choose the geometry preset from the atmosphere (\File{1d} or \File{3d}) and, for NLTE, solve the departure coefficients with \File{departures} and synthesise on them with \File{read\_departures}. A request adds its own presets on top (\py{SynthRequest(..., presets=["multi3d"])}, or the \emph{Presets} field of a synthesis setup in TumultStudio); these refine the NLTE steps rather than being overridden by them.
+
+A spectrum run with \fort{rotate_atmos=T} on departure coefficients saved without rotation reads the model named in the saved run's \File{params.nml} once more, and interpolates the ray-aligned copies of the atmosphere from it. The model must still be at that path.
+
+\input{tabs/presets}
 
 \subsection{Namelist groups}
 
@@ -638,14 +648,14 @@ Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE 
 
 \subsection{Launching runs}
 
-\py{tumult.launch} layers a dictionary of namelist settings over a default namelist, writes it and runs \File{dispatch.x}:
+\py{tumult.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
 
 \begin{minted}{Python}
-folder, ran = tumult.launch("ba_test", default=tumult.preset("nlte.nml"),
+folder, ran = tumult.launch("ba_test", default=[tumult.preset("1d"), tumult.preset("nlte")],
                             nml_settings={"atom_params": {"abundance": 2.41}})
 \end{minted}
 
-It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tumult.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. The presets are in \File{tumult/presets/}.
+It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tumult.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tumult.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
 
 \subsection{Higher-level modules}
 

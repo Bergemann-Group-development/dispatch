@@ -4,7 +4,7 @@ The page edits the catalogue :mod:`tumult.refstars` serves: one row per star wit
 label and ``(Teff, log g, [Fe/H], vmic)``, a delete button per row, *Add reference star*
 and *Restore defaults*. The list persists under the store section ``reference_stars``
 (key ``stars``) and is installed into :mod:`tumult.refstars` on construction and after
-every edit, so the setups' Preset dropdowns, the ionisation-balance entry point and the
+every edit, so the setups' Reference star dropdowns, the ionisation-balance entry point and the
 line-strength ranking all read the edited list. ``on_change`` lets the app repaint the
 dropdowns that list the stars.
 

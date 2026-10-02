@@ -1,33 +1,35 @@
+! Comparison with MULTI 1D: its frequency quadrature, Gauss angles, collision rates and
+! composition, with decoupled continua. Use on its own rather than combined.
 &atmos_params
   use_ne = .true.
-  use_rho = .true.
-  amr = 'Z'
-  nz = 230
-  dims = 32
+  use_rho = .false.
+  use_vel = 3*.false.
 /
 &nlte_params
-  decouple_continuum = .false.
+  decouple_continuum = .true.
   initial_Jnu = 'zero'
   premature_finish = .false.
 /
 &rt_iteration_params
-  angle_quad = 'set_a4'
+  angle_quad = 'Gauss'
+  ntheta = 3
   sample_back_opac = .false.
 /
 &rt_output_params
-  angle_quad = 'lobatto'
+  angle_quad = 'Gauss'
+  ntheta = 3
   sample_back_opac = .false.
 /
 &run_params
   rotate_atmos = .false.
 /
 &atom_params
-  overlapping_bb = .true.
-  overlapping_bf = .true.
-  legacy_freql = .false.
+  overlapping_bb = .false.
+  overlapping_bf = .false.
+  legacy_freql = .true.
   use_classic_col = .false.
   level_partf = .true.
-  use_atom_abnd = .false.
+  use_atom_abnd = .true.
 /
 &composition_params
   h_occupation_probability = .false.

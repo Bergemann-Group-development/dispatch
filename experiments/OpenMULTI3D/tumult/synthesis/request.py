@@ -16,6 +16,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
+from .presets import STEP_PRESETS
 from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
                      coerce_atmosphere, coerce_windows)
 
@@ -239,6 +240,12 @@ class SynthRequest:
     :class:`~tumult.departures.DepartureRequest` is NLTE with departures solved for each
     effective request.
 
+    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) applied to every
+    run, later ones winning, on top of the geometry preset the atmosphere selects (``1d``
+    or ``3d``); the request's own settings and ``config.expert`` override them. The NLTE
+    step presets are applied by the calculation the departures select and are not listed
+    here.
+
     The request is immutable; :meth:`update` returns a changed copy. Balance and abundance
     results may be passed for ``star`` and ``abundances``.
     """
@@ -248,6 +255,7 @@ class SynthRequest:
     windows: tuple = ()
     abundances: Abundances | None = None
     departures: Any | None = None
+    presets: tuple = ()
 
     def __post_init__(self):
         from ..departures import DepartureGrid, DepartureRequest, Departures
@@ -262,6 +270,13 @@ class SynthRequest:
         set_("abundances", Abundances.coerce(self.abundances))
         if self.abundances is not None and not self.abundances:
             set_("abundances", None)
+        names = (self.presets,) if isinstance(self.presets, (str, Path)) else self.presets
+        set_("presets", tuple(str(name) for name in (names or ())))
+        steps = [name for name in self.presets if Path(name).stem in STEP_PRESETS
+                 and len(Path(name).parts) == 1]
+        if steps:
+            raise ValueError(f"{', '.join(steps)}: the NLTE step presets follow from "
+                             "`departures`; request departures instead of listing them.")
         departures = self.departures
         if not isinstance(departures, (type(None), Departures, DepartureGrid,
                                        DepartureRequest)):
@@ -299,7 +314,7 @@ class SynthRequest:
 
     def update(self, **changes):
         """A new request with ``changes`` (``star``, ``abundances``, ``windows``,
-        ``departures``, ``atmosphere``, ``config``) applied and validated.
+        ``departures``, ``atmosphere``, ``config``, ``presets``) applied and validated.
 
         ``star`` may be a balance result and ``abundances`` an abundance result; both are
         reduced to their lightweight form. The request this is called on is unchanged.
@@ -330,7 +345,8 @@ class SynthRequest:
                 "atmosphere": self.atmosphere.to_dict(), "star": self.star.to_dict(),
                 "windows": [list(window) for window in self.windows],
                 "abundances": None if self.abundances is None else self.abundances.to_dict(),
-                "departures": to_record(self.departures)}
+                "departures": to_record(self.departures),
+                "presets": list(self.presets)}
 
     def to_json(self, path=None):
         text = json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str)
@@ -348,7 +364,8 @@ class SynthRequest:
                    atmosphere=coerce_atmosphere(value["atmosphere"]),
                    star=Star.coerce(value["star"]), windows=value.get("windows") or (),
                    abundances=Abundances.coerce(value.get("abundances")),
-                   departures=from_record(value.get("departures")))
+                   departures=from_record(value.get("departures")),
+                   presets=tuple(value.get("presets") or ()))
 
     @classmethod
     def from_json(cls, value):

@@ -1,9 +1,5 @@
-! TumultStudio NLTE departures preset -- layered on top of base.nml.
-! Solves the NLTE departure coefficients ONLY: rt_output_params angle_quad='none' skips the
-! formal solution, so NO spectrum is written (Spectrum.has_spectrum is False). Use
-! nlte.nml for NLTE runs that need a spectrum.
-&rt_iteration_params maxiter=99 /
-&rt_output_params    maxiter=0 angle_quad='none' /
-&nlte_params     convlim=1e-2 /
-&atmos_params    save_atmos=.true. /
-&atom_params     relative_abundance=.true. /
+! NLTE departure coefficients only: the populations are solved and saved, and no
+! spectrum is written (the formal solution is skipped).
+&nlte_params      convlim=1e-3 /
+&rt_output_params angle_quad='none' /
+&atmos_params     save_atmos=.true. /

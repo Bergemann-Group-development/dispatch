@@ -87,3 +87,6 @@ benchmarks/*
 !.claude/
 .claude/*
 !.claude/skills/
+
+# The shipped namelist presets are source.
+!tumult/presets/**/*.nml

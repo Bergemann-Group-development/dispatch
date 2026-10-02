@@ -65,11 +65,6 @@ PREF_PAGES = {
         ("dispatch_cwd", "Dispatch run directory", "text", REPO_DIR),
         ("synth_output_dir", "Output directory", "text", "synth"),
         ("R", "Sampling resolving power R", "number", 300000),
-        # The mesh a 3D snapshot is sampled onto; nx/ny are horizontal columns and only nz
-        # is depth. A 1D atmosphere ignores nx/ny (read_external_mod forces them to 1).
-        ("nx", "Atmosphere columns nx", "number", 30),
-        ("ny", "Atmosphere columns ny", "number", 30),
-        ("nz", "Atmosphere depth points nz", "number", 128),
         ("vmic_step", "vmic lattice step [km/s]", "number", 0.5),
         # fit controls: Teff/logg/[Fe/H] are sampled at the atmosphere-grid nodes (no step);
         # only the continuous overrides (vmic via vmic_step, abundances) have a lattice step.
@@ -102,7 +97,7 @@ PREF_LABELS = {key: label for fields in PREF_PAGES.values() for key, label, _, _
 # --- run settings: only the per-target knobs ----------------------------------------
 # the four stellar axes come from the shared synth.STELLAR_PARAMS spec (see fittab too).
 RUN_DEFAULTS = {**{k: d for k, _, _, d in synth.STELLAR_PARAMS},
-                "departures": "",
+                "departures": "", "presets": "",
                 "abundances": "", "relative_abundances": True, "mode": "LTE",
                 "atoms": [], "atmos_mode": "interp", "atmos_file": "",
                 "atmos_individual_format": ATMOS_FORMATS[0]}

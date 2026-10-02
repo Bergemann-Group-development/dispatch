@@ -1,0 +1,4 @@
+! Workflow layer for the 1D LTE reference of an abundance correction; not a user preset.
+! The model atom's transitions are the only lines.
+&rt_output_params    maxiter=3 /
+&linelist_params linelist_file='' linelist_folder='' /

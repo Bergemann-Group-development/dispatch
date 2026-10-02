@@ -210,7 +210,7 @@ class IonBalanceTool(ResultView):
                   value=vals["cont_pct"], min=0, step=0.1),
         ], on_change=self._on_field, groups=[("Measurement uncertainty", ("snr", "cont_pct"))])
         self.form2 = Form("ionbal2", [
-            Field("entry", "Preset", kind="select", value=vals["entry"],
+            Field("entry", "Reference star", kind="select", value=vals["entry"],
                   options=self._entry_options()),
             Field("teff", "Teff [K]", kind="number", value=vals["teff"], step=50,
                   inline=True),

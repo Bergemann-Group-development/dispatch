@@ -212,7 +212,7 @@ def test_every_nlte_rung_is_a_departure_solve_of_its_own(tmp_path, monkeypatch):
                            star=(5750.0, 4.5, 0.0, 1.0))
     workflows.compute_batch(request, rungs, set_spectrum=False)
     solves = [path for batch in submitted for _key, path, nml in batch
-              if nml.get("rt_iteration_params", {}).get("maxiter") == 99]
+              if nml.get("rt_output_params", {}).get("angle_quad") == "none"]
     assert len(solves) == 3 and len(set(solves)) == 3
 
 

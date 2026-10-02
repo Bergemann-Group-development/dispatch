@@ -613,16 +613,23 @@ SUBROUTINE execute (self)
     ! it was written in.  NOTE: the Pe-gradient slots now hold dPe/d (linear),
     ! not dlnPe/d -- files written before that convention change load without
     ! error but carry wrong gradients, so they must be regenerated too.
+    ! a run that rotates reads the unrotated copy from a save without rotated
+    ! ones, and interpolates the ray-aligned copies from the original snapshot,
+    ! which read_external has loaded into ia for that case
     if (atmos_format == 'save') then
       call self%load5('atmos', run_dir=atmos_file, alloc=atmos)
       if (size(atmos,4) < self%i_dpe_z) &
         error stop 'saved atmosphere predates the gradient slots -- regenerate it'
+      if (size(atmos,5) /= self%nw .and. size(atmos,5) /= 1) &
+        error stop 'saved atmosphere holds rotated copies for other output directions'
+      if (size(atmos,5) < self%nw .and. .not. allocated(ia%ltemp)) &
+        error stop 'rotated copies of a saved atmosphere need its original snapshot'
     elseif (save_atmos) then
       allocate(atmos(n(1),n(2),n(3),self%i_dpe_z,self%nw))
     endif
 
     do i=1, self%nw
-      if (atmos_format == 'save') then
+      if (atmos_format == 'save' .and. i <= size(atmos,5)) then
         ne   = atmos(:,:,:,self%i_ne,   i)
         rho  = atmos(:,:,:,self%i_rho,  i)
         temp = atmos(:,:,:,self%i_temp, i)

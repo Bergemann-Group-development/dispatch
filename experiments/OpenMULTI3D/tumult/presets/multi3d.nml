@@ -1,33 +1,35 @@
+! Comparison with Multi3D: its z-mesh, angle sets and composition, with no frozen columns.
+! Use on its own rather than combined.
 &atmos_params
   use_ne = .true.
-  use_rho = .false.
-  use_vel(1:3) = .false.
+  use_rho = .true.
+  amr = 'Z'
+  nz = 230
+  dims = 32
 /
 &nlte_params
-  decouple_continuum = .true.
+  decouple_continuum = .false.
   initial_Jnu = 'zero'
   premature_finish = .false.
 /
 &rt_iteration_params
-  angle_quad = 'Gauss'
-  ntheta = 3
+  angle_quad = 'set_a4'
   sample_back_opac = .false.
 /
 &rt_output_params
-  angle_quad = 'Gauss'
-  ntheta = 3
+  angle_quad = 'lobatto'
   sample_back_opac = .false.
 /
 &run_params
   rotate_atmos = .false.
 /
 &atom_params
-  overlapping_bb = .false.
-  overlapping_bf = .false.
-  legacy_freql = .true.
+  overlapping_bb = .true.
+  overlapping_bf = .true.
+  legacy_freql = .false.
   use_classic_col = .false.
   level_partf = .true.
-  use_atom_abnd = .true.
+  use_atom_abnd = .false.
 /
 &composition_params
   h_occupation_probability = .false.
