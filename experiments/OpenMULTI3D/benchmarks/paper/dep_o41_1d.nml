@@ -3,8 +3,7 @@
 &timer_params        sec_per_report=1e8 verbose=2 /
 &atmos_params        nz=96 atmos_format='Marcs' atmos_file='input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod' /
 &atom_params         atom_file='./input/atoms/atom.o41f' /
-&nlte_params         convlim=1d-2 convmax=1d-3 ng_step=20 /
+&nlte_params         convlim=1d-2 convmax=1d-3 /
 &rt_iteration_params maxiter=99 /
 &rt_output_params    angle_quad='none' /
-!&opac_table_params   absmet_file='input/absmet'/
-&m3d_debug_params   verbose=2 /
+&m3d_debug_params    verbose=2 /

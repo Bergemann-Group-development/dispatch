@@ -7,4 +7,4 @@
 &rt_iteration_params maxiter=99 sample_back_opac=T /
 &rt_output_params    angle_quad='none' /
 &opac_table_params   absmet_file='input/absmet_files/absmet'/
-&m3d_debug_params   verbose=2 /
+&m3d_debug_params    verbose=2 /
