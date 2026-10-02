@@ -117,6 +117,7 @@ def preflight(request):
                    list(departures) if isinstance(departures, DepartureGrid) else []):
         if not solved.saved:
             problems.append(f"departures are no longer on disk: {solved.folder}")
+    problems.extend(_preset_problems(request))
     if isinstance(atmosphere, AtmosphereGrid):
         folder = config.resolve(atmosphere.folder)
         if not folder.is_dir():
@@ -127,6 +128,23 @@ def preflight(request):
         problems.append(f"atmosphere not found: {config.resolve(atmosphere.path)}")
     if problems:
         raise ValueError("The request cannot run:\n  " + "\n  ".join(problems))
+
+
+def _preset_problems(request):
+    """Presets that cannot be found, or that ask for NLTE on a request without departures,
+    which name no model atom to solve."""
+    from . import presets
+    problems = []
+    for name in request.presets:
+        try:
+            item = presets.load(name)
+        except FileNotFoundError as exc:
+            problems.append(str(exc))
+            continue
+        if request.departures is None and presets.is_nlte(item.settings):
+            problems.append(f"preset {item.name} asks for NLTE; request departures for its "
+                            "model atoms (departures.request)")
+    return problems
 
 
 def _grid_coverage(request):

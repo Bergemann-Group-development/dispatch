@@ -67,7 +67,7 @@ class SynthConfig:
 
     ``expert`` holds namelist sections merged into every run's settings last, e.g.
     ``{"nlte_params": {"convlim": 1e-3}}``; ``preferences`` holds further entries of the
-    GUI preference dictionary (``nx``, ``fit_max_rounds``, ...). Both are escape hatches
+    GUI preference dictionary (``fit_max_rounds``, ...). Both are escape hatches
     and are recorded with every result.
     """
     root: Path = Path(".")
@@ -402,18 +402,20 @@ class Atmosphere:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """One 3D snapshot sampled onto ``resolution`` ``(nx, ny, nz)``."""
+    """One 3D snapshot sampled onto ``resolution`` ``(nx, ny, nz)``; without one, onto the
+    mesh of the request's presets (the ``3d`` preset's by default)."""
     path: Path
     format: str
-    resolution: tuple
+    resolution: tuple | None = None
     preparation: AtmosphereGrid | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "path", Path(self.path).expanduser())
-        resolution = tuple(int(v) for v in self.resolution)
-        if len(resolution) != 3 or any(v <= 0 for v in resolution):
-            raise ValueError("Snapshot resolution needs three positive integers.")
-        object.__setattr__(self, "resolution", resolution)
+        if self.resolution is not None:
+            resolution = tuple(int(v) for v in self.resolution)
+            if len(resolution) != 3 or any(v <= 0 for v in resolution):
+                raise ValueError("Snapshot resolution needs three positive integers.")
+            object.__setattr__(self, "resolution", resolution)
         if isinstance(self.preparation, Mapping):
             object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
 
@@ -421,7 +423,7 @@ class Snapshot:
 
     def to_dict(self):
         return {"kind": "snapshot", "path": str(self.path), "format": self.format,
-                "resolution": list(self.resolution),
+                "resolution": None if self.resolution is None else list(self.resolution),
                 "preparation": None if self.preparation is None else self.preparation.to_dict()}
 
     @classmethod

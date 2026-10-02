@@ -43,6 +43,7 @@ from pathlib import Path
 from tumult.auxfuncs import update_dict
 from tumult.departures import Departures, atom_ids
 
+from . import presets
 from .api import _dep_bucket
 from .executor import _run_batch
 
@@ -64,8 +65,9 @@ def _spectrum_name(nml):
 
 
 def departure_settings(settings, snapshot, resolution=None, atmos_format=None):
-    """The namelist of the departures phase: the snapshot, no spectrum, saved populations."""
-    nml = copy.deepcopy(settings or {})
+    """The namelist of the departures phase: the snapshot, no spectrum, saved populations,
+    with the ``departures`` preset filling what ``settings`` leave unset."""
+    nml = presets.fill(settings or {}, presets.STEP_DEPARTURES)
     for section in SPECTRUM_ONLY:
         nml.pop(section, None)
     atmos = {'atmos_file': str(snapshot), 'save_atmos': True}
@@ -77,9 +79,6 @@ def departure_settings(settings, snapshot, resolution=None, atmos_format=None):
         'atmos_params': atmos,
         'rt_output_params': {'angle_quad': 'none'},
     })
-    # The populations are only worth saving from an NLTE solve; an expert's explicit
-    # convlim and iteration limit are kept.
-    nml.setdefault('nlte_params', {}).setdefault('convlim', 1e-3)
     return nml
 
 
@@ -91,7 +90,8 @@ def spectrum_settings(field, settings=None, window=None):
     ``atom_params`` the solve used, and a caller who had to restate them could restate them
     wrongly. ``settings`` is merged on top — the line list, the sampling, an abundance
     override — and the phase's own three decisions are applied last, since they are what
-    makes this the spectrum phase rather than another solve.
+    makes this the spectrum phase rather than another solve. The ``read_departures`` preset
+    fills what is left unset.
     """
     nml = copy.deepcopy(field.settings)
     # The destination mesh and the snapshot come back from the saved run's params.nml, so
@@ -105,6 +105,7 @@ def spectrum_settings(field, settings=None, window=None):
             nml.pop('rt_output_params')
 
     nml = update_dict(nml, copy.deepcopy(settings or {}))
+    nml = presets.fill(nml, presets.STEP_READ)
     for axis in ('nx', 'ny', 'nz'):
         nml.get('atmos_params', {}).pop(axis, None)
     nml = update_dict(nml, {

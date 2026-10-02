@@ -1,3 +1,5 @@
+! Comparison with Turbospectrum: its data files, MARCS densities and abundances, and its
+! 12-point disk-centre-to-limb output angles. Use on its own rather than combined.
 &atmos_params
   atmos_format = 'Marcs'
   use_rho = .false.

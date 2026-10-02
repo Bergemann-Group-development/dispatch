@@ -1,0 +1,3 @@
+! 1D model atmospheres: a 64-point depth mesh, exit planes of frozen columns kept in memory.
+&atmos_params    nz=64 /
+&output_params   rt_to_file=.false. /

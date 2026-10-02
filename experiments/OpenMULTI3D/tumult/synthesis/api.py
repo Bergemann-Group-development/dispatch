@@ -22,18 +22,19 @@ from tumult.decorators import instance_cache
 import tumult as tm
 from tumult.flux import write_set_manifest
 from tumult.launch import prepare_input
+from . import presets
 
 from .atmos_select import select_nodes
 from .executor import _make_da_jobs, _run_batch, job_output
 
-# Bundled namelist presets (base / nlte / departures / corr_ref), co-located with the core so
-# both the library and any front-end (e.g. TumultStudio) reference one canonical location.
-PRESETS_DIR = Path(__file__).resolve().parents[1] / "presets"
+# The shipped namelist presets; :mod:`tumult.synthesis.presets` finds them by name.
+PRESETS_DIR = presets.SHIPPED_DIR
 
 
 def preset(name):
-    """Absolute path to a bundled namelist preset, e.g. ``preset("base.nml")``."""
-    return PRESETS_DIR / name
+    """Path of the namelist preset ``name`` (``"3d"``, ``"nlte.nml"``) or of a preset file;
+    see :func:`tumult.synthesis.presets.find`."""
+    return presets.find(name)
 
 
 def _is_nlte(settings):
@@ -77,19 +78,18 @@ def _node_atmos(atmos_path, feh_i, v):
 
 
 def _dep_jobs(base, nodes, departures_top):
-    """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: no
-    line list, no output spectrum (``rt_output_params angle_quad='none'``), saved via the
-    'save' format."""
+    """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: the
+    ``departures`` preset under ``base``, no line list and no output spectrum
+    (``rt_output_params angle_quad='none'``), the populations saved for the 'save' format."""
     jobs = []
     for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, absmet_file in nodes:
-        dep_nml = copy.deepcopy(base)
+        dep_nml = presets.fill(base, presets.STEP_DEPARTURES)
         dep_nml.pop('linelist_params', None)
         dep_nml.pop('spectrum_params', None)
         dep_nml = update_dict(dep_nml, {
-            'atmos_params': _node_atmos(atmos_path, feh_i, v),
+            'atmos_params': dict(_node_atmos(atmos_path, feh_i, v), save_atmos=True),
             'opac_table_params': {'absmet_file': absmet_file},
-            'rt_iteration_params': {'maxiter': 99},
-            'rt_output_params': {'maxiter': 3, 'angle_quad': 'none'},
+            'rt_output_params': {'angle_quad': 'none'},
         })
         jobs.append((jkey, Path(departures_top) / _node_name(jkey, teff_i, logg_i, feh_i, v),
                      dep_nml))
@@ -98,7 +98,8 @@ def _dep_jobs(base, nodes, departures_top):
 
 def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     """Spectrum jobs (one per node): LTE reads the marcs atmosphere directly; NLTE reads the
-    saved atmosphere + precomputed departures ('save' format, maxiter=0). Returns
+    saved atmosphere + precomputed departures ('save' format, maxiter=0) with the
+    ``read_departures`` preset under ``base``. Returns
     ``(jobs, job_keys, job_weights, job_params)``.
 
     ``node_linelists`` (optional) maps a node key to the line-list files that node's runs read
@@ -117,7 +118,8 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
         if node_linelists:
             extra = dict(extra,
                          linelist_params={'linelist_file': list(node_linelists[jkey])})
-        nml_i = update_dict(copy.deepcopy(base), {
+        node_base = presets.fill(base, presets.STEP_READ) if nlte else copy.deepcopy(base)
+        nml_i = update_dict(node_base, {
             'atmos_params': atmos_override,
             'opac_table_params': {'absmet_file': absmet_file},
             **extra,
@@ -331,8 +333,9 @@ def _apply_window(settings, xmin, xmax, pad):
 
 def _dep_bucket(top, settings):
     """The ``dep_<hash>`` cache dir for an NLTE solve, keyed only on the departure-relevant
-    settings so departures are reused across windows/line lists. ``None`` for LTE settings
-    without the relevant sections."""
+    settings so departures are reused across windows/line lists. The ``departures`` preset
+    is part of them, so editing it starts a new bucket."""
+    settings = presets.fill(settings, presets.STEP_DEPARTURES)
     dep_subset = {k: settings[k] for k in
                   ('atom_params', 'composition_params', 'opac_table_params', 'atmos_params',
                    'm3d_params', 'nlte_params', 'rt_iteration_params', 'rt_output_params',

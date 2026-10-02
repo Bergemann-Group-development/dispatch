@@ -28,7 +28,7 @@ from pathlib import Path
 from .api import (compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   normalise_windows, write_window_file,
-                  PRESETS_DIR, preset, PROVENANCE_NAME)
+                  PROVENANCE_NAME)
 from ..abundance import (
     SYNTH_PAD_AA, abund_to_xfe, convert_abundances,
     read_solar_abundances, xfe_to_abund,
@@ -38,13 +38,13 @@ from .inputs import Atmosphere, AtmosphereGrid, Snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
 from .snapshot_grid import SNAPSHOT_FORMATS, discover_grid
 from ..auxfuncs import update_dict
+from . import presets
 
-# namelist presets now live with the core (tumult/presets) so the library and this app
-# share one location; see tumult.synthesis.PRESETS_DIR.
-_PRESETS = PRESETS_DIR
+# the workflow layer under every run (tumult/presets/internal/base.nml)
+_BASE_LAYER = presets.internal("base.nml")
 
 __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
-           "build_settings", "compute", "compute_batch", "compute_window_batch",
+           "build_settings", "preset_settings", "compute", "compute_batch", "compute_window_batch",
            "resolve_request", "execute_request",
            "solve_request_departures",
            "compute_reference",
@@ -53,9 +53,9 @@ __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
            "FORMAT_PATTERNS", "default_pattern",
            "CancelToken", "CancelledError"]
 
-# preset layered on top of base.nml for the 1D LTE reference: LTE (maxiter=0), atom-only
-# (empty line list), relative abundances — see tumult/presets/corr_ref.nml.
-_CORR_REF_PRESET = preset("corr_ref.nml")
+# layered on top of base.nml for the 1D LTE reference: atom-only (empty line list), see
+# tumult/presets/internal/corr_ref.nml.
+_CORR_REF_PRESET = presets.internal("corr_ref.nml")
 
 # (key, UI label, input step, default) — the four interpolated stellar axes,
 # shared by the Synthesize run form (synthpanel) and the Fit tab (fittab).
@@ -428,18 +428,8 @@ def build_settings(prefs, run_vals, atmos_format=None):
     grid's format. The atmosphere file, FeH and vmic are filled per node by
     ``build_stellar_grid``.
 
-    A 3D snapshot format (:data:`~tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`)
-    samples the background and the LTE line opacity from tables in both passes
-    (``sample_back_opac`` and ``sample_linelist`` in ``rt_iteration_params`` and
-    ``rt_output_params``). The flags go together: the Fortran allocates and builds the
-    line table only in a pass that also samples the background, and a pass with
-    ``sample_linelist`` alone reads no line opacity at all (``rt_patch_mod``). Departure
-    species are masked out of the table and computed in detail, so NLTE lines are
-    unaffected; a pass without a line list gets an empty table, which is how the departure
-    phase of a snapshot runs. The caller merges ``config.expert`` on top of this dict, so an
-    explicit value of either flag wins. The Fortran refuses an abundance ladder (a
-    ``set_file`` with more than the unperturbed sets) under ``sample_linelist``, so a 3D
-    ladder runs one process per rung (:func:`tumult.synthesis.api._foldable_ladder`).
+    The mesh and the radiative-transfer choices of a geometry come from the request's
+    presets (:func:`preset_settings`), which the caller puts under this dict.
     """
     nlte = str(run_vals.get("mode", "LTE")).upper() == "NLTE"
     # ``only_atom``: synthesise from the model atom's own transitions with NO external line
@@ -454,9 +444,6 @@ def build_settings(prefs, run_vals, atmos_format=None):
     fmt = atmos_format or prefs.get("atmos_format")
     if fmt:
         atmos["atmos_format"] = fmt
-    if prefs.get("nx"): atmos["nx"] = int(prefs["nx"])
-    if prefs.get("ny"): atmos["ny"] = int(prefs["ny"])
-    if prefs.get("nz"): atmos["nz"] = int(prefs["nz"])
 
     composition = {}
     if prefs.get("abund_file"):
@@ -476,15 +463,11 @@ def build_settings(prefs, run_vals, atmos_format=None):
         if val:
             linelist[key] = val if isinstance(val, str) else " ".join(val)
 
-    # timer_params and the LTE/NLTE m3d_params/atom_params constants live in the
-    # presets (tumult/presets/{base,nlte}.nml), applied as launch defaults.
+    # timer_params and the workflow constants live in tumult/presets/internal/base.nml,
+    # applied as a launch default; the NLTE step settings in the step presets.
     settings = {
         "linelist_params": linelist,
     }
-    if str(fmt or "").lower() in SNAPSHOT_FORMATS:
-        sampled = {"sample_back_opac": True, "sample_linelist": True}
-        settings["rt_iteration_params"] = dict(sampled)
-        settings["rt_output_params"] = dict(sampled)
     # A curve-of-growth rung only repeats one atmosphere at another abundance; the
     # transition dump is the same diagnostic every time, so a caller synthesising a
     # ladder asks for it once. Absent means the Fortran default (write it).
@@ -574,8 +557,9 @@ def _stellar(request):
 
 
 def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
-             window_batch=False):
-    """Resolve common inputs once; each backend retains its own window assembly."""
+             window_batch=False, report=True):
+    """Resolve common inputs once; each backend retains its own window assembly.
+    ``report=False`` leaves preset conflicts to a caller that has reported them."""
     from .operations import run_values
     config, atmosphere = request.config, request.atmosphere
     prefs, root = config.to_prefs(), config.root
@@ -596,8 +580,10 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
     nlte = modes.pop() == "NLTE"
     R = config.resolving_power
     settings_list = []
+    layer = preset_settings(request, report=report)
     for values in values_list:
-        settings = build_settings(prefs, values, atmos_format=atmosphere.format)
+        settings = update_dict(deepcopy(layer),
+                               build_settings(prefs, values, atmos_format=atmosphere.format))
         settings = update_dict(settings, {"atmos_params": mesh})
         settings = update_dict(settings, deepcopy(config.expert))
         if set_spectrum:
@@ -605,9 +591,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
                 sampling["R_sampling"] = R
         settings_list.append(settings)
-    defaults = [str(_PRESETS / "base.nml")]
-    if nlte:
-        defaults.append(str(_PRESETS / "nlte.nml"))
+    defaults = [str(_BASE_LAYER)]
     defaults.extend(str(path) for path in (extra_presets or []))
     launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults,
                      "cwd": str(root)}
@@ -633,7 +617,7 @@ def compute(request, run_values=None, xmin=None, xmax=None, *, extra_presets=Non
     windows are not read.
 
     ``extra_presets`` (optional) is a list of namelist preset paths appended after the
-    base/NLTE presets, so later ones win — used to layer ``corr_ref.nml`` for the 1D LTE
+    base layer, so later ones win — used to layer ``corr_ref.nml`` for the 1D LTE
     reference synthesis.
 
     ``set_spectrum`` (default True) injects a sampling trigger into ``spectrum_params`` (the
@@ -745,7 +729,7 @@ def compute_window_batch(request, run_values_list, windows, *, extra_presets=Non
 
 def _grid_mesh(grid):
     """The ``nx/ny/nz`` a registered snapshot grid asks its cubes to be sampled onto, when
-    it names one; otherwise the preferences' global mesh stands."""
+    it names one; otherwise the geometry preset's mesh stands."""
     resolution = (grid or {}).get("resolution")
     if not resolution:
         return {}
@@ -753,6 +737,32 @@ def _grid_mesh(grid):
     if len(values) != 3 or any(v <= 0 for v in values):
         raise ValueError("A grid resolution needs three positive integers (nx, ny, nz).")
     return dict(zip(("nx", "ny", "nz"), values))
+
+
+def preset_settings(request, report=True):
+    """The namelist settings of ``request``'s presets: the geometry preset of its
+    atmosphere, then ``request.presets`` in order. Conflicts between them are logged
+    unless ``report`` is false.
+
+    The ``3d`` preset samples the background and the LTE line opacity from tables in both
+    passes (``sample_back_opac`` and ``sample_linelist``). The flags go together: the
+    Fortran builds the line table only in a pass that also samples the background, and a
+    pass with ``sample_linelist`` alone reads no line opacity at all (``rt_patch_mod``).
+    Departure species are masked out of the table and computed in detail, so NLTE lines are
+    unaffected; a pass without a line list gets an empty table, which is how the departure
+    phase of a snapshot runs. The Fortran refuses an abundance ladder under
+    ``sample_linelist``, so a 3D ladder runs one process per rung
+    (:func:`tumult.synthesis.api._foldable_ladder`).
+    """
+    atmosphere = request.atmosphere
+    is_3d = (isinstance(atmosphere, Snapshot)
+             or str(atmosphere.format).lower() in SNAPSHOT_FORMATS)
+    geometry = presets.geometry(atmosphere.format, is_3d)
+    names = ([geometry] if geometry else []) + list(request.presets)
+    settings, conflicts = presets.stack(names)
+    if report:
+        presets.report(conflicts)
+    return settings
 
 
 # --- resolved public request -----------------------------------------------------------
@@ -879,7 +889,8 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
     _check_run_values(values)
     config, atmosphere = request.config, request.atmosphere
     root, prefs = config.root, config.to_prefs()
-    settings = build_settings(prefs, values, atmos_format=atmosphere.format)
+    settings = update_dict(preset_settings(request),
+                           build_settings(prefs, values, atmos_format=atmosphere.format))
     if isinstance(atmosphere, AtmosphereGrid):
         settings = update_dict(settings,
                                {'atmos_params': _grid_mesh(atmosphere.record(config))})
@@ -943,10 +954,8 @@ def execute_request(request, run_values=None, *, cancel_token=None):
         settings.setdefault('linelist_params', {}).pop('linelist_folder', None)
         settings['linelist_params']['linelist_file'] = [artifact.files[0]]
     launch_kwargs = {'overwrite': False, 'verbose': 0,
-                     'default': [str(_PRESETS / 'base.nml')], 'cwd': resolved.execution_root}
+                     'default': [str(_BASE_LAYER)], 'cwd': resolved.execution_root}
     nlte = str(values.get('mode', 'LTE')).upper() == 'NLTE'
-    if nlte:
-        launch_kwargs['default'].append(str(_PRESETS / 'nlte.nml'))
     max_threads = config.threads or (os.cpu_count() or 1)
     top = str(config.cache)
     path = None if grid else _resolved_path(Path(resolved.execution_root), atmosphere.path)
@@ -986,7 +995,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
     else:
         extra = [resolved.run_values]
         if resolved.windows:
-            common, _settings, R = _prepare(request, extra, window_batch=True)
+            common, _settings, R = _prepare(request, extra, window_batch=True, report=False)
             spectra_by_run, run_paths = _compute_window_batch(
                 **common, settings_list=[settings], windows=resolved.windows, R=R,
                 pad=SYNTH_PAD_AA, cancel_token=cancel_token,
@@ -994,7 +1003,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
             spectra.extend(spectra_by_run[0])
             runs.extend(run_paths)
         else:
-            common, _settings, _ = _prepare(request, extra)
+            common, _settings, _ = _prepare(request, extra, report=False)
             value, run_paths = compute_spectrum(**common, settings=settings,
                                                 cancel_token=cancel_token, return_runs=True,
                                                 dep_dirs=dep_dirs)
@@ -1015,8 +1024,7 @@ def solve_request_departures(request, run_values, *, cancel_token=None):
         raise ValueError('Choose an individual 1D atmosphere or 3D snapshot for saved departures.')
     if str(resolved.values.get('mode', 'LTE')).upper() != 'NLTE':
         raise ValueError('Departure solving requires NLTE mode.')
-    defaults = [str(_PRESETS / 'base.nml'), str(_PRESETS / 'nlte.nml')]
-    launch_kwargs = {'overwrite': False, 'verbose': 0, 'default': defaults,
+    launch_kwargs = {'overwrite': False, 'verbose': 0, 'default': [str(_BASE_LAYER)],
                      'cwd': resolved.execution_root}
     from .snapshot import solve_departures
     resolution = atmosphere.resolution if isinstance(atmosphere, Snapshot) else None

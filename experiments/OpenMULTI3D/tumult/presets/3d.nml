@@ -1,0 +1,7 @@
+! 3D snapshots: a 30x30x96 mesh, tabulated background and line opacities, rays traced on
+! the rotated atmosphere and exit planes of frozen columns kept on disk.
+&atmos_params        nx=30 ny=30 nz=96 /
+&rt_iteration_params sample_back_opac=.true. sample_linelist=.true. /
+&rt_output_params    sample_back_opac=.true. sample_linelist=.true. /
+&run_params          rotate_atmos=.true. /
+&output_params       rt_to_file=.true. /
