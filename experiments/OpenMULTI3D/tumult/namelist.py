@@ -3,7 +3,7 @@ from pathlib import Path
 from numbers import Integral, Real
 
 # --- regexes ---
-_QUOTE_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
+_QUOTE_OR_COMMENT_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|![^\n]*")
 _GROUP_RE = re.compile(r"&(\w+)(.*?)\/", flags=re.S)
 _KEY_RE = re.compile(r"(\w+)\s*=")
 _REPEAT_RE = re.compile(r"^(\d+)\*(.+)$")
@@ -106,19 +106,19 @@ class NameList(dict):
 
 # --- internal parser ---
 def _parse_namelist(text, strip_strings=True):
-    # 1) Extract quotes -> placeholders
+    # 1) Quotes -> placeholders and comments -> nothing, in one left-to-right pass, so
+    #    an apostrophe in a comment opens no string and a '!' in a string is no comment
     quotes = []
     def _quote_replacer(m):
+        if m.group(0).startswith('!'):
+            return ''
         idx = len(quotes)
         quote = m.group(0)
         quote = quote.replace('\n', '')  # remove newlines inside quotes
         quotes.append(quote)
         return f"__STR{idx}__"
 
-    text_with_ph = _QUOTE_RE.sub(_quote_replacer, text)
-
-    # 2) Remove comments
-    text_nocom = re.sub(r'!.*$', '', text_with_ph, flags=re.M)
+    text_nocom = _QUOTE_OR_COMMENT_RE.sub(_quote_replacer, text)
 
     # 3) Normalize
     text_norm = text_nocom.replace(',', ' ')
