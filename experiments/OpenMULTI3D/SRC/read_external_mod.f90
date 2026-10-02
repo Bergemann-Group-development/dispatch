@@ -25,7 +25,7 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
   USE patch_mod
   USE const_mod, only:cc
-  USE m3d_patch_mod, only: m3d_patch_t, nz_total, use_rho, use_ne, atmos_format, amr, &
+  USE m3d_patch_mod, only: m3d_patch_t, nz_total, use_rho, use_ne, atmos_format, amr, rotate_atmos, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_conv_signal, flux_final_counter
   USE rt_params_mod, only: rt_iter, rt_out
@@ -49,6 +49,7 @@ MODULE read_external_mod
     procedure:: init_exp
     procedure:: setup_patch
     procedure:: read_saved_snapshot
+    procedure:: read_original_snapshot
   end type read_external_t
 
   type, public, extends(task_t):: rank_t
@@ -58,6 +59,9 @@ MODULE read_external_mod
   type(rank_t) :: rank
   real(4) :: origin(3) = [0., 0., 0.]
   real(4), public :: vmic=-1
+  ! the model a saved atmosphere was computed from, as its params.nml names it
+  character(len=512) :: saved_from_file='', saved_from_format=''
+  integer :: saved_from_snap=0
 
 contains
 
@@ -168,6 +172,9 @@ contains
       open(file=trim(save_file)//'/params.nml', newunit=lunit, form='FORMATTED')
       read (lunit, nml=atmos_params, iostat=iostat)
       close(lunit)
+      saved_from_file = atmos_file
+      saved_from_format = lowercase(atmos_format)
+      saved_from_snap = snap
       read_departures = read_departures_local
       atmos_file = save_file
       atmos_format = 'save'
@@ -178,30 +185,7 @@ contains
       if (console_on(ch_atmos, 1)) &
         write (console_unit,'(4a)') 'Reading ', trim(atmos_format), ' atmosphere from ', trim(atmos_file)
       read_departures = .false.
-      select case (atmos_format)
-       case('stagger')
-        call read_stagger(atmos_file, snap, use_ne)
-       case('stagger2')
-        call read_stagger2(atmos_file)
-       case('co5bold')
-        call read_co5bold(atmos_file)
-       case ('marcs')
-        call read_marcs(atmos_file, FeH, vmic, external_abund)
-        if (.not. use_abnd) deallocate(external_abund)
-       case ('multi', 'm3dis')
-        call read_multi_snapshot(atmos_file)
-       case ('text')
-        call read_text_1d(atmos_file, vmic, FeH)
-       case ('multi1d')
-        call read_multi_1d(atmos_file, vmic)
-       case ('siu_bin')
-        call read_siu_bin(atmos_file, vmic)
-       case default
-        call console_error ('unknown atmos_format '//trim(atmos_format)// &
-          ". Options are: 'Stagger', 'Co5bold', 'Multi', &
-        &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
-        error stop
-      end select
+      call read_model(atmos_format, atmos_file, snap, use_abnd)
       if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
     endif
 
@@ -306,6 +290,9 @@ contains
     end do
 
     nz_total = patch%ze
+    ! the patches' pre_init has settled rotate_atmos and the output directions
+    if (atmos_format == 'save' .and. rotate_atmos) &
+      call self%read_original_snapshot(atmos_file, 1+size(rt_out%vec,2))
     call init_rt_columns (task_list)
 
     if (console_on(ch_atmos, 2)) then
@@ -374,6 +361,79 @@ contains
     !-----------------------------------------------------------------------------
     call trace%end()
   END SUBROUTINE init
+
+  !===============================================================================
+  !> Read the model atmosphere file into ia with the reader of its format.
+  !===============================================================================
+  SUBROUTINE read_model (format, file, snap, use_abnd)
+    character(len=*), intent(in):: format, file
+    integer, intent(in):: snap
+    logical, intent(in):: use_abnd
+    !-----------------------------------------------------------------------------
+    select case (format)
+     case('stagger')
+      call read_stagger(file, snap, use_ne)
+     case('stagger2')
+      call read_stagger2(file)
+     case('co5bold')
+      call read_co5bold(file)
+     case ('marcs')
+      call read_marcs(file, FeH, vmic, external_abund)
+      if (.not. use_abnd) deallocate(external_abund)
+     case ('multi', 'm3dis')
+      call read_multi_snapshot(file)
+     case ('text')
+      call read_text_1d(file, vmic, FeH)
+     case ('multi1d')
+      call read_multi_1d(file, vmic)
+     case ('siu_bin')
+      call read_siu_bin(file, vmic)
+     case default
+      call console_error ('unknown atmos_format '//trim(format)// &
+        ". Options are: 'Stagger', 'Co5bold', 'Multi', &
+      &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
+      error stop
+    end select
+  END SUBROUTINE read_model
+
+  !===============================================================================
+  !> A run with rotate_atmos=T needs one ray-aligned copy of the atmosphere per
+  !> output direction.  A saved atmosphere written without rotation holds only
+  !> the unrotated copy, so the model it was computed from is read into ia, and
+  !> the composition patches interpolate the rotated copies from it.  The saved
+  !> mesh stays the mesh of the run, so the box of the model must match it.
+  !===============================================================================
+  SUBROUTINE read_original_snapshot (self, save_dir, n_copies)
+    class(read_external_t):: self
+    character(len=*), intent(in):: save_dir
+    integer, intent(in):: n_copies
+    character(len=512) :: line, name
+    integer :: lunit, iostat, saved_copies, sizes(6)
+    real(8) :: box(3)
+    !-----------------------------------------------------------------------------
+    open(file=trim(save_dir)//'/save/atmos_meta.txt', newunit=lunit, form='FORMATTED', &
+         status='old', iostat=iostat)
+    if (iostat /= 0) then
+      call console_error ('no save/atmos_meta.txt in '//trim(save_dir))
+      error stop
+    endif
+    read (lunit, '(a)') line                            ! header
+    read (lunit, '(a)') line
+    close(lunit)
+    read (line, *) name, sizes                          ! bytes, n(3), slots, copies
+    saved_copies = sizes(6)
+    if (saved_copies /= 1 .or. n_copies == 1) return
+    if (console_on(ch_atmos, 1)) &
+      write (console_unit,'(4a)') 'Reading ', trim(saved_from_format), &
+        ' atmosphere for the rotated copies from ', trim(saved_from_file)
+    call read_model(saved_from_format, saved_from_file, saved_from_snap, .false.)
+    call ia%thick2thin()
+    call ia%scale_box(box=box, scale=scaling%l)
+    if (any(abs(box - self%size) > 1d-4*abs(self%size))) then
+      call console_error ('the model of the saved atmosphere does not fill its saved box')
+      error stop
+    endif
+  END SUBROUTINE read_original_snapshot
 
   !===============================================================================
   SUBROUTINE read_saved_snapshot (self, atmos_file, dims)
