@@ -2,7 +2,7 @@
 \toprule
 \fort{&run_params} & Meaning\\
 \midrule
-\fort{n_windows} & Number of wavelength windows (one set of tasks each).\\
+\fort{n_windows} & Number of wavelength windows (one set of tasks each). Default: twice the thread count, doubled while the memory estimate exceeds 70\,\% of the memory limit.\\
 \fort{lam_tolerance} & Merge wavelength points closer than this (default $0.001$ {\AA}).\\
 \fort{rotate_atmos} & Rotate the atmosphere for each ray (required by the Hermite solvers in 3D).\\
 \fort{mem_limit_gb} & Limit of the pre-run memory check (0: physical memory of the machine, negative: no check).\\

@@ -23,7 +23,7 @@ MODULE ray_patch_mod
   USE interpol_mod, only: pchip_mono
   USE console_mod
   USE m3d_patch_mod, only: m3d_patch_t, &
-    converged, print_send, n_windows_out
+    converged, print_send, n_windows, n_windows_out
   USE spectrum_mod, only: spectrum_type
   USE const_mod, only: cc, over_4pi, PI
   implicit none
@@ -31,7 +31,7 @@ MODULE ray_patch_mod
 
   !-----------------------------------------------------------------------------
 
-  public :: output_patch_window, output_patch_range
+  public :: output_patch_window, output_patch_range, window_range
 
   type, public, extends(m3d_patch_t) :: ray_patch_t
     real(8) :: vec(3), wmu
@@ -62,11 +62,7 @@ contains
     integer, dimension(:), allocatable :: order
     integer, save, target :: counter1=-999, counter2=-999
     !-----------------------------------------------------------------------------
-    if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
-      call output_patch_range(self%sp, self%i_nu, n_windows_out, fs, fe)
-    else
-      call unequal_intervals(self%sp%nnu, self%i_nu, self%n_windows, fs, fe)
-    endif
+    call window_range(self%sp, self%i_nu, fs, fe)
 
     self%fs = fs
     self%fe = fe
@@ -87,6 +83,23 @@ contains
       counter = self%i_nu
     endif
   END SUBROUTINE set_freq_indices
+
+  !===============================================================================
+  !> Frequency range [fs, fe] of window i_nu of spectrum sp: an output window
+  !> (i_nu < 0) on a segmented grid lies inside one segment, any other window is
+  !> part |i_nu| of the grid split into n_windows near-equal parts.
+  !===============================================================================
+  SUBROUTINE window_range (sp, i_nu, fs, fe)
+    class(spectrum_type), intent(in) :: sp
+    integer, intent(in) :: i_nu
+    integer, intent(out) :: fs, fe
+    !-----------------------------------------------------------------------------
+    if (i_nu < 0 .and. sp%n_segments > 0) then
+      call output_patch_range(sp, i_nu, n_windows_out, fs, fe)
+    else
+      call unequal_intervals(sp%nnu, i_nu, n_windows, fs, fe)
+    endif
+  END SUBROUTINE window_range
 
   !===============================================================================
   !> Window (segment) index of output patch i_nu (in -n_out..-1) on a segmented

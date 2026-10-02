@@ -15,7 +15,7 @@ MODULE rt_patch_mod
   USE interpol_mod, only: pchip_mono
   USE handyfuncs_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
-  USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
+  USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
     dlam, n_windows_out, &
@@ -51,7 +51,7 @@ MODULE rt_patch_mod
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   implicit none
   private
-  integer :: n_negative_chi = 0                 ! diagnostic: cells with chi<=0 in work_to_transfer_units
+  integer :: n_negative_chi = 0                 ! diagnostic: slabs that reported a floored chi in work_to_transfer_units
 
   !-----------------------------------------------------------------------------
   ! What a set *is*, as opposed to where it sits.  The set axis is variable-length
@@ -77,7 +77,19 @@ MODULE rt_patch_mod
   ! (m3d_patch_mod, set in composition_pre_init) equals n_windows for a contiguous output
   ! grid; a window_file grid gets a whole number of patches per window.
   !-----------------------------------------------------------------------------
-  public :: verify_output_patch_coverage
+  public :: verify_output_patch_coverage, window_shape, slab_memory, trans_copy_bytes
+
+  !-----------------------------------------------------------------------------
+  ! What the memory of one slab depends on besides its cells: the frequency
+  ! points, directions and sets of its window and the transitions of each atom
+  ! that reach into it.  window_shape predicts it before the slab exists.
+  !-----------------------------------------------------------------------------
+  type, public :: slab_shape_t
+    integer :: nf=0, n_mu=0, n_set=1
+    integer, allocatable :: nline(:), ncont(:)
+    logical, allocatable :: get_rates(:)
+    logical :: bound_bound=.false., bound_free=.false., do_final=.false., do_out_sp=.false.
+  end type slab_shape_t
 
   !-----------------------------------------------------------------------------
   ! The state of one frequency window, ray direction and depth slab.  A slab is
@@ -301,55 +313,132 @@ MODULE rt_patch_mod
 contains
 
   !===============================================================================
-  !> Leading registered RT allocations of one slab, in bytes, before the first
-  !> execution.  Keep the array counts consistent with allocate_arrays and
-  !> deallocate_arrays.  work is execution-local; retained survives between
-  !> executions when rt_to_file is false; boundary is the buffer its column
-  !> hands from slab to slab; persistent is the slab's u_phase.  Opacity caches
-  !> and solver temporaries are excluded.
+  !> Leading registered RT allocations of this slab, in bytes, before its first
+  !> execution; see slab_memory.  u_phase counts until the slab allocates it.
   !===============================================================================
   SUBROUTINE estimate_memory (self, work, retained, boundary, persistent)
     class(rt_patch_t), intent(in) :: self
     real(8), intent(out) :: work, retained, boundary, persistent
-    real(8) :: cell, field, sets
-    logical :: scat_ali, psi
-    integer :: i, nrad
+    type(slab_shape_t) :: shape
+    integer :: i
     !-----------------------------------------------------------------------------
-    cell = real(storage_size(0.0_4)/8,8)*product(real(self%n,8))
-    field = cell*self%nf
-    sets = field*self%n_set
-    work = 5*field + 3*real(storage_size(0.0_4)/8,8)*self%nf* &
-      self%n(1)*self%n(2)*(real(self%n(3),8)+2*self%ng(3))
-    retained = 0.d0
-    boundary = 3*real(storage_size(0.0_4)/8,8)*self%nf* &
-      self%n(1)*self%n(2)*self%n_mu*self%n_set
-    ! u_phase, allocated by patch_t%init when the patch first executes
-    persistent = real(storage_size(0.0_4)/8,8)*product(real(self%n+2*self%ng,8))
+    shape%nf = self%nf
+    shape%n_mu = self%n_mu
+    shape%n_set = self%n_set
+    shape%bound_bound = self%bound_bound
+    shape%bound_free = self%bound_free
+    shape%do_final = self%do_final
+    shape%do_out_sp = self%do_out_sp
+    allocate(shape%nline(self%natom), shape%ncont(self%natom))
+    do i=1, self%natom
+      shape%nline(i) = size(self%trans(i)%line)
+      shape%ncont(i) = size(self%trans(i)%cont)
+    end do
+    allocate(shape%get_rates, source=self%get_rates)
+    call slab_memory (shape, self%n, self%ng, work, retained, boundary, persistent)
     if (associated(self%u_phase)) persistent = 0.d0
+  END SUBROUTINE estimate_memory
+
+  !===============================================================================
+  !> Shape of the slab of window i_nu and direction i_mu that create_sub_patches
+  !> would make from spectrum sp and atoms, as rt_patch_pre_init and
+  !> init_patch_trans set it up.  The window counts n_windows and n_windows_out
+  !> must be set.
+  !===============================================================================
+  FUNCTION window_shape (sp, atoms, i_nu, i_mu) RESULT (shape)
+    class(atomic_spectrum_type), intent(in) :: sp
+    type(atom_type), pointer, intent(in) :: atoms(:)
+    integer, intent(in) :: i_nu, i_mu
+    type(slab_shape_t) :: shape
+    logical :: is_nlte
+    integer :: i, natom, fs, fe
+    !-----------------------------------------------------------------------------
+    shape%do_final = i_mu < 0
+    shape%do_out_sp = i_nu < 0 .or. i_mu < 0
+    shape%n_mu = merge(size(rt_out%wmu), size(rt_iter%wmu)/2, shape%do_final)
+    if (shape%do_out_sp) then
+      is_nlte = rt_iter%maxiter > 0 .or. rt_out%maxiter > 0 .or. read_departures
+      call init_output_sets(is_nlte)
+      shape%n_set = output_n_set
+    endif
+    call window_range(sp, i_nu, fs, fe)
+    shape%nf = fe - fs + 1
+    natom = 0
+    if (associated(atoms)) natom = size(atoms)
+    allocate(shape%nline(natom), shape%ncont(natom))
+    if (natom > 0) then
+      shape%bound_bound = any([(associated(atoms(i)%trans%line), i=1, natom)])
+      shape%bound_free = any([(associated(atoms(i)%trans%cont), i=1, natom)])
+    endif
+    do i=1, natom
+      call count_window_trans(atoms(i), shape%bound_bound, shape%bound_free, fs, fe, &
+                              shape%nline(i), shape%ncont(i))
+    end do
+    allocate(shape%get_rates(natom), source=(.not. shape%do_out_sp))
+  END FUNCTION window_shape
+
+  !===============================================================================
+  !> Bytes of the transition copies (init_patch_trans) of a slab of this shape,
+  !> registered when the slab is made.  A continuum usually spans many windows,
+  !> so its copies grow with n_windows.
+  !===============================================================================
+  FUNCTION trans_copy_bytes (shape) RESULT (bytes)
+    type(slab_shape_t), intent(in) :: shape
+    real(8) :: bytes
+    type(line_type) :: line
+    type(cont_type) :: cont
+    !-----------------------------------------------------------------------------
+    bytes = (real(sum(shape%nline),8)*storage_size(line) + &
+             real(sum(shape%ncont),8)*storage_size(cont))/8
+  END FUNCTION trans_copy_bytes
+
+  !===============================================================================
+  !> Leading registered RT allocations of a slab of n cells and ng ghost cells, in
+  !> bytes, before the first execution.  Keep the array counts consistent with
+  !> allocate_arrays and deallocate_arrays.  work is execution-local; retained
+  !> survives between executions when rt_to_file is false; boundary is the
+  !> buffer its column hands from slab to slab; persistent is the slab's
+  !> u_phase.  Opacity caches and solver temporaries are excluded.
+  !===============================================================================
+  SUBROUTINE slab_memory (shape, n, ng, work, retained, boundary, persistent)
+    type(slab_shape_t), intent(in) :: shape
+    integer, intent(in) :: n(3), ng(3)
+    real(8), intent(out) :: work, retained, boundary, persistent
+    real(8) :: word, cell, field, sets
+    logical :: scat_ali, psi, rates
+    integer :: i
+    !-----------------------------------------------------------------------------
+    word = real(storage_size(0.0_4)/8,8)
+    cell = word*product(real(n,8))
+    field = cell*shape%nf
+    sets = field*shape%n_set
+    work = 5*field + 3*word*shape%nf*n(1)*n(2)*(real(n(3),8)+2*ng(3))
+    retained = 0.d0
+    boundary = 3*word*shape%nf*n(1)*n(2)*shape%n_mu*shape%n_set
+    ! u_phase, allocated by patch_t%init when the patch first executes
+    persistent = word*product(real(n+2*ng,8))
+    rates = any(shape%get_rates)
 
     if (rt_to_file) then
       work = work + sets
     else
       retained = retained + sets
     endif
-    do i=1, self%natom
-      if (self%bound_bound) work = work + cell*size(self%trans(i)%line)
-      if (self%get_rates(i)) then
-        nrad = size(self%trans(i)%line) + size(self%trans(i)%cont)
-        work = work + 2*cell*nrad
-      endif
+    do i=1, size(shape%nline)
+      if (shape%bound_bound) work = work + cell*shape%nline(i)
+      if (shape%get_rates(i)) work = work + 2*cell*(shape%nline(i) + shape%ncont(i))
     enddo
     ! split_opac(2), split_id, split_chi(2), split_chi_id, Irem and escape
-    if (rate_formulation == 'largest' .and. any(self%get_rates)) work = work + 8*field
+    if (rate_formulation == 'largest' .and. rates) work = work + 8*field
     if (line_scattering) work = work + 4*field
     ! the do_scat_precond and compute_psi tests of execute
-    scat_ali = scattering_preconditioning .and. .not. self%do_final &
-      .and. (any(self%get_rates) .or. self%do_out_sp) &
+    scat_ali = scattering_preconditioning .and. .not. shape%do_final &
+      .and. (rates .or. shape%do_out_sp) &
       .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0)
-    psi = any(self%get_rates) .or. scat_ali
+    psi = rates .or. scat_ali
     if (psi) then
       work = work + field
-      if (self%bound_free .or. scat_ali) then
+      if (shape%bound_free .or. scat_ali) then
         if (scat_ali .and. .not. rt_to_file) then
           retained = retained + sets
         else
@@ -364,8 +453,8 @@ contains
         endif
       endif
     endif
-    if (self%do_final .and. save_cntrbf) work = work + 5*field*self%n_mu
-  END SUBROUTINE estimate_memory
+    if (shape%do_final .and. save_cntrbf) work = work + 5*field*shape%n_mu
+  END SUBROUTINE slab_memory
 
 
   !===============================================================================
@@ -417,11 +506,29 @@ contains
   END SUBROUTINE rt_patch_pre_init
 
   !===============================================================================
-  !> Derive the historical base layout, or read an abundance-ladder manifest.
-  !> The process-global copy is also consumed once by each composition instance.
+  !> Give this output slab the process-global set layout.
   !===============================================================================
   SUBROUTINE init_set_layout (self, is_nlte)
     class(rt_patch_t) :: self
+    logical, intent(in) :: is_nlte
+    !-----------------------------------------------------------------------------
+    call init_output_sets(is_nlte)
+    self%n_set = output_n_set
+    allocate(self%set_kind(self%n_set), source=output_set_kind)
+    self%i_set_cnt = output_i_set_cnt
+    self%i_set_main = output_i_set_main
+    if (self%n_set > merge(3,2,is_nlte)) then
+      if (rt_out%sample_linelist) &
+        error stop 'abundance ladders require rt_output_params sample_linelist=.false.'
+    endif
+  END SUBROUTINE init_set_layout
+
+  !===============================================================================
+  !> Derive the historical base layout, or read an abundance-ladder manifest,
+  !> once per process.  The process-global copy is also consumed once by each
+  !> composition instance.
+  !===============================================================================
+  SUBROUTINE init_output_sets (is_nlte)
     logical, intent(in) :: is_nlte
     integer :: unit, ios, number, max_set, z, i, ncnt, nmain
     character(len=1024) :: line
@@ -523,16 +630,7 @@ contains
       initialised = .true.
     endif
     !$omp end critical (cr_init_set_layout)
-
-    self%n_set = output_n_set
-    allocate(self%set_kind(self%n_set), source=output_set_kind)
-    self%i_set_cnt = output_i_set_cnt
-    self%i_set_main = output_i_set_main
-    if (self%n_set > merge(3,2,is_nlte)) then
-      if (rt_out%sample_linelist) &
-        error stop 'abundance ladders require rt_output_params sample_linelist=.false.'
-    endif
-  END SUBROUTINE init_set_layout
+  END SUBROUTINE init_output_sets
 
   !===============================================================================
   !> Write 'sets.txt': one row per (set, element), naming what each slot on the
@@ -597,26 +695,8 @@ contains
 
     do k=1, self%natom
       associate(atom=>self%atoms(k), trans=>self%trans(k))
-        nline = 0
-        ncont = 0
-        if (self%bound_bound) then
-          do i=1, atom%nline
-            line => atom%trans%line(i)
-            if (.not. line%active) cycle
-            call line%check_range(self%fs, self%fe, fs, fe, skip)
-            if (skip) cycle
-            nline = nline + 1
-          end do
-        endif
-        if (self%bound_free) then
-          do i=1, atom%ncont
-            cont => atom%trans%cont(i)
-            if (.not. cont%active) cycle
-            call cont%check_range(self%fs, self%fe, fs, fe, skip)
-            if (skip) cycle
-            ncont = ncont + 1
-          end do
-        endif
+        call count_window_trans(atom, self%bound_bound, self%bound_free, self%fs, self%fe, &
+                                nline, ncont)
         call trans%allocate(nline, ncont)
         if (self%bound_bound) then
           j = 1
@@ -647,6 +727,39 @@ contains
       end associate
     end do
   END SUBROUTINE init_patch_trans
+
+  !===============================================================================
+  !> Number of active lines and continua of atom that reach into [fs_in, fe_in].
+  !===============================================================================
+  SUBROUTINE count_window_trans (atom, bound_bound, bound_free, fs_in, fe_in, nline, ncont)
+    type(atom_type), intent(in) :: atom
+    logical, intent(in) :: bound_bound, bound_free
+    integer, intent(in) :: fs_in, fe_in
+    integer, intent(out) :: nline, ncont
+    integer :: i, fs, fe
+    logical :: skip
+    !-----------------------------------------------------------------------------
+    nline = 0
+    ncont = 0
+    if (bound_bound) then
+      do i=1, atom%nline
+        associate (line => atom%trans%line(i))
+          if (.not. line%active) cycle
+          call line%check_range(fs_in, fe_in, fs, fe, skip)
+          if (.not. skip) nline = nline + 1
+        end associate
+      end do
+    endif
+    if (bound_free) then
+      do i=1, atom%ncont
+        associate (cont => atom%trans%cont(i))
+          if (.not. cont%active) cycle
+          call cont%check_range(fs_in, fe_in, fs, fe, skip)
+          if (.not. skip) ncont = ncont + 1
+        end associate
+      end do
+    endif
+  END SUBROUTINE count_window_trans
 
   !===============================================================================
   !> With premature_finish, an iteration slab freezes (static_mem) once it is
@@ -3005,13 +3118,14 @@ contains
     class(rt_patch_t) :: self
     logical :: do_scat, split_rates
     integer, save :: itimer=0
-    integer :: x, y, z, f, i
-    real(4) :: xhat, eta, chi, floor
+    integer :: x, y, z, f, i, n_floored, first(4)
+    real(4) :: xhat, eta, chi, floor, first_val(3)
     real(4), allocatable :: chiv(:)
     character(len=256) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%work_to_transfer_units', itimer=itimer)
     allocate(chiv(self%fs:self%fe))
+    n_floored = 0
     do_scat = self%do_line_scat
     split_rates = self%split_rates
     do z=1, self%nz
@@ -3060,18 +3174,11 @@ contains
               chi = max(chi, floor)
             elseif (abs(chi) < floor) then
               chi = sign(floor, chi)
-              if (check_NaN) then
-                !$omp atomic capture
-                n_negative_chi = n_negative_chi + 1
-                i = n_negative_chi
-                !$omp end atomic
-                if (i <= 20) then
-                  write(msg,'(A,A,4(I5),4(1x,ES13.5))') trim(self%m3d_patch_info()), &
-                    '  CHI floored f,x,y,z=', f, x, y, z, chi, xhat, eta, &
-                    self%beta(f,x,y,z)
-                  call console_warn (ch_m3d, msg)
-                endif
+              if (n_floored == 0) then
+                first = [f, x, y, z]
+                first_val = [chi, xhat, eta]
               endif
+              n_floored = n_floored + 1
             endif
             self%work(f,x,y,z,1) = chi
             self%work(f,x,y,z,2) = eta / chi
@@ -3079,6 +3186,19 @@ contains
         end do
       end do
     end do
+    ! one warning per execution, for the first 20 that floor chi
+    if (check_NaN .and. n_floored > 0) then
+      !$omp atomic capture
+      n_negative_chi = n_negative_chi + 1
+      i = n_negative_chi
+      !$omp end atomic
+      if (i <= 20) then
+        write(msg,'(A,A,I0,A,4(I5),4(1x,ES13.5))') trim(self%m3d_patch_info()), &
+          '  CHI floored in ', n_floored, ' points, first f,x,y,z=', first, first_val, &
+          self%beta(first(1),first(2),first(3),first(4))
+        call console_warn (ch_m3d, msg)
+      endif
+    endif
     call trace%end(itimer)
   END SUBROUTINE work_to_transfer_units
 

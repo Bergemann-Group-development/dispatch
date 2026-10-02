@@ -52,9 +52,14 @@ MODULE composition_patch_mod
     ! the RT slab states of this depth slab, which init_rt_columns groups into
     ! rt_column_t tasks
     type(rt_patch_ptr_t), allocatable :: rt_slabs(:)
+    ! the spectra and atoms the RT slabs are made from, kept until create_rt_slabs;
+    ! the same object as nlte_patch when that is linked
+    class(nlte_patch_t), pointer :: spectra => null()
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: execute
+    procedure :: slab_groups
+    procedure :: create_rt_slabs
     procedure :: create_sub_patches
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
@@ -65,6 +70,13 @@ MODULE composition_patch_mod
     procedure :: save_number_densities
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
+
+  ! The RT slabs of one spectrum: windows nu(1):nu(2) times directions mu(1):mu(2)
+  type, public :: slab_group_t
+    integer :: nu(2), mu(2)
+    class(atomic_spectrum_type), pointer :: sp => null()
+    type(atom_type), pointer :: atoms(:) => null()
+  end type slab_group_t
   
   real(8), public :: FeH=-99.9, ldne=0.25, ldrho=0.25, ldtemp=0.05
   logical, public :: save_atmos=.true., save_eos=.false.
@@ -81,7 +93,7 @@ MODULE composition_patch_mod
   character(len=512), save :: linelist_folder=''
   character(len=256), save, dimension(:), allocatable :: linelist_file
 
-  public :: read_composition_params
+  public :: read_composition_params, max_n_windows, set_n_windows_out
 
 contains
 
@@ -169,7 +181,7 @@ SUBROUTINE composition_pre_init (self)
   class(nlte_patch_t), pointer :: nlte_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
   real(8) :: ll_lam(2)
-  integer :: i, mu, nw, n_mu
+  integer :: i, mu, nw
   integer, save:: itimer=0
   logical, save :: first_time=.true., external_sp
   ! ----------------------------------------------------------------------------
@@ -195,10 +207,6 @@ SUBROUTINE composition_pre_init (self)
     endif
 
     external_sp = output_sp%nnu > 0
-
-    if (n_windows < 0) then
-      n_windows = omp%nthreads
-    endif
   endif
 
   allocate(nlte_patch)
@@ -250,24 +258,50 @@ SUBROUTINE composition_pre_init (self)
     call nlte_patch%exclude_double_lines()
   endif
 
-  ! make sure there are no more f-domain splits than threads
-  if (output_sp%nnu > 0) n_windows = min(n_windows, output_sp%nnu)
-  if (decouple_continuum) then
-    if (nlte_patch%bb_sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%bb_sp%nnu)
-    if (nlte_patch%bf_sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%bf_sp%nnu)
-  else
-    if (nlte_patch%sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%sp%nnu)
+  ! create_rt_slabs makes the RT slabs once n_windows is chosen
+  self%spectra => nlte_patch
+
+  if (save_species /= '') then
+    call self%save_number_densities(composition, pre_init=.true.)
   endif
 
-  self%n_windows = n_windows
-  n_mu = size(rt_out%vec,2)
+  call self%save_abundances_to_file()
+  call self%post_pre_init()
+  call trace%end(itimer)
+END SUBROUTINE composition_pre_init
 
-  ! Output frequency patches.  A contiguous output grid is split like the internal
-  ! one, into n_windows parts.  A window_file grid is split per window, so that no patch
-  ! spans the gap between two windows (see output_patch_range).  With fewer windows
-  ! than n_windows, each window is split into n_windows parts, so the output pass still has
-  ! at least n_windows tasks per depth for the threads; the smallest window caps that
-  ! count at one point per part.
+!===============================================================================
+!> The largest useful n_windows: no window of the internal or output spectrum
+!> may be empty.
+!===============================================================================
+INTEGER FUNCTION max_n_windows (spectra) RESULT (n)
+  class(nlte_patch_t), intent(in) :: spectra
+  !-----------------------------------------------------------------------------
+  n = huge(1)
+  if (spectra%output_sp%nnu > 0) n = min(n, spectra%output_sp%nnu)
+  if (decouple_continuum) then
+    if (associated(spectra%bb_sp)) then
+      if (spectra%bb_sp%nnu > 0) n = min(n, spectra%bb_sp%nnu)
+    endif
+    if (associated(spectra%bf_sp)) then
+      if (spectra%bf_sp%nnu > 0) n = min(n, spectra%bf_sp%nnu)
+    endif
+  elseif (associated(spectra%sp)) then
+    if (spectra%sp%nnu > 0) n = min(n, spectra%sp%nnu)
+  endif
+END FUNCTION max_n_windows
+
+!===============================================================================
+!> Output frequency patches.  A contiguous output grid is split like the internal
+!> one, into n_windows parts.  A window_file grid is split per window, so that no patch
+!> spans the gap between two windows (see output_patch_range).  With fewer windows
+!> than n_windows, each window is split into n_windows parts, so the output pass still has
+!> at least n_windows tasks per depth for the threads; the smallest window caps that
+!> count at one point per part.
+!===============================================================================
+SUBROUTINE set_n_windows_out (output_sp)
+  class(atomic_spectrum_type), intent(in) :: output_sp
+  !-----------------------------------------------------------------------------
   if (output_sp%n_segments > 0) then
     n_windows_out = output_sp%n_segments
     if (output_sp%n_segments < n_windows) n_windows_out = output_sp%n_segments * &
@@ -275,6 +309,56 @@ SUBROUTINE composition_pre_init (self)
   else
     n_windows_out = n_windows
   endif
+END SUBROUTINE set_n_windows_out
+
+!===============================================================================
+!> The RT slabs this patch makes for the current n_windows and n_windows_out:
+!> both directions of every internal window when the NLTE iteration runs, both
+!> directions of every output window for the output Lambda iteration, and the
+!> final output ray.
+!===============================================================================
+FUNCTION slab_groups (self) RESULT (groups)
+  class(composition_patch_t), intent(in) :: self
+  type(slab_group_t), allocatable :: groups(:)
+  class(nlte_patch_t), pointer :: spectra
+  type(slab_group_t) :: g(4)
+  integer :: n
+  !-----------------------------------------------------------------------------
+  spectra => self%spectra
+  n = 0
+  if (associated(spectra%atoms) .and. rt_iter%maxiter > 0) then
+    if (decouple_continuum) then
+      n = n + 1; g(n) = slab_group_t([1, n_windows], [1,2], spectra%bb_sp, spectra%bb_atoms)
+      n = n + 1; g(n) = slab_group_t([1, n_windows]+n_windows, [1,2], spectra%bf_sp, spectra%bf_atoms)
+    else
+      n = n + 1; g(n) = slab_group_t([1, n_windows], [1,2], spectra%sp, spectra%atoms)
+    endif
+  endif
+  ! rt_out%solver='none' disables the output pass entirely -- create no output
+  ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
+  if (spectra%output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
+    if (size(rt_out%vec,2) > 0 .or. (make_eos .and. self%key(1)==1)) then
+      if (rt_out%maxiter > 0) then
+        n = n + 1; g(n) = slab_group_t([-n_windows_out, -1], [1,2], spectra%output_sp, spectra%output_atoms)
+      endif
+      n = n + 1; g(n) = slab_group_t([-n_windows_out, -1], [-1,-1], spectra%output_sp, spectra%output_atoms)
+    endif
+  endif
+  allocate(groups, source=g(1:n))
+END FUNCTION slab_groups
+
+!===============================================================================
+!> Make the RT slabs of this depth slab, once n_windows and n_windows_out are
+!> set (init_rt_columns), with the opacity tables they share.
+!===============================================================================
+SUBROUTINE create_rt_slabs (self)
+  class(composition_patch_t) :: self
+  class(nlte_patch_t), pointer :: nlte_patch
+  type(slab_group_t), allocatable :: groups(:)
+  integer :: i
+  !-----------------------------------------------------------------------------
+  nlte_patch => self%spectra
+  self%n_windows = n_windows
 
   ! One sampled opacity table per i_nu, shared by the rt_patches created below,
   ! which differ only in i_mu and would otherwise build identical copies.  The
@@ -319,44 +403,22 @@ SUBROUTINE composition_pre_init (self)
       call self%ll_point_locks(i)%init('ll_point', i)
     end do
   endif
-  if (associated(nlte_patch%atoms)) then
-    if (rt_iter%maxiter > 0) then
-      if (decouple_continuum) then
-        call self%create_sub_patches([1, n_windows],      [1,2], nlte_patch%bb_sp, nlte_patch%bb_atoms)
-        call self%create_sub_patches([1, n_windows]+n_windows, [1,2], nlte_patch%bf_sp, nlte_patch%bf_atoms)
-      else
-        call self%create_sub_patches([1, n_windows], [1,2], nlte_patch%sp, nlte_patch%atoms)
-      endif
-    endif
+
+  ! explicit allocation: the optimized builds use -assume norealloc_lhs
+  allocate(groups, source=self%slab_groups())
+  do i=1, size(groups)
+    call self%create_sub_patches(groups(i)%nu, groups(i)%mu, groups(i)%sp, groups(i)%atoms)
+  end do
+
+  if (nlte_patch%output_sp%n_segments > 0) then
+    call verify_output_patch_coverage(nlte_patch%output_sp, n_windows_out)
   endif
 
-  ! rt_out%solver='none' disables the output pass entirely -- create no output
-  ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
-  if (output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
-    if (n_mu > 0 .or. (make_eos .and. self%key(1)==1)) then
-      if (rt_out%maxiter > 0) then
-        call self%create_sub_patches([-n_windows_out, -1], [1,2], output_sp, nlte_patch%output_atoms)
-      endif
-      call self%create_sub_patches([-n_windows_out, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
-    endif
-  endif
-
-  if (output_sp%n_segments > 0) then
-    call verify_output_patch_coverage(output_sp, n_windows_out)
-  endif
-
+  self%spectra => null()
   if (.not. associated(self%nlte_patch)) then
     deallocate(nlte_patch)
   endif
-
-  if (save_species /= '') then
-    call self%save_number_densities(composition, pre_init=.true.)
-  endif
-
-  call self%save_abundances_to_file()
-  call self%post_pre_init()
-  call trace%end(itimer)
-END SUBROUTINE composition_pre_init
+END SUBROUTINE create_rt_slabs
 
 !===============================================================================
 ! Phase B: Build line-list intervals from output and internal spectra.

@@ -25,10 +25,10 @@ MODULE rt_column_mod
   USE list_mod, only: list_t
   USE shared_mod
   USE console_mod
-  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos, mem_limit_gb
+  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos, mem_limit_gb, n_windows
   USE rt_params_mod, only: rt_out
-  USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t
-  USE composition_patch_mod, only: composition_patch_t
+  USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, slab_shape_t, window_shape, slab_memory, trans_copy_bytes
+  USE composition_patch_mod, only: composition_patch_t, slab_group_t, max_n_windows, set_n_windows_out
   USE nlte_patch_mod, only: nlte_patch_t
   implicit none
   private
@@ -43,39 +43,70 @@ MODULE rt_column_mod
     procedure :: init_nbors_hash
   end type rt_column_t
 
+  type :: composition_ptr_t
+    class(composition_patch_t), pointer :: p => null()
+  end type composition_ptr_t
+
+  ! The memory terms of report_memory_estimate, in bytes.  The phases are the EOS
+  ! setup, the NLTE iteration and the output pass; index 1 of the RT terms is the
+  ! NLTE phase, index 2 the output phase.  trans_copies are the transition copies
+  ! of slabs not made yet; those of existing slabs are part of os%gb.
+  type :: memory_terms_t
+    integer :: n_comp=0, n_column(2)=0
+    real(8) :: eos_work=0d0, eos_retained=0d0, atom(2)=0d0, trans_copies=0d0
+    real(8) :: max_work(2)=0d0, max_boundary(2)=0d0, sum_retained(2)=0d0, rt_persistent=0d0
+  end type memory_terms_t
+
+  ! With n_windows left at its default, the estimated peak must stay within this
+  ! fraction of the memory limit.  The estimate leaves out opacity caches and
+  ! solver temporaries and has come out about 10 % below the measured peak.
+  real(8), parameter :: window_memory_fraction = 0.7d0
+
   public :: init_rt_columns, report_memory_estimate, check_memory_limit
 
 contains
 
 !===============================================================================
-!> Group the RT slab states of all composition patches into columns, one per
-!> (i_nu, i_mu), and append the columns to the task list.  Called once all
-!> slabs exist and before the nbor lists are built.
+!> Choose n_windows, make the RT slab states of all composition patches, group
+!> them into columns, one per (i_nu, i_mu), and append the columns to the task
+!> list.  Called once all composition patches exist and before the nbor lists
+!> are built.
 !===============================================================================
 SUBROUTINE init_rt_columns (task_list)
   class(list_t) :: task_list
   class(link_t), pointer :: link
   type(rt_patch_ptr_t), allocatable :: slabs(:), grown(:)
+  type(composition_ptr_t), allocatable :: comps(:), grown_comps(:)
   class(rt_column_t), pointer :: column
   logical, allocatable :: grouped(:)
   integer, allocatable :: member(:)
   integer :: i, j, k, tmp
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_column_mod%init_rt_columns')
-  ! slabs and member are reallocated explicitly: the optimized builds use
+  ! comps, slabs and member are reallocated explicitly: the optimized builds use
   ! -assume norealloc_lhs
-  allocate(slabs(0))
+  allocate(comps(0))
   link => task_list%head
   do while (associated(link))
     select type (task => link%task)
     class is (composition_patch_t)
-      if (allocated(task%rt_slabs)) then
-        call set_twins(task%rt_slabs)
-        allocate(grown, source=[slabs, task%rt_slabs])
-        call move_alloc(grown, slabs)
-      endif
+      allocate(grown_comps(size(comps)+1))
+      grown_comps(1:size(comps)) = comps
+      grown_comps(size(comps)+1)%p => task
+      call move_alloc(grown_comps, comps)
     end select
     link => link%next
+  end do
+  call choose_n_windows (comps, task_list)
+
+  allocate(slabs(0))
+  do i=1, size(comps)
+    call comps(i)%p%create_rt_slabs()
+    if (allocated(comps(i)%p%rt_slabs)) then
+      call set_twins(comps(i)%p%rt_slabs)
+      allocate(grown, source=[slabs, comps(i)%p%rt_slabs])
+      call move_alloc(grown, slabs)
+    endif
   end do
   if (size(slabs) > 0 .and. mpi%size > 1) then
     call console_error ('RT columns need all depth slabs on one MPI rank')
@@ -350,88 +381,243 @@ SUBROUTINE init_nbors_hash (self, nbors)
 END SUBROUTINE init_nbors_hash
 
 !===============================================================================
-!> Per-rank estimate of the peak registered allocation.  The EOS setup, the NLTE
-!> iteration and the output pass run one after the other (output tasks wait for
-!> nlte_finished), so the estimate is the startup allocation and the retained
-!> EOS species plus the largest phase.  A phase holds, per busy thread, the
-!> workspace of one slab and the boundary buffer of its column, plus the
-!> retained RT fields of all slabs.  Allocations outside Dispatch's registry,
-!> opacity caches, solver temporaries and, without rt_to_file, the exit plane
-!> an up column's frozen slabs retain are excluded, so this is an estimate, not an
-!> upper bound.  Slabs
+!> n_windows, if not set in &run_params: at least twice the thread count, and
+!> doubled until the estimated peak (report_memory_estimate) fits within
+!> window_memory_fraction of the memory limit, or n_windows reaches the number
+!> of frequency points.  More windows shrink the work arrays of the busy columns
+!> but add slabs, each with its own u_phase and copies of the transitions that
+!> reach into its window, and leave the atom arrays and the EOS phase alone; if
+!> no count fits, the one with the lowest estimate is taken and
+!> check_memory_limit decides.  Sets n_windows_out to match.  The slabs do
+!> not exist yet, so the few kB of bookkeeping each registers when it is made
+!> are missing from the prediction, apart from their transition copies;
+!> window_memory_fraction covers the rest.
+!===============================================================================
+SUBROUTINE choose_n_windows (comps, list)
+  type(composition_ptr_t), intent(in) :: comps(:)
+  class(list_t), intent(in) :: list
+  type(memory_terms_t) :: fixed, terms
+  real(8) :: limit, estimate, best_estimate
+  integer :: n, n_max, n_default, best
+  character(len=32) :: text(3)
+  !-----------------------------------------------------------------------------
+  if (size(comps) == 0) return
+  n_max = max_n_windows(comps(1)%p%spectra)
+  if (n_windows > 0) then
+    n_windows = min(n_windows, n_max)
+    call set_n_windows_out(comps(1)%p%spectra%output_sp)
+    return
+  endif
+  n_default = min(2*omp%nthreads, n_max)
+  limit = memory_limit()
+  if (limit <= 0d0) then
+    n_windows = n_default
+    call set_n_windows_out(comps(1)%p%spectra%output_sp)
+    return
+  endif
+
+  call fixed_memory_terms (list, fixed)
+  n = n_default
+  best = n
+  best_estimate = huge(1d0)
+  do
+    n_windows = n
+    call set_n_windows_out(comps(1)%p%spectra%output_sp)
+    terms = fixed
+    call predicted_rt_terms (comps, terms)
+    estimate = peak_estimate(terms)
+    if (console_on(ch_m3d, 2, all_ranks=.true.)) &
+      write(console_unit,'(a,i0,a,f0.4,a)') '  n_windows=', n, ': estimated peak ', estimate, ' GiB'
+    if (estimate < best_estimate .or. estimate <= window_memory_fraction*limit) then
+      best = n
+      best_estimate = estimate
+    endif
+    ! past the lowest estimate, more windows only add slabs
+    if (estimate <= window_memory_fraction*limit .or. n >= n_max .or. estimate > best_estimate) exit
+    n = min(2*n, n_max)
+  end do
+  n_windows = best
+  call set_n_windows_out(comps(1)%p%spectra%output_sp)
+  if (n_windows /= n_default .and. console_on(ch_m3d, 0, all_ranks=.true.)) then
+    write(text(1),'(f10.2)') best_estimate
+    write(text(2),'(f10.2)') limit
+    write(text(3),'(i0)') nint(100*window_memory_fraction)
+    if (best_estimate <= window_memory_fraction*limit) then
+      write(console_unit,'(a,i0,a,i0,a,a,a,a,a,a,a)') 'n_windows=', n_windows, ' instead of ', n_default, &
+        ': the estimated peak, ', trim(adjustl(text(1))), ' GiB, fits within ', trim(text(3)), &
+        ' % of the ', trim(adjustl(text(2))), ' GiB memory limit'
+    else
+      write(console_unit,'(a,i0,a,i0,a,a,a,a,a,a,a)') 'n_windows=', n_windows, ' instead of ', n_default, &
+        ': the lowest estimated peak, ', trim(adjustl(text(1))), ' GiB, exceeds ', trim(text(3)), &
+        ' % of the ', trim(adjustl(text(2))), ' GiB memory limit'
+    endif
+  endif
+END SUBROUTINE choose_n_windows
+
+!===============================================================================
+!> The RT terms of the slabs that create_rt_slabs would make for the current
+!> n_windows: a slab's shape depends on its window and direction, its cells on
+!> its depth slab.  Columns are counted once per (i_nu, i_mu).
+!===============================================================================
+SUBROUTINE predicted_rt_terms (comps, terms)
+  type(composition_ptr_t), intent(in) :: comps(:)
+  type(memory_terms_t), intent(inout) :: terms
+  type(slab_group_t), allocatable :: groups(:)
+  type(slab_shape_t) :: shape
+  real(8) :: work, retained, boundary, persistent
+  integer :: c, g, i_nu, i_mu, k
+  logical :: new_column
+  !-----------------------------------------------------------------------------
+  allocate(groups, source=comps(1)%p%slab_groups())
+  do g=1, size(groups)
+    do i_mu=groups(g)%mu(1), groups(g)%mu(2)
+      do i_nu=groups(g)%nu(1), groups(g)%nu(2)
+        shape = window_shape(groups(g)%sp, groups(g)%atoms, i_nu, i_mu)
+        k = merge(2, 1, shape%do_out_sp)
+        terms%trans_copies = terms%trans_copies + size(comps)*trans_copy_bytes(shape)
+        new_column = .true.
+        do c=1, size(comps)
+          call slab_memory(shape, comps(c)%p%n, [0,0,1], work, retained, boundary, persistent)
+          terms%rt_persistent = terms%rt_persistent + persistent
+          terms%max_work(k) = max(terms%max_work(k), work)
+          terms%sum_retained(k) = terms%sum_retained(k) + retained
+          terms%max_boundary(k) = max(terms%max_boundary(k), boundary)
+          if (new_column) terms%n_column(k) = terms%n_column(k) + 1
+          new_column = .false.
+        end do
+      end do
+    end do
+  end do
+END SUBROUTINE predicted_rt_terms
+
+!===============================================================================
+!> The memory registered so far and the EOS and atom terms, which do not depend
+!> on n_windows.
+!===============================================================================
+SUBROUTINE fixed_memory_terms (list, terms)
+  class(list_t), intent(in) :: list
+  type(memory_terms_t), intent(out) :: terms
+  class(link_t), pointer :: link
+  real(8) :: transient, retained, atom_nlte, atom_out
+  !-----------------------------------------------------------------------------
+  link => list%head
+  do while (associated(link))
+    if (link%task%is_clear(bits%remove+bits%external+bits%virtual)) then
+      select type (task => link%task)
+      class is (composition_patch_t)
+        call task%estimate_eos_memory(transient, retained)
+        terms%n_comp = terms%n_comp + 1
+        ! the patch being loaded holds its own retained arrays inside transient
+        terms%eos_work = max(terms%eos_work, transient - retained/merge(1+task%n_out, 1, rotate_atmos))
+        terms%eos_retained = terms%eos_retained + retained
+      class is (nlte_patch_t)
+        call task%estimate_atom_memory(atom_nlte, atom_out)
+        terms%atom = terms%atom + [atom_nlte, atom_out]
+      end select
+    endif
+    link => link%next
+  end do
+END SUBROUTINE fixed_memory_terms
+
+!===============================================================================
+!> Per-rank peak [GiB].  The EOS setup, the NLTE iteration and the output pass
+!> run one after the other (output tasks wait for nlte_finished), so the peak is
+!> the startup allocation and the retained EOS species plus the largest phase.
+!> A phase holds, per busy thread, the workspace of one slab and the boundary
+!> buffer of its column, plus the retained RT fields of all slabs.  Slabs
 !> allocate u_phase when they first execute and keep it, so both RT phases
 !> count it for every slab.
+!===============================================================================
+FUNCTION peak_estimate (terms, phase) RESULT (estimate)
+  type(memory_terms_t), intent(in) :: terms
+  real(8), intent(out), optional :: phase(3)
+  real(8) :: estimate
+  real(8), parameter :: gib=1024d0**3
+  real(8) :: p(3)
+  !-----------------------------------------------------------------------------
+  p(1) = min(omp%nthreads, terms%n_comp)*terms%eos_work
+  p(2:3) = min(omp%nthreads, terms%n_column)*(terms%max_work + terms%max_boundary) &
+         + terms%sum_retained + terms%rt_persistent + terms%atom
+  estimate = os%gb + (terms%trans_copies + terms%eos_retained + maxval(p))/gib
+  if (present(phase)) phase = p
+END FUNCTION peak_estimate
+
+!===============================================================================
+!> Per-rank estimate of the peak registered allocation (peak_estimate) of the
+!> slabs and patches in the task list.  Allocations outside Dispatch's registry,
+!> opacity caches, solver temporaries and, without rt_to_file, the exit plane
+!> an up column's frozen slabs retain are excluded, so this is an estimate, not an
+!> upper bound.
 !===============================================================================
 SUBROUTINE report_memory_estimate (list, estimate)
   class(list_t), intent(in) :: list
   real(8), intent(out) :: estimate
   class(link_t), pointer :: link
+  type(memory_terms_t) :: terms
   real(8), parameter :: gib=1024d0**3
-  real(8) :: work, retained, boundary, persistent, transient, eos_retained, eos_work, rt_persistent
-  real(8) :: max_work(2), sum_retained(2), max_boundary(2), phase(3), atom(2), atom_nlte, atom_out
-  integer :: n_column(2), n_comp, workers(2), eos_workers, j, k
+  real(8) :: work, retained, boundary, persistent, phase(3)
+  integer :: workers(2), j, k
   character(len=6), parameter :: label(2) = ['NLTE  ', 'output']
   character(len=16) :: text
   !-----------------------------------------------------------------------------
-  n_column = 0; n_comp = 0
-  max_work = 0d0; sum_retained = 0d0; max_boundary = 0d0
-  eos_work = 0d0; eos_retained = 0d0; rt_persistent = 0d0; atom = 0d0
+  call fixed_memory_terms (list, terms)
   link => list%head
   do while (associated(link))
     if (link%task%is_clear(bits%remove+bits%external+bits%virtual)) then
       select type (task => link%task)
       class is (rt_column_t)
         k = merge(2, 1, task%do_out_sp)
-        n_column(k) = n_column(k) + 1
+        terms%n_column(k) = terms%n_column(k) + 1
         do j=1, size(task%slab)
           call task%slab(j)%p%estimate_memory(work, retained, boundary, persistent)
-          rt_persistent = rt_persistent + persistent
-          max_work(k) = max(max_work(k), work)
-          sum_retained(k) = sum_retained(k) + retained
-          max_boundary(k) = max(max_boundary(k), boundary)
+          terms%rt_persistent = terms%rt_persistent + persistent
+          terms%max_work(k) = max(terms%max_work(k), work)
+          terms%sum_retained(k) = terms%sum_retained(k) + retained
+          terms%max_boundary(k) = max(terms%max_boundary(k), boundary)
         end do
-      class is (composition_patch_t)
-        call task%estimate_eos_memory(transient, retained)
-        n_comp = n_comp + 1
-        ! the patch being loaded holds its own retained arrays inside transient
-        eos_work = max(eos_work, transient - retained/merge(1+task%n_out, 1, rotate_atmos))
-        eos_retained = eos_retained + retained
-      class is (nlte_patch_t)
-        call task%estimate_atom_memory(atom_nlte, atom_out)
-        atom = atom + [atom_nlte, atom_out]
       end select
     endif
     link => link%next
   end do
-  workers = min(omp%nthreads, n_column)
-  eos_workers = min(omp%nthreads, n_comp)
-  phase(1) = eos_workers*eos_work
-  phase(2:3) = workers*(max_work + max_boundary) + sum_retained + rt_persistent + atom
-  estimate = os%gb + (eos_retained + maxval(phase))/gib
+  estimate = peak_estimate(terms, phase)
   if (.not. console_on(ch_m3d, 1, all_ranks=.true.)) return
   write(text,'(f10.4)') estimate
   write(console_unit,'(a,a,a,i0,a)') 'Memory estimate: peak ', trim(adjustl(text)), ' GiB (rank ', mpi%rank, ')'
   if (.not. console_on(ch_m3d, 2, all_ranks=.true.)) return
+  workers = min(omp%nthreads, terms%n_column)
   write(console_unit,'(a)') '  by phase [GiB]:'
   write(console_unit,'(a,f10.4)') '  startup registered allocation ', os%gb
-  write(console_unit,'(a,f10.4)') '  retained EOS species          ', eos_retained/gib
+  write(console_unit,'(a,f10.4)') '  retained EOS species          ', terms%eos_retained/gib
   write(console_unit,'(a,f10.4,a,i0,a)') '  EOS phase                     ', phase(1)/gib, &
-    '  (', eos_workers, ' concurrent composition patches)'
+    '  (', min(omp%nthreads, terms%n_comp), ' concurrent composition patches)'
   do k=1, 2
-    if (n_column(k) == 0) cycle
+    if (terms%n_column(k) == 0) cycle
     write(console_unit,'(2x,a6,a,f10.4,a,i0,a,i0,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a)') label(k), &
-      ' phase                  ', phase(k+1)/gib, '  (', workers(k), ' of ', n_column(k), &
-      ' columns x (', max_work(k)/gib, ' work + ', max_boundary(k)/gib, ' buffer), ', &
-      sum_retained(k)/gib, ' retained, ', rt_persistent/gib, ' u_phase, ', atom(k)/gib, ' atom arrays)'
+      ' phase                  ', phase(k+1)/gib, '  (', workers(k), ' of ', terms%n_column(k), &
+      ' columns x (', terms%max_work(k)/gib, ' work + ', terms%max_boundary(k)/gib, ' buffer), ', &
+      terms%sum_retained(k)/gib, ' retained, ', terms%rt_persistent/gib, ' u_phase, ', &
+      terms%atom(k)/gib, ' atom arrays)'
   end do
   write(console_unit,'(a,f10.4)') '  estimated peak allocation     ', estimate
   flush(console_unit)
 END SUBROUTINE report_memory_estimate
 
 !===============================================================================
+!> The memory the run may use [GiB]: mem_limit_gb if positive, else the
+!> physical memory of the machine; 0 if there is no limit to check against.
+!===============================================================================
+FUNCTION memory_limit () RESULT (limit)
+  real(8) :: limit
+  !-----------------------------------------------------------------------------
+  limit = 0d0
+  if (mem_limit_gb < 0d0) return
+  limit = mem_limit_gb
+  if (limit == 0d0) limit = physical_memory_gib()
+END FUNCTION memory_limit
+
+!===============================================================================
 !> Stop before the dispatcher starts when the estimated peak exceeds the memory
-!> the run may use: mem_limit_gb if positive, else the physical memory of the
-!> machine.  The estimate leaves out some allocations, so a run that passes may
+!> limit.  The estimate leaves out some allocations, so a run that passes may
 !> still run out of memory, but one that fails would have.
 !===============================================================================
 SUBROUTINE check_memory_limit (estimate)
@@ -440,8 +626,7 @@ SUBROUTINE check_memory_limit (estimate)
   character(len=160) :: msg
   !-----------------------------------------------------------------------------
   if (mem_limit_gb < 0d0) return
-  limit = mem_limit_gb
-  if (limit == 0d0) limit = physical_memory_gib()
+  limit = memory_limit()
   if (limit <= 0d0) then
     call console_error ('Physical memory unknown; set mem_limit_gb in &run_params to enable the memory check')
     return

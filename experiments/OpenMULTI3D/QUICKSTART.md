@@ -84,6 +84,8 @@ accumulators) do not shrink with `n_windows` and set the floor of the NLTE phase
 If the estimate exceeds the physical memory of the machine, the run stops before the
 dispatcher starts. `mem_limit_gb` in `&run_params` replaces that limit with a value in
 GiB, and a negative value skips the check. Console level 2 adds the estimate per phase.
+Unless `n_windows` is set, it starts at twice the thread count and is doubled until the
+estimate fits within 70 % of the limit; the console says when it was raised.
 
 At completion, `Peak memory: ...` gives the registered peak, followed by the estimate at
 console level 1 and above. Opacity caches, solver temporaries and allocations Dispatch does not

@@ -290,7 +290,6 @@ contains
     ! still be linked to the original atom
     self%atoms = atoms
     self%atoms%name = 'main'
-    self%n_windows = n_windows
 
     if (decouple_continuum) then
       allocate(self%bb_atoms(natom))
