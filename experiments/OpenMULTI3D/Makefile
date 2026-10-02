@@ -69,6 +69,10 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
 # object into the link automatically (hence the explicit prerequisite above), and its
 # compile order relative to its ancestor needs stating explicitly too.
 rt_solvers_mod.o: rt_patch_mod.o
+
+# Fortran INCLUDE files: the compiler's .d files only feed the link list here, so
+# their includers are named explicitly
+rt_solvers_mod.o bftrans_mod.o level_mod.o: HOP/exp_neg.inc
 # The standalone HOP package is built in its own directory with -DHOP_STANDALONE, so its
 # objects never mix with the framework-enabled ones above.  Its default target builds
 # what the Python layer runs: libhop.so (tumult.hop, through the committed libhop.h) and

@@ -295,7 +295,7 @@ contains
   !> Both forms are evaluated at every point and one is kept by a bitwise select:
   !> merge() on the reals would let gfortran move each form into its own arm, and
   !> under its default -ftrapping-math it will not speculate floating-point arms,
-  !> which keeps the calling loop scalar.  The work is split over lw_exp, lw_series
+  !> which keeps the calling loop scalar.  The work is split over exp_neg, lw_series
   !> and lw_select so that each piece, and then linear_weights, stays under
   !> gfortran's inlining limits even in short_char and short_char_hermite.
   !===============================================================================
@@ -305,7 +305,7 @@ contains
     real(4) :: u0, ut, ps
     logical :: thin
     !-----------------------------------------------------------------------------
-    call lw_exp(t, E, u0)
+    call exp_neg(t, E, u0)
     ut = u0 / t
     ps = lw_series(t)
     thin = abs(t) <= 1.0
@@ -314,26 +314,7 @@ contains
     W = lw_select(u0 - ps, ut - E, thin)
   end subroutine linear_weights
 
-  !===============================================================================
-  !> exp(-t) and 1 - exp(-t) for linear_weights, neither formed from the other.
-  pure subroutine lw_exp (t, E, u0)
-    real(4), intent(in) :: t
-    real(4), intent(out) :: E, u0
-    ! ln2 split so that n*LW_C1 is exact; LW_Q is q, lowest order first
-    real(4), parameter :: LW_LOG2E = 1.44269504, LW_C1 = 0.693359375, LW_C2 = -2.12194440e-4
-    real(4), parameter :: LW_Q(0:5) = [ &
-      +1.000000000e+00, -5.000000000e-01, +1.666666716e-01, -4.167019576e-02, &
-      +8.353385143e-03, -1.351550105e-03 ]
-    real(4) :: lw_tc, lw_n, lw_r, lw_m, lw_s
-    !-----------------------------------------------------------------------------
-    lw_tc = min(t, 87.0)
-    lw_n = anint(lw_tc*LW_LOG2E)
-    lw_r = (lw_tc - lw_n*LW_C1) - lw_n*LW_C2
-    lw_m = lw_r*(LW_Q(0) + lw_r*(LW_Q(1) + lw_r*(LW_Q(2) + lw_r*(LW_Q(3) + lw_r*(LW_Q(4) + lw_r*LW_Q(5))))))
-    lw_s = transfer(ishft(127 - int(lw_n), 23), 1.0)
-    E = lw_s - lw_s*lw_m
-    u0 = (1.0 - lw_s) + lw_s*lw_m
-  end subroutine lw_exp
+  include '../HOP/exp_neg.inc'
 
   !===============================================================================
   !> Psi = t*P(t), the series form of linear_weights for |t| <= 1.
@@ -365,13 +346,13 @@ contains
   !>
   !>   E = exp(-t),  U0 = 1 - E,  U1 = t - U0,  q = U2/t with U2 = t^2 - 2*U1.
   !>
-  !> E and U0 come from lw_exp's range reduction, so neither is formed from the
+  !> E and U0 come from exp_neg's range reduction, so neither is formed from the
   !> other.  U1 and q cancel as t -> 0.  U1 = t*Psi with linear_weights' Psi, so it
   !> is t*lw_series(t) for |t| <= 1 and t - U0 above.  q = t^2*R(t) for |t| <= 2 and
   !> t - 2*U1/t above; its series reaches further than Psi's because t - 2*U1/t
   !> still loses ~10 ulp near t = -1.5.  R is a relative-error minimax fit of degree
   !> 8 on |t| <= 2; every output is within 4 fp32 ulp of the exact value over
-  !> -2 <= t <= 87, and E is clamped there as in lw_exp.  The forms are combined by
+  !> -2 <= t <= 87, and E is clamped there as in exp_neg.  The forms are combined by
   !> lw_select for the reason given at linear_weights.
   !===============================================================================
   pure module subroutine parab_moments (t, E, U0, U1, q)
@@ -384,7 +365,7 @@ contains
       +5.153443894e-08 ]
     real(4) :: qs
     !-----------------------------------------------------------------------------
-    call lw_exp(t, E, U0)
+    call exp_neg(t, E, U0)
     U1 = lw_select(t*lw_series(t), t - U0, abs(t) <= 1.0)
     qs = t*t*(PM_R(0) + t*(PM_R(1) + t*(PM_R(2) + t*(PM_R(3) + t*(PM_R(4) + t*(PM_R(5) &
        + t*(PM_R(6) + t*(PM_R(7) + t*PM_R(8)))))))))
@@ -806,7 +787,7 @@ contains
     !> from the moments Mn = int_0^t tau^n exp(-tau) dtau, by the upward recurrence
     !> Mn = n*M(n-1) - t^n*E from M0 = 1 - E, with w3 = M0 - w0 - w1 - w2 so that
     !> the weights sum to M0 there.  The moment combinations cancel below t ~ 2.5
-    !> and for every t < 0.  E and M0 come from lw_exp.  Every weight is within
+    !> and for every t < 0.  E and M0 come from exp_neg.  Every weight is within
     !> 8 fp32 ulp of the exact value over -3 <= t <= 87.  The moment arm is formed
     !> at max(t, 3) so that it stays finite where it is not selected, and the arms
     !> are combined by lw_select (see linear_weights).
@@ -818,7 +799,7 @@ contains
       real(4) :: M0, M1, M2, M3, tb, tb2, tb3, r3, tE, b0, b1, b2
       logical :: ser
       !-------------------------------------------------------------------------
-      call lw_exp(t, E, M0)
+      call exp_neg(t, E, M0)
       tb  = max(t, tser)
       tb2 = tb*tb
       tb3 = tb2*tb
