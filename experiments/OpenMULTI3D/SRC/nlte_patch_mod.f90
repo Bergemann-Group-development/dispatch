@@ -25,7 +25,8 @@ MODULE nlte_patch_mod
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_windows, n_windows_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
-    flux_final_counter, nlte_finished, nlte_last_change, n_nlte_patches, release_output_tasks, &
+    flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
+    n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates
   USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
@@ -569,6 +570,7 @@ contains
           call shared%abort ('nlte_patch_t%execute: an iteration started before the previous one had completed')
         endif
         sweep_iter = self%iter
+        nlte_last_iter = self%iter
         sweep_active = n_nlte_patches - n_finished
         sweep_updates = 0
         last_maxerr = sweep_maxerr
@@ -591,6 +593,8 @@ contains
     ! flux_convergence is the authoritative one (see the matching guard in
     ! rt_patch_pre_update)
     if (locally_converged .and. .not. flux_convergence) then
+      !$omp atomic
+      n_convmax_finished = n_convmax_finished + 1
       call self%finish()
     endif
 

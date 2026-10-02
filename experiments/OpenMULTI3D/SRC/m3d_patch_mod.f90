@@ -187,6 +187,11 @@ MODULE m3d_patch_mod
     ! Largest relative population change of the last NLTE iteration reported in the
     ! iteration table, for the verdict printed at the end of the run
     real(8), public, save :: nlte_last_change=0d0
+    ! For the same verdict: the last iteration any nlte_patch of this rank performed,
+    ! and how many of them finished because every atom there changed by less than
+    ! convmax (premature_finish).  A run whose patches all finished that way never
+    ! completes the iteration that would give it a final global change.
+    integer, public, save :: nlte_last_iter=0, n_convmax_finished=0
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
     ! Which preconditioning the bound-bound rates use.  'original' subtracts the

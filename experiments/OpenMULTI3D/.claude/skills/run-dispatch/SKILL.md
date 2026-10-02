@@ -75,7 +75,9 @@ stops after 52 iterations in 2 s at 4 threads.
 ## Check the run
 
 - **Termination:** the run ended if the output contains `OpenMULTI3D terminated`.
-  `terminated successfully.` means LTE or converged NLTE iterations; `terminated, but the
+  `terminated successfully.` means LTE or NLTE iterations that met convlim;
+  `terminated successfully: every NLTE patch met convmax ...` a run that ended because
+  every depth patch met convmax (premature_finish); `terminated, but the
   NLTE iterations did not converge: ...` (a warning) gives the iteration count and the last
   relative change. The memory estimate is printed before execution (level 1;
   the breakdown by phase at level 2). The registered peak comes at the end, as

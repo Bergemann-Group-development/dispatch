@@ -23,7 +23,8 @@ PROGRAM dispatch
   USE read_external_mod
   USE timer_mod
   USE mpi_debug_mod
-  USE m3d_patch_mod, only: write_linelist_out, n_nlte_patches, converged, convlim, nlte_last_change
+  USE m3d_patch_mod, only: write_linelist_out, n_nlte_patches, converged, convlim, convmax, &
+    nlte_last_change, nlte_last_iter, n_convmax_finished
   USE rt_params_mod, only: rt_iter
   USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
@@ -52,13 +53,19 @@ PROGRAM dispatch
     endif
     write(console_unit,'(a)') trim(text)
   endif
-  ! Success is an LTE run or NLTE iterations that met convlim.  A run that used up
-  ! its iterations says so with the change it ended on.
+  ! Success is an LTE run, NLTE iterations that met convlim, or NLTE iterations in
+  ! which every depth patch met convmax and finished early (premature_finish); the
+  ! last of these never completes the iteration that would measure a final global
+  ! change.  A run that used up its iterations says so with the change it ended on.
+  write(nit,'(i0)') nlte_last_iter
   if (n_nlte_patches == 0 .or. rt_iter%maxiter == 0 .or. converged .or. &
       (nlte_last_change /= 0d0 .and. abs(nlte_last_change) < convlim)) then
     if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated successfully.'
+  else if (n_convmax_finished == n_nlte_patches) then
+    write(limit,'(es10.1)') convmax*100
+    if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated successfully: ' // &
+      'every NLTE patch met convmax (' // trim(adjustl(limit)) // ' %) after ' // trim(nit) // ' iterations.'
   else
-    write(nit,'(i0)') rt_iter%maxiter
     write(change,'(f10.2)') abs(nlte_last_change)*100
     write(limit,'(f10.2)') convlim*100
     text = 'OpenMULTI3D terminated, but the NLTE iterations did not converge: after ' // trim(nit) // &
