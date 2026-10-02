@@ -90,3 +90,11 @@ benchmarks/*
 
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml
+
+# The alpha campaign: reports and job scripts are source; its runs stay on the cluster.
+!alpha_campaign/
+alpha_campaign/*
+!alpha_campaign/reports/
+!alpha_campaign/jobs/
+!alpha_campaign/jobs/**
+alpha_campaign/jobs/**/__pycache__/

@@ -1,0 +1,2 @@
+# 4MOST LRS (air, Angstrom)
+3700 9500

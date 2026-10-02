@@ -1,0 +1,4 @@
+# 4MOST HRS arms (air, Angstrom), padded by 5 A
+3920 4360
+5155 5735
+6095 6795
