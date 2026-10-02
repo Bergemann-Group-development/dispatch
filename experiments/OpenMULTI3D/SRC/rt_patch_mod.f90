@@ -10,7 +10,7 @@ MODULE rt_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
-  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, one_twelfth, HZ_TO_AA, pi
+  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA, pi
   USE patch_mod, only: patch_t
   USE interpol_mod, only: pchip_mono
   USE handyfuncs_mod
@@ -267,9 +267,9 @@ MODULE rt_patch_mod
       real(8) :: vec(3)
     end subroutine long_char_linear
 
-    pure module subroutine parab_moments (dt, ex, rdt, U0, U1, q)
-      real(8), intent(in)  :: dt, ex, rdt
-      real(8), intent(out) :: U0, U1, q
+    pure module subroutine parab_moments (t, E, U0, U1, q)
+      real(4), intent(in)  :: t
+      real(4), intent(out) :: E, U0, U1, q
     end subroutine parab_moments
 
     module subroutine long_char_quadratic (self, vec)

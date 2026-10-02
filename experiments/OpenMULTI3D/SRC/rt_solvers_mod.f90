@@ -360,24 +360,35 @@ contains
   end function lw_select
 
   !===============================================================================
-  !> Parabolic transfer moments over an interval of optical depth dt (ex=exp(-dt),
-  !> rdt=1/dt): U0 = 1-exp(-dt), U1 = dt-U0, q = U2/dt with U2 = dt^2-2*U1.  Below
-  !> dt=1e-3 they use the Taylor series (U1 = dt^2/2 - dt^3/6, q = dt^2/3 -
-  !> dt^3/12) to avoid cancellation in 1-ex.
+  !> Parabolic transfer moments over an interval of optical depth t, in fp32 and
+  !> branch-free:
+  !>
+  !>   E = exp(-t),  U0 = 1 - E,  U1 = t - U0,  q = U2/t with U2 = t^2 - 2*U1.
+  !>
+  !> E and U0 come from lw_exp's range reduction, so neither is formed from the
+  !> other.  U1 and q cancel as t -> 0.  U1 = t*Psi with linear_weights' Psi, so it
+  !> is t*lw_series(t) for |t| <= 1 and t - U0 above.  q = t^2*R(t) for |t| <= 2 and
+  !> t - 2*U1/t above; its series reaches further than Psi's because t - 2*U1/t
+  !> still loses ~10 ulp near t = -1.5.  R is a relative-error minimax fit of degree
+  !> 8 on |t| <= 2; every output is within 4 fp32 ulp of the exact value over
+  !> -2 <= t <= 87, and E is clamped there as in lw_exp.  The forms are combined by
+  !> lw_select for the reason given at linear_weights.
   !===============================================================================
-  pure module subroutine parab_moments (dt, ex, rdt, U0, U1, q)
-    real(8), intent(in)  :: dt, ex, rdt
-    real(8), intent(out) :: U0, U1, q
+  pure module subroutine parab_moments (t, E, U0, U1, q)
+    real(4), intent(in)  :: t
+    real(4), intent(out) :: E, U0, U1, q
+    ! PM_R is R = q/t^2, lowest order first
+    real(4), parameter :: PM_R(0:8) = [ &
+      +3.333333433e-01, -8.333329856e-02, +1.666668802e-02, -2.777901944e-03, &
+      +3.968053206e-04, -4.948913192e-05, +5.514686109e-06, -5.894584660e-07, &
+      +5.153443894e-08 ]
+    real(4) :: qs
     !-----------------------------------------------------------------------------
-    if (abs(dt) > 1e-3) then       ! exact moments hold for either sign of dt
-      U0 = 1.0d0 - ex
-      U1 = dt - U0
-      q  = dt - 2.0d0*U1*rdt        ! q = U2/dt
-    else
-      U1 = dt*dt*(0.5d0 - dt*one_sixth)
-      U0 = dt - U1
-      q  = dt*dt*(one_third - dt*one_twelfth)
-    end if
+    call lw_exp(t, E, U0)
+    U1 = lw_select(t*lw_series(t), t - U0, abs(t) <= 1.0)
+    qs = t*t*(PM_R(0) + t*(PM_R(1) + t*(PM_R(2) + t*(PM_R(3) + t*(PM_R(4) + t*(PM_R(5) &
+       + t*(PM_R(6) + t*(PM_R(7) + t*PM_R(8)))))))))
+    q = lw_select(qs, t - 2.0*(U1/t), abs(t) <= 2.0)
   end subroutine parab_moments
 
 !===============================================================================
@@ -472,7 +483,7 @@ contains
       logical, intent(in) :: at_target
       real(4), intent(out) :: Inu, plam
       real(4) :: t1, t2, t3, dtup, dtdn, dsdtau
-      real(8) :: dt, rdt, ex, U0, U1, q, A, B, C ! keep in double precision
+      real(4) :: dt, rdt, ex, U0, U1, q, A, B, C
       !-------------------------------------------------------------------------
       ! one sided dchi/ds either side of c, and the MC-limited central slope
       t1 = (xxc - xxup) * rdsup
@@ -487,17 +498,16 @@ contains
       dtdn = max(sign(max(abs(dtdn), dtmin), dtdn), -real(maser_dtau_max))
 
       dt = merge(dtup, dtdn, at_target)
-      rdt = 1.0d0 / dt
-      ex = exp(-min(dt, 80.d0))
-      call parab_moments(dt, ex, rdt, U0, U1, q)
+      rdt = 1.0 / dt
+      call parab_moments(dt, ex, U0, U1, q)
 
       ! one sided dS/dtau either side of c, and the MC-limited central slope
       if (at_target) then
-        t1 = (ssc - ssup) * real(rdt,4)
+        t1 = (ssc - ssup) * rdt
         t3 = (ssdn - ssc) / dtdn
       else
         t1 = (ssc - ssup) / dtup
-        t3 = (ssdn - ssc) * real(rdt,4)
+        t3 = (ssdn - ssc) * rdt
       endif
       t2 = 0.5*(t1 + t3)
       dsdtau = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
@@ -506,19 +516,19 @@ contains
       ! (plam=0), and Inu is capped, as in the other solvers
       plam = 0.0
       if (at_target) then
-        B = (2.0d0*U1 - q) * rdt      ! on ssc  (the target)
+        B = (2.0*U1 - q) * rdt        ! on ssc  (the target)
         A = U0 - B                    ! on ssup (the upwind point)
         C = q - U1                    ! on dsdtau
-        Inu = Inuup*ex + real(A,4)*ssup + real(B,4)*ssc + real(C,4)*dsdtau
+        Inu = Inuup*ex + A*ssup + B*ssc + C*dsdtau
         if (get_rates .and. dt > 0 .and. xxc > 0) &
-          plam = real(B,4) / xxc    ! diagonal of the Lambda operator
+          plam = B / xxc            ! diagonal of the Lambda operator
       else
         A = q * rdt                   ! on ssdn (the target)
         B = U0 - A                    ! on ssc  (the upwind point)
         C = U1 - q                    ! on dsdtau
-        Inu = Inuup*ex + real(A,4)*ssdn + real(B,4)*ssc + real(C,4)*dsdtau
+        Inu = Inuup*ex + A*ssdn + B*ssc + C*dsdtau
         if (get_rates .and. dt > 0 .and. xxdn > 0) &
-          plam = real(A,4) / xxdn   ! diagonal of the Lambda operator
+          plam = A / xxdn           ! diagonal of the Lambda operator
       endif
       Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
     end subroutine quad_step
@@ -544,13 +554,13 @@ contains
 !> The source cubic's two Bezier control points are clamped into
 !> [min(Sup,Sc), max(Sup,Sc)] (monotone), the cubic analogue of the quadratic
 !> solver's MC limiter; the weights are integrals of the Bernstein basis against
-!> exp(-t), from the moments Mn = int_0^dt t^n e^-t dt with a Taylor branch at
-!> small dt.
+!> exp(-t), from series below dt = 3 and the moments Mn = int_0^dt t^n e^-t dt
+!> above (bezier3_weights).
 !>
 !> The first plane integrates from the boundary ghost plane (chi/Snu/Inu from
 !> set_upstream_boundary via halo exchange).  With a real upstream neighbour
 !> (comp_up) or a deep BOTTOM boundary (ghost Pe/T extrapolated by ghost_thermo)
-!> the full herm_step is used.  Only at the zeroed TOP boundary (chi==0, where the
+!> the full step (herm_plane) is used.  Only at the zeroed TOP boundary (chi==0, where the
 !> analytic dBnu/dtau=.../chi is singular) does the upwind-end source slope
 !> degrade to the interval secant (herm_first).
 !===============================================================================
@@ -560,13 +570,13 @@ contains
     class(composition_type), pointer :: comp_up
     real(8), intent(in) :: vec(3)
     real(4) :: ds, dsup, rdsup, dsup1, dsup2, gfac
-    real(4) :: Inu, ppsi, aTu, aTc, rTup, betup
-    real(4) :: peu, pec, pedn, rpeu, rpec, rpedn, gpu, gpc
+    real(4) :: Inu, ppsi, aTc
+    real(4) :: pec, pedn, rpec, rpedn, gpc
     real(4), parameter :: dtmin=1e-20
     real(4), dimension(:,:,:,:,:), contiguous, pointer :: w
     real(4), dimension(:,:,:,:), contiguous, pointer :: psi, bk
-    real(4), dimension(:), allocatable :: hknu
-    integer :: zs, ze, zup, zdn, zff, zu, z1, z2, z3, dir, nx, ny, fs, fe
+    real(4), dimension(:), allocatable, target :: hknu, bghost
+    integer :: zs, ze, zup, zdn, zu, z1, z2, z3, dir, nx, ny, fs, fe
     logical :: get_rates, use_upstream, extrap_bottom
     real(4) :: xx3g(3)
     integer, save :: itimer=0
@@ -602,12 +612,10 @@ contains
     ! first plane: integrate from the boundary ghost plane, whose chi/Snu are
     ! already set (a real neighbour, or set_upstream_boundary's bottom
     ! extrapolation / top zeroing).  With a neighbour or bottom boundary the ghost
-    ! Pe/T are available (or extrapolated by ghost_thermo) and the full herm_step
-    ! runs; the zeroed top ghost (chi==0) keeps the secant fallback herm_first.
+    ! Pe/T are available (or extrapolated by ghost_thermo) and the full step runs
+    ! in herm_plane; the zeroed top ghost (chi==0) keeps the secant fallback
+    ! herm_first.
     use_upstream = associated(comp_up)
-    z = zs
-    zup = z - dir
-    zdn = z + dir
     ! ghost extrapolated (not zeroed) exactly when set_upstream_boundary
     ! extrapolates chi/Snu: the zl branch with zu not also set
     extrap_bottom = (.not. use_upstream) .and. &
@@ -620,40 +628,16 @@ contains
       z3 = zs + 2*dir                           ! * ds from the ghost plane)
       xx3g = [1.0, 2.0, 3.0]
     endif
-    do y=1, ny
-      do x=1, nx
-        if (use_upstream) then
-          peu  = comp_up%pe4(x,y,zu)
-          rpeu = 1.0 / peu
-          gpu  = gfac * comp_up%dpe_dz(x,y,zu)
-          rTup = 1.0 / real(comp_up%temp(x,y,zu), 4)   ! upwind-plane beta from T
-          aTu  = gfac * comp_up%dlnt_dz(x,y,zu) * rTup
-        else if (extrap_bottom) then
-          ! ghost Pe/T extrapolated from the three innermost planes, mirroring
-          ! the chi/Snu extrapolation in set_upstream_boundary
-          call ghost_thermo (x, y, peu, rpeu, gpu, rTup, aTu)
-        endif
-        if (use_upstream .or. extrap_bottom) then
-          pec   = comp%pe4(x,y,z)
-          rpec  = 1.0 / pec
-          gpc   = gfac * comp%dpe_dz(x,y,z)
-          aTc   = gfac * comp%dlnt_dz(x,y,z) / real(comp%temp(x,y,z), 4)
-          rpedn = 1.0 / comp%pe4(x,y,zdn)              ! downwind parabola sample
-          do f=fs, fe
-            ! the ghost carries chi/Snu/Inu but not beta; rebuild beta at the
-            ! upwind point from the (neighbour or extrapolated) T, as
-            ! lte_background_opacities does (zdn is the third parabola sample)
-            betup = max(exp(-hknu(f)*rTup), tiny(1.0))
-            call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zdn,1), &
-                            w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zdn,2), &
-                            betup, bk(f,x,y,z), bk(f,x,y,zdn), hknu(f), &
-                            w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
-                            aTu, aTc, .true., Inu, ppsi)
-            w(f,x,y,z,3) = Inu
-            if (get_rates) psi(f,x,y,z) = ppsi
-          end do ! f-loop
-        else
-          ! top boundary: the zeroed ghost has no thermodynamic state (chi==0)
+    allocate(bghost(fs:fe))
+    if (use_upstream .or. extrap_bottom) then
+      call herm_plane (zs, zs+dir, .true.)
+    else
+      ! top boundary: the zeroed ghost has no thermodynamic state (chi==0)
+      z = zs
+      zup = z - dir
+      zdn = z + dir
+      do y=1, ny
+        do x=1, nx
           pec   = comp%pe4(x,y,z)
           pedn  = comp%pe4(x,y,zdn)
           rpec  = 1.0 / pec
@@ -669,120 +653,118 @@ contains
             w(f,x,y,z,3) = Inu
             if (get_rates) psi(f,x,y,z) = ppsi
           end do ! f-loop
-        endif
+        end do
       end do
-    end do
+    endif
 
     ! interior planes with a downwind neighbour: the parabola is centred at the
     ! target z (third sample = zdn), so its centred slope lands at the downwind
     ! end of the integrated interval [zup, z] and its one-sided slope at zup
     do z=zs+dir, ze-dir, dir
-      zup = z - dir
-      zdn = z + dir
-      do y=1, ny
-        do x=1, nx
-          peu   = comp%pe4(x,y,zup)
-          pec   = comp%pe4(x,y,z)
-          rpeu  = 1.0 / peu
-          rpec  = 1.0 / pec
-          rpedn = 1.0 / comp%pe4(x,y,zdn)
-          gpu   = gfac * comp%dpe_dz(x,y,zup)
-          gpc   = gfac * comp%dpe_dz(x,y,z)
-          aTu   = gfac * comp%dlnt_dz(x,y,zup) / real(comp%temp(x,y,zup), 4)
-          aTc   = gfac * comp%dlnt_dz(x,y,z)   / real(comp%temp(x,y,z),   4)
-          do f=fs, fe
-            call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zdn,1), &
-                            w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zdn,2), &
-                            bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,zdn), hknu(f), &
-                            w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
-                            aTu, aTc, .true., Inu, ppsi)
-            w(f,x,y,z,3) = Inu
-            if (get_rates) psi(f,x,y,z) = ppsi
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
+      call herm_plane (z, z+dir, .true.)
+    end do
 
     ! last plane z==ze: no downwind sample exists, so the parabola is centred at
-    ! the upwind end zup (third sample = zff, two planes upwind) and its centred
-    ! slope lands at zup, the one-sided slope at the target z -- the same stencil
-    ! shift the quadratic solver uses at its final point
-    z   = ze
-    zup = z - dir
-    zff = z - 2*dir
-    if (zff >= 1 .and. zff <= self%nz) then
-      ! nz >= 3: the two-planes-upwind sample is in the domain
+    ! the upwind end zup (third sample two planes upwind) and its centred slope
+    ! lands at zup, the one-sided slope at the target z -- the same stencil shift
+    ! the quadratic solver uses at its final point
+    call herm_plane (ze, ze-2*dir, .false.)
+    call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> One plane z, integrated over [zup, z] with zup = z - dir.  zt is the third
+    !> parabola sample: downwind with center_target, two planes upwind without.
+    !> Every plane that takes the full step goes through here, so herm_dtau,
+    !> bezier3_weights and herm_source each have a single call site, and gfortran
+    !> inlines them into the f-loop whatever their size; called from several
+    !> places they exceed its inlining limits and the loop stays scalar.
+    !>
+    !> The upwind point is the boundary ghost on the first plane.  Its Pe/T come
+    !> from the neighbour or from ghost_thermo, and its beta is rebuilt from T as
+    !> lte_background_opacities does, since the ghost carries chi/Snu/Inu but not
+    !> beta.  The third sample is the ghost only on the last plane of a patch with
+    !> nz == 2: from the neighbour, or at the zeroed top ghost the target's
+    !> beta/Pe, which need only be finite since chi/Pe and Snu/Bnu vanish there.
+    !---------------------------------------------------------------------------
+    subroutine herm_plane (z, zt, center_target)
+      integer, intent(in) :: z, zt
+      logical, intent(in) :: center_target
+      real(4), dimension(:,:,:,:,:), contiguous, pointer :: wp
+      real(4), dimension(:,:,:,:), contiguous, pointer :: bp, pp
+      real(4), dimension(:), contiguous, pointer :: hp, bu, bt
+      real(4) :: peu, pec, rpeu, rpec, rpet, gpu, gpc, aTu, aTc, rTup
+      real(4) :: Inu, ppsi, dt, ex, w0, w1, w2, w3
+      logical :: ghost_up, ghost_t, rates
+      integer :: x, y, f, zup
+      !-------------------------------------------------------------------------
+      ! local copies of the host pointers and of get_rates: through the host
+      ! frame, which the f-loop's stores may alias, gfortran reloads them every
+      ! iteration, and then cannot vectorise the loads or hoist the psi branch
+      wp => w
+      bp => bk
+      pp => psi
+      hp => hknu
+      rates = get_rates
+      zup = z - dir
+      ghost_up = z == zs
+      ghost_t = zt < 1 .or. zt > self%nz
       do y=1, ny
         do x=1, nx
-          peu   = comp%pe4(x,y,zup)
-          pec   = comp%pe4(x,y,z)
-          rpeu  = 1.0 / peu
-          rpec  = 1.0 / pec
-          rpedn = 1.0 / comp%pe4(x,y,zff)
-          gpu   = gfac * comp%dpe_dz(x,y,zup)
-          gpc   = gfac * comp%dpe_dz(x,y,z)
-          aTu   = gfac * comp%dlnt_dz(x,y,zup) / real(comp%temp(x,y,zup), 4)
-          aTc   = gfac * comp%dlnt_dz(x,y,z)   / real(comp%temp(x,y,z),   4)
+          pec  = comp%pe4(x,y,z)
+          rpec = 1.0 / pec
+          gpc  = gfac * comp%dpe_dz(x,y,z)
+          aTc  = gfac * comp%dlnt_dz(x,y,z) / real(comp%temp(x,y,z), 4)
+          if (ghost_up) then
+            if (use_upstream) then
+              peu  = comp_up%pe4(x,y,zu)
+              rpeu = 1.0 / peu
+              gpu  = gfac * comp_up%dpe_dz(x,y,zu)
+              rTup = 1.0 / real(comp_up%temp(x,y,zu), 4)
+              aTu  = gfac * comp_up%dlnt_dz(x,y,zu) * rTup
+            else
+              ! ghost Pe/T extrapolated from the three innermost planes,
+              ! mirroring the chi/Snu extrapolation in set_upstream_boundary
+              call ghost_thermo (x, y, peu, rpeu, gpu, rTup, aTu)
+            endif
+            bghost(fs:fe) = max(exp(-hp*rTup), tiny(1.0))
+            bu(fs:) => bghost
+          else
+            peu  = comp%pe4(x,y,zup)
+            rpeu = 1.0 / peu
+            gpu  = gfac * comp%dpe_dz(x,y,zup)
+            aTu  = gfac * comp%dlnt_dz(x,y,zup) / real(comp%temp(x,y,zup), 4)
+            bu(fs:) => bp(fs:fe,x,y,zup)
+          endif
+          if (.not. ghost_t) then
+            rpet = 1.0 / comp%pe4(x,y,zt)
+            bt(fs:) => bp(fs:fe,x,y,zt)
+          else if (use_upstream) then
+            rpet = 1.0 / comp_up%pe4(x,y,zu)
+            bghost(fs:fe) = max(exp(-hp/real(comp_up%temp(x,y,zu), 4)), tiny(1.0))
+            bt(fs:) => bghost
+          else
+            rpet = rpec
+            bt(fs:) => bp(fs:fe,x,y,z)
+          endif
           do f=fs, fe
-            call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
-                            w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                            bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,zff), hknu(f), &
-                            w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
-                            aTu, aTc, .false., Inu, ppsi)
-            w(f,x,y,z,3) = Inu
-            if (get_rates) psi(f,x,y,z) = ppsi
+            dt = herm_dtau (wp(f,x,y,zup,1), wp(f,x,y,z,1), wp(f,x,y,zt,1), &
+                            peu, rpeu, gpu, pec, rpec, gpc, rpet, center_target)
+            call bezier3_weights (dt, ex, w0, w1, w2, w3)
+            call herm_source (wp(f,x,y,zup,1), wp(f,x,y,z,1), wp(f,x,y,zup,2), wp(f,x,y,z,2), wp(f,x,y,zt,2), &
+                              bu(f), bp(f,x,y,z), bt(f), hp(f), wp(f,x,y,zup,3), &
+                              aTu, aTc, center_target, dt, ex, w0, w1, w2, w3, Inu, ppsi)
+            wp(f,x,y,z,3) = Inu
+            if (rates) pp(f,x,y,z) = ppsi
           end do ! f-loop
         end do
       end do
-    else
-      ! nz == 2: the two-planes-upwind sample is the boundary ghost (zff == zup of
-      ! the first plane).  Its Pe/beta come from the neighbour, or (zeroed top
-      ! ghost) only need to be finite since chi/Pe and Snu/Bnu vanish there
-      do y=1, ny
-        do x=1, nx
-          peu   = comp%pe4(x,y,zup)
-          pec   = comp%pe4(x,y,z)
-          rpeu  = 1.0 / peu
-          rpec  = 1.0 / pec
-          gpu   = gfac * comp%dpe_dz(x,y,zup)
-          gpc   = gfac * comp%dpe_dz(x,y,z)
-          aTu   = gfac * comp%dlnt_dz(x,y,zup) / real(comp%temp(x,y,zup), 4)
-          aTc   = gfac * comp%dlnt_dz(x,y,z)   / real(comp%temp(x,y,z),   4)
-          if (use_upstream) then
-            rTup  = 1.0 / real(comp_up%temp(x,y,zu), 4)   ! ghost beta from neighbour T
-            rpedn = 1.0 / comp_up%pe4(x,y,zu)             ! ghost Pe from neighbour
-            do f=fs, fe
-              betup = max(exp(-hknu(f)*rTup), tiny(1.0))
-              call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
-                              w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                              bk(f,x,y,zup), bk(f,x,y,z), betup, hknu(f), &
-                              w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
-                              aTu, aTc, .false., Inu, ppsi)
-              w(f,x,y,z,3) = Inu
-              if (get_rates) psi(f,x,y,z) = ppsi
-            end do ! f-loop
-          else
-            do f=fs, fe    ! zeroed top ghost: beta/Pe from the target plane (finite)
-              call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
-                              w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                              bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,z), hknu(f), &
-                              w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpec, &
-                              aTu, aTc, .false., Inu, ppsi)
-              w(f,x,y,z,3) = Inu
-              if (get_rates) psi(f,x,y,z) = ppsi
-            end do ! f-loop
-          endif
-        end do
-      end do
-    endif
-    call trace%end(itimer)
-  contains
+    end subroutine herm_plane
     !---------------------------------------------------------------------------
     !> Ghost-plane thermodynamics at a deep (bottom) domain boundary, where there
     !> is no upstream neighbour.  set_upstream_boundary fills the ghost chi/Snu by
     !> monotone extrapolation of the three innermost planes; this does the same
     !> for Pe and T (and their d/dz gradients), returning the exact quantities the
-    !> upstream branch reads from a real neighbour, so herm_step is used unchanged.
+    !> upstream branch reads from a real neighbour, so herm_plane uses it unchanged.
     !---------------------------------------------------------------------------
     subroutine ghost_thermo (x, y, pe_g, rpe_g, gp_g, rT_g, aT_g)
       integer, intent(in) :: x, y
@@ -808,67 +790,146 @@ contains
       aT_g  = gfac * dlnt_g * rT_g
     end subroutine ghost_thermo
     !---------------------------------------------------------------------------
-    !> Cubic-Bezier weights: integrals of the Bernstein basis against exp(-t)
-    !> over the interval, t measured backward from the target.  w0 multiplies
-    !> S_up, w1/w2 the upwind-/target-side control points, w3 S_target;
-    !> w0+w1+w2+w3 = 1-exp(-dt) exactly (enforced by construction of w3).
+    !> Cubic-Bezier weights over an interval of optical depth t, in fp32 and
+    !> branch-free: integrals of the Bernstein basis against exp(-tau), tau
+    !> measured backward from the target.  w0 multiplies S_up, w1/w2 the upwind-/
+    !> target-side control points, w3 S_target, and E = exp(-t) is returned with
+    !> them.  With u = tau/t,
+    !>
+    !>   w_k = t * int_0^1 b_k(u) exp(-t*u) du,   b = u^3, 3u^2(1-u), 3u(1-u)^2, (1-u)^3,
+    !>
+    !> and reflecting u -> 1-u gives w0(t) = t*E*P3(-t) and w1(t) = t*E*P2(-t), with
+    !> P_k = w_k/t.  For t <= 3 the weights are these series.  P2 and P3 are
+    !> relative-error minimax fits of degree 10 and 9 on |t| <= 3 (b3_p2, b3_p3);
+    !> the reflection evaluates w0 and w1, whose basis functions peak at the far
+    !> end, where their series has terms of one sign.  Above t = 3 the weights come
+    !> from the moments Mn = int_0^t tau^n exp(-tau) dtau, by the upward recurrence
+    !> Mn = n*M(n-1) - t^n*E from M0 = 1 - E, with w3 = M0 - w0 - w1 - w2 so that
+    !> the weights sum to M0 there.  The moment combinations cancel below t ~ 2.5
+    !> and for every t < 0.  E and M0 come from lw_exp.  Every weight is within
+    !> 8 fp32 ulp of the exact value over -3 <= t <= 87.  The moment arm is formed
+    !> at max(t, 3) so that it stays finite where it is not selected, and the arms
+    !> are combined by lw_select (see linear_weights).
     !---------------------------------------------------------------------------
-    pure subroutine bezier3_weights (dt, ex, w0, w1, w2, w3)
-      real(8), intent(in) :: dt, ex
-      real(8), intent(out) :: w0, w1, w2, w3
-      real(8) :: M0, M1, M2, M3, r3
+    pure subroutine bezier3_weights (t, E, w0, w1, w2, w3)
+      real(4), intent(in) :: t
+      real(4), intent(out) :: E, w0, w1, w2, w3
+      real(4), parameter :: tser = 3.0
+      real(4) :: M0, M1, M2, M3, tb, tb2, tb3, r3, tE, b0, b1, b2
+      logical :: ser
       !-------------------------------------------------------------------------
-      ! exact moments hold for either sign of dt; Taylor branch only for |dt| << 1
-      if (abs(dt) > 0.05d0) then
-        M0 = 1.d0 - ex
-        M1 = 1.d0 - ex*(1.d0 + dt)
-        M2 = 2.d0 - ex*(2.d0 + dt*(2.d0 + dt))
-        M3 = 6.d0 - ex*(6.d0 + dt*(6.d0 + dt*(3.d0 + dt)))
-        r3 = 1.d0 / (dt*dt*dt)
-        w0 = M3*r3
-        w1 = 3.d0*(M2*dt - M3)*r3
-        w2 = 3.d0*(M1*dt*dt - 2.d0*M2*dt + M3)*r3
-        w3 = M0 - w0 - w1 - w2
-      else
-        ! Taylor series below dt=0.05, where the moment combinations cancel
-        w0 = dt*(0.25d0 - dt*(0.20d0 - dt*(1.d0/12.d0  - dt/42.d0)))
-        w1 = dt*(0.25d0 - dt*(0.15d0 - dt*(1.d0/20.d0  - dt/84.d0)))
-        w2 = dt*(0.25d0 - dt*(0.10d0 - dt*(1.d0/40.d0  - dt/210.d0)))
-        w3 = dt*(0.25d0 - dt*(0.05d0 - dt*(1.d0/120.d0 - dt/840.d0)))
-      endif
+      call lw_exp(t, E, M0)
+      tb  = max(t, tser)
+      tb2 = tb*tb
+      tb3 = tb2*tb
+      r3  = 1.0 / tb3
+      M1 = M0 - tb*E
+      M2 = 2.0*M1 - tb2*E
+      M3 = 3.0*M2 - tb3*E
+      b0 = M3*r3
+      b1 = 3.0*(M2*tb - M3)*r3
+      b2 = 3.0*(M1*tb2 - 2.0*M2*tb + M3)*r3
+      ser = t <= tser
+      tE  = t*E
+      w0 = lw_select(tE*b3_p3(-t), b0, ser)
+      w1 = lw_select(tE*b3_p2(-t), b1, ser)
+      w2 = lw_select(t*b3_p2(t), b2, ser)
+      w3 = lw_select(t*b3_p3(t), M0 - b0 - b1 - b2, ser)
     end subroutine bezier3_weights
     !---------------------------------------------------------------------------
-    !> One integrated interval [up, c].  chi/Pe and Snu/Bnu are each fitted by a
-    !> PARABOLA through the upwind, central and downwind samples (xx3/ss3/... is
-    !> the third sample); their derivatives set the product-rule chi slopes
-    !> (-> dtau) and source slopes (-> Bezier control points).  center_target
-    !> picks which end of [up,c] gets the centred 3-point estimate:
+    !> P2 = w2/t of bezier3_weights, for |t| <= 3.
+    pure real(4) function b3_p2 (t)
+      real(4), intent(in) :: t
+      ! B3_C2 is P2, lowest order first
+      real(4), parameter :: B3_C2(0:10) = [ &
+        +2.500000000e-01, -1.000000238e-01, +2.499995567e-02, -4.761847202e-03, &
+        +7.440865738e-04, -9.924791084e-05, +1.156294547e-05, -1.190877015e-06, &
+        +1.137804801e-07, -1.100420821e-08, +7.658396139e-10 ]
+      !-------------------------------------------------------------------------
+      b3_p2 = B3_C2(0) + t*(B3_C2(1) + t*(B3_C2(2) + t*(B3_C2(3) + t*(B3_C2(4) + t*(B3_C2(5) &
+            + t*(B3_C2(6) + t*(B3_C2(7) + t*(B3_C2(8) + t*(B3_C2(9) + t*B3_C2(10))))))))))
+    end function b3_p2
+    !---------------------------------------------------------------------------
+    !> P3 = w3/t of bezier3_weights, for |t| <= 3.
+    pure real(4) function b3_p3 (t)
+      real(4), intent(in) :: t
+      ! B3_C3 is P3, lowest order first
+      real(4), parameter :: B3_C3(0:9) = [ &
+        +2.500000000e-01, -4.999998957e-02, +8.333289996e-03, -1.190488110e-03, &
+        +1.488493726e-04, -1.653099389e-05, +1.640762775e-06, -1.503805294e-07, &
+        +1.414234507e-08, -1.025371787e-09 ]
+      !-------------------------------------------------------------------------
+      b3_p3 = B3_C3(0) + t*(B3_C3(1) + t*(B3_C3(2) + t*(B3_C3(3) + t*(B3_C3(4) + t*(B3_C3(5) &
+            + t*(B3_C3(6) + t*(B3_C3(7) + t*(B3_C3(8) + t*B3_C3(9)))))))))
+    end function b3_p3
+    !---------------------------------------------------------------------------
+    !> One integrated interval [up, c] is herm_dtau, then bezier3_weights, then
+    !> herm_source, each called from the f-loop.  chi/Pe and Snu/Bnu are each
+    !> fitted by a PARABOLA through the upwind, central and third samples
+    !> (xx3/ss3/...); their derivatives set the product-rule chi slopes (-> dtau)
+    !> and source slopes (-> Bezier control points).  center_target picks which
+    !> end of [up,c] gets the centred 3-point estimate:
     !>   .true.  -> parabola centred at the target c (interior sweep; third sample
     !>              downwind), one-sided slope at up.
     !>   .false. -> parabola centred at up (final plane z==ze; third sample two
     !>              planes upwind), one-sided slope at c -- the quadratic end shift.
+    !> The step is split in three so that each piece stays under gfortran's
+    !> inlining limits and the f-loop can vectorise; as one routine it is not
+    !> inlined.
     !---------------------------------------------------------------------------
-    pure subroutine herm_step (xxup, xxc, xx3, ssup, ssc, ss3, betau, betac, beta3, &
-                               hk, Inuup, peu, rpeu, gpu, pec, rpec, gpc, rpe3, &
-                               aTu, aTc, center_target, Inu, plam)
-      real(4), intent(in) :: xxup, xxc, xx3, ssup, ssc, ss3, betau, betac, beta3, hk, Inuup
-      real(4), intent(in) :: peu, rpeu, gpu, pec, rpec, gpc, rpe3, aTu, aTc
+    !> dtau over [up, c]: dchi/ds at both ends by the product rule
+    !> chi = (chi/Pe)*Pe, clamped to the sign of the interval secant and twice its
+    !> magnitude (MC envelope), then the Euler-Maclaurin trapezoid.
+    pure real(4) function herm_dtau (xxup, xxc, xx3, peu, rpeu, gpu, pec, rpec, gpc, rpe3, &
+                                     center_target) result (dt)
+      real(4), intent(in) :: xxup, xxc, xx3, peu, rpeu, gpu, pec, rpec, gpc, rpe3
       logical, intent(in) :: center_target
-      real(4), intent(out) :: Inu, plam
-      real(4) :: dchi, t1, sgn, mup, mc, r1mbu, r1mbc, r1mb3, Bu, Bc, B3, gu, gc
-      real(4) :: rxpu, rxpc, rxp3, drxpu, drxpc, hh, rxxu, rxxc
-      real(4) :: dt3, smin, smax, P1, P2, rhou, rhoc, rho3, drhu, drhc, depu, depc, d1, d2
-      real(8) :: dt, ex, w0, w1, w2, w3
+      real(4) :: t1, sgn, mup, mc, rxpu, rxpc, rxp3, drxpu, drxpc, hh
       !-------------------------------------------------------------------------
       hh   = 0.5 * rdsup                      ! 1/(2*ds), the parabola half-step
-      dchi = xxc - xxup
-      t1   = dchi * rdsup                     ! chi secant over [up,c] (limiter ref)
+      t1   = (xxc - xxup) * rdsup             ! chi secant over [up,c] (limiter ref)
       sgn  = sign(1.0, t1)
       rxpu = xxup * rpeu                      ! chi/Pe at the upwind point
       rxpc = xxc  * rpec                      ! chi/Pe at the target
       rxp3 = xx3  * rpe3                      ! chi/Pe at the third parabola sample
-
-      ! source departure ratios rho = Snu/Bnu at the three samples
+      if (center_target) then                ! centre = c (third sample downwind)
+        drxpc = (rxp3 - rxpu) * hh                     ! centred at c
+        drxpu = (4.0*rxpc - 3.0*rxpu - rxp3) * hh       ! left one-sided at up
+      else                                   ! centre = up (third sample 2 upwind)
+        drxpu = (rxpc - rxp3) * hh                      ! centred at up
+        drxpc = (rxp3 - 4.0*rxpu + 3.0*rxpc) * hh        ! right one-sided at c
+      endif
+      mup = rxpu*gpu + peu*drxpu
+      mc  = rxpc*gpc + pec*drxpc
+      mup = sgn * max(0.0, min(sgn*mup, 2.0*abs(t1)))
+      mc  = sgn * max(0.0, min(sgn*mc,  2.0*abs(t1)))
+      ! maser interval (chi<0 -> dtau<0): keep the sign, hold |dtau| away from
+      ! zero and cap the amplification
+      dt = dsup1*(xxup + xxc) + dsup2*(mup - mc)
+      dt = max(sign(max(abs(dt), dtmin), dt), -real(maser_dtau_max))
+    end function herm_dtau
+    !---------------------------------------------------------------------------
+    !> Inu and the Lambda diagonal at c from the Bezier weights over [up, c].
+    !> dSnu/dtau at both ends by the product rule S = rho*Bnu (rho = S/Bnu):
+    !>   dS/dtau = rho*(dBnu/dtau) + Bnu*(drho/dtau)
+    !> the analytic dBnu/dtau = hk*B*r1mb*aT/chi always enters as rho*dBnu/dtau
+    !> (= S*(dBnu/dtau)/B) or as (dBnu/dtau)/B in the Lambda term, so its B factor
+    !> cancels rho's 1/B: gu/gc hold (dBnu/dtau)/Bnu = hk*r1mb*aT/chi.  The
+    !> departure part is the parabola's d(rho)/ds divided by chi.
+    !---------------------------------------------------------------------------
+    pure subroutine herm_source (xxup, xxc, ssup, ssc, ss3, betau, betac, beta3, hk, &
+                                 Inuup, aTu, aTc, center_target, dt, ex, w0, w1, w2, w3, &
+                                 Inu, plam)
+      real(4), intent(in) :: xxup, xxc, ssup, ssc, ss3, betau, betac, beta3, hk, Inuup
+      real(4), intent(in) :: aTu, aTc, dt, ex, w0, w1, w2, w3
+      logical, intent(in) :: center_target
+      real(4), intent(out) :: Inu, plam
+      real(4) :: r1mbu, r1mbc, r1mb3, Bu, Bc, B3, gu, gc, rxxu, rxxc, hh
+      real(4) :: dt3, smin, smax, P1, P2, rhou, rhoc, rho3, drhu, drhc, d1, d2
+      !-------------------------------------------------------------------------
+      ! source departure ratios rho = Snu/Bnu at the three samples, and their
+      ! 3-point parabola derivatives d(rho)/ds at both ends of [up,c]
+      hh = 0.5 * rdsup
       r1mbu = 1.0 / (1.0 - betau)
       r1mbc = 1.0 / (1.0 - betac)
       r1mb3 = 1.0 / (1.0 - beta3)
@@ -878,69 +939,39 @@ contains
       rhou = ssup / Bu
       rhoc = ssc  / Bc
       rho3 = ss3  / B3
-
-      ! 3-point parabola derivatives d(chi/Pe)/ds and d(rho)/ds at both ends of
-      ! [up,c]: the centred estimate at the parabola centre, the one-sided
-      ! estimate (same parabola) at the far end
-      if (center_target) then                ! centre = c (third sample downwind)
-        drxpc = (rxp3 - rxpu) * hh                     ! centred at c
-        drxpu = (4.0*rxpc - 3.0*rxpu - rxp3) * hh       ! left one-sided at up
-        drhc  = (rho3 - rhou) * hh
-        drhu  = (4.0*rhoc - 3.0*rhou - rho3) * hh
-      else                                   ! centre = up (third sample 2 upwind)
-        drxpu = (rxpc - rxp3) * hh                      ! centred at up
-        drxpc = (rxp3 - 4.0*rxpu + 3.0*rxpc) * hh        ! right one-sided at c
-        drhu  = (rhoc - rho3) * hh
-        drhc  = (rho3 - 4.0*rhou + 3.0*rhoc) * hh
+      if (center_target) then
+        drhc = (rho3 - rhou) * hh
+        drhu = (4.0*rhoc - 3.0*rhou - rho3) * hh
+      else
+        drhu = (rhoc - rho3) * hh
+        drhc = (rho3 - 4.0*rhou + 3.0*rhoc) * hh
       endif
 
-      ! dchi/ds at both ends by the product rule chi = (chi/Pe)*Pe, then clamped
-      ! to the sign of the interval secant and twice its magnitude (MC envelope)
-      mup = rxpu*gpu + peu*drxpu
-      mc  = rxpc*gpc + pec*drxpc
-      mup = sgn * max(0.0, min(sgn*mup, 2.0*abs(t1)))
-      mc  = sgn * max(0.0, min(sgn*mc,  2.0*abs(t1)))
-      ! maser interval (chi<0 -> dtau<0): keep the sign, hold |dtau| away from
-      ! zero and cap the amplification
-      dt = dsup1*(xxup + xxc) + dsup2*(mup - mc)
-      dt = max(sign(max(abs(dt), dble(dtmin)), dt), -maser_dtau_max)
-      ex = exp(-min(dt, 80.d0))
-      call bezier3_weights (dt, ex, w0, w1, w2, w3)
-
-      ! dSnu/dtau at both ends by the product rule S = rho*Bnu (rho = S/Bnu):
-      !   dS/dtau = rho*(dBnu/dtau) + Bnu*(drho/dtau)
-      ! the analytic dBnu/dtau = hk*B*r1mb*aT/chi always enters as rho*dBnu/dtau
-      ! (= S*(dBnu/dtau)/B) or as (dBnu/dtau)/B in the Lambda term, so its B factor
-      ! cancels rho's 1/B: gu/gc hold (dBnu/dtau)/Bnu = hk*r1mb*aT/chi.  The
-      ! departure part is the parabola's d(rho)/ds divided by chi.
-      rxxu = 1.0 / xxup                      ! 1/chi at up and c, reused below
+      rxxu = 1.0 / xxup                      ! 1/chi at up and c
       rxxc = 1.0 / xxc
       gu = hk * r1mbu * aTu * rxxu           ! (dBnu/dtau)/Bnu at up
       gc = hk * r1mbc * aTc * rxxc           ! (dBnu/dtau)/Bnu at c
-      depu = drhu * rxxu                     ! (drho/dtau)|up = (drho/ds)/chi
-      depc = drhc * rxxc                     ! (drho/dtau)|c
-
-      dt3 = real(dt,4) * one_third
-      P1 = ssup + dt3*(ssup*gu + Bu*depu)    ! Sup + (dtau/3)*(dS/dtau)|up
-      P2 = ssc  - dt3*(ssc*gc  + Bc*depc)    ! Sc  - (dtau/3)*(dS/dtau)|c
+      dt3 = dt * real(one_third,4)
+      ! Sup + (dtau/3)*(dS/dtau)|up and Sc - (dtau/3)*(dS/dtau)|c, with
+      ! (drho/dtau) = (drho/ds)/chi
+      P1 = ssup + dt3*(ssup*gu + Bu*drhu*rxxu)
+      P2 = ssc  - dt3*(ssc*gc  + Bc*drhc*rxxc)
       smin = min(ssup, ssc)                  ! monotone clamp: overshoot-free
       smax = max(ssup, ssc)
       P1 = min(max(P1, smin), smax)
       P2 = min(max(P2, smin), smax)
 
-      Inu = Inuup*real(ex,4) + real(w0,4)*ssup + real(w1,4)*P1 &
-                             + real(w2,4)*P2   + real(w3,4)*ssc
+      Inu = Inuup*ex + w0*ssup + w1*P1 + w2*P2 + w3*ssc
       Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
-      plam = 0.0
-      if (get_rates .and. dt > 0 .and. xxc > 0) then
-        ! Lambda diagonal from dP1/dSc = Bu/(3*Bc), dP2/dSc = 2/3 - dt3*gc (cross-
-        ! terms and clamp neglected), both bounded into [0,1] so it cannot exceed
-        ! the attenuated total or go negative.  For dt<0/chi<0 leave plam=0.
-        d1 = min(max(Bu*real(one_third,4)/Bc, 0.0), 1.0)
-        d2 = min(max(2.0*real(one_third,4) - dt3*gc, 0.0), 1.0)
-        plam = real(w1*dble(d1) + w2*dble(d2) + w3, 4) * rxxc
-      endif
-    end subroutine herm_step
+      ! Lambda diagonal from dP1/dSc = Bu/(3*Bc), dP2/dSc = 2/3 - dt3*gc (cross-
+      ! terms and clamp neglected), both bounded into [0,1] so it cannot exceed
+      ! the attenuated total or go negative.  For dt<0/chi<0 plam=0.  It is
+      ! formed everywhere and kept by lw_select, which leaves the calling f-loop
+      ! free of branches (see linear_weights).
+      d1 = min(max(Bu*real(one_third,4)/Bc, 0.0), 1.0)
+      d2 = min(max(2.0*real(one_third,4) - dt3*gc, 0.0), 1.0)
+      plam = lw_select((w1*d1 + w2*d2 + w3) * rxxc, 0.0, get_rates .and. dt > 0 .and. xxc > 0)
+    end subroutine herm_source
     !---------------------------------------------------------------------------
     !> The boundary interval [ghost, zs]: state-space slopes from the adjacent
     !> interior interval [zs, zs+dir] (the ghost plane has no beta/lnPe), and
@@ -953,10 +984,10 @@ contains
       real(4), intent(out) :: Inu, plam
       real(4) :: t1, sgn, mc, r1mbc, r1mbdn, Bc, Bdn, Gc, dSc, dSu, rxpc
       real(4) :: dt3, smin, smax, P1, P2, dss, rhoc, rhodn, taudn
-      real(8) :: dt, ex, w0, w1, w2, w3
+      real(4) :: dt, ex, w0, w1, w2, w3
       !-------------------------------------------------------------------------
       ! target-end chi slope by the same chi = (chi/Pe)*Pe product rule as
-      ! herm_step; the ghost plane has no Pe, so the one-sided d(chi/Pe)/ds
+      ! herm_dtau; the ghost plane has no Pe, so the one-sided d(chi/Pe)/ds
       ! comes from the adjacent DOWN interval
       t1 = (xxc - xxup) * rdsup
       sgn = sign(1.0, t1)
@@ -966,27 +997,26 @@ contains
       ! maser interval: keep the sign of dtau, bound it away from zero (it
       ! divides the secant slope below) and cap the amplification
       dt = dsup1*(xxup + xxc) + dsup2*(t1 - mc)
-      dt = max(sign(max(abs(dt), dble(dtmin)), dt), -maser_dtau_max)
-      ex = exp(-min(dt, 80.d0))
+      dt = max(sign(max(abs(dt), dtmin), dt), -real(maser_dtau_max))
       call bezier3_weights (dt, ex, w0, w1, w2, w3)
 
       r1mbc  = 1.0 / (1.0 - betac)
       r1mbdn = 1.0 / (1.0 - betadn)
       Bc  = betac  * r1mbc
       Bdn = betadn * r1mbdn
-      ! target-end slope by the same product rule S = rho*Bnu as herm_step, the
+      ! target-end slope by the same product rule S = rho*Bnu as herm_source, the
       ! Bnu again cancelling rho's 1/Bnu (Gc = (dBnu/dtau)/Bnu); the departure
       ! ratio secant across the DOWN interval uses the leading-trapezoid dtau
       Gc = hk * r1mbc * aTc / xxc              ! (dBnu/dtau)/Bnu at c
       rhoc  = ssc  / Bc
       rhodn = ssdn / Bdn
       taudn = dsup1 * (xxc + xxdn)             ! leading trapezoid dtau, down side
-      taudn = sign(max(abs(taudn), real(dtmin,4)), taudn)
+      taudn = sign(max(abs(taudn), dtmin), taudn)
       dSc = ssc*Gc + Bc*(rhodn - rhoc)/taudn
       dss = ssc - ssup
-      dSu = dss * real(1.d0/dt, 4)      ! interval secant slope wrt tau
+      dSu = dss / dt                   ! interval secant slope wrt tau
 
-      dt3 = real(dt,4) * one_third
+      dt3 = dt * real(one_third,4)
       P1 = ssup + dt3*dSu
       P2 = ssc  - dt3*dSc
       smin = min(ssup, ssc)                    ! monotone clamp: overshoot-free
@@ -994,15 +1024,13 @@ contains
       P1 = min(max(P1, smin), smax)
       P2 = min(max(P2, smin), smax)
 
-      Inu = Inuup*real(ex,4) + real(w0,4)*ssup + real(w1,4)*P1 &
-                             + real(w2,4)*P2   + real(w3,4)*ssc
+      Inu = Inuup*ex + w0*ssup + w1*P1 + w2*P2 + w3*ssc
       Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
-      plam = 0.0
       ! P1's secant slope contributes dP1/dSc = 1/3; P2's sensitivity is >= 1
-      ! and is bounded to 1, as in herm_step; for dt<0 or chi<0 the rates are
+      ! and is bounded to 1, as in herm_source; for dt<0 or chi<0 the rates are
       ! left unpreconditioned, as in the other solvers
-      if (get_rates .and. dt > 0 .and. xxc > 0) &
-        plam = real(w1*(1.d0/3.d0) + w2 + w3, 4) / xxc
+      plam = lw_select((w1*real(one_third,4) + w2 + w3) / xxc, 0.0, &
+                       get_rates .and. dt > 0 .and. xxc > 0)
     end subroutine herm_first
   END SUBROUTINE long_char_hermite
 
@@ -1016,7 +1044,7 @@ contains
 !> downwind samples, clamped to the cubic-Bezier control-point bound
 !> (|dchi/ds| <= 3*|secant|, the monotonicity limit matching the cubic-Hermite
 !> chi that the Euler-Maclaurin trapezoid dtau integrates exactly).  The same
-!> Euler-Maclaurin trapezoid dtau as herm_step.  The source term, however, is
+!> Euler-Maclaurin trapezoid dtau as herm_dtau.  The source term, however, is
 !> NOT the cubic Bezier / Bnu-chain-rule reconstruction of long_char_hermite:
 !> it is long_char_quadratic's plain parabolic Sinterpol -- a single MC-limited
 !> dS/dtau at the target, built from the one-sided S-secants on the two
@@ -1170,7 +1198,7 @@ contains
     ! at the upwind end zup (third sample = zff, two planes upwind), as in
     ! long_char_hermite.  Snu has no data beyond the target, so herm2_step's
     ! secant fallback applies -- but rxp3=xx3*rpe3 still feeds the (unchanged,
-    ! herm_step-identical) chi/Pe slope estimate at both ends even when
+    ! herm_dtau-identical) chi/Pe slope estimate at both ends even when
     ! center_target is false, so rpe3 must be the real Pe at the third sample,
     ! not a placeholder
     z   = ze
@@ -1250,10 +1278,10 @@ contains
       gp_g  = gfac * dpe_g
     end subroutine ghost_pe
     !---------------------------------------------------------------------------
-    !> One integrated interval [up, c].  chi/Pe slopes as in herm_step: a
+    !> One integrated interval [up, c].  chi/Pe slopes as in herm_dtau: a
     !> parabola through (up, c, 3) gives the product-rule dchi/ds at up
     !> (one-sided) and at c (centred when center_target, one-sided otherwise),
-    !> here clamped to the cubic-Bezier bound |dchi/ds| <= 3*|secant| (herm_step
+    !> here clamped to the cubic-Bezier bound |dchi/ds| <= 3*|secant| (herm_dtau
     !> itself keeps the tighter 2* MC clamp).
     !>
     !> Snu is long_char_quadratic's parabolic Sinterpol: when center_target
@@ -1279,7 +1307,8 @@ contains
       logical, intent(in), optional :: src_onesided
       real(4) :: dchi, t1, t3, sgn, sgn3, mup, mc, m3, rxpu, rxpc, rxp3
       real(4) :: drxpu, drxpc, drxp3, hh, dss, dsdtau
-      real(8) :: dt, dt3int, rdt, ex, U0, U1, q, A, B, C
+      real(8) :: dt, dt3int, rdt, A, B, C
+      real(4) :: ex, U0, U1, q
       !-------------------------------------------------------------------------
       hh   = 0.5 * rdsup                      ! 1/(2*ds), the parabola half-step
       dchi = xxc - xxup
@@ -1311,9 +1340,8 @@ contains
       ! zero and cap the amplification
       dt = dsup1*(xxup + xxc) + dsup2*(mup - mc)
       dt = max(sign(max(abs(dt), dble(dtmin)), dt), -maser_dtau_max)
-      ex = exp(-min(dt, 80.d0))
       rdt = 1.0d0 / dt
-      call parab_moments(dt, ex, rdt, U0, U1, q)
+      call parab_moments(real(dt,4), ex, U0, U1, q)
 
       dss = ssc - ssup
       if (center_target) then
@@ -1358,7 +1386,7 @@ contains
       B = (2.0d0*U1 - q) * rdt      ! on ssc  (the target)
       A = U0 - B                    ! on ssup (the upwind point)
       C = q - U1                    ! on dsdtau
-      Inu = Inuup*real(ex,4) + real(A,4)*ssup + real(B,4)*ssc + real(C,4)*dsdtau
+      Inu = Inuup*ex + real(A,4)*ssup + real(B,4)*ssc + real(C,4)*dsdtau
       Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
       plam = 0.0
       if (get_rates .and. dt > 0 .and. xxc > 0) &
@@ -1376,7 +1404,8 @@ contains
       real(4), intent(in) :: pec, rpec, rpedn, gpc
       real(4), intent(out) :: Inu, plam
       real(4) :: t1, sgn, mc, rxpc, dss, dsdtau
-      real(8) :: dt, rdt, ex, U0, U1, q, A, B, C
+      real(8) :: dt, rdt, A, B, C
+      real(4) :: ex, U0, U1, q
       !-------------------------------------------------------------------------
       ! target-end chi slope by the same chi = (chi/Pe)*Pe product rule as
       ! herm2_step; the ghost plane has no Pe, so the one-sided d(chi/Pe)/ds
@@ -1390,9 +1419,8 @@ contains
       ! divides the secant slope below) and cap the amplification
       dt = dsup1*(xxup + xxc) + dsup2*(t1 - mc)
       dt = max(sign(max(abs(dt), dble(dtmin)), dt), -maser_dtau_max)
-      ex = exp(-min(dt, 80.d0))
       rdt = 1.0d0 / dt
-      call parab_moments(dt, ex, rdt, U0, U1, q)
+      call parab_moments(real(dt,4), ex, U0, U1, q)
 
       dss = ssc - ssup
       dsdtau = dss * real(rdt, 4)      ! no data beyond the target: interval secant
@@ -1400,7 +1428,7 @@ contains
       B = (2.0d0*U1 - q) * rdt
       A = U0 - B
       C = q - U1
-      Inu = Inuup*real(ex,4) + real(A,4)*ssup + real(B,4)*ssc + real(C,4)*dsdtau
+      Inu = Inuup*ex + real(A,4)*ssup + real(B,4)*ssc + real(C,4)*dsdtau
       Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
       plam = 0.0
       if (get_rates .and. dt > 0 .and. xxc > 0) &
@@ -1438,7 +1466,8 @@ contains
     real(4) :: v1, v2, v3, gpe, aT, pec, rpec, rxpc, rxpup
     real(4) :: dchi, t1, sgn, mc, r1mbc, Bc, kf, dsdtau, dss
     real(4) :: rhou, rhoc, gc, t1s, sgns, rdt4, srem, Psi_loc
-    real(8) :: ds(3), dt, rdt, ex, U0, U1, q, A, B, C ! keep in double precision
+    real(4) :: ex, U0, U1, q
+    real(8) :: ds(3), dt, rdt, A, B, C ! keep in double precision
     real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
     real(4), dimension(:), pointer, contiguous :: xkern, ykern
     real(4), dimension(:,:), allocatable :: work_up, work_min
@@ -1631,8 +1660,7 @@ contains
               dt = max(sign(max(abs(dt), dble(dtmin)), dt), -maser_dtau_max)
               rdt = 1.0d0 / dt
               rdt4 = real(rdt, 4)
-              ex = exp(-min(dt, 80.d0))
-              call parab_moments(dt, ex, rdt, U0, U1, q)
+              call parab_moments(real(dt,4), ex, U0, U1, q)
 
               ! target-end dSnu/dtau by the product rule S = rho*Bnu
               ! (rho = S/Bnu):  dS/dtau = rho*(dBnu/dtau) + Bnu*(drho/dtau).  The
@@ -1670,7 +1698,7 @@ contains
               B = (2.0d0*U1 - q) * rdt
               A = U0 - B
               C = q - U1
-              Inu = Inuup*real(ex,4) + real(A,4)*ssup + real(B,4)*ss + real(C,4)*dsdtau
+              Inu = Inuup*ex + real(A,4)*ssup + real(B,4)*ss + real(C,4)*dsdtau
               Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
               self%work(f,x,y,z,3) = Inu
               if (get_rates) then
@@ -1685,7 +1713,7 @@ contains
                 if (dt > 0 .and. xx > 0 .and. Psi_loc >= 0. .and. Psi_loc <= 1. &
                     .and. abs(Inu) < real(maser_Inu_max)) then
                   self%Psi(f,x,y,z) = Psi_loc / xx
-                  rem(f) = Inuup*real(ex,4) + real(A,4)*ssup + real(C,4)*srem
+                  rem(f) = Inuup*ex + real(A,4)*ssup + real(C,4)*srem
                   ! 1 - Psi_loc, formed from the real(8) weights before rounding
                   esc(f) = real(1d0 - (B + C*dble(kf)), 4)
                 else
