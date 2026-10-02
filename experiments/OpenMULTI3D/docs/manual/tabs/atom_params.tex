@@ -7,6 +7,8 @@
 \fort{abundance} & Explicit abundance per atom, overriding both. $-99.9$ means unset.\\
 \fort{qnorm} & Doppler width in \si{\km\per\s} that the frequency units \fort{QMAX} and \fort{Q0} of the atom file refer to (default 10).\\
 \fort{exclude_trace_cont} & Remove bound-free transitions of the atom from the LTE background to avoid double counting (default \fort{T}).\\
+\fort{exclude_from_line_list} & Drop the atom's species from the line list (default \fort{T}). With \fort{F}, only line-list records that the atom carries with the same frequency and $\log gf$ are dropped.\\
+\fort{disable_bb} & Deactivate the atom's bound-bound transitions; its levels and continua stay (default \fort{F}). With \fort{read_departures} and \fort{exclude_from_line_list=F}, the spectrum then comes from the line list, whose lines of the atom's species take the departure coefficients of the levels nearest in energy (stage tagged).\\
 \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
 \fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
 {\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\

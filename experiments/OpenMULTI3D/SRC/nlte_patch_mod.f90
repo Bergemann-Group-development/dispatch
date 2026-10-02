@@ -790,6 +790,7 @@ contains
       call self%load6('pop_'//trim(keys(i)), run_dir=run_dir, alloc=mem)
       dep => self%departures(i,1)
       allocate(dep%mem, source=mem(:,:,:,:,2,1))
+      deallocate(mem)               ! load6 allocates it afresh for the next atom
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       dep%nlevel = size(mem,4)
       allocate(dep%ev(dep%nlevel))

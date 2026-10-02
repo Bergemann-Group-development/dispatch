@@ -1397,6 +1397,12 @@ MODULE atom_mod
           cycle
         endif
       endif
+      ! as in read_pandas: the atom keeps its levels and continua, and its lines leave
+      ! the opacity to the line list (a spectrum on precomputed departures)
+      if (disable_bb) then
+        call lin%deactivate()
+        cycle
+      endif
 
       if (.not. line_frequency_grid(self, lin, i, qnorm, nterm<=1 .and. legacy_freql)) cycle
       gij = self%g(lin%i) / self%g(lin%j)
