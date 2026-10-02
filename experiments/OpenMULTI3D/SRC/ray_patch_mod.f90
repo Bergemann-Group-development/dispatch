@@ -23,7 +23,7 @@ MODULE ray_patch_mod
   USE interpol_mod, only: pchip_mono
   USE console_mod
   USE m3d_patch_mod, only: m3d_patch_t, &
-    converged, print_send, n_nu_out
+    converged, print_send, n_windows_out
   USE spectrum_mod, only: spectrum_type
   USE const_mod, only: cc, over_4pi, PI
   implicit none
@@ -63,9 +63,9 @@ contains
     integer, save, target :: counter1=-999, counter2=-999
     !-----------------------------------------------------------------------------
     if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
-      call output_patch_range(self%sp, self%i_nu, n_nu_out, fs, fe)
+      call output_patch_range(self%sp, self%i_nu, n_windows_out, fs, fe)
     else
-      call unequal_intervals(self%sp%nnu, self%i_nu, self%n_nu, fs, fe)
+      call unequal_intervals(self%sp%nnu, self%i_nu, self%n_windows, fs, fe)
     endif
 
     self%fs = fs
@@ -82,7 +82,7 @@ contains
       label = 'internal'
     endif
     if (self%i_nu > counter .and. console_on(ch_m3d, 2)) then
-      if (counter == -999) write(console_unit,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
+      if (counter == -999) write(console_unit,'(I2, A10, A18)') self%n_windows, trim(label), 'wavelength windows'
       write(console_unit,'(I4, I10,A3,I8)') self%i_nu, fs, ' - ', fe
       counter = self%i_nu
     endif

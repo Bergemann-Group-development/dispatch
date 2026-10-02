@@ -510,7 +510,7 @@ The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded 
     \item \textbf{RT column} (\File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
 \end{itemize}
 
-A run is split in frequency with \fort{n_nu}: the internal spectrum has \fort{n_nu} windows (with \fort{decouple_continuum=T} a second set of \fort{n_nu} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads and with \fort{n_nu}.
+A run is split in wavelength with \fort{n_windows}: the internal spectrum has \fort{n_windows} windows (with \fort{decouple_continuum=T} a second set of \fort{n_windows} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads and with \fort{n_windows}.
 
 The column scheduler does not use MPI: the program stops with an error if started with more than one MPI rank.
 
@@ -551,7 +551,7 @@ HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled in
 \section{Memory Profiling} \label{sec:Memory}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_nu} lowers the estimate, down to a floor set by the model atoms. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
+\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_windows} lowers the estimate, down to a floor set by the model atoms. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
 
 \textbf{Registered arrays.} Every time the allocated memory crosses a multiple of \fort{gb_step} (GB), the code prints a line
 

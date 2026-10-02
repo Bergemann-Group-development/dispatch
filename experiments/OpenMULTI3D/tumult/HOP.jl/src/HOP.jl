@@ -491,9 +491,9 @@ function meshgrid(ax...)
     grids
 end
 
-function freq_split(nnu::Integer, i::Integer, n_nu::Integer)
-    nv, md = divrem(nnu, n_nu)
-    j = mod(abs(i) - 1, n_nu) + 1
+function freq_split(nnu::Integer, i::Integer, n_windows::Integer)
+    nv, md = divrem(nnu, n_windows)
+    j = mod(abs(i) - 1, n_windows) + 1
     # Return 1-based closed interval (start:end) instead of 0-based half-open
     ((j - 1) * nv + min(md, j - 1) + 1, j * nv + min(md, j))
 end

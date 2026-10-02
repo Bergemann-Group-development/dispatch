@@ -44,11 +44,11 @@ def load_patch_files(folder, kind):
     return dct, dims
 
 
-def concat_patches(dct, n_nu, fdim, zdim, lazy):
+def concat_patches(dct, n_windows, fdim, zdim, lazy):
     """Stitch the ``(iz, inu)``-keyed patches into full arrays.
 
-    ``n_nu`` is the run's frequency-block size (``run_params/n_nu``): when patches are
-    frequency-split, the positive ``inu`` ids up to ``n_nu``, above ``n_nu``, and the
+    ``n_windows`` is the run's frequency-block size (``run_params/n_windows``): when patches are
+    frequency-split, the positive ``inu`` ids up to ``n_windows``, above ``n_windows``, and the
     negative ids form separate sets (returned as a list, in that order). ``lazy``
     stitches with :class:`MemmapList` (no copy) instead of ``np.concatenate``.
     """
@@ -76,8 +76,8 @@ def concat_patches(dct, n_nu, fdim, zdim, lazy):
     if f_indep:
         return merge_set(all_inu)
     else:
-        set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
-        set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]
+        set1 = [inu for inu in all_inu if inu > 0 and inu <= n_windows]
+        set2 = [inu for inu in all_inu if inu > 0 and inu > n_windows]
         set3 = [inu for inu in all_inu if inu < 0][::-1]
         sets = [s for s in [set1, set2, set3] if len(s) > 0]
         return [merge_set(s) for s in sets]
@@ -131,11 +131,11 @@ def write_patch_save(folder, kind, arrays):
     return write_patch_meta(folder, kind, entries)
 
 
-def read_patch_save(folder, kind, n_nu, concat=True, fdim=0, zdim=None, lazy=True):
+def read_patch_save(folder, kind, n_windows, concat=True, fdim=0, zdim=None, lazy=True):
     """Load ``kind`` from a run's save folder: memmap the patches and (by default)
     stitch them together (``zdim`` defaults to the patches' last axis)."""
     dct, dims = load_patch_files(folder, kind)
     if not concat:
         return dct
     zdim = zdim or len(dims) - 1
-    return concat_patches(dct, n_nu, fdim, zdim, lazy=lazy)
+    return concat_patches(dct, n_windows, fdim, zdim, lazy=lazy)

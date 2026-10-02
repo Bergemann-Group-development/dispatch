@@ -13,7 +13,7 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
-  rotate_atmos, decouple_continuum, n_nu, n_nu_out, use_vel, &
+  rotate_atmos, decouple_continuum, n_windows, n_windows_out, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
   n_nlte_patches, nlte_finished
   USE rt_params_mod, only: rt_iter, rt_out, pivot_z
@@ -196,8 +196,8 @@ SUBROUTINE composition_pre_init (self)
 
     external_sp = output_sp%nnu > 0
 
-    if (n_nu < 0) then
-      n_nu = omp%nthreads
+    if (n_windows < 0) then
+      n_windows = omp%nthreads
     endif
   endif
 
@@ -251,48 +251,48 @@ SUBROUTINE composition_pre_init (self)
   endif
 
   ! make sure there are no more f-domain splits than threads
-  if (output_sp%nnu > 0) n_nu = min(n_nu, output_sp%nnu)
+  if (output_sp%nnu > 0) n_windows = min(n_windows, output_sp%nnu)
   if (decouple_continuum) then
-    if (nlte_patch%bb_sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%bb_sp%nnu)
-    if (nlte_patch%bf_sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%bf_sp%nnu)
+    if (nlte_patch%bb_sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%bb_sp%nnu)
+    if (nlte_patch%bf_sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%bf_sp%nnu)
   else
-    if (nlte_patch%sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%sp%nnu)
+    if (nlte_patch%sp%nnu > 0) n_windows = min(n_windows,  nlte_patch%sp%nnu)
   endif
 
-  self%n_nu = n_nu
+  self%n_windows = n_windows
   n_mu = size(rt_out%vec,2)
 
   ! Output frequency patches.  A contiguous output grid is split like the internal
-  ! one, into n_nu parts.  A window_file grid is split per window, so that no patch
+  ! one, into n_windows parts.  A window_file grid is split per window, so that no patch
   ! spans the gap between two windows (see output_patch_range).  With fewer windows
-  ! than n_nu, each window is split into n_nu parts, so the output pass still has
-  ! at least n_nu tasks per depth for the threads; the smallest window caps that
+  ! than n_windows, each window is split into n_windows parts, so the output pass still has
+  ! at least n_windows tasks per depth for the threads; the smallest window caps that
   ! count at one point per part.
   if (output_sp%n_segments > 0) then
-    n_nu_out = output_sp%n_segments
-    if (output_sp%n_segments < n_nu) n_nu_out = output_sp%n_segments * &
-      min(n_nu, minval(output_sp%segment_last - output_sp%segment_first + 1))
+    n_windows_out = output_sp%n_segments
+    if (output_sp%n_segments < n_windows) n_windows_out = output_sp%n_segments * &
+      min(n_windows, minval(output_sp%segment_last - output_sp%segment_first + 1))
   else
-    n_nu_out = n_nu
+    n_windows_out = n_windows
   endif
 
   ! One sampled opacity table per i_nu, shared by the rt_patches created below,
   ! which differ only in i_mu and would otherwise build identical copies.  The
-  ! internal spectrum uses i_nu in [1, n_nu], the bound-free half of a decoupled
-  ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu_out, -1]; slot 0 is
+  ! internal spectrum uses i_nu in [1, n_windows], the bound-free half of a decoupled
+  ! continuum [n_windows+1, 2*n_windows], and the output spectrum [-n_windows_out, -1]; slot 0 is
   ! never used.  make_eos is excluded: save_opac_table overwrites the table in
   ! place, so those rt_patches keep a private one.
   if ((rt_iter%sample_back_opac .or. rt_out%sample_back_opac) .and. .not. make_eos) then
-    allocate(self%opac_tables(-n_nu_out:2*n_nu))
-    allocate(self%opac_locks (-n_nu_out:2*n_nu))
-    do i=-n_nu_out, 2*n_nu
+    allocate(self%opac_tables(-n_windows_out:2*n_windows))
+    allocate(self%opac_locks (-n_windows_out:2*n_windows))
+    do i=-n_windows_out, 2*n_windows
       call self%opac_locks(i)%init('opac', i)
     end do
     ! Separate LTE line-list opacity table (sample_linelist): same i_nu keying.
     if (sample_linelist) then
-      allocate(self%ll_opac_tables(-n_nu_out:2*n_nu))
-      allocate(self%ll_opac_locks (-n_nu_out:2*n_nu))
-      do i=-n_nu_out, 2*n_nu
+      allocate(self%ll_opac_tables(-n_windows_out:2*n_windows))
+      allocate(self%ll_opac_locks (-n_windows_out:2*n_windows))
+      do i=-n_windows_out, 2*n_windows
         call self%ll_opac_locks(i)%init('ll_opac', i)
       end do
     endif
@@ -301,9 +301,9 @@ SUBROUTINE composition_pre_init (self)
   ! iteration, so each i_nu of either pass computes it once (see
   ! lte_background_opacities in rt_patch_mod).  make_eos writes tables instead.
   if (one_dimensional .and. .not. make_eos) then
-    allocate(self%bg_point_tables(-n_nu_out:2*n_nu))
-    allocate(self%bg_point_locks (-n_nu_out:2*n_nu))
-    do i=-n_nu_out, 2*n_nu
+    allocate(self%bg_point_tables(-n_windows_out:2*n_windows))
+    allocate(self%bg_point_locks (-n_windows_out:2*n_windows))
+    do i=-n_windows_out, 2*n_windows
       call self%bg_point_locks(i)%init('bg_point', i)
     end do
   endif
@@ -313,19 +313,19 @@ SUBROUTINE composition_pre_init (self)
   ! holds few enough points to keep it.
   if (one_dimensional .and. rt_out%include_linelist .and. &
       .not. rt_out%sample_linelist) then
-    allocate(self%ll_point_tables(-n_nu_out:-1))
-    allocate(self%ll_point_locks (-n_nu_out:-1))
-    do i=-n_nu_out, -1
+    allocate(self%ll_point_tables(-n_windows_out:-1))
+    allocate(self%ll_point_locks (-n_windows_out:-1))
+    do i=-n_windows_out, -1
       call self%ll_point_locks(i)%init('ll_point', i)
     end do
   endif
   if (associated(nlte_patch%atoms)) then
     if (rt_iter%maxiter > 0) then
       if (decouple_continuum) then
-        call self%create_sub_patches([1, n_nu],      [1,2], nlte_patch%bb_sp, nlte_patch%bb_atoms)
-        call self%create_sub_patches([1, n_nu]+n_nu, [1,2], nlte_patch%bf_sp, nlte_patch%bf_atoms)
+        call self%create_sub_patches([1, n_windows],      [1,2], nlte_patch%bb_sp, nlte_patch%bb_atoms)
+        call self%create_sub_patches([1, n_windows]+n_windows, [1,2], nlte_patch%bf_sp, nlte_patch%bf_atoms)
       else
-        call self%create_sub_patches([1, n_nu], [1,2], nlte_patch%sp, nlte_patch%atoms)
+        call self%create_sub_patches([1, n_windows], [1,2], nlte_patch%sp, nlte_patch%atoms)
       endif
     endif
   endif
@@ -335,14 +335,14 @@ SUBROUTINE composition_pre_init (self)
   if (output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
     if (n_mu > 0 .or. (make_eos .and. self%key(1)==1)) then
       if (rt_out%maxiter > 0) then
-        call self%create_sub_patches([-n_nu_out, -1], [1,2], output_sp, nlte_patch%output_atoms)
+        call self%create_sub_patches([-n_windows_out, -1], [1,2], output_sp, nlte_patch%output_atoms)
       endif
-      call self%create_sub_patches([-n_nu_out, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
+      call self%create_sub_patches([-n_windows_out, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
     endif
   endif
 
   if (output_sp%n_segments > 0) then
-    call verify_output_patch_coverage(output_sp, n_nu_out)
+    call verify_output_patch_coverage(output_sp, n_windows_out)
   endif
 
   if (.not. associated(self%nlte_patch)) then

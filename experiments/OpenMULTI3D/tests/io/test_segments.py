@@ -52,7 +52,7 @@ def test_segments_round_trip_to_air_windows(tmp_path):
 
 def test_windows_split_into_several_patches_stitch_to_one_spectrum(tmp_path):
     """With fewer windows than threads each window has several output patches, saved as
-    flux_008001..; all of them are the output spectrum, whatever the internal n_nu."""
+    flux_008001..; all of them are the output spectrum, whatever the internal n_windows."""
     segs = write_segments(tmp_path, [
         "        1      1      8    5151.43473    5171.44006\n",
         "        2      9     16    5181.44272    5201.44805\n",
@@ -61,7 +61,7 @@ def test_windows_split_into_several_patches_stitch_to_one_spectrum(tmp_path):
     parts = np.split(flux, 8)   # four patches per window
     write_patch_save(tmp_path / 'save', 'flux',
                      {(8, i + 1): p.reshape(-1, 1) for i, p in enumerate(parts)})
-    run = SimpleNamespace(nml={'run_params': {'n_nu': 4}}, segments=segs, sfolder=tmp_path / 'save')
+    run = SimpleNamespace(nml={'run_params': {'n_windows': 4}}, segments=segs, sfolder=tmp_path / 'save')
     out = Run.read_patch_save(run, 'flux', lazy=False)
     assert len(out) == 1
     np.testing.assert_array_equal(np.asarray(out[0]).ravel(), flux)

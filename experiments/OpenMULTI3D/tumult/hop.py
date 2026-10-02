@@ -590,7 +590,7 @@ class HopEOS:
         the continuum, and is applied without re-solving the state.
 
         The wavelength axis is split into ``nchunks`` pieces (default: ``nprocs``)
-        the same way dispatch splits it over its n_nu rt_patches, and the pieces
+        the same way dispatch splits it over its n_windows rt_patches, and the pieces
         run in ``nprocs`` processes -- HOP keeps process-wide global state, so each
         worker holds its own instance and reads only the lines its chunk needs.
         With ``nprocs=1`` the chunks are computed here, in one instance holding the
@@ -709,15 +709,15 @@ def logstep(start, stop, step):
     return np.exp(lmin + step * np.arange(n))
 
 
-def freq_split(nnu, i, n_nu):
-    """Wavelength range [start, stop) of split i (1-based) out of n_nu.
+def freq_split(nnu, i, n_windows):
+    """Wavelength range [start, stop) of split i (1-based) out of n_windows.
 
     Python (0-based, half-open) port of HOP's unequal_intervals, which is what
     ray_patch_mod%set_freq_indices uses to hand each rt_patch its slice -- so
     split i here holds exactly the wavelengths of the patch saved with |i_nu| = i.
     """
-    nv, md = divmod(nnu, n_nu)
-    j = (abs(i) - 1) % n_nu + 1
+    nv, md = divmod(nnu, n_windows)
+    j = (abs(i) - 1) % n_windows + 1
     return (j - 1) * nv + min(md, j - 1), j * nv + min(md, j)
 
 

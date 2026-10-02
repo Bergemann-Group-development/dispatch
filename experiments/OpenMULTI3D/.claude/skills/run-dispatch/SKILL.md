@@ -125,7 +125,7 @@ Each check below is a cheap rerun:
    the floor within a few iterations, rounding is being injected every iteration.
 3. **Isolate the transition type.** Settings to toggle: `preconditioning`,
    `rate_formulation`, `decouple_continuum`, `lse_solver`, `suppress_masers`, `sor_w`,
-   `n_nu` and the angle set. If a switch you need does not exist, add a temporary
+   `n_windows` and the angle set. If a switch you need does not exist, add a temporary
    environment-variable test in a worktree build, never in the working tree.
 4. **Matrix or rates.** Dump the rates and the collision matrix of one cell from
    `setup_transition_matrix` in a worktree build. Rebuild W in Python and perturb one

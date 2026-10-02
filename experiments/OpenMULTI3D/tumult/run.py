@@ -33,7 +33,7 @@ import multiprocessing as mp
 trapz = getattr(np, 'trapz', np.trapezoid)
 
 # kinds written by the output RT patches, whose i_nu axis is the output split rather
-# than the internal n_nu
+# than the internal n_windows
 OUTPUT_PATCH_KINDS = ('flux', 'ie')
 
 def option(nml, key):
@@ -549,15 +549,15 @@ class Run(object):
     def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         """Load ``kind`` from this run's save folder (see :mod:`tumult.io_binary`)."""
         folder = pathlib.Path(folder) if folder else self.sfolder
-        n_nu = self.nml['run_params']['n_nu']
+        n_windows = self.nml['run_params']['n_windows']
         if self.segments and kind in OUTPUT_PATCH_KINDS:
             # A multi-window run splits its output spectrum per window, into as many
             # patches as the Fortran side chose (composition_pre_init), and saves each
             # under abs(i_nu). Every one of those ids belongs to the output spectrum, so
             # the split point must lie above all of them; the grid size is such a bound,
-            # since no patch is empty. The internal kinds keep n_nu.
-            n_nu = self.segments[-1]['last']
-        return _read_patch_save(folder, kind, n_nu=n_nu,
+            # since no patch is empty. The internal kinds keep n_windows.
+            n_windows = self.segments[-1]['last']
+        return _read_patch_save(folder, kind, n_windows=n_windows,
                                 concat=concat, fdim=fdim, zdim=zdim, lazy=lazy)
 
     #=================================================================

@@ -23,7 +23,7 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     convlim, convmax, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
-    rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, n_nu_out, detailed_absmet, &
+    rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_windows, n_windows_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates
@@ -290,7 +290,7 @@ contains
     ! still be linked to the original atom
     self%atoms = atoms
     self%atoms%name = 'main'
-    self%n_nu = n_nu
+    self%n_windows = n_windows
 
     if (decouple_continuum) then
       allocate(self%bb_atoms(natom))
@@ -1242,7 +1242,7 @@ contains
     key(1) = 0
     key(4) = hash_string('rt_column')
     do i_mu=-1, 2
-      do i_nu=-n_nu_out, 2*n_nu
+      do i_nu=-n_windows_out, 2*n_windows
         key(2) = i_nu
         key(3) = i_mu
         call self%check_nbor(key, nbors)

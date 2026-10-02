@@ -117,7 +117,11 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   comparison is convolved with.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
   constant-`R_sampling` *segment* per window. Output patches never span two segments; with
-  fewer windows than `n_nu`, each window is split into `n_nu` output patches.
+  fewer windows than `n_windows`, each window is split into `n_windows` output patches.
+- *wavelength windows* (`n_windows`, `n_windows_out` in `&run_params`): the number of wavelength-ordered
+  pieces the internal and the output spectrum are divided into, each with its own radiative-transfer
+  tasks. Defaults to the thread count. Not the *window file* windows, which are requested
+  wavelength ranges, and not `nnu`, the number of frequency points of a grid or line profile.
 - *line window*: the span `[lam_min, lam_max]` of the shared frequency grid an NLTE run
   integrates one bound-bound transition's rates over; set by the model atom's `qmax` (in
   units of `qnorm`). A *line grid* (`line_grid_file`, written by

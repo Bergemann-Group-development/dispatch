@@ -94,12 +94,12 @@ MODULE m3d_patch_mod
       type(lock_t),            pointer :: ll_opac_locks(:)  => null()   ! same bounds
       ! Detailed line-list opacity of the 1D output pass, stored by the first
       ! foreground of each (i_nu, set) and copied back by the later scattering
-      ! iterations and the final pass; indexed by the output i_nu in [-n_nu_out,-1].
+      ! iterations and the final pass; indexed by the output i_nu in [-n_windows_out,-1].
       type(point_opac_t), pointer :: ll_point_tables(:) => null()
       type(lock_t),       pointer :: ll_point_locks(:)  => null()   ! same bounds
       ! LTE background opacity of a 1D atmosphere, stored by the first
       ! lte_background_opacities of each i_nu and copied back by its twins and
-      ! later iterations; indexed like opac_tables, [-n_nu_out, 2*n_nu].
+      ! later iterations; indexed like opac_tables, [-n_windows_out, 2*n_windows].
       type(bg_opac_t), pointer :: bg_point_tables(:) => null()
       type(lock_t),    pointer :: bg_point_locks(:)  => null()   ! same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
@@ -111,7 +111,7 @@ MODULE m3d_patch_mod
       logical :: initialized  = .false.
       real(8) :: t_offset=0
       integer :: iter=0, maxiter, master_maxiter, dir=0
-      integer :: n_nu, n_out, zs, ze
+      integer :: n_windows, n_out, zs, ze
       integer :: fcheck, pcheck(3)
       logical :: do_out_sp=.false., do_full_sp=.false., do_final=.false.
       logical :: wait_for_nlte=.false.
@@ -171,11 +171,11 @@ MODULE m3d_patch_mod
     integer, save, public:: verbose=console_inherit
     integer, public :: nz_total
     integer, public, save :: save_id=-1
-    integer, public, save :: n_nu=-1
+    integer, public, save :: n_windows=-1
     ! Largest memory estimate [GiB] the run may start with: 0 takes the physical
     ! memory of the machine, a negative value switches the check off
     real(8), public, save :: mem_limit_gb=0
-    integer, public, save :: n_nu_out=0   ! output frequency patch count, set in composition_pre_init
+    integer, public, save :: n_windows_out=0   ! output frequency patch count, set in composition_pre_init
     ! convlim <= 0 requests no NLTE iterations (see resolve_nlte_iterations)
     real(8), public:: convlim=0d0, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
@@ -297,7 +297,7 @@ MODULE m3d_patch_mod
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
     diag_pops, diag_db, diag_no_scat_loop
 
-    namelist /run_params/ n_nu, make_eos, rotate_atmos, &
+    namelist /run_params/ n_windows, make_eos, rotate_atmos, &
     column_by_column, lam_tolerance, mem_limit_gb
 
   contains

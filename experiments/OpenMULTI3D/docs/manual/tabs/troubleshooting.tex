@@ -5,7 +5,7 @@
 \Code{No Fortran compiler found} & Install \Code{gfortran}, or pass \Code{COMPILER=}.\\
 \Code{No rule to make target '/Makefile.dep'} & The parent DISPATCH checkout is missing; clone the whole repository.\\
 \Code{Fortran runtime error: End of record} at start & The namelist path is too long. Use a short relative path (\fort{datadir} may be absolute).\\
-Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_nu}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
+Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_windows}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
 Run aborts while reading the line list & HOP aborts on an unreadable list. The first line of each block must be a quoted species label (Sec.~\ref{sec:linelist}).\\
 \Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}.\\
 \Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Deactivate conda or call \File{.venv/bin/python}.\\

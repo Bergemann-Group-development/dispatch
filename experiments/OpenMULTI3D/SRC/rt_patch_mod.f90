@@ -18,14 +18,14 @@ MODULE rt_patch_mod
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
-    dlam, n_nu_out, &
+    dlam, n_windows_out, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
     rt_to_file, preconditioning, rate_formulation, &
     scattering_preconditioning, scat_op_max, &
     make_eos, amr, save_Inu, save_chi, save_Snu, &
-    fixed_Jnu, n_nu, save_Jnu, &
+    fixed_Jnu, n_windows, save_Jnu, &
     convlim, converged, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file
@@ -73,8 +73,8 @@ MODULE rt_patch_mod
   logical, allocatable, public, save :: output_set_element(:,:) ! explicit rows, including da=0
 
   !-----------------------------------------------------------------------------
-  ! Output patches use IDs -n_nu_out:-1, internal patches use 1:n_nu.  n_nu_out
-  ! (m3d_patch_mod, set in composition_pre_init) equals n_nu for a contiguous output
+  ! Output patches use IDs -n_windows_out:-1, internal patches use 1:n_windows.  n_windows_out
+  ! (m3d_patch_mod, set in composition_pre_init) equals n_windows for a contiguous output
   ! grid; a window_file grid gets a whole number of patches per window.
   !-----------------------------------------------------------------------------
   public :: verify_output_patch_coverage
@@ -379,7 +379,7 @@ contains
     call self%m3d_patch_t%pre_init()
 
     self%dir = merge(1, -1, abs(self%i_mu)==1)
-    self%n_nu = n_nu
+    self%n_windows = n_windows
     self%n_mu = merge(size(rt_out%wmu), size(rt_iter%wmu)/2, self%do_final)
     self%mus = merge(1, self%n_mu+1, self%dir>0)
     self%mue = merge(self%n_mu, size(rt_iter%wmu), self%dir>0)
@@ -997,9 +997,9 @@ contains
     !-----------------------------------------------------------------------------
     rtp => pass_params(self)
     ! with a decoupled continuum, only the bound-free half of the internal
-    ! spectrum (i_nu > n_nu) can carry the absmet background
+    ! spectrum (i_nu > n_windows) can carry the absmet background
     include_absmet = rtp%include_absmet .and. (self%do_out_sp .or. &
-                     self%i_nu > self%n_nu .or. .not. decouple_continuum)
+                     self%i_nu > self%n_windows .or. .not. decouple_continuum)
     do_sample_opac = rtp%sample_back_opac
     do_make_eos = make_eos .and. self%do_out_sp
 
@@ -1068,7 +1068,7 @@ contains
     ! An output patch on a window_file grid visits the lines of its whole window, however
     ! many patches that window is split into; unallocated, window_lam is absent.
     if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
-      i_seg = output_patch_window(self%sp, self%i_nu, n_nu_out)
+      i_seg = output_patch_window(self%sp, self%i_nu, n_windows_out)
       window_lam = self%sp%lam([self%sp%segment_first(i_seg), self%sp%segment_last(i_seg)])
     endif
     use_linelist = comp%ll_initialised .and. rtp%include_linelist .and. .not. rtp%sample_linelist
@@ -3526,9 +3526,9 @@ contains
       ! reporters had contributed to the current round -- harmless with many
       ! reporters (the population check uses this same idiom, keyed by
       ! z-column, where it is very unlikely to misfire) but a near-certain
-      ! false convergence with as few as 2 reporters (e.g. n_nu=1 with
+      ! false convergence with as few as 2 reporters (e.g. n_windows=1 with
       ! decouple_continuum=T).
-      expected = merge(2*n_nu, n_nu, decouple_continuum)
+      expected = merge(2*n_windows, n_windows, decouple_continuum)
 
       !$omp critical (flux_maxerr_reset)
       count = flux_update_counter%update(+1)
@@ -3585,29 +3585,29 @@ contains
   END SUBROUTINE mem_unregister
 
   !===============================================================================
-  !> Verify that the n_nu_out output patches of a segmented (window_file) grid tile
+  !> Verify that the n_windows_out output patches of a segmented (window_file) grid tile
   !> it exactly: in i_nu order each patch is non-empty, starts where the previous
   !> one ended (the windows are adjacent in grid index) and lies inside one window.
   !===============================================================================
-  SUBROUTINE verify_output_patch_coverage(output_sp, n_nu_out)
+  SUBROUTINE verify_output_patch_coverage(output_sp, n_windows_out)
     class(atomic_spectrum_type), intent(in) :: output_sp
-    integer, intent(in) :: n_nu_out
+    integer, intent(in) :: n_windows_out
     integer :: i_nu, i_seg, fs, fe, prev_fe
     character(len=256) :: msg
     !---------------------------------------------------------------------------
     if (output_sp%n_segments == 0) return
 
-    if (mod(n_nu_out, output_sp%n_segments) /= 0) then
+    if (mod(n_windows_out, output_sp%n_segments) /= 0) then
       write(msg,'(A,I0,A,I0)') &
-        'n_nu_out=', n_nu_out, ' is not a multiple of n_segments=', output_sp%n_segments
+        'n_windows_out=', n_windows_out, ' is not a multiple of n_segments=', output_sp%n_segments
       call console_error (msg)
-      error stop 'n_nu_out and n_segments mismatch'
+      error stop 'n_windows_out and n_segments mismatch'
     endif
 
     prev_fe = 0
-    do i_nu = -1, -n_nu_out, -1
-      call output_patch_range(output_sp, i_nu, n_nu_out, fs, fe)
-      i_seg = output_patch_window(output_sp, i_nu, n_nu_out)
+    do i_nu = -1, -n_windows_out, -1
+      call output_patch_range(output_sp, i_nu, n_windows_out, fs, fe)
+      i_seg = output_patch_window(output_sp, i_nu, n_windows_out)
       if (fs /= prev_fe + 1 .or. fe < fs .or. &
           fs < output_sp%segment_first(i_seg) .or. fe > output_sp%segment_last(i_seg)) then
         write(msg,'(A,I0,A,I0,A,I0,A,I0)') 'output patch i_nu=', i_nu, &
@@ -3623,7 +3623,7 @@ contains
       error stop 'incomplete segment coverage'
     endif
 
-    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,I0,A)') 'Verified: ', n_nu_out, &
+    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,I0,A)') 'Verified: ', n_windows_out, &
       ' output patches tile ', output_sp%n_segments, ' windows'
   END SUBROUTINE verify_output_patch_coverage
 

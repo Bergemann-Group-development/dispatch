@@ -1,6 +1,6 @@
 """A 1D NLTE run does not depend on the thread count.
 
-The frequency decomposition (``n_nu``) defaults to the thread count, so it is fixed
+The wavelength decomposition (``n_windows``) defaults to the thread count, so it is fixed
 here; with it fixed, the populations and the spectrum are a property of the model
 alone. The i_mu twins of each depth patch run each iteration concurrently and exchange
 their hemisphere mean intensities, and the rt tasks of all frequency windows add into
@@ -50,7 +50,7 @@ def _run(tmp_path, threads):
 &nlte_params convlim=1d-2 decouple_continuum=T /
 &rt_iteration_params maxiter=5 /
 &rt_output_params maxiter=3 /
-&run_params n_nu=8 /
+&run_params n_windows=8 /
 &linelist_params linelist_file='{LINELIST}' line_scattering=T /
 &spectrum_params daa=0.05 aa_blue=5160 aa_red=5192 /
 """)
