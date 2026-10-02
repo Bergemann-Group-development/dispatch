@@ -6,10 +6,11 @@ grid), with the continuum alone and with the FGK line list of make_nml.py. Repor
 points per second per process and the output volume per point. Nothing is saved.
 
 The line list is read through the windowed reader (``windows=``): the plain range
-reader (hop_init_linelist) crashes in an ifort build because build_linelist assigns
-``blk_lo = [lo]`` to an unallocated array, which -assume norealloc_lhs does not
-allocate. HopEOS.opacity(nprocs>1) takes that range path in its workers, so the
-parallel variant is left out; points parallelise as independent processes instead.
+reader (hop_init_linelist) crashes in the frozen ifort build bin/5eb036cbb, whose
+build_linelist assigns ``blk_lo = [lo]`` to an unallocated array under -assume
+norealloc_lhs (fixed in a9b67c3e2). HopEOS.opacity(nprocs>1) takes that range path in
+its workers, so the parallel variant is left out; points parallelise as independent
+processes instead.
 """
 import time
 from pathlib import Path

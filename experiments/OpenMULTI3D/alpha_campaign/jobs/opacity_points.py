@@ -14,8 +14,9 @@ extinction chi, its continuum part and the scattering part [1/cm, float32] on th
 grid of batch 1 (R=2e5), with the FGK line list of make_nml.py, vmic = 1 km/s.  Each
 shard is one .npz under runs/opac/feh<FEH>/.
 
-The line list is read through the windowed reader: the range reader crashes in an ifort
-build (build_linelist's ``blk_lo = [lo]`` under -assume norealloc_lhs).
+The line list is read through the windowed reader: the range reader crashes in the
+frozen ifort build bin/5eb036cbb (build_linelist's ``blk_lo = [lo]`` under -assume
+norealloc_lhs, fixed in a9b67c3e2).
 """
 import sys
 from pathlib import Path

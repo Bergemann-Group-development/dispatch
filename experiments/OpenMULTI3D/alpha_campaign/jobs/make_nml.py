@@ -65,7 +65,8 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     """One run.  geometry '1d' applies the 1d preset (nz=64, exit planes in memory),
     '3d' the 3d preset (30x30x96, tabulated opacities, rotated rays, exit planes on
     disk).  atom: a model atom for NLTE, solved and synthesised in one run (nlte
-    preset), with its element excluded from the line list.  output / rt_output: keys
+    preset), with its element excluded from the line list; atom['nlte'] adds to
+    &nlte_params and atom['maxiter'] sets the iteration limit.  output / rt_output: keys
     added to &output_params / &rt_output_params (a group counts only once)."""
     lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
              group('timer_params', sec_per_report=1e8, verbose=2)]
@@ -90,9 +91,11 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
         element = atom['element']
         exclude = element
         lines.append(group('atom_params', atom_file=atom['file']))
-        lines.append(group('nlte_params', convlim=1e-3, **atom.get('nlte', {})))
+        lines.append(group('nlte_params', **{'convlim': 1e-3, **atom.get('nlte', {})}))
         lines.append(group('opac_table_params', absmet_file='input/absmet_files/absmet'))
         rt_out['maxiter'] = 3
+        if 'maxiter' in atom:
+            rt_it['maxiter'] = atom['maxiter']
         if atom.get('departures_only'):
             rt_out['angle_quad'] = 'none'
     if rt_it:
@@ -242,7 +245,23 @@ PILOT = [
 ]
 # tumult.synthesis.snapshot_grid.halton_order(10): a prefix of k is the k-snapshot pick
 HALTON_10 = [7, 2, 9, 5, 4, 8, 0, 6, 3, 1]
-FE_PILOT = dict(element='Fe', file='input/atoms/atom.fe607a', nlte=dict(convmax=1e-3))
+# One stopping rule per element for every approximation (1D, <3D>, 3D), so the paired
+# spectra share it.  convlim is the global criterion; convmax = convlim/10 only freezes
+# patches that are well inside it.  With convmax = convlim the patches end the run one
+# iteration before the global change confirms convlim, with twice the flux error of
+# convlim alone.  A run that ends on convmax quotes the previous iteration's global change
+# and can warn of non-convergence although every patch changed by less than convmax.
+# In 1D against convlim=1e-5 references, convlim=1e-3 leaves up to 7e-4 in the
+# normalised flux, 1e-4 at most 4e-5 (reports/2026-10-03_phase1_launch.md).
+# Mg is cheap and takes 1e-4; Fe takes 1e-3, which the weekend's 3D budget allows.  The
+# 3D runs converge more slowly per iteration (Mg: ~0.92 against ~0.8 in 1D), hence
+# Ng every 20 iterations (as in the phase-0 3D Mg run) and a higher iteration limit.
+PILOT_MG = dict(element='Mg', file='input/atoms/atom.mg86e', nlte=dict(convlim=1e-4, convmax=1e-5))
+PILOT_FE = dict(element='Fe', file='input/atoms/atom.fe607a', nlte=dict(convlim=1e-3, convmax=1e-4))
+
+
+def in_3d(atom):
+    return dict(atom, nlte=dict(atom['nlte'], ng_step=20), maxiter=150)
 
 
 def pilot(k=2):
@@ -250,7 +269,12 @@ def pilot(k=2):
     same line list and composition: 1D LTE / NLTE (Mg, Fe) on the MARCS twin and on the
     <3D> average, and per snapshot 3D LTE and 3D NLTE (Mg; Fe separately, it needs
     ~80 GB and hours per snapshot).  NLTE runs solve the departures and write the NLTE
-    and LTE spectra in one run (nlte preset)."""
+    and LTE spectra in one run (nlte preset); that LTE spectrum shares the model atom's
+    lines, so Delta_NLTE, Delta_3D and Delta_interaction of an element come from its NLTE
+    runs alone.  The plain LTE runs use the VALD lines of every element.
+
+    The 3D task lists are ordered by snapshot rank (the first Halton snapshot of every
+    model before the second), so the first array elements cover all models."""
     tasks = {'1d': [], '3d_lte': [], '3d_mg': [], '3d_fe': []}
 
     def put(kind, rel, text):
@@ -266,22 +290,21 @@ def pilot(k=2):
                  'av3d': dict(atmos_file=f'av3d/atmos.{av}', FeH=feh)}
         for kind, atmos in one_d.items():
             put('1d', f'{model}/{kind}_lte.nml', namelist(atmos, composition=comp))
-            put('1d', f'{model}/{kind}_mg.nml', namelist(atmos, atom=MG, composition=comp))
-            put('1d', f'{model}/{kind}_fe.nml', namelist(atmos, atom=FE_PILOT, composition=comp))
-        snaps = sorted((Path('stagger2') / folder).glob('atm3d.*'))
-        for i in sorted(HALTON_10[:k]):
-            snap = snaps[i]
+            put('1d', f'{model}/{kind}_mg.nml', namelist(atmos, atom=PILOT_MG, composition=comp))
+            put('1d', f'{model}/{kind}_fe.nml', namelist(atmos, atom=PILOT_FE, composition=comp))
+    for i in HALTON_10[:k]:
+        for folder, marcs, av, feh, alpha in PILOT:
+            model = Path(folder).name.replace('_new', '')
+            comp = dict(alpha_enhancement=alpha) if alpha else None
+            snap = sorted((Path('stagger2') / folder).glob('atm3d.*'))[i]
             tag = snap.name.split('_')[1]                       # snapshot number
             atmos = dict(atmos_format='stagger2', atmos_file=str(snap))
             put('3d_lte', f'{model}/s{tag}_lte.nml',
                 namelist(atmos, geometry='3d', feh=feh, composition=comp))
             put('3d_mg', f'{model}/s{tag}_mg.nml',
-                namelist(atmos, geometry='3d', feh=feh, atom=dict(MG, nlte=dict(ng_step=20)),
-                         composition=comp))
+                namelist(atmos, geometry='3d', feh=feh, atom=in_3d(PILOT_MG), composition=comp))
             put('3d_fe', f'{model}/s{tag}_fe.nml',
-                namelist(atmos, geometry='3d', feh=feh,
-                         atom=dict(FE_PILOT, nlte=dict(convmax=1e-3, ng_step=20)),
-                         composition=comp))
+                namelist(atmos, geometry='3d', feh=feh, atom=in_3d(PILOT_FE), composition=comp))
     for kind, names in tasks.items():
         Path(f'p1/tasks_{kind}.txt').write_text('\n'.join(names) + '\n')
     print(', '.join(f'{len(v)} {k}' for k, v in tasks.items()), 'namelists in p1/')
