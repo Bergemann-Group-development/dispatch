@@ -506,8 +506,8 @@ The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded 
     \item \textbf{Geometry patch} (\File{experiment\_mod.f90}). One per slab. It carries the geometry only.
     \item \textbf{Composition patch} (\File{composition\_patch\_mod.f90}). It interpolates the model onto its slab and passes temperature, density, electron density, velocity and microturbulence to HOP, which solves the ionisation and molecular equilibrium. It creates the NLTE patch and the RT slabs of its slab.
     \item \textbf{NLTE patch} (\File{nlte\_patch\_mod.f90}). It holds the atoms of its slab, computes LTE populations and, in each iteration, solves the statistical equilibrium from the accumulated rates. It writes populations and departure coefficients.
-    \item \textbf{RT slab} (\Code{rt\_patch\_t}, \File{rt\_patch\_mod.f90}). The state of one combination of frequency window, ray and z-slab: background and line opacities, source functions, the formal solution and rate accumulation. It is not scheduled as a task of its own.
-    \item \textbf{RT column} (\Code{rt\_column\_t}, \File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
+    \item \textbf{RT slab} (\File{rt\_patch\_mod.f90}). The state of one combination of frequency window, ray and z-slab: background and line opacities, source functions, the formal solution and rate accumulation. It is not scheduled as a task of its own.
+    \item \textbf{RT column} (\File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
 \end{itemize}
 
 A run is split in frequency with \fort{n_nu}: the internal spectrum has \fort{n_nu} windows (with \fort{decouple_continuum=T} a second set of \fort{n_nu} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads and with \fort{n_nu}.
@@ -580,12 +580,12 @@ Console output is divided into channels (atmosphere, m3d, hop) with levels $-1$ 
 DISPATCH's timer lists the procedures that take more than \Code{\&timer\_params\%min\_fraction} (default 1\%) of the thread time:
 
 \begin{minted}[fontsize=\scriptsize]{Text}
-                    procedure       calls          time       time(%)      s/call  locks(%)
-           interp_xkap_1      8.421E+04       3.36           5.1    0.000040       0.0
-      dispatcher0%no_queue      5.861E+04       3.44           5.2    0.000059       0.0
- rt_patch%add_bound_bound_opacities  3.072E+03       26.9          40.9    0.008752       0.0
- rt_patch%bound_bound_rates          2.560E+03       23.2          35.2    0.009047       0.0
- TOTAL updates, thread time           1.00         65.8         100.
+                          procedure       calls          time       time(%)      s/call  locks(%)
+                      interp_xkap_1      8.421E+04       3.36           5.1    0.000040       0.0
+               dispatcher0%no_queue      5.861E+04       3.44           5.2    0.000059       0.0
+ rt_patch%add_bound_bound_opacities      3.072E+03       26.9          40.9    0.008752       0.0
+         rt_patch%bound_bound_rates      2.560E+03       23.2          35.2    0.009047       0.0
+         TOTAL updates, thread time           1.00       65.8          100.
 \end{minted}
 
 The table is printed by the task list around the task loop and at the end of the run when \Code{\&timer\_params\%verbose}$>0$; \fort{sec_per_report} sets the interval of periodic reports. The rows are the instrumented procedures of the radiative transfer, which show where a configuration spends its time (line opacities, rates, formal solutions).
