@@ -38,7 +38,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   cached in one HOP call.
 - *reference star*: a named set of stellar parameters (Teff, log g, [Fe/H], vmic) from the
   editable catalogue of Preferences → Reference stars (`tumult.refstars`). A setup's
-  *Preset* dropdown fills its fields from one and reads *Custom* otherwise; the
+  *Reference star* dropdown fills its fields from one and reads *Custom* otherwise; the
   line-strength ranking computes on the entry nearest to a spectrum, its atmosphere being
   the nearest model of the registered MARCS grid. Distinct from the *reference spectrum*
   and the *1D LTE reference grid* of the correction tool.
@@ -164,6 +164,12 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   abundances and departures, immutable and in physical terms. Scripts and the GUI's tools
   build the same type. A request never holds a target spectrum; the analysis operations
   take that as an argument.
+- *preset*: a namelist file of settings for one kind of calculation, found by name in
+  `~/.config/tumult/presets/` and then in `tumult/presets/` (`tumult.synthesis.presets`).
+  The workflows choose a *geometry preset* (`1d`, `3d`) from the atmosphere and the *step
+  presets* (`departures`, `read_departures`) of an NLTE calculation; a request lists further
+  ones. The workflow layers in `tumult/presets/internal/` are not presets. Distinct from a
+  *reference star*.
 - *run values*: the namelist choices an operation varies around a request for one
   synthesis (`only_elements`, an abundance rung, a prepared atom quadrature), passed to the
   execution layer beside the request; `operations.run_values` combines the two.

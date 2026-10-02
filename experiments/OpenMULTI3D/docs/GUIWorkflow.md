@@ -467,13 +467,14 @@ fitted spectrum's **Rerun from this…** (its recorded request, see "Duplicate a
   5480–6720 Å".
 - Body: Atmosphere (grid, interpolate or pick a model), Stellar parameters, Abundances,
   Radiative transfer (LTE/NLTE, and in NLTE the model atoms, the **Use line list** switch
-  and the **Saved departures** field). A registered grid is picked from by parsed model:
+  and the **Saved departures** field), and **Presets**: the request's namelist presets by
+  name or path, applied on top of the geometry preset the atmosphere selects. A registered grid is picked from by parsed model:
   the picker lists what the grid's pattern matched, one row per model (per snapshot on a
   3D grid) as `5750 K · log g 4.50 · [Fe/H] +0.00 · ξ 1`, filtered by every fragment
   typed into its box. The grid is read away from the document, and the picker is the model
   picker while that runs (it says so instead of listing files); a picked model then shows
   by its row label rather than its path; picking one fills the stellar parameters. The Individual file
-  browses a folder instead; it fixes Teff and log g, so only [Fe/H] and vmic are shown. Stellar parameters lead with a **Preset** dropdown listing the
+  browses a folder instead; it fixes Teff and log g, so only [Fe/H] and vmic are shown. Stellar parameters lead with a **Reference star** dropdown listing the
   Preferences → Reference stars catalogue: choosing an entry fills the four fields,
   editing any field puts the dropdown back on *Custom*, and values written back by a fit
   or a picked model select the entry they match. Values are a draft of the
@@ -509,7 +510,7 @@ Synthesis *Line list* and *Absmet* preferences name, and atoms into `input/atoms
 The same downloads are available without the GUI as
 `python -m tumult.synthesis.input_data fetch linelists|atoms|absmet`.
 Preferences → Reference stars edits the one catalogue of named stellar parameters
-(`tumult.refstars`): every setup's Preset dropdown, the ionisation balance's entry
+(`tumult.refstars`): every setup's Reference star dropdown, the ionisation balance's entry
 point and the line-strength ranking read it, and the line strengths take the atmosphere
 of an entry from the nearest model of the registered MARCS grid.
 

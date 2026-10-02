@@ -103,9 +103,10 @@ OMP_STACKSIZE=256M ./dispatch.x demo.nml     # 1D MARCS Sun, toy Ba atom, LTE + 
 ```
 
 [QUICKSTART.md](../QUICKSTART.md) walks through the same run and the plotting below. Namelist sections and their
-defaults are documented in the Fortran sources under `SRC/` and in the presets in
-`tumult/presets/` (`base.nml`, `nlte.nml`, `departures.nml`), which the Python layer stacks
-under a user's settings.
+defaults are documented in the Fortran sources under `SRC/`. The presets in
+`tumult/presets/` (`1d`, `3d`, `nlte`, `departures`, `read_departures` and the comparison
+presets) hold the settings of common calculations; the manual's Presets section explains
+how they combine and how to replace them.
 
 ### How do I control how much `dispatch.x` prints?
 

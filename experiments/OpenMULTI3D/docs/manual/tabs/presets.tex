@@ -1,0 +1,12 @@
+\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\toprule
+\textbf{Preset} & \textbf{Purpose}\\
+\midrule
+\File{1d} & 1D models: a 64-point depth mesh, exit planes of frozen columns kept in memory (\fort{rt_to_file=F}). Chosen for 1D atmospheres.\\
+\File{3d} & 3D snapshots: a $30\times30\times96$ mesh, tabulated background and line opacities in both passes, \fort{rotate_atmos=T}, exit planes on disk. Chosen for snapshots.\\
+\File{nlte} & Departure coefficients and spectrum in one run (\fort{convlim=1e-3}); the populations are saved.\\
+\File{departures} & Departure coefficients only: \fort{convlim=1e-3}, no formal solution, populations saved.\\
+\File{read\_departures} & Spectrum on the departure coefficients of another run, named by \fort{atmos_file}; no NLTE iteration.\\
+\File{turbospectrum}, \File{multi1d}, \File{multi3d} & Settings of these codes, for comparisons. Use each on its own.\\
+\bottomrule
+\end{longtblr}
