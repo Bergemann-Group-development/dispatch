@@ -14,7 +14,7 @@ ifeq ($(strip $(MPI)),mpi)
 else
   FC = ifx
 endif
-F90 = $(FC) -cpp -assume byterecl -diag-disable remark -diag-disable=16219 -module $(BUILD)
+F90 = $(FC) -cpp -assume byterecl,protect_parens -diag-disable remark -diag-disable=16219 -module $(BUILD)
 LD  = $(FC) -module $(BUILD)
 
 # Set openmp compiler flags if needed
