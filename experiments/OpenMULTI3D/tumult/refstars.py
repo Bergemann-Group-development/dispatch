@@ -3,7 +3,7 @@
 What a reference star is
 ------------------------
 One entry is a label and ``(Teff, log g, [Fe/H], vmic)``. The list serves three places:
-the *Preset* dropdown of every synthesis setup, which fills the stellar-parameter fields
+the *Reference star* dropdown of every synthesis setup, which fills the stellar-parameter fields
 from an entry; the ionisation-balance entry point, which starts a solve from one; and the
 line-strength ranking, which computes strengths on the reference atmosphere and picks the
 entry nearest to a spectrum's own parameters when none is chosen.

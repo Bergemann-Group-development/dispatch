@@ -3,12 +3,16 @@ cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
 Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
-the Preset dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. The
+the Reference star dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. The
 picker (:class:`atmospicker.AtmosPicker`) lists a registered grid's parsed models and
-browses a folder for the Individual file. The Preset dropdown lists the reference
+browses a folder for the Individual file. The Reference star dropdown lists the reference
 stars (:mod:`tumult.refstars`): it fills the four parameter fields from an entry and shows
 *Custom* whenever the fields hold anything else, so the two stay in step in both
 directions.
+
+The mode form's **Presets** field names the request's namelist presets
+(:mod:`tumult.synthesis.presets`), applied on top of the geometry preset of the atmosphere.
+The LTE/NLTE choice and the saved departures select the NLTE step presets.
 
 Parameterised by a ``prefix`` (DOM-id / form-name / action-channel namespace) and a store
 ``section`` (where this instance's per-target state lives), so several independent setups
@@ -43,7 +47,8 @@ from bokeh.models import TextInput
 
 from tumult import refstars
 from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
-                              DepartureRequest, Departures, Snapshot, Star, SynthRequest)
+                              DepartureRequest, Departures, Snapshot, Star, SynthRequest,
+                              presets)
 from tumult.synthesis.snapshot_grid import SNAPSHOT_FORMATS, is_snapshot_grid
 
 from ..workspace import store
@@ -58,6 +63,7 @@ from ..preferences.synthprefs import (INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, a
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
 # synthesis modal stores it under "synthesis", not its run section.
 _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundances", "mode",
+                 "presets",
                  "departures", "atmos_mode", "atmos_file",
                  "atmos_individual_format")
 
@@ -150,9 +156,9 @@ class SynthSetup:
                  "mode": f"{prefix}mode", **(form_names or {})}
         vals = {**RUN_DEFAULTS, **store.get_section(section)}
         self.run_form = Form(names["run"], [
-            # the reference-star catalogue as presets, full width like the Grid select
-            # above it since the entry names are long
-            Field("refstar", "Preset", kind="select", value=refstars.CUSTOM_KEY,
+            # the reference-star catalogue, full width like the Grid select above it since
+            # the entry names are long
+            Field("refstar", "Reference star", kind="select", value=refstars.CUSTOM_KEY,
                   options=self._refstar_options()),
             *(Field(key, label, kind="number", value=vals[key], step=step, inline=True,
                     min=0 if key == "vmic" else None)
@@ -174,6 +180,8 @@ class SynthSetup:
             Field("departures", "Saved departures (optional)", kind="text",
                   value=vals.get("departures", ""),
                   placeholder="path to departure run"),
+            Field("presets", "Presets", kind="text", value=vals.get("presets", ""),
+                  placeholder=self._preset_hint()),
         ], on_change=self._save_mode)
 
         # atmosphere selection UI: a server-rendered block (grid select + source/format + file
@@ -214,7 +222,7 @@ class SynthSetup:
     def _sync_run_fields(self):
         """Show the stellar fields the atmosphere source leaves free, and repaint. An
         Individual file fixes Teff and log g (they only choose the MARCS preparation node of a
-        non-MARCS format), so those and the Preset are hidden; [Fe/H] and vmic stay, since the
+        non-MARCS format), so those and the Reference star are hidden; [Fe/H] and vmic stay, since the
         run scales the abundance table by [Fe/H] and overrides the model's vmic."""
         fields = self.run_form.fields
         for key in ("refstar", "teff", "logg"):
@@ -587,7 +595,8 @@ class SynthSetup:
                                   relative_abundances=vals["relative_abundances"])
         self.mode_form.set_values(mode=vals["mode"], use_linelist=vals.get("use_linelist", True),
                                   background_lines=vals.get("background_lines", True),
-                                  departures=vals.get("departures", ""))
+                                  departures=vals.get("departures", ""),
+                                  presets=vals.get("presets", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
         self.render_grid_ui()
@@ -610,6 +619,7 @@ class SynthSetup:
         sect["departures"] = (str(request.departures.folder)
                               if isinstance(request.departures, Departures) else "")
         sect["use_linelist"] = bool(use_linelist)
+        sect["presets"] = " ".join(request.presets)
         reason = self._load_atmosphere(request.atmosphere, request.config)
         self.reload()
         return reason
@@ -650,6 +660,18 @@ class SynthSetup:
         """False when a line-mask analysis synthesises its element's transitions alone."""
         return not (self.element and not self.mode_form.value("background_lines"))
 
+    @staticmethod
+    def _preset_hint():
+        """The placeholder of the Presets field: the presets a user may list."""
+        names = [p.name for p in presets.available() if p.name not in presets.STEP_PRESETS
+                 and p.name not in (presets.GEOMETRY_1D, presets.GEOMETRY_3D)]
+        return "e.g. " + ", ".join(names) if names else "preset names or .nml paths"
+
+    def preset_names(self):
+        """The Presets field as a tuple of names or paths (comma or space separated)."""
+        text = str(self.mode_form.value("presets") or "")
+        return tuple(name for name in text.replace(",", " ").split() if name)
+
     def context(self):
         """A :class:`~tumult.synthesis.SynthRequest` for the operations, or ``None`` (with
         :attr:`reason` set) when synthesis is not yet runnable or the setup does not form a
@@ -684,12 +706,19 @@ class SynthSetup:
             return None
         if departures is None and self.is_nlte:
             departures = DepartureRequest(atoms, line_grid=False)
+        names = self.preset_names()
+        for name in names:
+            try:
+                presets.find(name)
+            except FileNotFoundError as exc:
+                self.reason = str(exc)
+                return None
         reference = self.grids.reference_grid()
         preparation = atmosphere_grid(reference) if reference else None
         try:
             if self.is_snapshot:
-                resolution = tuple(int(v) for v in (grid.get("resolution") or
-                                                    [prefs.get(k) for k in ("nx", "ny", "nz")]))
+                # a registered grid's own mesh, else the presets' (the 3d preset's)
+                resolution = grid.get("resolution") or None
                 # active_grid() already carries the Individual selector's format or the
                 # registered grid's; a snapshot picked from a Stagger grid must not fall back
                 # to the Individual preference (which defaults to Marcs)
@@ -704,7 +733,7 @@ class SynthSetup:
                 config=synth_config(prefs), atmosphere=atmosphere,
                 star=Star(*(float(stellar[k]) for k in ("teff", "logg", "feh", "vmic"))),
                 abundances=Abundances.from_override(base["abundances"], convention),
-                departures=departures)
+                departures=departures, presets=names)
         except (TypeError, ValueError) as exc:
             self.reason = str(exc)
             return None
