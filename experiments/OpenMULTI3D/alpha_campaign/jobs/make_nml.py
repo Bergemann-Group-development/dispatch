@@ -21,6 +21,8 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py pilot_sed        # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs
     python3 make_nml.py vmic_av3d        # <3D> LTE with the MARCS twin's constant vmic, into b3/
     python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
+    python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
+    python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
 """
 import re
 import sys
@@ -650,8 +652,101 @@ def lte3d(labels_csv, out='x3d/tasks.txt'):
     print(f'{len(tasks)} 3D LTE namelists in x3d/ ({len(stars)} stars)')
 
 
+# Snapshots pooled into one <3D> average: evenly spaced over a model's sequence, so the
+# average spans its time coverage rather than one stretch of it.
+AVG_SNAPSHOTS = 10
+
+
+def avg3d_models():
+    """Models that get their own <3D> average: the pilot, every [Fe/H] <= -3 model of
+    batch 2 (b2/pairs.txt) and every model of the 3D LTE extension list."""
+    names = [Path(f).name.replace('_new', '') for f, *_ in PILOT]
+    for row in Path('b2/pairs.txt').read_text().splitlines()[1:]:
+        if float(row.split()[3]) <= -3:
+            names.append(row.split()[0])
+    tasks = Path('x3d/tasks_s4.txt')
+    if tasks.exists():
+        names += [Path(t).parent.name for t in tasks.read_text().split()]
+    return list(dict.fromkeys(names))
+
+
+def avg3d(models=()):
+    """Own <3D> averages, with density, for the Stagger models of avg3d_models() (or
+    the ones named).  Per model:
+
+    - avg3d/<model>/s<snap>.nml: atmosphere-only runs (a 0.5 A window, no line list) on
+      AVG_SNAPSHOTS snapshots, through the 3d preset's 30x30x96 resampling and the
+      model's composition; each saves T, n_e, rho, velocities and chi_500.
+    - avg3d.py pools their columns into runs/../work/avg3d/<model>.atmos (log tau_500
+      surfaces; text format).
+    - b4/av3d/<model>/{lte,mg,fe}.nml: the batch-2 <3D> runs on that file (Mg and Fe
+      for the pilot and [Fe/H] <= -3 only), which a run
+      reads with use_ne=F (rho given, n_e from the EOS) and amr='T' (the default
+      pressure-based depth sampling needs n_e).
+
+    Writes avg3d/models.txt (model, [Fe/H], the snapshot namelists) for avg3d.sh."""
+    rows = []
+    folders = stagger_models()
+    pilot = {Path(f).name.replace('_new', '') for f, *_ in PILOT}
+    missing = []
+    for name in (models or avg3d_models()):
+        if name not in folders:
+            missing.append(name)                    # a <3D> file without snapshots
+            continue
+        teff, logg, feh, alpha = av3d_labels(name)
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        snaps = sorted(folders[name].glob('atm3d.*'))
+        pick = sorted({round(i * (len(snaps) - 1) / (AVG_SNAPSHOTS - 1))
+                       for i in range(AVG_SNAPSHOTS)}) if len(snaps) > AVG_SNAPSHOTS else range(len(snaps))
+        nmls = []
+        for i in pick:
+            snap = snaps[i]
+            nml = Path('avg3d') / name / f's{snap.name.split("_")[1]}.nml'
+            nml.parent.mkdir(parents=True, exist_ok=True)
+            atmos = dict(atmos_format='stagger2', atmos_file=str(snap), FeH=feh, nx=30, ny=30, nz=96)
+            lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
+                     group('timer_params', sec_per_report=1e8, verbose=2),
+                     group('atmos_params', **atmos),
+                     group('spectrum_params', aa_blue=5000.0, aa_red=5000.5, daa=0.1)]
+            if comp:
+                lines.append(group('composition_params', **comp))
+            nml.write_text('\n'.join(lines) + '\n')
+            nmls.append(str(nml))
+        atmos = dict(atmos_format='text', atmos_file=f'avg3d/{name}.atmos', FeH=feh, use_ne=False, amr='T')
+        quiet = dict(save_linelist=False)
+        out = Path('b4/av3d') / name
+        out.mkdir(parents=True, exist_ok=True)
+        (out / 'lte.nml').write_text(namelist(atmos, composition=comp, rt_output=quiet))
+        if name in pilot or feh <= -3:            # the 3D LTE extension needs LTE only
+            for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
+                (out / f'{el}.nml').write_text(namelist(atmos, atom=atom, composition=comp, rt_output=quiet))
+        rows.append(f'{name} {feh} ' + ' '.join(nmls))
+    listing = Path('avg3d/models.txt')
+    old = {r.split()[0]: r for r in listing.read_text().splitlines()} if listing.exists() else {}
+    old.update({r.split()[0]: r for r in rows})
+    listing.write_text('\n'.join(old.values()) + '\n')
+    print(f'{len(rows)} models in avg3d/models.txt; no snapshots for', ' '.join(missing) or 'none')
+
+
+def avg3d_sed(name):
+    """Stage-2 SED (batch2_sed's settings) on the Mg and Fe departures of the b4 run of
+    one own average: b4/sed/av3d_<model>.nml, departures linked in runs/b4/dep/."""
+    teff, logg, feh, alpha = av3d_labels(name)
+    comp = dict(alpha_enhancement=alpha) if alpha else None
+    dep = DATADIR / 'b4/dep' / f'av3d_{name}'
+    combine_departures(dep, DATADIR / f'b4/av3d/{name}/mg', DATADIR / f'b4/av3d/{name}/fe')
+    nml = Path('b4/sed') / f'av3d_{name}.nml'
+    nml.parent.mkdir(parents=True, exist_ok=True)
+    nml.write_text(sed_namelist(dep, comp))
+    print(nml)
+
+
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['lte3d']:
+    if sys.argv[1:2] == ['avg3d']:
+        avg3d(sys.argv[2:])
+    elif sys.argv[1:2] == ['avg3d_sed']:
+        avg3d_sed(sys.argv[2])
+    elif sys.argv[1:2] == ['lte3d']:
         lte3d(*sys.argv[2:4])
     elif sys.argv[1:2] == ['vmic_av3d']:
         vmic_av3d()
