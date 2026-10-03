@@ -41,7 +41,9 @@ finished 3D LTE snapshot (x3d/, and the pilot's p1/<model>/s*_lte) against those
 N compares the own <3D> averages with density (make_nml.py avg3d, runs b4/) with the
 Stagger MULTI-format averages of batch 2: in LTE (lte runs) and, where b4 has them, in
 the stage-2 SEDs (NLTE and LTE).  dA_new_old = A(own) - A(Stagger file) at the same EW;
-dA_3d_* = A(own <3D>) - A(MARCS twin), the new Delta_<3D>.  It also records the run's
+dA_3d_* = A(own <3D>) - A(MARCS twin), the new Delta_<3D>.  $B4_NLTE names the runs/
+folder of the own averages' stage-2 SEDs (default b4; b4_defq holds those made with
+batch 2's departure setup, the like-for-like comparison).  It also records the run's
 log tau_500 against the file's at three temperatures (the phase-3 tau-scale check).
 
 W reads every finished 3D LTE snapshot and its 1D LTE partners on the constant-vmic grid
@@ -298,8 +300,9 @@ def one_n(args):
         new, old = lte_ews(f'b4/av3d/{av}/lte'), lte_ews(f'{av_run}/lte')
         tw = lte_ews(tw_lte) if tw_lte != '-' else None
         sed = None
-        if (RUNS / f'b4/sed/av3d_{av}/save').is_dir():
-            sed = (nlte_lte(f'b4/sed/av3d_{av}', LINES_SED), nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
+        b4n = os.environ.get('B4_NLTE', 'b4')            # b4_defq: the first departure setup
+        if (RUNS / f'{b4n}/sed/av3d_{av}/save').is_dir():
+            sed = (nlte_lte(f'{b4n}/sed/av3d_{av}', LINES_SED), nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
             twn = (f'b2/sed/twin_{av}' if tw_mg.startswith('b2/twin/') else
                    f'b2/sed/{Path(tw_mg).name[:-3]}' if tw_mg.startswith('b2/n1d/') else None)
             twn = nlte_lte(twn, LINES_SED) if twn else None
