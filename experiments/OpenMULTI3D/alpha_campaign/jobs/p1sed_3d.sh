@@ -5,7 +5,9 @@
 # the <3D> departure maps it reads (p1sed/map.txt).  A SED is claimed by an atomic mkdir
 # under logs/claims_p1sed/, so several jobs on different nodes can share the list;
 # finished SEDs are skipped.  Needs BIN of a build with 7425e2438 (8ce90476b reads one
-# Jnu set per final ray).
+# Jnu set per final ray).  With LOCAL=1 a SED runs on the node's /scratch when it has
+# 150 GB free (its Jnu_out files reach about 120 GB; beegfs throughput varies with the
+# other users' load); everything but the Jnu files is copied back to runs/ afterwards.
 #   sbatch -w NODE -c 24 --mem=80G --time=4-00:00:00 --export=ALL,BIN=$C/bin/8ce90476b jobs/p1sed_3d.sh
 #SBATCH -J p1sed_3d
 #SBATCH --partition=four-wks
@@ -31,6 +33,18 @@ while read -r nml; do
     [ -f "$c/save/pop_${d}_meta.txt" ] && continue
     PYTHONPATH=$CL OMP_NUM_THREADS=1 $CL/.venv/bin/python $CAMPAIGN/jobs/map_departures.py $a $b $c $d
   done
-  run "$nml" $SLURM_CPUS_PER_TASK
+  free=$(df -BG --output=avail /scratch 2>/dev/null | tail -1 | tr -dc 0-9)
+  if [ "${LOCAL:-0}" = 1 ] && [ "${free:-0}" -ge 150 ]; then
+    tmp=/scratch/hoppe_alpha_$SLURM_JOB_ID
+    mkdir -p $tmp/work/$(dirname $nml)
+    ln -sfn $WORK/input $tmp/work/input; ln -sfn $WORK/windows $tmp/work/windows
+    sed "s#datadir='[^']*'#datadir='$tmp/runs'#" $nml > $tmp/work/$nml
+    ( WORK=$tmp/work run "$nml" $SLURM_CPUS_PER_TASK )
+    mkdir -p $CAMPAIGN/runs/${nml%.nml}
+    rsync -a --exclude='Jnu*' --exclude='exit_plane*' $tmp/runs/${nml%.nml}/ $CAMPAIGN/runs/${nml%.nml}/
+    rm -rf $tmp
+  else
+    run "$nml" $SLURM_CPUS_PER_TASK
+  fi
   tail -1 $TIMINGS
 done < $WORK/p1sed/tasks_3d.txt
