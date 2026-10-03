@@ -5,6 +5,8 @@ Delta_<3D> between each Stagger <3D> average and its MARCS twin (B).
     python delta_maps.py B OUT.csv      # one row per <3D> average, element and line
     python delta_maps.py A2 OUT.csv     # the same from the stage-2 line-list SEDs
     python delta_maps.py B2 OUT.csv
+    python delta_maps.py V OUT.csv      # Delta_<3D> in LTE, <3D> own vmic and twin vmic
+    python delta_maps.py X OUT.csv      # Delta_3D in LTE: 3D snapshots against <3D>, MARCS
 
 Every EW is the integral of 1 - F/F_cont over the line's window around its centre, on
 the R=2e5 spectra.  The windows include blends, which are the same in both spectra of
@@ -27,6 +29,12 @@ is the abundance change that would give spectrum b the EW of spectrum a: the
 correction to add to an abundance from b (1D LTE, or MARCS) to get a (NLTE, or <3D>).
 The b1 sets use the VALD line, not the model atom's, so s is approximate where their
 gf values differ.
+
+V and X read plain LTE runs with the full line list (LINES_SED): V the <3D> average with
+its own vmic (b2/av3d/<av>/lte) and with its MARCS twin's constant vmic
+(b3/av3d_vmic/<av>/lte), each against the twin (dA_av = A(<3D>) - A(MARCS)); X every
+finished 3D LTE snapshot (x3d/, and the pilot's p1/<model>/s*_lte) against those three
+(dA_3d_av, dA_3d_avv, dA_3d_tw = A(3D) - A(1D)).
 """
 import re
 import sys
@@ -155,11 +163,83 @@ def one_b(args):
         return []
 
 
+def lte_ews(folder, lines=LINES_SED):
+    r = tumult.read(str(RUNS / folder))
+    return {lam0: ew(r, lam0, hw, LTE=True) for _, lam0, hw in lines}
+
+
+def pair_rows():
+    return [l.split() for l in (CAMPAIGN / 'work/b2/pairs.txt').read_text().splitlines()
+            if not l.startswith('#')]
+
+
+def one_v(args):
+    row, b1_names = args
+    av, teff, logg, feh, alpha, av_run, tw_lte = row[:7]
+    if tw_lte == '-':
+        return []
+    try:
+        s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
+        a, v, b = lte_ews(f'{av_run}/lte'), lte_ews(f'b3/av3d_vmic/{av}/lte'), lte_ews(tw_lte)
+        return [dict(av3d=av, teff=float(teff), logg=float(logg), feh=float(feh), element=e,
+                     line=lam0, ew_av=a[lam0], ew_avv=v[lam0], ew_tw=b[lam0], slope=s[lam0],
+                     dA_av=corr(a[lam0], b[lam0], s[lam0]), dA_avv=corr(v[lam0], b[lam0], s[lam0]))
+                for e, lam0, _ in LINES_SED]
+    except Exception as exc:
+        print(f'skip {av}: {type(exc).__name__}: {exc}', flush=True)
+        return []
+
+
+def one_x(args):
+    run, row, b1_names = args
+    av, teff, logg, feh, alpha, av_run, tw_lte = row[:7]
+    try:
+        s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
+        x = lte_ews(run)
+        one = {'av': lte_ews(f'{av_run}/lte')}
+        if (RUNS / f'b3/av3d_vmic/{av}/lte/save').is_dir():
+            one['avv'] = lte_ews(f'b3/av3d_vmic/{av}/lte')
+        if tw_lte != '-':
+            one['tw'] = lte_ews(tw_lte)
+        rows = []
+        for e, lam0, _ in LINES_SED:
+            r = dict(run=run, av3d=av, teff=float(teff), logg=float(logg), feh=float(feh),
+                     element=e, line=lam0, ew_3d=x[lam0], slope=s[lam0])
+            for k, v in one.items():
+                r[f'ew_{k}'] = v[lam0]
+                r[f'dA_3d_{k}'] = corr(x[lam0], v[lam0], s[lam0])
+            rows.append(r)
+        return rows
+    except Exception as exc:
+        print(f'skip {run}: {type(exc).__name__}: {exc}', flush=True)
+        return []
+
+
+def lte3d_runs():
+    """(run folder, <3D> name) of every finished 3D LTE run: x3d/<av>/s*_lte and the
+    pilot's p1/<model>/s*_lte."""
+    out = []
+    for top in ('x3d', 'p1'):
+        for run in sorted((RUNS / top).glob('t*/s*_lte')):
+            log = CAMPAIGN / 'logs' / f'{top}_{run.parent.name}_{run.name}.log'
+            if log.exists() and 'OpenMULTI3D terminated' in log.read_text(errors='replace'):
+                out.append((f'{top}/{run.parent.name}/{run.name}', run.parent.name))
+    return out
+
+
 def main(which, out, nproc):
     names = sorted(p.name for p in (RUNS / 'b1/hrs').iterdir())
     sed = which.endswith('2')
     with Pool(nproc) as pool:
-        if which.startswith('A'):
+        if which == 'V':
+            res = pool.map(one_v, [(p, names) for p in pair_rows()], chunksize=2)
+            df = pd.DataFrame([r for rows in res for r in rows])
+        elif which == 'X':
+            pairs = {p[0]: p for p in pair_rows()}
+            todo = [(run, pairs[av], names) for run, av in lte3d_runs() if av in pairs]
+            res = pool.map(one_x, todo, chunksize=1)
+            df = pd.DataFrame([r for rows in res for r in rows])
+        elif which.startswith('A'):
             res = pool.map(one_a, [(n, sed) for n in names], chunksize=4)
             df = pd.DataFrame([r for rows in res for r in rows])
             lab = np.array([labels(n) for n in df['model']])
@@ -177,7 +257,7 @@ def main(which, out, nproc):
 
 if __name__ == '__main__':
     import os
-    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2']):
+    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X']):
         main(sys.argv[1], sys.argv[2], int(os.environ.get('SLURM_CPUS_PER_TASK', 1)))
     else:
         sys.exit(__doc__)

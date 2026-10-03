@@ -467,6 +467,17 @@ def sed_namelist_3d(dep_folder, atoms, feh, composition=None):
                               exclude_from_line_list=False))
 
 
+def solved(run, element):
+    """Whether an NLTE run has written the departures of all its depth patches.  Each
+    patch saves them (one row of pop_<el>_meta.txt) when it stops iterating, before the
+    output pass (about 3 h of a 3D run), so a run that its time limit ends during the
+    output pass still serves stage 2."""
+    rows = lambda f: (sum(1 for l in f.read_text().splitlines() if not l.startswith('*'))
+                      if f.is_file() else -1)
+    save = run / 'save'
+    return rows(save / f'pop_{element}_meta.txt') == rows(save / 'atmos_meta.txt')
+
+
 def pilot_sed():
     """Stage-2 SEDs of the pilot, Mg departures (Mg + Fe once a 3D Fe run has finished), all from the
     full line list: 1D on the MARCS twin and the <3D> average (b2-style combined Mg+Fe
@@ -487,9 +498,8 @@ def pilot_sed():
             nml.write_text(sed_namelist(dep, comp))
             t1.append(str(nml))
         for run in sorted((DATADIR / f'p1/{model}').glob('s*_mg')):
-            log = CAMPAIGN / 'logs' / f'p1_{model}_{run.name}.log'
-            if not log.exists() or 'OpenMULTI3D terminated' not in log.read_text(errors='replace'):
-                continue                                   # still running
+            if not solved(run, 'Mg'):
+                continue                                   # still iterating
             snap = run.name.split('_')[0]
             nml = Path('p1sed') / model / f'{snap}_3dmg.nml'
             nml.write_text(sed_namelist_3d(run, [PILOT_MG['file']], feh, comp))
@@ -500,8 +510,7 @@ def pilot_sed():
             nml.write_text(sed_namelist_3d(out, [PILOT_MG['file']], feh, comp))
             t3.append(str(nml))
             fe = DATADIR / f'p1/{model}/{snap}_fe'
-            fe_log = CAMPAIGN / 'logs' / f'p1_{model}_{snap}_fe.log'
-            if fe_log.exists() and 'OpenMULTI3D terminated' in fe_log.read_text(errors='replace'):
+            if solved(fe, 'Fe'):
                 dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
                 combine_departures(dep, run, fe)
                 nml = Path('p1sed') / model / f'{snap}_3dmgfe.nml'

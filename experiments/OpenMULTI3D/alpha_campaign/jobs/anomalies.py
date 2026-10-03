@@ -2,6 +2,7 @@
 
     python anomalies.py feii OUT.csv          # Fe II: matched levels and their departures
     python anomalies.py emission RUN [RUN..]  # NLTE flux above the continuum
+    python anomalies.py levels RUN L [L ..]   # log b of levels L (1-based) and T per depth
 
 feii: every Fe II line of delta_maps.LINES_SED takes, in a stage-2 SED, the departure
 coefficients of the fe607a levels nearest in energy (HOP find_closest; level_match.py).
@@ -71,7 +72,7 @@ def at(ltau, b, level):
 def feii(out):
     _, keys, ion = atom_keys()
     ground2 = int(np.where(ion == 2)[0][0])
-    vald = vald_block('Fe 2')
+    vald = vald_block('Fe II')
     match = []
     for el, lam0, _ in (l for l in LINES_SED if l[0] == 'FeII'):
         lam, elo, lgf = vald[np.abs(vald[:, 0] - lam0).argmin()]
@@ -140,10 +141,25 @@ def emission(runs):
                       f'  log(b_up/b_lo) {np.log10(bu / bl):+.3f}')
 
 
+def levels(run, which):
+    """log tau_500, T and log b of the given levels at every depth point."""
+    r = tumult.read(str(run))
+    pop = np.asarray(r.read_patch_save('pop_Fe', folder=Path(run) / 'save', zdim=2))
+    b = pop[0, 0, :, :, 1, 0]
+    ltau = np.asarray(r.atmos.ltau, float).ravel()
+    temp = np.asarray(r.atmos.temp, float).ravel()
+    print(f'== {run}')
+    print('  ltau      T  ' + '  '.join(f'lb{l:>4d}' for l in which))
+    for k in np.argsort(ltau):
+        print(f'{ltau[k]:+6.2f} {temp[k]:6.0f}  ' + '  '.join(f'{np.log10(b[k, l - 1]):+6.3f}' for l in which))
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['feii'] and len(sys.argv) == 3:
         feii(sys.argv[2])
     elif sys.argv[1:2] == ['emission'] and len(sys.argv) > 2:
         emission(sys.argv[2:])
+    elif sys.argv[1:2] == ['levels'] and len(sys.argv) > 3:
+        levels(sys.argv[2], [int(x) for x in sys.argv[3:]])
     else:
         sys.exit(__doc__)
