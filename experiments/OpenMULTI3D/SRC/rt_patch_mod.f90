@@ -209,6 +209,7 @@ MODULE rt_patch_mod
     procedure :: iso_integrations
     procedure :: has_twin
     procedure :: restore_combined_state
+    procedure :: load_Jnu_set
     procedure :: combine_twin_hemispheres
     procedure :: save_debug_arrays
     procedure :: save_set_manifest
@@ -1667,6 +1668,32 @@ contains
   END SUBROUTINE restore_combined_state
 
   !===============================================================================
+  !> Read set i_set of this patch's saved Jnu (label Jnu or Jnu_out), written by
+  !> save5 as one stream of shape (nf, nx, ny, nz, n_set).  The sets are the
+  !> slowest index, so one set is a contiguous block at a fixed offset.
+  !===============================================================================
+  SUBROUTINE load_Jnu_set (self, label, i_set, mem)
+    class(rt_patch_t) :: self
+    character(len=*), intent(in) :: label
+    integer, intent(in) :: i_set
+    real(4), intent(out) :: mem(:,:,:,:)
+    character(len=256) :: filename, folder
+    integer :: lunit
+    integer(8) :: pos
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%load_Jnu_set', itimer=itimer)
+    call self%get_meta_name(filename, folder, label, self%key(1:3))
+    pos = 1_8 + int(i_set-1,8)*size(mem,kind=8)*int(storage_size(mem)/8,8)
+    call self%save_lock%set_read('load')
+    open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
+    read(lunit, pos=pos) mem
+    close(lunit)
+    call self%save_lock%unset_read('load')
+    call trace%end(itimer)
+  END SUBROUTINE load_Jnu_set
+
+  !===============================================================================
   SUBROUTINE save_debug_arrays(self, i_set, i_mu)
     class(rt_patch_t) :: self
     integer, intent(in) :: i_set, i_mu
@@ -1836,8 +1863,6 @@ contains
     integer, intent(in) :: i_set
     real(8), intent(in) :: vec(3)
     logical, intent(in) :: include_absmet, do_rotate_atmos
-    real(4), dimension(:,:,:,:,:), allocatable, target :: Jup_mem, Jdn_mem
-    real(4), dimension(:,:,:,:,:), pointer, contiguous :: Jup, Jdn
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
@@ -1869,31 +1894,18 @@ contains
       !-------------------------------------------------------------------------
       ! A twin already holds the previous iteration's full-sphere Jnu in its own
       ! array (combine_twin_hemispheres, restore_combined_state).  The do_final
-      ! ray reads the output hemisphere pair, which has finished iterating and
-      ! holds the combined Jnu in both halves.
+      ! ray reads the output hemisphere pair, which has finished iterating:
+      ! the last combine wrote the same full-sphere Jnu to both halves, so one
+      ! twin's copy of this ray's set is all it needs.  With rt_to_file that is
+      ! a 1/n_set slice of one file, read for each final ray and set.
       !-------------------------------------------------------------------------
       if (self%do_final) then
         if (rt_to_file) then
           Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
-          allocate(Jup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
-          allocate(Jdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
-          call self%up_twin%load5(Jnu_label, key=self%up_twin%key(1:3), mem=Jup_mem)
-          call self%dn_twin%load5(Jnu_label, key=self%dn_twin%key(1:3), mem=Jdn_mem)
-          Jup => Jup_mem
-          Jdn => Jdn_mem
+          call self%up_twin%load_Jnu_set(trim(Jnu_label), i_set, self%Jnu(:,:,:,:,i_set))
         else
-          Jup => self%up_twin%Jnu
-          Jdn => self%dn_twin%Jnu
+          self%Jnu(:,:,:,:,i_set) = self%up_twin%Jnu(:,:,:,:,i_set)
         endif
-        do z=1, self%nz
-          do y=1, self%ny
-            do x=1, self%nx
-              do f=fs, fe
-                self%Jnu(f,x,y,z,i_set) = 0.5*(Jup(f,x,y,z,i_set) + Jdn(f,x,y,z,i_set))
-              end do
-            end do
-          end do
-        end do
       endif
       !-------------------------------------------------------------------------
       ! Jnu enters eta via comp%scattering, so a corrupt Jnu -- from the twins'
