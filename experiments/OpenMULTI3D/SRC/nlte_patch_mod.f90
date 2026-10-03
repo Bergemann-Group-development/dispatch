@@ -927,6 +927,10 @@ contains
         dep => self%departures(i,1+imu)
         allocate(dep%mem, source=self%departures(i,1)%mem)
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
+        ! the level energies too: line-list lines of the species find their levels
+        ! by energy on every ray-aligned copy (linelist_mod, find_closest)
+        if (.not. allocated(dep%ev)) allocate(dep%ev, source=self%departures(i,1)%ev)
+        dep%nlevel = self%departures(i,1)%nlevel
         do l=1, size(dep%mem, 4)
           call self%rotate_cube4(vec, dep%mem(:,:,:,l), do_log=.true.)
         end do
