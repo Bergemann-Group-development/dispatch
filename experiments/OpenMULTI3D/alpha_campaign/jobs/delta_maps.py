@@ -51,6 +51,7 @@ which the Fe I lines give one abundance (the minimum over vmic, interpolated in 
 0.05 km/s, of the spread of dA over the Fe I lines, which removes the trend with line
 strength) and records Delta_3D there (columns vfit_<kind>, dA_3d_<kind>_vfit).
 """
+import os
 import re
 import sys
 from multiprocessing import Pool
@@ -61,7 +62,9 @@ import pandas as pd
 
 import tumult
 
-CAMPAIGN = Path('/mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign')
+# ALPHA_CAMPAIGN points a local mirror of the run folders (same layout) at the script
+CAMPAIGN = Path(os.environ.get('ALPHA_CAMPAIGN',
+                               '/mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign'))
 RUNS = CAMPAIGN / 'runs'
 # (element, centre [A, air, model atom], half window [A])
 LINES = [('Mg', 5172.681, 1.5), ('Mg', 5528.416, 0.8), ('Mg', 5711.063, 0.4),
@@ -222,8 +225,10 @@ def lte_ews(folder, lines=LINES_SED):
 
 
 def pair_rows():
+    """b2/pairs.txt, restricted to the <3D> names in $ONLY (space-separated) if set."""
+    only = set(os.environ.get('ONLY', '').split())
     return [l.split() for l in (CAMPAIGN / 'work/b2/pairs.txt').read_text().splitlines()
-            if not l.startswith('#')]
+            if not l.startswith('#') and (not only or l.split()[0] in only)]
 
 
 def one_v(args):
@@ -407,7 +412,6 @@ def main(which, out, nproc):
 
 
 if __name__ == '__main__':
-    import os
     if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N'], ['W']):
         main(sys.argv[1], sys.argv[2], int(os.environ.get('SLURM_CPUS_PER_TASK', 1)))
     else:

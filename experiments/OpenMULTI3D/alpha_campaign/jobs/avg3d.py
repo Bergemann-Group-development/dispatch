@@ -6,9 +6,15 @@ Each RUN is a dispatch.x run on one snapshot whose saved atmosphere carries T, n
 rho, the velocities and the 500 nm opacity (any 3D run of the snapshot; make_nml.py
 avg3d writes cheap atmosphere-only runs).  The columns of all snapshots are pooled and
 averaged on surfaces of constant log tau_500 with tumult's AtmosClass.to_dispatch1d_atmos:
-geometric means of T, n_e and rho, and vmic from the velocity dispersion.  The result
-is dispatch.x's 'text' format (log tau_500, T, Pe, rho, vmic), which a run reads with
-atmos_format='text'; use_ne=F makes it take rho and recompute n_e from (T, rho).
+geometric means of T, n_e and rho.  The result is dispatch.x's 'text' format (log tau_500,
+T, Pe, rho, vmic), which a run reads with atmos_format='text'; use_ne=F makes it take rho
+and recompute n_e from (T, rho).
+
+vmic follows the convention of the Stagger MULTI-format files, so that the two kinds of
+average differ in structure only: to_dispatch1d_atmos's vmic is the rms velocity of one
+component, sqrt((s_x^2 + s_y^2 + s_z^2)/3) on the tau surface, and the files' column is
+that divided by sqrt(3) to within 2 % in the solar, 5000 K giant and [Fe/H] = -2 models
+compared (phase 4).  Any other vmic is set in the run (the vmic grid of make_nml.py).
 
 The MULTI-format Stagger <3D> files have no density, and dispatch.x rebuilds it from the
 averaged (T, n_e); in metal-poor atmospheres that compresses the tau scale above
@@ -32,8 +38,20 @@ def pooled(runs):
     return out
 
 
+def vmic_stagger_files(atm):
+    """vmic [km/s] per tau surface on the Stagger files' scale: tumult's one-component
+    rms (to_dispatch1d_atmos) divided by sqrt(3)."""
+    var = 0.0
+    for v in ('vx', 'vy', 'vz'):
+        mean = atm.get_surf_mean('ltau', v)[1]
+        rms = atm.get_surf_mean('ltau', v, power=2)[1]
+        var = var + rms**2 - mean**2
+    return 1e-5 * np.sqrt(var / 3) / np.sqrt(3)
+
+
 def main(out, feh, runs):
-    pooled(runs).to_dispatch1d_atmos(Path(out), FeH=feh)
+    atm = pooled(runs)
+    atm.to_dispatch1d_atmos(Path(out), FeH=feh, vmic=vmic_stagger_files(atm))
 
 
 if __name__ == '__main__':
