@@ -16,6 +16,9 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py bench            # the phase-0 timing set, into bench/
     python3 make_nml.py batch1           # 1D LTE grid over the 4MOST domain, into b1/
     python3 make_nml.py pilot [K]        # paired 1D/<3D>/3D LTE+NLTE pilot, K snapshots, into p1/
+    python3 make_nml.py batch2           # 1D NLTE Mg/Fe map and <3D>-vs-MARCS pairs, into b2/
+    python3 make_nml.py batch2_sed       # stage 2: line-list NLTE SEDs on the b2 departures
+    python3 make_nml.py pilot_sed        # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs
 """
 import re
 import sys
@@ -310,11 +313,253 @@ def pilot(k=2):
     print(', '.join(f'{len(v)} {k}' for k, v in tasks.items()), 'namelists in p1/')
 
 
+AV3D_NAME = re.compile(r't(?P<teff>\d+)g(?P<logg>\d\d)(?P<sign>[mp])(?P<feh>\d\d)$')
+
+
+def av3d_labels(name):
+    """Nominal Teff, log g and [Fe/H] of a Stagger <3D> average from its name
+    (t45g25m05: 4500 K, 2.5, -0.5; t5777g44p05: 5777 K, 4.4, +0.5), and the alpha
+    enhancement of the Stagger grid: +0.4 at [Fe/H] <= -1, otherwise 0 (Magic et al.
+    2013)."""
+    m = AV3D_NAME.match(name)
+    teff = int(m['teff']) * (100 if len(m['teff']) == 2 else 1)
+    feh = int(m['feh']) / 10 * (-1 if m['sign'] == 'm' else 1) + 0.0     # no -0.0
+    return teff, int(m['logg']) / 10, feh, 0.4 if feh <= -1 else 0.0
+
+
+def marcs_twin(teff, logg, feh, folder='marcs'):
+    """The standard-composition MARCS model at the node of a Stagger average, under
+    the batch-1 geometry rule (plane-parallel at log g >= 3.5, spherical 1 Msun at
+    log g <= 3.0).  The Sun takes the dedicated p5777_g+4.4 model at solar
+    metallicity and p5750_g+4.5 otherwise, the nearest MARCS node."""
+    if (teff, logg) == (5777, 4.4):
+        if feh == 0:
+            return Path(PILOT[0][1])
+        teff, logg = 5750, 4.5
+    geo, mass, vt = ('p', '0.0', '01') if logg >= 3.5 else ('s', '1.0', '02')
+    hits = sorted(Path(folder).glob(f'{geo}{teff}_g{logg:+.1f}_m{mass}_t{vt}_st_z{feh:+.2f}_*.mod'))
+    return hits[0] if hits and marcs_readable(hits[0]) else None
+
+
+def run_name(path):
+    """batch-1 run name of a MARCS model: p5750_g+4.5_m0.0_t01_z+0.00."""
+    return path.name.split('_st_')[0] + '_z' + path.name.split('_z')[1][:5]
+
+
+def batch2():
+    """1D NLTE Mg and Fe over the batch-1 MARCS models (A) and LTE, NLTE Mg and NLTE Fe
+    on every Stagger <3D> average with its MARCS twin (B), all on the HRS windows at
+    R=2e5 with the pilot's convergence rules.  Each NLTE run writes the NLTE and LTE
+    spectra of its element and keeps the departure coefficients.  linelist_out is not
+    written (it would be 80 % of the output).
+
+    A twin is taken from A (and batch 1 for LTE) when the model and the synthesis
+    composition are the same; the Sun, 7000 K and the [Fe/H] = -0.5 averages (Stagger
+    alpha 0, MARCS +0.2) get their own twin runs with the <3D> composition.
+    b2/pairs.txt lists every <3D> run folder with its labels and twin folders."""
+    quiet = dict(save_linelist=False)
+    tasks = {'a': [], 'b': []}
+
+    def put(kind, rel, text):
+        nml = Path('b2') / rel
+        nml.parent.mkdir(parents=True, exist_ok=True)
+        nml.write_text(text)
+        tasks[kind].append(str(nml))
+        return str(Path('b2') / Path(rel).with_suffix(''))
+
+    in_a = {}
+    for path, alpha in domain_models():
+        name = run_name(path)
+        atmos = dict(atmos_format='Marcs', atmos_file=f'marcs/{path.name}')
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
+            put('a', f'n1d/{name}_{el}.nml', namelist(atmos, atom=atom, composition=comp,
+                                                      rt_output=quiet))
+        in_a[path.name] = alpha
+    pairs = ['# av3d teff logg feh alpha  av3d_run  twin_lte twin_mg twin_fe  twin_model']
+    for av in sorted(p.name[6:] for p in Path('av3d').glob('atmos.t*')):
+        teff, logg, feh, alpha = av3d_labels(av)
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        atmos = dict(atmos_file=f'av3d/atmos.{av}', FeH=feh)
+        put('b', f'av3d/{av}/lte.nml', namelist(atmos, composition=comp, rt_output=quiet))
+        for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
+            put('b', f'av3d/{av}/{el}.nml', namelist(atmos, atom=atom, composition=comp,
+                                                     rt_output=quiet))
+        twin = marcs_twin(teff, logg, feh)
+        if twin is None:
+            runs = ['-'] * 3
+        elif in_a.get(twin.name) == alpha:
+            runs = [f'b1/hrs/{run_name(twin)}', f'b2/n1d/{run_name(twin)}_mg',
+                    f'b2/n1d/{run_name(twin)}_fe']
+        else:
+            m = dict(atmos_format='Marcs', atmos_file=str(twin))
+            runs = [put('b', f'twin/{av}/lte.nml', namelist(m, composition=comp, rt_output=quiet))]
+            runs += [put('b', f'twin/{av}/{el}.nml', namelist(m, atom=atom, composition=comp,
+                                                              rt_output=quiet))
+                     for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE))]
+        pairs.append(f'{av} {teff} {logg} {feh} {alpha}  b2/av3d/{av}  {" ".join(runs)}  '
+                     f'{twin.name if twin else "-"}')
+    # the expensive Fe runs first, so the array's tail holds the short Mg and LTE runs
+    order = lambda t: (not t.endswith('fe.nml'), t)
+    for kind, names in tasks.items():
+        Path(f'b2/tasks_{kind}.txt').write_text('\n'.join(sorted(names, key=order)) + '\n')
+    Path('b2/pairs.txt').write_text('\n'.join(pairs) + '\n')
+    print(', '.join(f'{len(v)} {k}' for k, v in tasks.items()), 'namelists in b2/,',
+          sum(' - ' in p for p in pairs), '<3D> averages without a twin')
+
+
+def combine_departures(folder, mg_run, fe_run):
+    """A read_departures source holding the Mg and Fe departures of two runs on the
+    same atmosphere: params.nml, atmos_mesh.txt and save/* of the Fe run, plus
+    save/pop_Mg_* of the Mg run, as symlinks."""
+    save = folder / 'save'
+    save.mkdir(parents=True, exist_ok=True)
+    links = [(fe_run / f, folder / f) for f in ('params.nml', 'atmos_mesh.txt')]
+    links += [(f, save / f.name) for f in (fe_run / 'save').iterdir()]
+    links += [(f, save / f.name) for f in (mg_run / 'save').glob('pop_Mg_*')]
+    for src, dst in links:
+        if not dst.is_symlink():
+            dst.symlink_to(src)
+
+
+def sed_namelist(dep_folder, composition=None, window='windows/hrs.txt', R=2e5):
+    """Stage 2 of the NLTE synthesis: the spectrum from the full FGK line list on the
+    precomputed Mg and Fe departures.  The atoms keep their levels and continua but not
+    their lines (disable_bb), and their species stay in the line list
+    (exclude_from_line_list=F), so every Mg and Fe line of the list takes the departure
+    coefficients of the atom levels nearest in energy.  The run's LTE spectrum
+    (crop(LTE=True)) is the matching LTE SED: same line list, mesh and wavelengths."""
+    lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
+             group('timer_params', sec_per_report=1e8, verbose=2),
+             group('atmos_params', atmos_format='save', atmos_file=str(dep_folder),
+                   read_departures=True),
+             group('output_params', rt_to_file=False),
+             group('atom_params', atom_file=[PILOT_MG['file'], PILOT_FE['file']],
+                   disable_bb=True, exclude_from_line_list=False),
+             group('opac_table_params', absmet_file='input/absmet_files/absmet'),
+             group('rt_iteration_params', maxiter=0),
+             group('rt_output_params', maxiter=3, save_linelist=False),
+             linelist_group('fgk'),
+             group('spectrum_params', window_file=window, R_sampling=R)]
+    if composition:
+        lines.append(group('composition_params', **composition))
+    return '\n'.join(lines) + '\n'
+
+
+def sed_namelist_3d(dep_folder, atoms, feh, composition=None):
+    """Stage 2 on a 3D snapshot: as sed_namelist, with the 3d preset's tabulated
+    opacities and rotated rays, for the given model atoms."""
+    text = sed_namelist(dep_folder, composition)
+    text = text.replace(group('output_params', rt_to_file=False),
+                        group('run_params', rotate_atmos=True) + '\n' +
+                        group('output_params', rt_to_file=True))
+    text = text.replace(group('rt_iteration_params', maxiter=0),
+                        group('rt_iteration_params', maxiter=0, sample_back_opac=True,
+                              sample_linelist=True))
+    text = text.replace(group('rt_output_params', maxiter=3, save_linelist=False),
+                        group('rt_output_params', maxiter=3, save_linelist=False,
+                              sample_back_opac=True, sample_linelist=True))
+    return text.replace(group('atom_params', atom_file=[PILOT_MG['file'], PILOT_FE['file']],
+                              disable_bb=True, exclude_from_line_list=False),
+                        group('atom_params', atom_file=atoms, disable_bb=True,
+                              exclude_from_line_list=False))
+
+
+def pilot_sed():
+    """Stage-2 SEDs of the pilot, Mg departures (Mg + Fe once a 3D Fe run has finished), all from the
+    full line list: 1D on the MARCS twin and the <3D> average (b2-style combined Mg+Fe
+    departures), and per finished 3D Mg snapshot (a) on its own 3D departures and (b) on
+    the <3D> departures mapped to it in log tau_500 (map_departures.py, run by the job
+    before the SED; the folder is runs/p1sed/map/<model>_s<snap>).  Writes
+    p1sed/tasks_1d.txt, p1sed/tasks_3d.txt and p1sed/map.txt (1D run, 3D template, out)."""
+    t1, t3, maps = [], [], []
+    for folder, marcs, av, feh, alpha in PILOT:
+        model = Path(folder).name.replace('_new', '')
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        for kind in ('marcs', 'av3d'):
+            mg, fe = DATADIR / f'p1/{model}/{kind}_mg', DATADIR / f'p1/{model}/{kind}_fe'
+            dep = DATADIR / 'p1sed/dep' / f'{model}_{kind}'
+            combine_departures(dep, mg, fe)
+            nml = Path('p1sed') / model / f'{kind}.nml'
+            nml.parent.mkdir(parents=True, exist_ok=True)
+            nml.write_text(sed_namelist(dep, comp))
+            t1.append(str(nml))
+        for run in sorted((DATADIR / f'p1/{model}').glob('s*_mg')):
+            log = CAMPAIGN / 'logs' / f'p1_{model}_{run.name}.log'
+            if not log.exists() or 'OpenMULTI3D terminated' not in log.read_text(errors='replace'):
+                continue                                   # still running
+            snap = run.name.split('_')[0]
+            nml = Path('p1sed') / model / f'{snap}_3dmg.nml'
+            nml.write_text(sed_namelist_3d(run, [PILOT_MG['file']], feh, comp))
+            t3.append(str(nml))
+            out = DATADIR / 'p1sed/map' / f'{model}_{snap}'
+            maps.append(f'{DATADIR}/p1/{model}/av3d_mg {DATADIR}/p1/{model}/{snap}_lte {out} Mg')
+            nml = Path('p1sed') / model / f'{snap}_mapmg.nml'
+            nml.write_text(sed_namelist_3d(out, [PILOT_MG['file']], feh, comp))
+            t3.append(str(nml))
+            fe = DATADIR / f'p1/{model}/{snap}_fe'
+            fe_log = CAMPAIGN / 'logs' / f'p1_{model}_{snap}_fe.log'
+            if fe_log.exists() and 'OpenMULTI3D terminated' in fe_log.read_text(errors='replace'):
+                dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
+                combine_departures(dep, run, fe)
+                nml = Path('p1sed') / model / f'{snap}_3dmgfe.nml'
+                nml.write_text(sed_namelist_3d(dep, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
+                t3.append(str(nml))
+                out = DATADIR / 'p1sed/map' / f'{model}_{snap}_mgfe'
+                for el in ('mg', 'fe'):                        # both maps into one folder
+                    maps.append(f'{DATADIR}/p1/{model}/av3d_{el} {DATADIR}/p1/{model}/{snap}_lte '
+                                f'{out} {el.capitalize()}')
+                nml = Path('p1sed') / model / f'{snap}_mapmgfe.nml'
+                nml.write_text(sed_namelist_3d(out, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
+                t3.append(str(nml))
+    Path('p1sed/tasks_1d.txt').write_text('\n'.join(t1) + '\n')
+    Path('p1sed/tasks_3d.txt').write_text('\n'.join(t3) + '\n')
+    Path('p1sed/map.txt').write_text('\n'.join(maps) + '\n')
+    print(f'{len(t1)} 1D and {len(t3)} 3D stage-2 namelists in p1sed/')
+
+
+def batch2_sed():
+    """Stage-2 NLTE SEDs of every batch-2 departure pair (A: MARCS grid, B: <3D>
+    averages and their own twins), needing the f63e2fc95 build (disable_bb for classic
+    atoms, several precomputed atoms).  Departure folders: runs/b2/dep/<run>."""
+    tasks = []
+
+    def one(rel, mg, fe, comp):
+        dep = DATADIR / 'b2/dep' / rel
+        if not ((DATADIR / mg / 'save').is_dir() and (DATADIR / fe / 'save').is_dir()):
+            print(f'missing departures for {rel}')
+            return
+        combine_departures(dep, DATADIR / mg, DATADIR / fe)
+        nml = Path('b2/sed') / f'{rel}.nml'
+        nml.parent.mkdir(parents=True, exist_ok=True)
+        nml.write_text(sed_namelist(dep, comp))
+        tasks.append(str(nml))
+
+    for path, alpha in domain_models():
+        name = run_name(path)
+        one(name, f'b2/n1d/{name}_mg', f'b2/n1d/{name}_fe',
+            dict(alpha_enhancement=alpha) if alpha else None)
+    for row in Path('b2/pairs.txt').read_text().splitlines()[1:]:
+        av, _, _, _, alpha, av_run, _, tw_mg, tw_fe = row.split()[:9]
+        comp = dict(alpha_enhancement=float(alpha)) if float(alpha) else None
+        one(f'av3d_{av}', f'{av_run}/mg', f'{av_run}/fe', comp)
+        if tw_mg.startswith('b2/twin/'):
+            one(f'twin_{av}', tw_mg, tw_fe, comp)
+    Path('b2/tasks_sed.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} stage-2 namelists in b2/sed/')
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['bench']:
         bench()
     elif sys.argv[1:2] == ['batch1']:
         batch1()
+    elif sys.argv[1:2] == ['batch2']:
+        batch2()
+    elif sys.argv[1:2] == ['batch2_sed']:
+        batch2_sed()
+    elif sys.argv[1:2] == ['pilot_sed']:
+        pilot_sed()
     elif sys.argv[1:2] == ['pilot']:
         pilot(int(sys.argv[2]) if len(sys.argv) > 2 else 2)
     else:

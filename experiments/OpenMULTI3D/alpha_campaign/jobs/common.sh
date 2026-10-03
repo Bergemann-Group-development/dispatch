@@ -1,7 +1,7 @@
 # Shared settings of the alpha-campaign job scripts (sourced, not run).
 CAMPAIGN=/mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign
 WORK=$CAMPAIGN/work
-BIN=$CAMPAIGN/bin/current
+BIN=${BIN:-$CAMPAIGN/bin/current}    # a job may export another frozen build
 export KMP_STACKSIZE=256M
 unset OMP_PROC_BIND OMP_PLACES I_MPI_PMI_LIBRARY
 
