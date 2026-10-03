@@ -23,6 +23,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
     python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
+    python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
     python3 make_nml.py sed_validate         # cost/accuracy test of the 3D SED output-pass settings, into val/
 """
@@ -70,12 +71,14 @@ def linelist_group(linelist, exclude=''):
 
 
 def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1d',
-             atom=None, feh=None, output=None, rt_output=None, composition=None, extra=()):
+             atom=None, feh=None, output=None, rt_output=None, composition=None, extra=(),
+             absmet='input/absmet_files/absmet'):
     """One run.  geometry '1d' applies the 1d preset (nz=64, exit planes in memory),
     '3d' the 3d preset (30x30x96, tabulated opacities, rotated rays, exit planes on
     disk).  atom: a model atom for NLTE, solved and synthesised in one run (nlte
     preset), with its element excluded from the line list; atom['nlte'] adds to
-    &nlte_params and atom['maxiter'] sets the iteration limit.  output / rt_output: keys
+    &nlte_params, atom['maxiter'] sets the iteration limit and atom['grid'] names a
+    line_grid_file.  absmet: the background line-opacity table of the iteration pass.  output / rt_output: keys
     added to &output_params / &rt_output_params (a group counts only once)."""
     lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
              group('timer_params', sec_per_report=1e8, verbose=2)]
@@ -99,9 +102,12 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     if atom:
         element = atom['element']
         exclude = element
-        lines.append(group('atom_params', atom_file=atom['file']))
+        keys = dict(atom_file=atom['file'])
+        if 'grid' in atom:
+            keys['line_grid_file'] = atom['grid']
+        lines.append(group('atom_params', **keys))
         lines.append(group('nlte_params', **{'convlim': 1e-3, **atom.get('nlte', {})}))
-        lines.append(group('opac_table_params', absmet_file='input/absmet_files/absmet'))
+        lines.append(group('opac_table_params', absmet_file=absmet))
         rt_out['maxiter'] = 3
         if 'maxiter' in atom:
             rt_it['maxiter'] = atom['maxiter']
@@ -828,8 +834,102 @@ def vmic_grid():
     print(f'{len(tasks)} namelists for {len(models)} models in b5/vmic/')
 
 
+# The departure setup of phase 4 (reports/2026-10-04_phase4.md, sections 8-9).
+# Bound-bound quadrature: tumult.line_quadrature grids built on the model's MARCS twin;
+# Fe at the generator defaults, Mg and O at the finer reference settings, which cost no
+# more for these small atoms.  Background: the absmet line-opacity table of the nearest
+# [Fe/H] (solar, -1, -2, -3; alpha +0.4 below solar) instead of the solar table for all.
+LINE_GRID_OPTS = {
+    'Fe': '',
+    'Mg': '--tol-dex 0.01 --rel-floor 1e-5 --abs-floor 1e-4 --half-window-kms 600 --R 2e6',
+    'O': '--tol-dex 0.01 --rel-floor 1e-5 --abs-floor 1e-4 --half-window-kms 600 --R 2e6',
+}
+ABSMET = {0.0: 'absmet/absmet',
+          -1.0: 'absmet/m-1.00a+0.40c+0.00n+0.00o+0.40r+0.00s+0.00v+1.00.bin',
+          -2.0: 'absmet/m-2.00a+0.40c+0.00n+0.00o+0.40r+0.00s+0.00v+1.00.bin',
+          -3.0: 'absmet/m-3.00a+0.40c+0.00n+0.00o+0.40r+0.00s+0.00v+1.00.bin'}
+
+
+def absmet_for(feh):
+    """The absmet table nearest in [Fe/H] (clipped to the tables' 0..-3 range)."""
+    x = min(0.0, max(-3.0, feh))
+    return ABSMET[min(ABSMET, key=lambda k: abs(k - x))]
+
+
+def nearest_marcs(teff, logg, feh, folder='marcs'):
+    """The batch-1-rule MARCS twin, else the same Teff/log g/geometry at the nearest
+    available [Fe/H] (three [Fe/H] = -4 giants have no readable spherical model)."""
+    twin = marcs_twin(teff, logg, feh, folder)
+    if twin is not None:
+        return twin
+    geo, mass, vt = ('p', '0.0', '01') if logg >= 3.5 else ('s', '1.0', '02')
+    hits = [h for h in Path(folder).glob(f'{geo}{teff}_g{logg:+.1f}_m{mass}_t{vt}_st_z*.mod')
+            if marcs_readable(h)]
+    zof = lambda h: float(h.name.split('_z')[1][:5])
+    return min(hits, key=lambda h: abs(zof(h) - feh)) if hits else None
+
+
+def line_grid(atom, marcs, feh, alpha, vmic):
+    """(grid folder relative to work/, the command that builds it).  The folder holds
+    line_grid.txt and the atom copy whose windows match it."""
+    el = atom['element']
+    out = Path('lgrid') / f'{Path(marcs).name.split("_st_")[0]}_z{feh:+.2f}_{el}'
+    ab = f'--abundances O=+{alpha},Mg=+{alpha}' if alpha else ''
+    cmd = (f'python -m tumult.line_quadrature {CAMPAIGN}/work/{atom["file"]} '
+           f'{Path(marcs).resolve()} {CAMPAIGN}/work/{out} --feh {feh} --vmic {vmic} {ab} '
+           f'{LINE_GRID_OPTS[el]}')
+    return out, cmd
+
+
+def with_grid(atom, grid):
+    """The atom dict of namelist() run with a generated line grid."""
+    el = atom['element'].lower()
+    return dict(atom, file=f'{grid}/atom.{el}', grid=f'{grid}/line_grid.txt')
+
+
+def dep4(models=()):
+    """Mg and Fe departures on the own <3D> averages with the phase-4 setup (line-grid
+    quadrature on the MARCS twin, [Fe/H]-matched absmet), for the pilot and the
+    [Fe/H] <= -3 models: b4/av3d/<model>/{mg,fe}.nml (replacing the first ones), the grid
+    commands in lgrid/todo.txt and the model list b4/tasks_dep.txt for dep4_queue.sbatch."""
+    pilot = [Path(f).name.replace('_new', '') for f, *_ in PILOT]
+    rows = [r.split() for r in Path('avg3d/models.txt').read_text().splitlines()]
+    todo, tasks = {}, []
+    for name, feh, *_ in rows:
+        feh = float(feh)
+        if models and name not in models:
+            continue
+        if not models and not (name in pilot or feh <= -3):
+            continue
+        teff, logg, _, alpha = av3d_labels(name)
+        marcs = nearest_marcs(teff, logg, feh)
+        if marcs is None:
+            print(f'{name}: no MARCS model for the line grid')
+            continue
+        vmic = 1.0 if logg >= 3.5 else 2.0
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        atmos = dict(atmos_format='text', atmos_file=f'avg3d/{name}.atmos', FeH=feh,
+                     use_ne=False, amr='T')
+        out = Path('b4/av3d') / name
+        out.mkdir(parents=True, exist_ok=True)
+        for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
+            grid, cmd = line_grid(atom, marcs, feh, alpha, vmic)
+            todo[str(grid)] = cmd
+            (out / f'{el}.nml').write_text(namelist(atmos, atom=with_grid(atom, grid), composition=comp,
+                                                    rt_output=dict(save_linelist=False),
+                                                    absmet=absmet_for(feh)))
+        tasks.append(f'{name} ' + ' '.join(str(line_grid(a, marcs, feh, alpha, vmic)[0])
+                                          for a in (PILOT_MG, PILOT_FE)))
+    Path('lgrid').mkdir(exist_ok=True)
+    Path('lgrid/todo.txt').write_text('\n'.join(f'{k} {v}' for k, v in todo.items()) + '\n')
+    Path('b4/tasks_dep.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} models in b4/tasks_dep.txt, {len(todo)} line grids in lgrid/todo.txt')
+
+
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['vmic_grid']:
+    if sys.argv[1:2] == ['dep4']:
+        dep4(sys.argv[2:])
+    elif sys.argv[1:2] == ['vmic_grid']:
         vmic_grid()
     elif sys.argv[1:2] == ['sed_validate']:
         sed_validate()
