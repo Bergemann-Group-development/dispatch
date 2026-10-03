@@ -53,6 +53,7 @@ def vmic(table, out):
             ax.axhline(0, color=MUTED, lw=0.6)
             ax.grid(color=GRID, lw=0.5)
             ax.set_xlim(7150, 3850)
+            ax.set_ylim(-0.8, 0.8)          # a few weak Fe II lines at [Fe/H] = -4 fall outside
             if i == 0:
                 ax.set_title(title)
             if j == 0:
@@ -91,6 +92,7 @@ def lte3d(table, out):
             ax.axhline(0, color=MUTED, lw=0.6)
             ax.grid(color=GRID, lw=0.5)
             ax.set_xlim(7150, 3850)
+            ax.set_ylim(-0.8, 0.8)
             if i == 0:
                 ax.set_title(title)
             if j == 0:
