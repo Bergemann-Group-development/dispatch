@@ -823,7 +823,8 @@ def vmic_grid():
         one_d = {'av3d': (dict(atmos_format='text', atmos_file=str(own), FeH=feh, use_ne=False, amr='T')
                           if own.exists() else dict(atmos_file=f'av3d/atmos.{name}', FeH=feh))}
         if twin != '-':
-            one_d['marcs'] = dict(atmos_format='Marcs', atmos_file=f'marcs/{twin}')
+            path = f'marcs/{twin}' if Path(f'marcs/{twin}').exists() else f'input/atmos/{twin}'
+            one_d['marcs'] = dict(atmos_format='Marcs', atmos_file=path)   # the Sun's is in input/
         for kind, atmos in one_d.items():
             for v in VMIC_GRID:
                 nml = Path('b5/vmic') / name / f'{kind}_v{v:.1f}.nml'
