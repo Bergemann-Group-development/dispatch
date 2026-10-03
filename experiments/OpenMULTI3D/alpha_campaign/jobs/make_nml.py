@@ -24,6 +24,9 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
     python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
+    python3 make_nml.py dep4_list FILE MODEL ...  # the same for the named models, listed in FILE
+    python3 make_nml.py batch2_dep4          # batch-2 MARCS departures at [Fe/H] <= -1 with that setup, into b6/
+    python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
     python3 make_nml.py sed_validate         # cost/accuracy test of the 3D SED output-pass settings, into val/
 """
@@ -889,11 +892,22 @@ def with_grid(atom, grid):
     return dict(atom, file=f'{grid}/atom.{el}', grid=f'{grid}/line_grid.txt')
 
 
-def dep4(models=()):
+def add_todo(todo):
+    """Merge grid commands into lgrid/todo.txt, which running queues read."""
+    Path('lgrid').mkdir(exist_ok=True)
+    f = Path('lgrid/todo.txt')
+    old = dict(l.split(' ', 1) for l in f.read_text().splitlines() if l) if f.exists() else {}
+    old.update(todo)
+    f.write_text('\n'.join(f'{k} {v}' for k, v in old.items()) + '\n')
+
+
+def dep4(models=(), tasks_file='b4/tasks_dep.txt'):
     """Mg and Fe departures on the own <3D> averages with the phase-4 setup (line-grid
     quadrature on the MARCS twin, [Fe/H]-matched absmet), for the pilot and the
-    [Fe/H] <= -3 models: b4/av3d/<model>/{mg,fe}.nml (replacing the first ones), the grid
-    commands in lgrid/todo.txt and the model list b4/tasks_dep.txt for dep4_queue.sbatch."""
+    [Fe/H] <= -3 models, or the ones named: b4/av3d/<model>/{mg,fe}.nml (replacing the
+    first ones), the grid commands merged into lgrid/todo.txt and the model list
+    tasks_file for dep4_queue.sbatch (a running queue reads its list as it goes, so a
+    new list takes a new file)."""
     pilot = [Path(f).name.replace('_new', '') for f, *_ in PILOT]
     rows = [r.split() for r in Path('avg3d/models.txt').read_text().splitlines()]
     todo, tasks = {}, []
@@ -922,15 +936,69 @@ def dep4(models=()):
                                                     absmet=absmet_for(feh)))
         tasks.append(f'{name} ' + ' '.join(str(line_grid(a, marcs, feh, alpha, vmic)[0])
                                           for a in (PILOT_MG, PILOT_FE)))
-    Path('lgrid').mkdir(exist_ok=True)
-    Path('lgrid/todo.txt').write_text('\n'.join(f'{k} {v}' for k, v in todo.items()) + '\n')
-    Path('b4/tasks_dep.txt').write_text('\n'.join(tasks) + '\n')
-    print(f'{len(tasks)} models in b4/tasks_dep.txt, {len(todo)} line grids in lgrid/todo.txt')
+    add_todo(todo)
+    Path(tasks_file).write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} models in {tasks_file}, {len(todo)} line grids in lgrid/todo.txt')
+
+
+def batch2_dep4(feh_max=-1.0):
+    """Batch 2's MARCS departures (A) again with the phase-4 setup, for every domain
+    model at [Fe/H] <= feh_max, where the solar absmet table and the atoms' own
+    quadrature biased Delta_NLTE low (reports/2026-10-04_phase4.md, sections 8-9): line
+    grids on the model itself, the absmet table nearest in [Fe/H].  Namelists
+    b6/n1d/<name>_{mg,fe}.nml; b6/tasks_dep.txt lists 'name mg_grid fe_grid' for
+    dep4_queue.sbatch (KIND=marcs), which also runs the stage-2 SED (make_nml.py
+    b6_sed NAME)."""
+    quiet = dict(save_linelist=False)
+    todo, tasks = {}, []
+    for path, alpha in domain_models():
+        m = MARCS_NAME.match(path.name)
+        teff, logg, feh = int(m['teff']), float(m['logg']), float(m['feh'])
+        if feh > feh_max:
+            continue
+        name = run_name(path)
+        atmos = dict(atmos_format='Marcs', atmos_file=f'marcs/{path.name}')
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        vmic = 1.0 if logg >= 3.5 else 2.0
+        grids = []
+        for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
+            grid, cmd = line_grid(atom, path, feh, alpha, vmic)
+            todo[str(grid)] = cmd
+            grids.append(str(grid))
+            nml = Path('b6/n1d') / f'{name}_{el}.nml'
+            nml.parent.mkdir(parents=True, exist_ok=True)
+            nml.write_text(namelist(atmos, atom=with_grid(atom, grid), composition=comp,
+                                    rt_output=quiet, absmet=absmet_for(feh)))
+        tasks.append(f'{name} ' + ' '.join(grids))
+    add_todo(todo)
+    # the slow giants first, so that the queue's tail holds the short runs
+    tasks.sort(key=lambda t: (not t.startswith('s'), t))
+    Path('b6/tasks_dep.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} models in b6/tasks_dep.txt')
+
+
+def b6_sed(name):
+    """Stage-2 SED (batch2_sed's settings) on the b6 departures of one MARCS model:
+    b6/sed/<name>.nml, departures linked in runs/b6/dep/."""
+    path = next(p for p, _ in domain_models() if run_name(p) == name)
+    alpha = float(MARCS_NAME.match(path.name)['alpha'])
+    dep = DATADIR / 'b6/dep' / name
+    combine_departures(dep, DATADIR / f'b6/n1d/{name}_mg', DATADIR / f'b6/n1d/{name}_fe')
+    nml = Path('b6/sed') / f'{name}.nml'
+    nml.parent.mkdir(parents=True, exist_ok=True)
+    nml.write_text(sed_namelist(dep, dict(alpha_enhancement=alpha) if alpha else None))
+    print(nml)
 
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['dep4']:
         dep4(sys.argv[2:])
+    elif sys.argv[1:2] == ['dep4_list']:          # dep4_list TASKS_FILE MODEL ...
+        dep4(sys.argv[3:], sys.argv[2])
+    elif sys.argv[1:2] == ['batch2_dep4']:
+        batch2_dep4()
+    elif sys.argv[1:2] == ['b6_sed']:
+        b6_sed(sys.argv[2])
     elif sys.argv[1:2] == ['vmic_grid']:
         vmic_grid()
     elif sys.argv[1:2] == ['sed_validate']:
