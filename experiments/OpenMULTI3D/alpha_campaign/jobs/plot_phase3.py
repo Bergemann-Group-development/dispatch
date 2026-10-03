@@ -2,12 +2,16 @@
 
     python plot_phase3.py vmic DELTA_V.csv OUT.png
     python plot_phase3.py lte3d DELTA_X.csv OUT.png
+    python plot_phase3.py placement S4_LABELS.csv STAGGER3D.txt OUT.png
 
 vmic: Delta_<3D> = A(<3D>) - A(MARCS) in LTE per model (median over the Fe I lines,
 the Fe II lines and the Mg lines), with the <3D> average's own depth-dependent vmic and
 with its MARCS twin's constant vmic, against Teff for giants (log g <= 3) and dwarfs.
 lte3d: Delta_3D(LTE) = A(3D) - A(1D) per snapshot against the <3D> average (own vmic)
 and the MARCS twin, per line group.  Both print the medians per [Fe/H].
+placement: the HRS stars on their Gaia XP XGBoost labels (s4_labels.py) in the Kiel and
+Teff-[M/H] planes with the 3D Stagger models, and the offsets of the phase-2 crude 1D LTE
+fit from them.
 """
 import sys
 
@@ -17,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from plot_batch2 import INK, MUTED, GRID
+from plot_batch2 import INK, MUTED, GRID, BLUE, stagger_labels
 
 GROUPS = {'Fe': 'Fe I (8 lines)', 'FeII': 'Fe II (5 lines)', 'Mg': 'Mg I (3 lines)'}
 FEH_COLOURS = {0.5: '#b52f2f', 0.0: '#ec8c8b', -0.5: '#e3b23c', -1.0: '#7fb069',
@@ -104,9 +108,53 @@ def lte3d(table, out):
     print(f'-> {out}')
 
 
+def placement(table, stagger, out):
+    d = pd.read_csv(table, dtype={'set': str})
+    d['set'] = d['set'].str.zfill(4)
+    lab = d[d['label_src'].fillna('') != '']
+    s3 = stagger_labels([l.split()[0] for l in open(stagger) if l.strip()])
+    near = np.array([((abs(s3[:, 0] - T) <= 250) & (abs(s3[:, 1] - g) <= 0.5)
+                      & (abs(s3[:, 2] - m) <= 0.5)).any()
+                     for T, g, m in zip(lab['teff'], lab['logg'], lab['mh'])])
+    sets = {'0201': BLUE[4], '0301': '#e3b23c', '0401': '#7fb069', '0408': BLUE[2]}
+    fig, axes = plt.subplots(1, 4, figsize=(9.6, 2.9), constrained_layout=True,
+                             gridspec_kw=dict(width_ratios=[1.2, 1.2, 1, 1]))
+    for ax, y, ylab, lim in zip(axes[:2], ('logg', 'mh'), ('log g', '[M/H]'), ((5.3, 0.7), (-4.3, 0.75))):
+        ax.grid(color=GRID, lw=0.5)
+        ys = s3[:, 1] if y == 'logg' else s3[:, 2]
+        ax.scatter(s3[:, 0], ys, marker='s', s=30, facecolor='none', edgecolor=INK, lw=0.6,
+                   zorder=3, label='3D Stagger model')
+        for s, c in sets.items():
+            x = lab[lab['set'] == s]
+            ax.scatter(x['teff'], x[y], s=4, color=c, alpha=0.7, lw=0, label=f'{s} ({len(x)})')
+        ax.set_xlim(7150, 3850)
+        ax.set_ylim(*lim)
+        ax.set_xlabel('Teff [K]')
+        ax.set_ylabel(ylab)
+    axes[0].legend(loc='upper left', frameon=False, fontsize=6, markerscale=2)
+    c = lab[lab['teff_crude'].notna()]
+    for ax, (q, cq, rng, unit) in zip(axes[2:], (('teff', 'teff_crude', (-1500, 1500), 'K'),
+                                                 ('mh', 'feh_crude', (-3, 1.5), 'dex'))):
+        for s, col in sets.items():
+            dd = (c.loc[c['set'] == s, cq] - c.loc[c['set'] == s, q]).dropna()
+            if len(dd):
+                ax.hist(dd, bins=40, range=rng, histtype='step', color=col, label=s)
+        ax.axvline(0, color=MUTED, lw=0.6)
+        ax.set_xlabel(f'crude 1D LTE - XGBoost, {q} [{unit}]')
+    axes[2].legend(frameon=False, fontsize=6)
+    fig.suptitle(f'{len(lab)} HRS stars on Gaia XP XGBoost labels; {near.mean():.0%} within one '
+                 'grid step of a 3D Stagger model', color=INK)
+    fig.savefig(out)
+    print(f'{len(lab)} stars, {near.mean():.3f} near a 3D model; by set: ' +
+          ', '.join(f'{s}: {near[(lab["set"] == s).to_numpy()].mean():.2f}' for s in sets
+                    if (lab['set'] == s).any()) + f' -> {out}')
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['vmic']:
         vmic(*sys.argv[2:4])
+    elif sys.argv[1:2] == ['placement']:
+        placement(*sys.argv[2:5])
     elif sys.argv[1:2] == ['lte3d']:
         lte3d(*sys.argv[2:4])
     else:

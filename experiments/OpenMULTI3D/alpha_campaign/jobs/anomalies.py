@@ -3,6 +3,7 @@
     python anomalies.py feii OUT.csv          # Fe II: matched levels and their departures
     python anomalies.py emission RUN [RUN..]  # NLTE flux above the continuum
     python anomalies.py levels RUN L [L ..]   # log b of levels L (1-based) and T per depth
+    python anomalies.py tauscale OUT.csv      # <3D> runs: own log tau_500 against the file's
 
 feii: every Fe II line of delta_maps.LINES_SED takes, in a stage-2 SED, the departure
 coefficients of the fe607a levels nearest in energy (HOP find_closest; level_match.py).
@@ -154,11 +155,43 @@ def levels(run, which):
         print(f'{ltau[k]:+6.2f} {temp[k]:6.0f}  ' + '  '.join(f'{np.log10(b[k, l - 1]):+6.3f}' for l in which))
 
 
+def tauscale(out):
+    """The <3D> averages are given on the Stagger log tau_500 scale with T and ne
+    (MULTI format, no density); dispatch.x derives the density from (T, ne) with its
+    EOS and recomputes tau_500 from its own opacity.  Per average: the run's log tau_500
+    at the file's T for file log tau = -3, -2, -1, 0 (the shift of the scale), and the
+    run's minimum log tau_500."""
+    rows = []
+    for run in sorted((RUNS / 'b2/av3d').glob('t*/lte')):
+        av = run.parent.name
+        f = np.array([[float(x) for x in l.split()[:3]]
+                      for l in (CAMPAIGN / f'work/av3d/atmos.{av}').read_text().splitlines()
+                      if len(l.split()) == 5 and not l.startswith('*')])
+        r = tumult.read(str(run))
+        lt = np.asarray(r.atmos.ltau, float).ravel()
+        tt = np.asarray(r.atmos.temp, float).ravel()
+        o = np.argsort(lt)
+        row = dict(av3d=av, feh=float(av[-2:]) / 10 * (-1 if av[-3] == 'm' else 1),
+                   ltau_min=lt.min())
+        for t0 in (-3.0, -2.0, -1.0, 0.0):
+            temp = np.interp(t0, f[:, 0], f[:, 1])
+            # first depth (from the top) where the run reaches this temperature
+            k = np.argmax(tt[o] >= temp)
+            row[f'ltau_run_at_{t0:+.0f}'] = lt[o][k] if tt[o][k] >= temp else np.nan
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    df.to_csv(out, index=False, float_format='%.4g')
+    cols = [c for c in df.columns if c.startswith('ltau')]
+    print(df.groupby('feh')[cols].median().round(2).to_string())
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['feii'] and len(sys.argv) == 3:
         feii(sys.argv[2])
     elif sys.argv[1:2] == ['emission'] and len(sys.argv) > 2:
         emission(sys.argv[2:])
+    elif sys.argv[1:2] == ['tauscale'] and len(sys.argv) == 3:
+        tauscale(sys.argv[2])
     elif sys.argv[1:2] == ['levels'] and len(sys.argv) > 3:
         levels(sys.argv[2], [int(x) for x in sys.argv[3:]])
     else:

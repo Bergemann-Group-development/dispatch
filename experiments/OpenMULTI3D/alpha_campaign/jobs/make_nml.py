@@ -20,7 +20,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py batch2_sed       # stage 2: line-list NLTE SEDs on the b2 departures
     python3 make_nml.py pilot_sed        # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs
     python3 make_nml.py vmic_av3d        # <3D> LTE with the MARCS twin's constant vmic, into b3/
-    python3 make_nml.py lte3d LABELS     # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
+    python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
 """
 import re
 import sys
@@ -592,13 +592,17 @@ def stagger_models(root='stagger2'):
 
 
 def star_labels(csv_path):
-    """(Teff, log g, [Fe/H]) of the placed 4MOST stars (place_stars.py): one point per
-    star, its highest-S/N spectrum, log g held at Gaia where possible.  0201 stars pinned
-    at the grid edge [Fe/H] = -4 are left out: their labels are unreliable
-    (reports/2026-10-03_phase2.md, section 8)."""
+    """(Teff, log g, [Fe/H]) of the 4MOST HRS stars.  From s4_labels.py's table: the
+    Gaia XP XGBoost labels (Andrae et al. 2023; [M/H] taken as [Fe/H]) of every star
+    that has them.  From place_stars.py's labels.csv (the phase-2 crude 1D LTE fit): one
+    point per star, its highest-S/N spectrum, log g held at Gaia where possible, without
+    the 0201 stars pinned at the grid edge [Fe/H] = -4."""
     import csv
+    rows = list(csv.DictReader(open(csv_path)))
+    if rows and 'label_src' in rows[0]:
+        return [(float(r['teff']), float(r['logg']), float(r['mh'])) for r in rows if r['label_src']]
     best = {}
-    for row in csv.DictReader(open(csv_path)):
+    for row in rows:
         star = row['OBJECT'] or row['specid']
         if star not in best or float(row['snr']) > float(best[star]['snr']):
             best[star] = row
@@ -612,7 +616,7 @@ def star_labels(csv_path):
     return out
 
 
-def lte3d(labels_csv):
+def lte3d(labels_csv, out='x3d/tasks.txt'):
     """3D LTE on the Halton-first snapshot of every Stagger model in the 4MOST domain
     with placed stars within one grid step (250 K, 0.5 dex in log g and [Fe/H]), as the
     pilot's 3D LTE runs (3d preset, HRS at R=2e5, FGK line list, the <3D> composition).
@@ -641,14 +645,14 @@ def lte3d(labels_csv):
         nml.write_text(namelist(atmos, geometry='3d', feh=feh, composition=comp))
         tasks.append(str(nml))
         counts.append(f'{name} {n} {nml}')
-    Path('x3d/tasks.txt').write_text('\n'.join(tasks) + '\n')
-    Path('x3d/counts.txt').write_text('\n'.join(counts) + '\n')
+    Path(out).write_text('\n'.join(tasks) + '\n')
+    Path(out).with_name(Path(out).stem.replace('tasks', 'counts') + '.txt').write_text('\n'.join(counts) + '\n')
     print(f'{len(tasks)} 3D LTE namelists in x3d/ ({len(stars)} stars)')
 
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['lte3d']:
-        lte3d(sys.argv[2])
+        lte3d(*sys.argv[2:4])
     elif sys.argv[1:2] == ['vmic_av3d']:
         vmic_av3d()
     elif sys.argv[1:2] == ['bench']:
