@@ -111,7 +111,41 @@ def nlte_lte(folder, lines=LINES):
     if lines is LINES:
         el = 'Mg' if folder.endswith('mg') else 'Fe'
         sel = [l for l in lines if l[0] == el]
+    for e, lam0, hw in sel:
+        y = np.asarray(r.crop(xmin=lam0 - hw, xmax=lam0 + hw).ydata.value)
+        PEAK[lam0] = max(PEAK.get(lam0, 0.0), float(y.max()))
     return {lam0: (e, ew(r, lam0, hw), ew(r, lam0, hw, LTE=True)) for e, lam0, hw in sel}
+
+
+# Highest normalised NLTE flux in each line window over the runs a row has read
+# (reset per row by the one_* functions); rows above 1 + EMISSION_TOL are flagged.
+PEAK = {}
+EMISSION_TOL = 1e-3
+
+
+def flag_rows(df):
+    """Fe II as LTE, emission flags (phase-4 decisions 4 and 8).
+
+    fe607a has no Fe II bound-bound transitions, and its excited Fe II super-levels run
+    40-60 % ahead of the ground in metal-poor giants (phase 3), so its Fe II corrections
+    are not used: in Fe II rows every NLTE EW and correction takes its LTE counterpart
+    (Delta_NLTE = 0) and feii_lte is set.  emission marks lines whose NLTE spectrum
+    rises above the continuum in the window (nlte_peak), the high-excitation Fe I
+    lines of the [Fe/H] = -4 giants; they are kept as a model prediction."""
+    if 'element' not in df:
+        return df
+    fe2 = df['element'] == 'FeII'
+    df['feii_lte'] = fe2
+    for c in [c for c in df.columns if 'nlte' in c and c != 'nlte_peak']:
+        if c.startswith('dA_nlte'):
+            df.loc[fe2, c] = 0.0
+        elif c.replace('nlte', 'lte') in df:
+            df.loc[fe2, c] = df.loc[fe2, c.replace('nlte', 'lte')]
+        else:
+            df.loc[fe2, c] = np.nan
+    if 'nlte_peak' in df:
+        df['emission'] = (df['nlte_peak'] > 1 + EMISSION_TOL) & ~fe2
+    return df
 
 
 def corr(ew_a, ew_b, s):
@@ -125,6 +159,7 @@ def labels(name):
 
 
 def one_a(args):
+    PEAK.clear()
     name, sed = args
     lines = LINES_SED if sed else LINES
     try:
@@ -132,7 +167,8 @@ def one_a(args):
         res = (nlte_lte(f'b2/sed/{name}', lines) if sed else
                {**nlte_lte(f'b2/n1d/{name}_mg'), **nlte_lte(f'b2/n1d/{name}_fe')})
         return [dict(model=name, element=e, line=lam0, ew_lte=el_, ew_nlte=en, slope=s[lam0],
-                     dA_nlte=corr(en, el_, s[lam0])) for lam0, (e, en, el_) in res.items()]
+                     dA_nlte=corr(en, el_, s[lam0]), nlte_peak=PEAK.get(lam0, np.nan))
+                for lam0, (e, en, el_) in res.items()]
     except Exception as exc:
         print(f'skip {name}: {type(exc).__name__}: {exc}', flush=True)
         return []
@@ -145,6 +181,7 @@ def nearest_b1(teff, logg, feh, names):
 
 
 def one_b(args):
+    PEAK.clear()
     row, b1_names, sed = args
     av, teff, logg, feh, alpha, av_run, tw_lte, tw_mg, tw_fe, tw_model = row
     teff, logg, feh = float(teff), float(logg), float(feh)
@@ -171,7 +208,8 @@ def one_b(args):
                              ew_av_lte=al, ew_av_nlte=an, ew_tw_lte=bl, ew_tw_nlte=bn,
                              slope=s[lam0], dA_3d_lte=corr(al, bl, s[lam0]),
                              dA_3d_nlte=corr(an, bn, s[lam0]),
-                             dA_nlte_av=corr(an, al, s[lam0]), dA_nlte_tw=corr(bn, bl, s[lam0])))
+                             dA_nlte_av=corr(an, al, s[lam0]), dA_nlte_tw=corr(bn, bl, s[lam0]),
+                             nlte_peak=PEAK.get(lam0, np.nan)))
         return rows
     except Exception as exc:
         print(f'skip {av}: {type(exc).__name__}: {exc}', flush=True)
@@ -245,6 +283,7 @@ def tau_check(av):
 
 
 def one_n(args):
+    PEAK.clear()
     row, b1_names = args
     av, teff, logg, feh, alpha, av_run, tw_lte, tw_mg = row[:8]
     if not (RUNS / f'b4/av3d/{av}/lte/save').is_dir():
@@ -270,7 +309,7 @@ def one_n(args):
                 r['dA_3d_lte_old'] = corr(old[lam0], tw[lam0], s[lam0])
             if sed:
                 (_, nn, nl), (_, on, ol) = sed[0][lam0], sed[1][lam0]
-                r.update(ew_new_nlte=nn, ew_old_nlte=on, ew_new_sl=nl,
+                r.update(ew_new_nlte=nn, ew_old_nlte=on, ew_new_sl=nl, nlte_peak=PEAK.get(lam0, np.nan),
                          dA_new_old_nlte=corr(nn, on, s[lam0]),
                          dA_nlte_new=corr(nn, nl, s[lam0]), dA_nlte_old=corr(on, ol, s[lam0]))
                 if twn:
@@ -362,6 +401,7 @@ def main(which, out, nproc):
                      if not l.startswith('#')]
             res = pool.map(one_b, [(p, names, sed) for p in pairs], chunksize=2)
             df = pd.DataFrame([r for rows in res for r in rows])
+    df = flag_rows(df)
     df.to_csv(out, index=False, float_format='%.5g')
     print(f'{len(df)} rows -> {out}')
 

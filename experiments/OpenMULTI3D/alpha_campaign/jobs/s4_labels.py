@@ -120,9 +120,18 @@ def crude(out, crude_csv):
     return out.merge(d[cols], on='OBJECT', how='left').merge(n, on='OBJECT', how='left')
 
 
+def flag_alpha(df):
+    """alpha_enhanced: the 0201 (S4 low-metallicity) giants with [M/H] <= -1, whose
+    XGBoost [M/H] is expected to lie above [Fe/H] by about their alpha enhancement
+    (+0.4 in the Stagger and MARCS grids at [Fe/H] <= -1).  [M/H] is not converted."""
+    df['alpha_enhanced'] = (df['set'].astype(str).str.zfill(4) == '0201') & \
+        (df['label_src'].fillna('') != '') & (df['mh'] <= -1) & (df['logg'] < 3.5)
+    return df
+
+
 def main(phot_dir, s4_dir, disk_csv, crude_csv, out):
     st = by_position(stars(phot_dir), s4_dir)
-    df = crude(labels(st, s4_dir, disk_csv), crude_csv)
+    df = flag_alpha(crude(labels(st, s4_dir, disk_csv), crude_csv))
     df.to_csv(out, index=False, float_format='%.5g')
     df['n_spectra'] = df['n_spectra'].fillna(0)
     lab = df['label_src'] != ''
