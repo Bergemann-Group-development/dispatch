@@ -23,6 +23,8 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
     python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
+    python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
+    python3 make_nml.py sed_validate         # cost/accuracy test of the 3D SED output-pass settings, into val/
 """
 import re
 import sys
@@ -785,8 +787,51 @@ def sed_validate():
     print(len(tasks), 'namelists in val/')
 
 
+VMIC_GRID = (0.5, 1.0, 1.5, 2.0, 2.5)
+
+
+def vmic_grid():
+    """1D LTE partners of every model with a finished 3D LTE snapshot (the pilot's
+    p1/<model>/s*_lte and the extension's x3d/<model>/s*_lte), on a constant-vmic grid
+    VMIC_GRID: the MARCS twin of b2/pairs.txt and the <3D> average, the own one with
+    density where make_nml.py avg3d has written it (avg3d/<model>.atmos), else the
+    Stagger file.  Same line list, windows and composition as the 3D runs; into
+    b5/vmic/<model>/{marcs,av3d}_v<vmic>.nml.  Rerun as more 3D LTE runs finish; existing
+    namelists are rewritten, finished runs are skipped by the queue."""
+    pairs = {r.split()[0]: r.split() for r in Path('b2/pairs.txt').read_text().splitlines()[1:]}
+    logs = CAMPAIGN / 'logs'
+    models = set()
+    for top in ('p1', 'x3d'):
+        for log in logs.glob(f'{top}_t*_s*_lte.log'):
+            if 'OpenMULTI3D terminated' in log.read_text(errors='replace'):
+                models.add(log.name[len(top) + 1:].rsplit('_s', 1)[0])
+    tasks = []
+    for name in sorted(models):
+        if name not in pairs:
+            continue
+        av, teff, logg, feh, alpha, *_ , twin = pairs[name]
+        feh, alpha = float(feh), float(alpha)
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        own = Path(f'avg3d/{name}.atmos')
+        one_d = {'av3d': (dict(atmos_format='text', atmos_file=str(own), FeH=feh, use_ne=False, amr='T')
+                          if own.exists() else dict(atmos_file=f'av3d/atmos.{name}', FeH=feh))}
+        if twin != '-':
+            one_d['marcs'] = dict(atmos_format='Marcs', atmos_file=f'marcs/{twin}')
+        for kind, atmos in one_d.items():
+            for v in VMIC_GRID:
+                nml = Path('b5/vmic') / name / f'{kind}_v{v:.1f}.nml'
+                nml.parent.mkdir(parents=True, exist_ok=True)
+                nml.write_text(namelist(dict(atmos, vmic=v), composition=comp,
+                                        rt_output=dict(save_linelist=False)))
+                tasks.append(str(nml))
+    Path('b5/tasks_vmic.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} namelists for {len(models)} models in b5/vmic/')
+
+
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['sed_validate']:
+    if sys.argv[1:2] == ['vmic_grid']:
+        vmic_grid()
+    elif sys.argv[1:2] == ['sed_validate']:
         sed_validate()
     elif sys.argv[1:2] == ['avg3d']:
         avg3d(sys.argv[2:])

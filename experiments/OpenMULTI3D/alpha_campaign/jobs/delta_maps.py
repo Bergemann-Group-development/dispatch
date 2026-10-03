@@ -8,6 +8,7 @@ Delta_<3D> between each Stagger <3D> average and its MARCS twin (B).
     python delta_maps.py V OUT.csv      # Delta_<3D> in LTE, <3D> own vmic and twin vmic
     python delta_maps.py X OUT.csv      # Delta_3D in LTE: 3D snapshots against <3D>, MARCS
     python delta_maps.py N OUT.csv      # own <3D> averages (b4) against the Stagger files (b2)
+    python delta_maps.py W OUT.csv      # Delta_3D in LTE against 1D on a vmic grid (b5)
 
 Every EW is the integral of 1 - F/F_cont over the line's window around its centre, on
 the R=2e5 spectra.  The windows include blends, which are the same in both spectra of
@@ -42,6 +43,13 @@ Stagger MULTI-format averages of batch 2: in LTE (lte runs) and, where b4 has th
 the stage-2 SEDs (NLTE and LTE).  dA_new_old = A(own) - A(Stagger file) at the same EW;
 dA_3d_* = A(own <3D>) - A(MARCS twin), the new Delta_<3D>.  It also records the run's
 log tau_500 against the file's at three temperatures (the phase-3 tau-scale check).
+
+W reads every finished 3D LTE snapshot and its 1D LTE partners on the constant-vmic grid
+of make_nml.py vmic_grid (b5/vmic/<model>/{marcs,av3d}_v<vmic>): dA_3d_<kind>_v<vmic> =
+A(3D) - A(1D at that vmic) per line.  Per snapshot and 1D kind it also fits the vmic at
+which the Fe I lines give one abundance (the minimum over vmic, interpolated in steps of
+0.05 km/s, of the spread of dA over the Fe I lines, which removes the trend with line
+strength) and records Delta_3D there (columns vfit_<kind>, dA_3d_<kind>_vfit).
 """
 import re
 import sys
@@ -275,6 +283,41 @@ def one_n(args):
         return []
 
 
+VMIC_GRID = (0.5, 1.0, 1.5, 2.0, 2.5)
+
+
+def one_w(args):
+    run, row, b1_names = args
+    av, teff, logg, feh = row[:4]
+    try:
+        s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
+        x = lte_ews(run)
+        rows = {lam0: dict(run=run, av3d=av, teff=float(teff), logg=float(logg), feh=float(feh),
+                           element=e, line=lam0, ew_3d=x[lam0], slope=s[lam0])
+                for e, lam0, _ in LINES_SED}
+        for kind in ('marcs', 'av3d'):
+            grid = [v for v in VMIC_GRID if (RUNS / f'b5/vmic/{av}/{kind}_v{v:.1f}/save').is_dir()]
+            if len(grid) < 2:
+                continue
+            da = {}
+            for v in grid:
+                one = lte_ews(f'b5/vmic/{av}/{kind}_v{v:.1f}')
+                for lam0 in rows:
+                    da.setdefault(lam0, []).append(corr(x[lam0], one[lam0], s[lam0]))
+                    rows[lam0][f'dA_3d_{kind}_v{v:.1f}'] = da[lam0][-1]
+            fe1 = np.array([da[lam0] for e, lam0, _ in LINES_SED if e == 'Fe'])
+            fine = np.arange(grid[0], grid[-1] + 1e-6, 0.05)
+            spread = [np.nanstd([np.interp(v, grid, d) for d in fe1]) for v in fine]
+            vfit = float(fine[int(np.nanargmin(spread))])
+            for lam0 in rows:
+                rows[lam0][f'vfit_{kind}'] = vfit
+                rows[lam0][f'dA_3d_{kind}_vfit'] = float(np.interp(vfit, grid, da[lam0]))
+        return list(rows.values())
+    except Exception as exc:
+        print(f'skip {run}: {type(exc).__name__}: {exc}', flush=True)
+        return []
+
+
 def lte3d_runs():
     """(run folder, <3D> name) of every finished 3D LTE run: x3d/<av>/s*_lte and the
     pilot's p1/<model>/s*_lte."""
@@ -291,7 +334,12 @@ def main(which, out, nproc):
     names = sorted(p.name for p in (RUNS / 'b1/hrs').iterdir())
     sed = which.endswith('2')
     with Pool(nproc) as pool:
-        if which == 'N':
+        if which == 'W':
+            pairs = {p[0]: p for p in pair_rows()}
+            todo = [(run, pairs[av], names) for run, av in lte3d_runs() if av in pairs]
+            res = pool.map(one_w, todo, chunksize=1)
+            df = pd.DataFrame([r for rows in res for r in rows])
+        elif which == 'N':
             res = pool.map(one_n, [(p, names) for p in pair_rows()], chunksize=1)
             df = pd.DataFrame([r for rows in res for r in rows])
         elif which == 'V':
@@ -320,7 +368,7 @@ def main(which, out, nproc):
 
 if __name__ == '__main__':
     import os
-    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N']):
+    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N'], ['W']):
         main(sys.argv[1], sys.argv[2], int(os.environ.get('SLURM_CPUS_PER_TASK', 1)))
     else:
         sys.exit(__doc__)
