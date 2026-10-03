@@ -18,7 +18,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py pilot [K]        # paired 1D/<3D>/3D LTE+NLTE pilot, K snapshots, into p1/
     python3 make_nml.py batch2           # 1D NLTE Mg/Fe map and <3D>-vs-MARCS pairs, into b2/
     python3 make_nml.py batch2_sed       # stage 2: line-list NLTE SEDs on the b2 departures
-    python3 make_nml.py pilot_sed        # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs
+    python3 make_nml.py pilot_sed [N]    # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs (N output scattering iterations)
     python3 make_nml.py vmic_av3d        # <3D> LTE with the MARCS twin's constant vmic, into b3/
     python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
     python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
@@ -480,17 +480,31 @@ def solved(run, element):
     return rows(save / f'pop_{element}_meta.txt') == rows(save / 'atmos_meta.txt')
 
 
-def pilot_sed():
+def pilot_sed(rt_maxiter=3):
     """Stage-2 SEDs of the pilot, Mg departures (Mg + Fe once a 3D Fe run has finished), all from the
     full line list: 1D on the MARCS twin and the <3D> average (b2-style combined Mg+Fe
     departures), and per finished 3D Mg snapshot (a) on its own 3D departures and (b) on
     the <3D> departures mapped to it in log tau_500 (map_departures.py, run by the job
-    before the SED; the folder is runs/p1sed/map/<model>_s<snap>).  Writes
+    before the SED).  The mapped departures come from the own <3D> averages with density
+    (b4/av3d/<model>, make_nml.py avg3d) into runs/p1sed/map4/<model>_s<snap>; the
+    earlier maps from the Stagger files (runs/p1sed/map/) stay as they are.
+
+    p1sed/tasks_3d.txt is in priority order: true-3D-departure SEDs, then the mapped
+    ones of each model's first snapshot, then those of the second (snapshot rank as
+    in pilot(): HALTON_10 over the sorted snapshots).  rt_maxiter sets the 3D SEDs'
+    &rt_output_params maxiter (scattering iterations of the output pass).  Writes
     p1sed/tasks_1d.txt, p1sed/tasks_3d.txt and p1sed/map.txt (1D run, 3D template, out)."""
     t1, t3, maps = [], [], []
+
+    def sed3d(dep, atoms, feh, comp):
+        text = sed_namelist_3d(dep, atoms, feh, comp)
+        return text.replace('maxiter=3 save_linelist', f'maxiter={rt_maxiter} save_linelist')
+
     for folder, marcs, av, feh, alpha in PILOT:
         model = Path(folder).name.replace('_new', '')
         comp = dict(alpha_enhancement=alpha) if alpha else None
+        snaps = [p.name.split('_')[1] for p in sorted((Path('stagger2') / folder).glob('atm3d.*'))]
+        rank = {f's{tag}': HALTON_10.index(i) if i in HALTON_10 else 99 for i, tag in enumerate(snaps)}
         for kind in ('marcs', 'av3d'):
             mg, fe = DATADIR / f'p1/{model}/{kind}_mg', DATADIR / f'p1/{model}/{kind}_fe'
             dep = DATADIR / 'p1sed/dep' / f'{model}_{kind}'
@@ -499,34 +513,37 @@ def pilot_sed():
             nml.parent.mkdir(parents=True, exist_ok=True)
             nml.write_text(sed_namelist(dep, comp))
             t1.append(str(nml))
+        av_new = DATADIR / f'b4/av3d/{model}'
         for run in sorted((DATADIR / f'p1/{model}').glob('s*_mg')):
             if not solved(run, 'Mg'):
                 continue                                   # still iterating
             snap = run.name.split('_')[0]
             nml = Path('p1sed') / model / f'{snap}_3dmg.nml'
-            nml.write_text(sed_namelist_3d(run, [PILOT_MG['file']], feh, comp))
-            t3.append(str(nml))
-            out = DATADIR / 'p1sed/map' / f'{model}_{snap}'
-            maps.append(f'{DATADIR}/p1/{model}/av3d_mg {DATADIR}/p1/{model}/{snap}_lte {out} Mg')
-            nml = Path('p1sed') / model / f'{snap}_mapmg.nml'
-            nml.write_text(sed_namelist_3d(out, [PILOT_MG['file']], feh, comp))
-            t3.append(str(nml))
+            nml.write_text(sed3d(run, [PILOT_MG['file']], feh, comp))
+            t3.append((0, rank[snap], str(nml)))
+            if solved(av_new / 'mg', 'Mg'):
+                out = DATADIR / 'p1sed/map4' / f'{model}_{snap}'
+                maps.append(f'{av_new}/mg {DATADIR}/p1/{model}/{snap}_lte {out} Mg')
+                nml = Path('p1sed') / model / f'{snap}_map4mg.nml'
+                nml.write_text(sed3d(out, [PILOT_MG['file']], feh, comp))
+                t3.append((1 + rank[snap], 1, str(nml)))
             fe = DATADIR / f'p1/{model}/{snap}_fe'
             if solved(fe, 'Fe'):
                 dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
                 combine_departures(dep, run, fe)
                 nml = Path('p1sed') / model / f'{snap}_3dmgfe.nml'
-                nml.write_text(sed_namelist_3d(dep, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
-                t3.append(str(nml))
-                out = DATADIR / 'p1sed/map' / f'{model}_{snap}_mgfe'
-                for el in ('mg', 'fe'):                        # both maps into one folder
-                    maps.append(f'{DATADIR}/p1/{model}/av3d_{el} {DATADIR}/p1/{model}/{snap}_lte '
-                                f'{out} {el.capitalize()}')
-                nml = Path('p1sed') / model / f'{snap}_mapmgfe.nml'
-                nml.write_text(sed_namelist_3d(out, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
-                t3.append(str(nml))
+                nml.write_text(sed3d(dep, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
+                t3.append((0, rank[snap], str(nml)))
+                if solved(av_new / 'mg', 'Mg') and solved(av_new / 'fe', 'Fe'):
+                    out = DATADIR / 'p1sed/map4' / f'{model}_{snap}_mgfe'
+                    for el in ('mg', 'fe'):                        # both maps into one folder
+                        maps.append(f'{av_new}/{el} {DATADIR}/p1/{model}/{snap}_lte '
+                                    f'{out} {el.capitalize()}')
+                    nml = Path('p1sed') / model / f'{snap}_map4mgfe.nml'
+                    nml.write_text(sed3d(out, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
+                    t3.append((1 + rank[snap], 0, str(nml)))
     Path('p1sed/tasks_1d.txt').write_text('\n'.join(t1) + '\n')
-    Path('p1sed/tasks_3d.txt').write_text('\n'.join(t3) + '\n')
+    Path('p1sed/tasks_3d.txt').write_text('\n'.join(n for *_, n in sorted(t3)) + '\n')
     Path('p1sed/map.txt').write_text('\n'.join(maps) + '\n')
     print(f'{len(t1)} 1D and {len(t3)} 3D stage-2 namelists in p1sed/')
 
@@ -741,8 +758,37 @@ def avg3d_sed(name):
     print(nml)
 
 
+def sed_validate():
+    """val/: the cost/accuracy test of the 3D stage-2 SED settings.  The Sun's first
+    3D Mg snapshot on its own departures, and the metal-poor giant t45g25m20 on the own
+    <3D> Mg departures mapped to a snapshot, each with 3, 1 and 0 scattering iterations
+    in the output pass (&rt_output_params maxiter); the reference is maxiter=3, the
+    pilot setting.  Writes val/tasks.txt (in run order) and val/map.txt."""
+    cases = [('sun', DATADIR / 'p1/t5777g44m00/s00459_mg', 0.0, None, None),
+             ('mpg', DATADIR / 'val/map_t45g25m20_s00233', -2.0, dict(alpha_enhancement=0.4),
+              f'{DATADIR}/b4/av3d/t45g25m20/mg {DATADIR}/p1/t45g25m20/s00233_lte '
+              f'{DATADIR}/val/map_t45g25m20_s00233 Mg')]
+    tasks, maps = [], []
+    for tag, dep, feh, comp, mapline in cases:
+        if mapline:
+            maps.append(mapline)
+        for it in (3, 1, 0):
+            text = sed_namelist_3d(dep, [PILOT_MG['file']], feh, comp)
+            nml = Path('val') / f'{tag}_it{it}.nml'
+            nml.parent.mkdir(parents=True, exist_ok=True)
+            nml.write_text(text.replace('maxiter=3 save_linelist', f'maxiter={it} save_linelist'))
+            tasks.append(str(nml))
+    order = ['val/sun_it3.nml', 'val/sun_it1.nml', 'val/mpg_it3.nml', 'val/mpg_it1.nml',
+             'val/sun_it0.nml', 'val/mpg_it0.nml']
+    Path('val/tasks.txt').write_text('\n'.join(order) + '\n')
+    Path('val/map.txt').write_text('\n'.join(maps) + '\n')
+    print(len(tasks), 'namelists in val/')
+
+
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['avg3d']:
+    if sys.argv[1:2] == ['sed_validate']:
+        sed_validate()
+    elif sys.argv[1:2] == ['avg3d']:
         avg3d(sys.argv[2:])
     elif sys.argv[1:2] == ['avg3d_sed']:
         avg3d_sed(sys.argv[2])
@@ -759,7 +805,7 @@ if __name__ == '__main__':
     elif sys.argv[1:2] == ['batch2_sed']:
         batch2_sed()
     elif sys.argv[1:2] == ['pilot_sed']:
-        pilot_sed()
+        pilot_sed(int(sys.argv[2]) if len(sys.argv) > 2 else 3)
     elif sys.argv[1:2] == ['pilot']:
         pilot(int(sys.argv[2]) if len(sys.argv) > 2 else 2)
     else:

@@ -7,6 +7,7 @@ Delta_<3D> between each Stagger <3D> average and its MARCS twin (B).
     python delta_maps.py B2 OUT.csv
     python delta_maps.py V OUT.csv      # Delta_<3D> in LTE, <3D> own vmic and twin vmic
     python delta_maps.py X OUT.csv      # Delta_3D in LTE: 3D snapshots against <3D>, MARCS
+    python delta_maps.py N OUT.csv      # own <3D> averages (b4) against the Stagger files (b2)
 
 Every EW is the integral of 1 - F/F_cont over the line's window around its centre, on
 the R=2e5 spectra.  The windows include blends, which are the same in both spectra of
@@ -35,6 +36,12 @@ its own vmic (b2/av3d/<av>/lte) and with its MARCS twin's constant vmic
 (b3/av3d_vmic/<av>/lte), each against the twin (dA_av = A(<3D>) - A(MARCS)); X every
 finished 3D LTE snapshot (x3d/, and the pilot's p1/<model>/s*_lte) against those three
 (dA_3d_av, dA_3d_avv, dA_3d_tw = A(3D) - A(1D)).
+
+N compares the own <3D> averages with density (make_nml.py avg3d, runs b4/) with the
+Stagger MULTI-format averages of batch 2: in LTE (lte runs) and, where b4 has them, in
+the stage-2 SEDs (NLTE and LTE).  dA_new_old = A(own) - A(Stagger file) at the same EW;
+dA_3d_* = A(own <3D>) - A(MARCS twin), the new Delta_<3D>.  It also records the run's
+log tau_500 against the file's at three temperatures (the phase-3 tau-scale check).
 """
 import re
 import sys
@@ -215,6 +222,59 @@ def one_x(args):
         return []
 
 
+def tau_check(av):
+    """Run log tau_500 of the own-average LTE run at the temperatures where the file
+    has log tau = -3, -1, 0, and the run's top."""
+    f = np.loadtxt(CAMPAIGN / f'work/avg3d/{av}.atmos', skiprows=3)
+    a = tumult.read(str(RUNS / f'b4/av3d/{av}/lte')).atmos
+    lt, t = np.ravel(a.ltau), np.ravel(a.temp)
+    out = {'run_top': float(lt.min()), 'file_top': float(f[:, 0].min())}
+    for x in (-3, -1, 0):
+        tx = np.interp(x, f[:, 0], f[:, 1])
+        k = np.argmin(np.abs(t - tx) + 1e3 * (lt < x - 2))      # the branch near x
+        out[f'run_ltau_at_file{x}'] = float(lt[k])
+    return out
+
+
+def one_n(args):
+    row, b1_names = args
+    av, teff, logg, feh, alpha, av_run, tw_lte, tw_mg = row[:8]
+    if not (RUNS / f'b4/av3d/{av}/lte/save').is_dir():
+        return []
+    try:
+        s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
+        new, old = lte_ews(f'b4/av3d/{av}/lte'), lte_ews(f'{av_run}/lte')
+        tw = lte_ews(tw_lte) if tw_lte != '-' else None
+        sed = None
+        if (RUNS / f'b4/sed/av3d_{av}/save').is_dir():
+            sed = (nlte_lte(f'b4/sed/av3d_{av}', LINES_SED), nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
+            twn = (f'b2/sed/twin_{av}' if tw_mg.startswith('b2/twin/') else
+                   f'b2/sed/{Path(tw_mg).name[:-3]}' if tw_mg.startswith('b2/n1d/') else None)
+            twn = nlte_lte(twn, LINES_SED) if twn else None
+        tau = tau_check(av)
+        rows = []
+        for e, lam0, _ in LINES_SED:
+            r = dict(av3d=av, teff=float(teff), logg=float(logg), feh=float(feh), element=e,
+                     line=lam0, slope=s[lam0], ew_new=new[lam0], ew_old=old[lam0],
+                     dA_new_old_lte=corr(new[lam0], old[lam0], s[lam0]), **tau)
+            if tw:
+                r['dA_3d_lte_new'] = corr(new[lam0], tw[lam0], s[lam0])
+                r['dA_3d_lte_old'] = corr(old[lam0], tw[lam0], s[lam0])
+            if sed:
+                (_, nn, nl), (_, on, ol) = sed[0][lam0], sed[1][lam0]
+                r.update(ew_new_nlte=nn, ew_old_nlte=on, ew_new_sl=nl,
+                         dA_new_old_nlte=corr(nn, on, s[lam0]),
+                         dA_nlte_new=corr(nn, nl, s[lam0]), dA_nlte_old=corr(on, ol, s[lam0]))
+                if twn:
+                    r['dA_3d_nlte_new'] = corr(nn, twn[lam0][1], s[lam0])
+                    r['dA_3d_nlte_old'] = corr(on, twn[lam0][1], s[lam0])
+            rows.append(r)
+        return rows
+    except Exception as exc:
+        print(f'skip {av}: {type(exc).__name__}: {exc}', flush=True)
+        return []
+
+
 def lte3d_runs():
     """(run folder, <3D> name) of every finished 3D LTE run: x3d/<av>/s*_lte and the
     pilot's p1/<model>/s*_lte."""
@@ -231,7 +291,10 @@ def main(which, out, nproc):
     names = sorted(p.name for p in (RUNS / 'b1/hrs').iterdir())
     sed = which.endswith('2')
     with Pool(nproc) as pool:
-        if which == 'V':
+        if which == 'N':
+            res = pool.map(one_n, [(p, names) for p in pair_rows()], chunksize=1)
+            df = pd.DataFrame([r for rows in res for r in rows])
+        elif which == 'V':
             res = pool.map(one_v, [(p, names) for p in pair_rows()], chunksize=2)
             df = pd.DataFrame([r for rows in res for r in rows])
         elif which == 'X':
@@ -257,7 +320,7 @@ def main(which, out, nproc):
 
 if __name__ == '__main__':
     import os
-    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X']):
+    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N']):
         main(sys.argv[1], sys.argv[2], int(os.environ.get('SLURM_CPUS_PER_TASK', 1)))
     else:
         sys.exit(__doc__)
