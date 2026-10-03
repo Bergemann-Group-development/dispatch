@@ -485,7 +485,8 @@ def solved(run, element):
     rows = lambda f: (sum(1 for l in f.read_text().splitlines() if not l.startswith('*'))
                       if f.is_file() else -1)
     save = run / 'save'
-    return rows(save / f'pop_{element}_meta.txt') == rows(save / 'atmos_meta.txt')
+    n = rows(save / 'atmos_meta.txt')
+    return n > 0 and rows(save / f'pop_{element}_meta.txt') == n
 
 
 def pilot_sed(rt_maxiter=3):

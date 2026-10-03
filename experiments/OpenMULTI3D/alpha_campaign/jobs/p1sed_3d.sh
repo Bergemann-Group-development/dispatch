@@ -24,7 +24,7 @@ mkdir -p "$CLAIMS"
 echo "host $(hostname -s), $SLURM_CPUS_PER_TASK threads, BIN=$BIN"
 # the output scattering iterations: RT_MAXITER, else work/p1sed/rt_maxiter, else 3
 [ -z "$RT_MAXITER" ] && [ -f $WORK/p1sed/rt_maxiter ] && RT_MAXITER=$(cat $WORK/p1sed/rt_maxiter)
-cd $WORK && python3 $CAMPAIGN/jobs/make_nml.py pilot_sed ${RT_MAXITER:-3}
+cd $WORK && python3 $CAMPAIGN/jobs/make_nml.py pilot_sed ${RT_MAXITER:-3} || { echo 'pilot_sed failed; stale task list, stopping'; exit 1; }
 while read -r nml; do
   [ -z "$nml" ] && continue
   log=$CAMPAIGN/logs/$(echo ${nml%.nml} | tr / _).log
