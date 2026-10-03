@@ -19,6 +19,8 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py batch2           # 1D NLTE Mg/Fe map and <3D>-vs-MARCS pairs, into b2/
     python3 make_nml.py batch2_sed       # stage 2: line-list NLTE SEDs on the b2 departures
     python3 make_nml.py pilot_sed        # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs
+    python3 make_nml.py vmic_av3d        # <3D> LTE with the MARCS twin's constant vmic, into b3/
+    python3 make_nml.py lte3d LABELS     # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
 """
 import re
 import sys
@@ -549,8 +551,98 @@ def batch2_sed():
     print(f'{len(tasks)} stage-2 namelists in b2/sed/')
 
 
+def vmic_av3d():
+    """The batch-2 <3D> LTE runs again with the constant microturbulence of their MARCS
+    twin (1 km/s at log g >= 3.5, 2 km/s below, as the twin's t01/t02), so that a
+    <3D>-MARCS difference holds the temperature and density structure only.  The <3D>
+    files carry their own depth-dependent vmic (about 1.4-2.5 km/s in giants).  Into
+    b3/av3d_vmic/<av>/lte.nml."""
+    tasks = []
+    for row in Path('b2/pairs.txt').read_text().splitlines()[1:]:
+        av, teff, logg, feh, alpha = row.split()[:5]
+        comp = dict(alpha_enhancement=float(alpha)) if float(alpha) else None
+        vmic = 1.0 if float(logg) >= 3.5 else 2.0
+        atmos = dict(atmos_file=f'av3d/atmos.{av}', FeH=float(feh), vmic=vmic)
+        nml = Path('b3/av3d_vmic') / av / 'lte.nml'
+        nml.parent.mkdir(parents=True, exist_ok=True)
+        nml.write_text(namelist(atmos, composition=comp, rt_output=dict(save_linelist=False)))
+        tasks.append(str(nml))
+    Path('b3/tasks_vmic.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} <3D> LTE namelists with the twin vmic in b3/av3d_vmic/')
+
+
+def stagger_models(root='stagger2'):
+    """{<3D> name: Stagger-grid folder} of every 3D model, the '_new' run where a model
+    has two (t40g25m00)."""
+    out = {}
+    for d in sorted(Path(root).glob('t*/t*')):
+        name = d.name.replace('_new', '')
+        if AV3D_NAME.match(name) and (name not in out or d.name.endswith('_new')):
+            out[name] = d
+    return out
+
+
+def star_labels(csv_path):
+    """(Teff, log g, [Fe/H]) of the placed 4MOST stars (place_stars.py): one point per
+    star, its highest-S/N spectrum, log g held at Gaia where possible.  0201 stars pinned
+    at the grid edge [Fe/H] = -4 are left out: their labels are unreliable
+    (reports/2026-10-03_phase2.md, section 8)."""
+    import csv
+    best = {}
+    for row in csv.DictReader(open(csv_path)):
+        star = row['OBJECT'] or row['specid']
+        if star not in best or float(row['snr']) > float(best[star]['snr']):
+            best[star] = row
+    out = []
+    for row in best.values():
+        held = row['teff_c'] != ''
+        t, g, m = (float(row[k + ('_c' if held else '')]) for k in ('teff', 'logg', 'feh'))
+        if row['set'] in ('0201', '201') and m <= -3.99:
+            continue
+        out.append((t, g, m))
+    return out
+
+
+def lte3d(labels_csv):
+    """3D LTE on the Halton-first snapshot of every Stagger model in the 4MOST domain
+    with placed stars within one grid step (250 K, 0.5 dex in log g and [Fe/H]), as the
+    pilot's 3D LTE runs (3d preset, HRS at R=2e5, FGK line list, the <3D> composition).
+    The pilot models are skipped.  x3d/tasks.txt lists them by star count, most first;
+    x3d/counts.txt gives the counts.  The <3D> and MARCS LTE partners are batch 2's
+    (b2/pairs.txt)."""
+    stars = star_labels(labels_csv)
+    pilot = {Path(f).name.replace('_new', '') for f, *_ in PILOT}
+    ranked = []
+    for name, folder in stagger_models().items():
+        teff, logg, feh, alpha = av3d_labels(name)
+        if not (4000 <= teff <= 6750 and 1.0 <= logg <= 5.0 and -4.0 <= feh <= 0.5):
+            continue
+        n = sum(abs(t - teff) <= 250 and abs(g - logg) <= 0.5 and abs(m - feh) <= 0.5
+                for t, g, m in stars)
+        if n and name not in pilot:
+            ranked.append((n, name, folder, feh, alpha))
+    ranked.sort(key=lambda r: (-r[0], r[1]))
+    tasks, counts = [], []
+    for n, name, folder, feh, alpha in ranked:
+        snap = sorted(folder.glob('atm3d.*'))[HALTON_10[0]]
+        atmos = dict(atmos_format='stagger2', atmos_file=str(snap))
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        nml = Path('x3d') / name / f's{snap.name.split("_")[1]}_lte.nml'
+        nml.parent.mkdir(parents=True, exist_ok=True)
+        nml.write_text(namelist(atmos, geometry='3d', feh=feh, composition=comp))
+        tasks.append(str(nml))
+        counts.append(f'{name} {n} {nml}')
+    Path('x3d/tasks.txt').write_text('\n'.join(tasks) + '\n')
+    Path('x3d/counts.txt').write_text('\n'.join(counts) + '\n')
+    print(f'{len(tasks)} 3D LTE namelists in x3d/ ({len(stars)} stars)')
+
+
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['bench']:
+    if sys.argv[1:2] == ['lte3d']:
+        lte3d(sys.argv[2])
+    elif sys.argv[1:2] == ['vmic_av3d']:
+        vmic_av3d()
+    elif sys.argv[1:2] == ['bench']:
         bench()
     elif sys.argv[1:2] == ['batch1']:
         batch1()
