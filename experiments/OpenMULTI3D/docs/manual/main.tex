@@ -2,6 +2,9 @@
 \documentclass[paper=a4, fontsize=11pt]{scrartcl}
 \usepackage[T1]{fontenc}
 \usepackage{fourier}
+% Monospaced text in Source Code Pro, scaled to the x-height of the Latin Modern Sans
+% body text.
+\usepackage[scale=0.84]{sourcecodepro}
 
 \usepackage[english]{babel}															% English language/hyphenation
 \usepackage[protrusion=true,expansion=true]{microtype}	
@@ -12,6 +15,33 @@
 \usepackage{siunitx}
 \usepackage{esdiff}
 \usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit}
+\usepackage{adjustbox}
+% Diagram palette (figs/*.tex): pastel fill with a darker border of the same hue.
+% grey: processing steps, blue: wavelength grids, orange: input data and composition,
+% green: NLTE populations, red: radiative transfer and its results, purple: the
+% OpenMULTI3D task layer (m3d_patch_t) in call diagrams.
+\definecolor{figGreyFill}{HTML}{F5F5F5}   \definecolor{figGreyLine}{HTML}{666666}
+\definecolor{figBlueFill}{HTML}{DAE8FC}   \definecolor{figBlueLine}{HTML}{6C8EBF}
+\definecolor{figOrangeFill}{HTML}{FFE6CC} \definecolor{figOrangeLine}{HTML}{D79B00}
+\definecolor{figGreenFill}{HTML}{D5E8D4}  \definecolor{figGreenLine}{HTML}{82B366}
+\definecolor{figRedFill}{HTML}{F8CECC}    \definecolor{figRedLine}{HTML}{B85450}
+\definecolor{figPurpleFill}{HTML}{E1D5E7} \definecolor{figPurpleLine}{HTML}{9673A6}
+% \fignote{...} sets secondary text in a box (descriptions, parameter names) in a darker
+% shade of the box's hue, so that the main statement stands out.
+\newcommand{\fignote}[1]{{\color{fignote}#1}}
+\colorlet{fignote}{black!65}
+\tikzset{
+  fig box/.style={fill=#1Fill, draw=#1Line,
+    execute at begin node={\colorlet{fignote}{#1Line!75!black}}},
+  fig grey/.style={fig box={figGrey}},
+  fig blue/.style={fig box={figBlue}},
+  fig orange/.style={fig box={figOrange}},
+  fig green/.style={fig box={figGreen}},
+  fig red/.style={fig box={figRed}},
+  fig purple/.style={fig box={figPurple}},
+}
 
 %%% Code snippets
 \usepackage{listings}
@@ -162,8 +192,8 @@
 \setcounter{tocdepth}{2}
 \tableofcontents
 
-% Figures are not yet updated to the current code; the figure files in figs/ date
-% from the first version of this manual.
+% The diagrams in figs/*.tex are TikZ, drawn after .claude/skills/manual-diagrams;
+% figs/3DQuad.png dates from the first version of this manual.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Introduction}
@@ -313,7 +343,8 @@ Solving the statistical equilibrium needs only the atom's own transitions and a 
 \paragraph{Stage 2: spectrum.} A second run reads that folder as its atmosphere:
 
 \begin{minted}{Fortran}
-&atmos_params        atmos_format='save' atmos_file='data/stage1_run' read_departures=T /
+&atmos_params        atmos_format='save' atmos_file='data/stage1_run'
+                     read_departures=T /
 &atom_params         atom_file='...' /
 &rt_iteration_params maxiter=0 /
 &rt_output_params    maxiter=3 /
@@ -346,6 +377,12 @@ This section describes what a run computes and the choices that control it. Sec.
 \subsection{Iteration and output passes}\label{sec:passes}
 
 A run has two radiative transfer passes (Sec.~\ref{sec:flow}). The \emph{iteration pass} (\fort{&rt_iteration_params}) solves the statistical equilibrium of the model atoms on the internal spectrum, which samples the atoms' bound-bound and bound-free transitions. With \fort{decouple_continuum=T} (the default) the bound-free points form a second set of windows, separate from the line windows. The \emph{output pass} (\fort{&rt_output_params}) computes the emergent spectrum on the output grid at fixed populations.
+
+\begin{figure}[!ht]
+    \centering
+    \input{figs/passes}
+    \caption{Wavelength grids of the two passes. The iteration pass samples the atoms' transitions; the output pass has a grid of its own, on which the atoms' lines (or the line list) are located. Populations are the only quantity passed on.}\label{fig:passes}
+\end{figure}
 
 \fort{maxiter} counts the NLTE iterations in the iteration pass and the extra iterations at fixed populations (scattering iterations) in the output pass. Each scattering iteration is one more formal solution over the whole output wavelength grid, so the output pass costs about \fort{maxiter}$+1$ solutions; 0 gives only the final solution. The solvers are described in Sec.~\ref{sec:numerics}.
 
@@ -393,7 +430,7 @@ Molecules receive no van der Waals broadening for $\gamma_\mathrm{vdw}=0$.
 
 \fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 
-\paragraph{Hydrogen lines.} Stark broadening with the tabulated profiles of Lemke (1997) (\fort{hydrogen_vcs_table}) and self-broadening (\fort{hydrogen_BPO}). A NLTE hydrogen atom (for example \File{input/atoms/atom.h20}) is treated like any other model atom.
+\paragraph{Hydrogen lines.} \fort{hydrogen_vcs_table} selects Stark broadening with the tabulated profiles of Lemke (1997), and \fort{hydrogen_BPO} self-broadening. A NLTE hydrogen atom (for example \File{input/atoms/atom.h20}) is treated like any other model atom.
 
 \subsection{Angle quadrature}\label{sec:angles}
 
@@ -487,7 +524,7 @@ END
 
 \fort{ecm} is the level energy in \si{\per\cm}, \fort{g} the statistical weight, \fort{ion} the ionisation stage (1 for neutral). For a transition, \fort{J} and \fort{I} are the upper and lower level (counted from 1), \fort{F} the oscillator strength, \fort{NQ} the number of frequency points, \fort{QMAX} the outermost point and \fort{Q0} the point where the profile changes from the Doppler core to the wings, both in units of the Doppler width \fort{qnorm}. \fort{IW} is the number of hyperfine or isotopic components. \fort{GRAD} is the radiative damping rate, \fort{GVDW} the van der Waals parameter (below 20: factor on the classical value; above 20: Anstee--Barklem--O'Mara form) and \fort{GSTK} the Stark parameter. The final word \fort{PROFILE} selects \fort{VOIGT} or \fort{HLINOP} (a hydrogen profile); anything else falls back to \fort{VOIGT}. For a bound-free transition, \fort{A0} is the cross-section at the edge in cgs units and \fort{LMAX} the edge wavelength in {\AA}. A positive \fort{LMAX} selects the hydrogenic wavelength dependence. A negative value means tabulated pairs (\fort{XL} in {\AA}, decreasing; \fort{ALPHA} in cgs units) follow. The collision block starts with the word \fort{GENCOL} (or \fort{END} for none). Keys are \fort{TEMP} (temperature grid), \fort{OHM}/\fort{OHMEGA} (collision strengths), \fort{CE} and \fort{CI} (excitation and ionisation by electrons), \fort{CH} (neutral hydrogen collisions), \fort{CHI} and \fort{CH0}; the details are in \File{SRC/atom\_mod.f90}.
 
-\textbf{Table format.} Same header lines, then tables of levels (\fort{idx ev g ion label}, energies in eV, indices from 0), transitions (\fort{idx i j lam_air lower_ev loggf grad gvdw gstk nnu qmax q0 profile iso}, wavelengths in air {\AA}), bound-free data (\fort{icont lam alpha}) and collisions (a temperature header followed by \fort{idx key l u values}). This format is convenient to produce from Python (\Code{tumult.model\_atom\_class}).
+\textbf{Table format.} Same header lines, then tables of levels (\Code{idx ev g ion label}, energies in eV, indices from 0), transitions (\Code{idx i j lam\_air lower\_ev loggf grad gvdw gstk nnu qmax q0 profile iso}, wavelengths in air {\AA}), bound-free data (\Code{icont lam alpha}) and collisions (a temperature header followed by \Code{idx key l u values}). This format is convenient to produce from Python (\Code{tumult.model\_atom\_class}).
 
 \subsection{Line list and isotope formats}\label{sec:linelist}
 
@@ -605,15 +642,20 @@ print(run.mode, run.lam.size, run.mus, run.abundances["Ba"])
 \py{run.crop(...)} returns a \Code{Spectrum} (an astropy-unit pair of wavelength and flux) and \py{Spectrum.plot()} plots it:
 
 \begin{minted}{Python}
-run.crop().plot()                          # NLTE flux, normalised to the continuum
+# NLTE flux, normalised to the continuum
+run.crop().plot()
 run.crop(window=(4550, 4558)).plot()
-run.crop(x0=4554.0, dx=1.0, relative=True).plot()   # window x0 +- dx, axis in Delta lambda
+# window x0 +- dx, axis in Delta lambda
+run.crop(x0=4554.0, dx=1.0, relative=True).plot()
 
-line = run.get_line(4554.033)              # nearest transition of the model atom
+# nearest transition of the model atom
+line = run.get_line(4554.033)
 line.crop().plot(label="NLTE")
 line.crop(LTE=True).plot(label="LTE", linestyle="--")
-line.crop(imu=0, vdop=3.0, vshift=1.0).plot()   # disk-centre intensity, broadened and shifted
-weq = line.crop().get_weq(target_unit=u.mAA)    # equivalent width
+# disk-centre intensity, broadened and shifted
+line.crop(imu=0, vdop=3.0, vshift=1.0).plot()
+# equivalent width
+weq = line.crop().get_weq(target_unit=u.mAA)
 \end{minted}
 
 The options of \Code{crop} are as follows.
@@ -635,8 +677,11 @@ Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE 
 \py{tumult.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
 
 \begin{minted}{Python}
-folder, ran = tumult.launch("ba_test", default=[tumult.preset("1d"), tumult.preset("nlte")],
-                            nml_settings={"atom_params": {"abundance": 2.41}})
+folder, ran = tumult.launch(
+    "ba_test",
+    default=[tumult.preset("1d"), tumult.preset("nlte")],
+    nml_settings={"atom_params": {"abundance": 2.41}},
+)
 \end{minted}
 
 It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tumult.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tumult.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
@@ -721,9 +766,23 @@ The table is printed by the task list around the task loop and at the end of the
 
 DISPATCH represents the work as \emph{tasks} that a dispatcher executes. All tasks are kept in a task list. Each task owns a list of neighbour tasks it depends on and tasks that depend on it. The dispatcher scans the list for tasks whose dependences are fulfilled and runs them on the available OpenMP threads. A task that is a \emph{patch} works on a geometric subregion of a 3D domain.
 
+Fig.~\ref{fig:dispatch_step} follows one task update on one thread. DISPATCH calls generic task procedures, which the OpenMULTI3D tasks override: \Code{m3d\_patch\_t} supplies the steps common to all of them, and \Code{execute} the work of each kind of task.
+
+\begin{figure}[!ht]
+    \centering
+    \input{figs/dispatch_step}
+    \caption{Calls of one dispatcher step. Solid lines lead to the routines a routine calls, dashed arrows to the OpenMULTI3D procedure that overrides a DISPATCH call. The MPI branches of DISPATCH are left out, since OpenMULTI3D runs on one rank.}\label{fig:dispatch_step}
+\end{figure}
+
 \subsection{Tasks in OpenMULTI3D}
 
 The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded by \fort{amr}). The horizontal directions are never split, so no guard zones are needed. Five kinds of objects exist.
+
+\begin{figure}[!ht]
+    \centering
+    \input{figs/tasks}
+    \caption{Tasks of a run. Each depth slab has a composition patch and an NLTE patch; the composition patch also creates the RT slabs (small boxes), which the RT columns sweep in the direction of their rays. Shown is one window of each spectrum; every further window adds such a group of columns.}\label{fig:tasks}
+\end{figure}
 
 \begin{itemize}
     \item \textbf{Geometry patch} (\File{experiment\_mod.f90}). One per slab. It carries the geometry only.

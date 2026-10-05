@@ -1,0 +1,72 @@
+% Calls of one dispatcher step (Sec. "DISPATCH tasks"): the DISPATCH call tree on the
+% left, the type-bound procedures of the OpenMULTI3D tasks it reaches on the right.
+% Needs tikz with the libraries positioning, arrows.meta, calc and fit.
+\begingroup
+\newcommand{\kw}[1]{\texttt{#1}}
+\begin{adjustbox}{max width=\linewidth, max height=0.62\textheight}
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[length=2mm]},
+    call/.style={draw, rounded corners=4pt, align=left, inner sep=3pt, anchor=west},
+    disp/.style={call, fig grey},
+    m3d/.style={call, fig purple},
+    comp/.style={call, fig orange},
+    nlte/.style={call, fig green},
+    rad/.style={call, fig red},
+    tree/.style={thick, figGreyLine},
+    bind/.style={->, thick, dashed, figPurpleLine},
+    lab/.style={font=\scriptsize, text=black!70, align=left},
+    head/.style={font=\small\bfseries, align=center},
+  ]
+  \def\dy{-0.95}
+  % DISPATCH call tree; x is the nesting level
+  \node[disp] (disp)  at (0.0,0*\dy) {\kw{dispatcher0\%update}\\\fignote{takes the first ready task from the queue}};
+  \node[disp] (tlu)   at (0.6,1*\dy) {\kw{task\_list\%update}};
+  \node[disp] (head)  at (1.2,2*\dy) {\kw{head\%update}};
+  \node[disp] (upd)   at (1.2,4*\dy) {\kw{task\%update}};
+  \node[disp] (rot)   at (1.2,10.5*\dy) {\kw{task\%rotate}};
+  \node[disp] (end)   at (1.2,11.5*\dy) {\kw{end\_game}\\\fignote{the task has reached its end time}};
+  \node[disp] (post)  at (1.2,12.5*\dy) {\kw{task\_list\%post\_update}};
+  \node[disp] (nbors) at (1.8,13.5*\dy) {\kw{check\_nbors}, \kw{check\_ready}\\\fignote{queue the tasks this update made ready}};
+  \node[disp] (noq)   at (0.6,14.5*\dy) {\kw{dispatcher0\%no\_queue}\\\fignote{only when no task is ready: stall handling}};
+
+  \draw[tree] ($(disp.south west)+(0.3,0)$) |- (tlu.west);
+  \draw[tree] ($(disp.south west)+(0.3,0)$) |- (noq.west);
+  \draw[tree] ($(tlu.south west)+(0.3,0)$) |- (head.west);
+  \draw[tree] ($(tlu.south west)+(0.3,0)$) |- (upd.west);
+  \draw[tree] ($(tlu.south west)+(0.3,0)$) |- (rot.west);
+  \draw[tree] ($(tlu.south west)+(0.3,0)$) |- (end.west);
+  \draw[tree] ($(tlu.south west)+(0.3,0)$) |- (post.west);
+  \draw[tree] ($(post.south west)+(0.3,0)$) |- (nbors.west);
+
+  % OpenMULTI3D: m3d_patch_t and the kind-specific execute
+  \def\X{7.4}
+  \node[m3d] (halo)  at (\X,2*\dy) {\kw{m3d\_halo\_t\%update}};
+  \node[m3d] (pre)   at (\X+0.6,3*\dy) {\kw{m3d\_patch\_t\%pre\_update}\\\fignote{\kw{init} on the first call; \kw{finish} once converged}};
+  \node[m3d] (mupd)  at (\X,4*\dy) {\kw{m3d\_patch\_t\%update}};
+  \node[m3d] (exec)  at (\X+0.6,5*\dy) {\kw{execute}\\\fignote{by task kind}};
+  \node[comp] (ex1)  at (\X+1.2,6*\dy) {\kw{composition\_patch\_t}\\\fignote{EOS and opacities with HOP}};
+  \node[nlte] (ex2)  at (\X+1.2,7*\dy) {\kw{nlte\_patch\_t}\\\fignote{statistical equilibrium from the rates}};
+  \node[rad]  (ex3)  at (\X+1.2, 8.3*\dy) {\kw{rt\_column\_t}\\\fignote{sweeps its RT slabs, calling}\\\fignote{\kw{pre\_update}, \kw{update}, \kw{rotate} on each}};
+  \node[m3d] (mpost) at (\X+0.6,9.5*\dy) {\kw{m3d\_patch\_t\%post\_update}\\\fignote{progress output, NaN check}};
+  \node[m3d] (mrot)  at (\X,10.5*\dy) {\kw{m3d\_patch\_t\%rotate}\\\fignote{counts the iteration; \kw{finish} after \kw{maxiter}}};
+
+  \draw[tree, figPurpleLine] ($(halo.south west)+(0.3,0)$) |- (pre.west);
+  \draw[tree, figPurpleLine] ($(mupd.south west)+(0.3,0)$) |- (exec.west);
+  \draw[tree, figPurpleLine] ($(mupd.south west)+(0.3,0)$) |- (mpost.west);
+  \draw[tree, figPurpleLine] ($(exec.south west)+(0.3,0)$) |- (ex1.west);
+  \draw[tree, figPurpleLine] ($(exec.south west)+(0.3,0)$) |- (ex2.west);
+  \draw[tree, figPurpleLine] ($(exec.south west)+(0.3,0)$) |- (ex3.west);
+
+  % DISPATCH calls that the OpenMULTI3D tasks override
+  \draw[bind] (head.east) -- (halo.west);
+  \draw[bind] (upd.east) -- (mupd.west);
+  \draw[bind] (rot.east) -- (mrot.west);
+
+  % column headers and divider
+  \node[head, anchor=south west] at (0,0.75) {DISPATCH};
+  \node[head, anchor=south west] at (\X,0.75) {OpenMULTI3D};
+  \draw[figGreyLine, densely dotted] (\X-0.6,1.2) -- (\X-0.6,15.2*\dy);
+\end{tikzpicture}
+\end{adjustbox}
+\endgroup

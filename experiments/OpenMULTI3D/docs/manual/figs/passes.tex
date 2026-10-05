@@ -1,0 +1,68 @@
+% Wavelength grids of the iteration and output passes (Sec. "Iteration and output passes").
+% Needs tikz with the libraries positioning, arrows.meta, calc and fit.
+\begingroup
+\newcommand{\kw}[1]{\texttt{#1}}
+\begin{adjustbox}{max width=\linewidth, max height=0.62\textheight}
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[length=2mm]},
+    box/.style={draw, rounded corners=4pt, align=center, inner sep=4pt, text width=5.5cm},
+    input/.style={box, fig orange},
+    proc/.style={box, fig grey},
+    grid/.style={box, fig blue},
+    nlte/.style={box, fig green},
+    rad/.style={box, fig red},
+    arr/.style={->, thick},
+    lab/.style={font=\scriptsize, text=black!70, align=left},
+    head/.style={font=\small\bfseries, align=center},
+    node distance=5mm
+  ]
+  % column headers
+  \node[head] (hi) at (1.9,0) {Iteration pass\\[-1pt]\normalfont\scriptsize\kw{\&rt\_iteration\_params}};
+  \node[head] (ho) at (9.6,0) {Output pass\\[-1pt]\normalfont\scriptsize\kw{\&rt\_output\_params}};
+  % iteration pass
+  \node[input, text width=6.6cm, below=4mm of hi] (atoms) {Active transitions of the model atoms\\
+    \fignote{(\kw{atom\_file}, \kw{\&atom\_params})}};
+  \coordinate (dc) at ($(atoms.south)+(0,-10mm)$);
+  \node[grid, text width=3.1cm, anchor=north] (bb) at ($(dc)+(-1.95cm,-8mm)$) {\textbf{bound-bound grid}\\
+    \fignote{profile points over each active line (\kw{qnorm}, \kw{nq\_fac}, \kw{nq\_min}, \kw{nq\_max} or \kw{line\_grid\_file}); merged where lines overlap (\kw{overlapping\_bb})}};
+  \node[grid, text width=3.1cm, below=4mm of bb] (bf) {\textbf{bound-free grid}\\
+    \fignote{points over each continuum, plus the \kw{absmet\_file} table (\kw{detailed\_absmet})}};
+  \node[grid, text width=3.1cm, anchor=north, yshift=0pt] (all) at ($(dc)+(1.95cm,-8mm)$) {\textbf{one grid}\\
+    \fignote{bound-bound and bound-free points together, sorted by wavelength}};
+  \node[proc, text width=6.6cm, anchor=north] (split) at ($(dc |- bf.south)+(0,-8mm)$) {split into \kw{n\_windows} windows per grid\\
+    \fignote{$2\times$\kw{n\_windows} tasks per depth with two grids, \kw{n\_windows} with one}};
+  \node[nlte, text width=6.6cm, below=of split] (nlte) {\kw{maxiter} NLTE iterations\\
+    \fignote{$J_\nu$, rates, new populations}};
+  \node[nlte, text width=6.6cm, below=of nlte] (dep) {departure coefficients\\
+    \fignote{\kw{save/pop\_<atom>\_*.bin}}};
+
+  \draw[thick] (atoms) -- (dc) node[midway, lab, fill=white, inner sep=1.5pt] {\kw{decouple\_continuum}};
+  \draw[arr] (dc) -| (bb.north) node[pos=0.75, right=1pt, lab] {T (default)};
+  \draw[arr] (dc) -| (all.north) node[pos=0.75, right=1pt, lab] {F};
+  \draw[arr] (bb) -- (bf);
+  \draw[arr] (bf.south) -- (bf.south |- split.north);
+  \draw[arr] (all.south) -- (all.south |- split.north);
+  \draw[arr] (split) -- (nlte);
+  \draw[arr] (nlte) -- (dep);
+
+  % output pass
+  \node[grid, below=4mm of ho] (ogrid) {\textbf{output grid}\\
+    \fignote{with \kw{\&spectrum\_params}: \kw{aa\_blue}, \kw{aa\_red} and \kw{daa}, \kw{nnu} or \kw{R\_sampling}; or \kw{lam\_file}; or \kw{window\_file} (several windows)\\[2pt]
+    without: the atom's own bound-bound points, cropped to \kw{aa\_blue}\,\ldots\,\kw{aa\_red} if given}};
+  \node[input, below=9mm of ogrid] (ll) {line list over the output windows\\
+    \fignote{widened by \kw{dlam}; the atom's species from the list (\kw{output\_from\_line\_list})}};
+  \node[proc, below=of ll] (split2) {grid split into \kw{n\_windows\_out} windows\\
+    \fignote{(each \kw{window\_file} window separately)}};
+  \node[rad, below=of split2] (final) {\kw{maxiter} scattering iterations,\\
+    then the final solution along the output rays};
+  \node[rad, below=of final] (flux) {intensities and flux};
+  \draw[arr] (ogrid) -- (ll);
+  \draw[arr] (ll) -- (split2);
+  \draw[arr] (split2) -- (final);
+  \draw[arr] (final) -- (flux);
+  % link between the passes
+  \draw[arr, dashed] (dep.east) -- ++(0.6,0) |- node[pos=0.25, right=1pt, lab, text width=1.3cm, font=\tiny] {fixed\\populations} (final.west);
+\end{tikzpicture}
+\end{adjustbox}
+\endgroup

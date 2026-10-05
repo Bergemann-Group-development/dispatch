@@ -1,0 +1,61 @@
+% Tasks of a run and their dependencies (Sec. "Tasks in OpenMULTI3D").
+% Needs tikz with the libraries positioning, arrows.meta, calc and fit.
+\begingroup
+\newcommand{\kw}[1]{\texttt{#1}}
+\begin{adjustbox}{max width=\linewidth}
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[length=2mm]},
+    box/.style={draw, rounded corners=4pt, align=center, inner sep=3pt, minimum height=9mm},
+    comp/.style={box, fig orange, text width=2.3cm},
+    nlte/.style={box, fig green, text width=2.3cm},
+    slab/.style={draw=figRedLine, rounded corners=2pt, fill=white, minimum width=7mm, minimum height=9mm, inner sep=0pt, font=\scriptsize},
+    column/.style={rounded corners=4pt, fig red},
+    group/.style={draw, dashed, rounded corners=4pt, inner sep=6pt},
+    arr/.style={->, thick},
+    lab/.style={font=\scriptsize, text=black!70, align=center},
+    head/.style={font=\small\bfseries, align=center},
+  ]
+  % depth slabs: one composition and one NLTE patch each
+  \foreach \y/\name/\txt in {0/top/top slab, -2.6/bot/bottom slab} {
+    \node[lab, anchor=east] (lab\name) at (-0.2,\y) {\txt};
+    \node[comp, anchor=west] (comp\name) at (0,\y) {\textbf{composition}\\\fignote{EOS, opacities}};
+    \node[nlte, right=8mm of comp\name] (nlte\name) {\textbf{NLTE patch}\\\fignote{populations}};
+    \draw[arr] (comp\name) -- (nlte\name);
+  }
+  \node at ($(comptop)!0.5!(compbot)$) {$\vdots$};
+  \node at ($(nltetop)!0.5!(nltebot)$) {$\vdots$};
+  \node[head, anchor=south] at ($(comptop.north)!0.5!(nltetop.north)+(0,1.25)$) {Depth slabs\\[-1pt]\normalfont\scriptsize one task each per slab};
+
+  % RT columns: x positions of the internal (up, down) and output (up, down, final) columns
+  \def\colw{0.95}
+  \foreach \x/\name/\dir/\top in {8.0/iu/up/up, 9.1/id/down/down, 11.6/su/up/up, 12.7/sd/down/down, 14.1/fi/up/final} {
+    \node[column, minimum width=\colw cm, minimum height=4.5cm, anchor=north] (\name) at (\x,1.05) {};
+    \node[lab, anchor=south] at (\name.north) {\kw{\top}};
+    \node[slab] (\name top) at (\x,0) {};
+    \node[slab] (\name bot) at (\x,-2.6) {};
+  }
+  % sweep directions: up columns start at the bottom slab, down columns at the top
+  \foreach \name in {iu, su, fi} \draw[arr, figRedLine] (\name bot.north) -- (\name top.south);
+  \foreach \name in {id, sd} \draw[arr, figRedLine] (\name top.south) -- (\name bot.north);
+  \node[lab] at ($(id)!0.5!(su)$) {$\cdots$};
+
+  \node[group, fit=(iu)(id), inner ysep=12pt, yshift=2pt] (internal) {};
+  \node[lab, below=2pt of internal] {twins exchange the\\hemispheres of $J_\nu$};
+  \node[group, fit=(su)(sd)(fi), inner ysep=12pt, yshift=2pt] (output) {};
+  \node[head, above=0pt of internal, text width=3.4cm] {Iteration pass\\[-1pt]\normalfont\scriptsize one RT column per window and direction};
+  \node[head, above=0pt of output, text width=4cm] {Output pass\\[-1pt]\normalfont\scriptsize scattering pair, then the final rays};
+
+  % twins exchange hemispheres; the final column waits for the scattering pair
+  \draw[<->, thick, figRedLine] ($(iu.south)+(0,2mm)$) -- ($(id.south)+(0,2mm)$);
+  \draw[<->, thick, figRedLine] ($(su.south)+(0,2mm)$) -- ($(sd.south)+(0,2mm)$);
+  \draw[arr, figRedLine] ($(sd.south east)+(0,4mm)$) -- ($(fi.south west)+(0,4mm)$);
+
+  % NLTE patches <-> iteration columns
+  \draw[arr] (nltetop.east) -- node[lab, above, pos=0.45] {populations} (internal.west |- nltetop.east);
+  \draw[arr] (internal.west |- nltebot.east) -- node[lab, above] {rates} (nltebot.east);
+  % converged populations to the output pass, below the internal group
+  \draw[arr, dashed] (nltebot.south) -- ++(0,-2.2) -| node[pos=0.2, lab, fill=white, inner sep=1.5pt] {converged populations} (output.south);
+\end{tikzpicture}
+\end{adjustbox}
+\endgroup
