@@ -84,6 +84,14 @@ MODULE nlte_patch_mod
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
   logical, public, save :: external_sp=.false.
+  ! The output pass takes the lines of the atom's species from the line list, with the
+  ! atom's departure coefficients, instead of from the atom's own transitions:
+  ! output_from_line_list (the default) asks for it, output_grid_and_list says that the
+  ! run has both an explicit output grid and a line list (set by composition_pre_init),
+  ! and line_list_precedence is the decision.  Without an explicit grid the output
+  ! spectrum is built from the atom's own lines and these have to stay.
+  logical, save :: output_from_line_list=.true.
+  logical, public, save :: output_grid_and_list=.false., line_list_precedence=.false.
   !-----------------------------------------------------------------------------
 
 contains
@@ -133,7 +141,7 @@ contains
     integer :: i, j, iostat, nlvl
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-      exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
+      exclude_from_line_list, output_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
       disable_bf, disable_bb, fmin, &
@@ -154,6 +162,8 @@ contains
         read (io%input, atom_params)
       end if
       call io%namelist_warning ('atom_params', iostat)
+
+      line_list_precedence = output_from_line_list .and. output_grid_and_list
 
       natom = count(atom_file /= '')
       ! atom_root is prepended to every atom_file
@@ -245,6 +255,13 @@ contains
           ! which will have altered ired and iblue for example
           ! they will be pointed at later
           call out_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
+          if (line_list_precedence) then
+            ! the output pass leaves the atom's lines to the line list; the atom's
+            ! own transitions stay active in the iterations
+            do j=1, size(out_trans(i)%line)
+              call out_trans(i)%line(j)%deactivate()
+            end do
+          endif
           if (decouple_continuum) then
             call dc_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
           endif
@@ -1150,6 +1167,11 @@ contains
     class(molec_type), pointer :: molec
     integer :: j, ia
     !-----------------------------------------------------------------------------
+    if (line_list_precedence) then
+      if (console_on(ch_m3d, 1)) write(console_unit,'(a)') &
+        'output pass: lines of the atoms'' species come from the line list'
+      return
+    endif
     do ia=1, self%natom
       associate(atom => self%atoms(ia))
         select type (species => atom%species)

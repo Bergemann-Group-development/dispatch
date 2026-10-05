@@ -26,7 +26,7 @@ MODULE composition_patch_mod
   sample_linelist, opac_table_vmic, &
   line_scattering
   USE atom_mod, only: use_classic_col, level_partf
-  USE nlte_patch_mod,  only: nlte_patch_t
+  USE nlte_patch_mod,  only: nlte_patch_t, output_grid_and_list
   USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, disable_rad, disable_stk, disable_vdw
@@ -207,6 +207,7 @@ SUBROUTINE composition_pre_init (self)
     endif
 
     external_sp = output_sp%nnu > 0
+    output_grid_and_list = external_sp .and. any(linelist_file /= '')
   endif
 
   allocate(nlte_patch)
