@@ -99,7 +99,7 @@ def set_index(run, element, da):
 
 def it1(folder):
     """With LTE_IT1=1, the rerun of a 1D LTE run with one output scattering iteration
-    (make_nml.py lte_it1): b1/hrs -> b1/hrs_it1, b5/vmic -> b5/vmic_it1, .../lte ->
+    (make_nml.py lte_it1; not for the slopes): b1/hrs -> b1/hrs_it1, b5/vmic -> b5/vmic_it1, .../lte ->
     b4|b2/twin .../lte -> lte_it1.  Other runs (3D LTE, the Stagger-file <3D> runs, SEDs)
     are returned unchanged."""
     if not os.environ.get('LTE_IT1'):
@@ -113,7 +113,7 @@ def it1(folder):
 def slopes(b1_run, lines=LINES):
     """dlog(EW)/dA of every line from the +-0.3 sets of a batch-1a run (Fe sets for
     Fe II)."""
-    r = tumult.read(str(RUNS / it1(b1_run)))
+    r = tumult.read(str(RUNS / b1_run))           # the b1/hrs_it1 reruns have no sets
     out = {}
     for el, lam0, hw in lines:
         el = el[:2]

@@ -1003,6 +1003,7 @@ def lte_it1():
     the stage-2 SEDs (reports/2026-10-05_phase5.md, section 6): batch 1a (b1/hrs ->
     b1/hrs_it1), the vmic-grid partners (b5/vmic -> b5/vmic_it1), the own <3D> LTE runs
     (b4/av3d/<m>/lte -> lte_it1) and batch 2's own twins (b2/twin/<av>/lte -> lte_it1).
+    The b1 reruns leave out the abundance sets.
     delta_maps.py reads them with LTE_IT1=1.  Writes lte_it1_tasks.txt."""
     pairs = [(f, f.parent.with_name(f.parent.name + '_it1') / f.name)
              for top in ('b1/hrs',) for f in sorted(Path(top).glob('*.nml'))]
@@ -1013,7 +1014,11 @@ def lte_it1():
     tasks = []
     for src, dst in pairs:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(with_rt_maxiter(src.read_text(), 1))
+        # with output iterations the main set counts as NLTE, which an abundance ladder
+        # (set_file) does not allow; the b1 reruns are the plain LTE spectrum, the
+        # curve-of-growth slopes stay with b1/hrs
+        text = re.sub(r" set_file='[^']*'", '', src.read_text())
+        dst.write_text(with_rt_maxiter(text, 1))
         tasks.append(str(dst))
     # the b1 runs with their abundance sets are the long ones: first
     tasks.sort(key=lambda t: (not t.startswith('b1/'), t))
