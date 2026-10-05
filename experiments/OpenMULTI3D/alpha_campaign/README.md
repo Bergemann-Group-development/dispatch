@@ -1,0 +1,56 @@
+# Alpha campaign: local operations notes
+
+Facts about the MPIA cluster, the campaign data and the job scripts that do not belong in
+the user manual. Sources: the phase 0-5 reports in `reports/`. Statements marked "unconfirmed" come
+from the wishlist only.
+
+## Layout
+
+- `$C = /mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign` on the cluster.
+  `$C/bin/<hash>` holds frozen builds, `$C/work` the namelists and run folders, `$C/logs`
+  the job logs, per-run timings and submission records (`logs/submitted_*.txt`).
+- `jobs/common.sh` sets `CAMPAIGN`, `WORK` and `BIN` (default `bin/current`) and refuses to
+  run outside nodes 81-90.
+- Metal-poor absmet tables are in `$C/work/absmet/`; the solar table is
+  `input/absmet_files/absmet`.
+
+## Cluster quirks
+
+- **Login shell.** Jobs start with `#!/bin/bash -l` so that the Intel runtime is on the path.
+- **node83.** `/opt/intel/oneapi` is a stale NFS handle there, so ifort-built binaries fail
+  with `libiomp5.so: cannot open shared object file`. `run_queue.sbatch` puts
+  `$C/lib/libiomp5.so` (copied from the login node's oneAPI 2024.0) on `LD_LIBRARY_PATH`.
+  Python jobs run unchanged. The mount is still open with the administrators.
+- **Partial nodes.** Other users hold cores and memory on some nodes (node83 had four free
+  cores, node88 one free core and about 5 GB, node90 no free memory during phase 3). Size a
+  job with `-c` and `--mem` against `scontrol show node` first.
+- **Stack size.** `KMP_STACKSIZE=256M` is set in `common.sh`; HOP from Python needs
+  `ulimit -s unlimited`.
+- **Allowed nodes.** Campaign jobs name `--nodelist=mpia-slurm-node[81-90]`. A job without a
+  node list landed eight tasks on node47.
+
+## 4MOST data
+
+- Spectra: `~/Documents/Spectra/4MOST/normalised_rv_corrected_19june2026`. HRS files are
+  text tables (wavelength, normalised flux, error) in three arms of 0.05 Å sampling,
+  3926-4355, 5160-5730 and 6100-6790 Å (air); LRS files cover 3700-9443 Å at 0.25 Å.
+  The `stack1/3/4` subfolders are undocumented.
+- Sets: 0201 (675 spectra, 85 stars, HRS, mostly giants, plausibly the low-metallicity
+  programme), 0301 (84, HRS giants), 0401 (463, HRS dwarfs and subgiants), 0408 (1875, HRS
+  turn-off and subgiants), 0409 (photometry only, red giants with asteroseismic data), s3
+  (1187, LRS).
+- No pipeline labels are included. The file names say `sapp_input_spectrum_from_fgkpayne_*`;
+  the labels are probably held by the 4MOST consortium pipeline.
+- Photometry CSVs carry Gaia DR3, 2MASS, distances and some radial velocities. Match IDs as
+  strings.
+- Related material on beegfs: `storm/4MOST/` (Payne training grids and
+  `victor_predictions_sep2025/` labels for benchmark-star simulations),
+  `storm/payne/` (Gaia-ESO setups), `storm/data/SAPP_DR4pub` (Gaia-ESO DR4 spectra),
+  `users/shared-storage/gent/4MOST_OpR2_spec_analysis/` (simulated OpR2 data and the SAPP
+  code). None of these contain labels for the 2026 spectra.
+- From the wishlist, unconfirmed here: the FITS columns are big-endian and `mg_gspphot` is an absolute magnitude.
+
+## Open items
+
+See `reports/2026-10-05_agent_wishlist.md` for the ranked list of tooling and documentation
+work.
