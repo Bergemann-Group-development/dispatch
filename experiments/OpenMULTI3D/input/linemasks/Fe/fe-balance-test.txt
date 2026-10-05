@@ -1,0 +1,27 @@
+; element: Fe
+; A small Fe I + Fe II set for the ionisation-balance fit.
+;
+; Windows are taken from fe-lmask.txt (hand-vetted); the subset was chosen with HOP line
+; strengths on a solar atmosphere, keeping only windows the named stage dominates by a wide
+; margin. The Fe I lines span 0.9-4.7 eV of excitation and a factor ~50 in strength, so the
+; excitation and reduced-EW slopes both have leverage; the Fe II lines are the weak,
+; uncrowded ones, which is where the ionisation balance is best behaved.
+;
+;   lam0      lmin      lmax      note
+; --- Fe I ---
+  5956.694  5956.442  5956.935  Fe I
+  6498.939  6498.630  6499.157  Fe I
+  6151.618  6151.340  6151.910  Fe I
+  6219.281  6218.985  6219.502  Fe I
+  6593.870  6593.600  6594.200  Fe I
+  6518.367  6518.080  6518.580  Fe I
+  5379.574  5379.230  5379.890  Fe I
+  5883.817  5883.600  5884.050  Fe I
+  6027.051  6026.800  6027.250  Fe I
+  5927.789  5927.615  5927.968  Fe I
+; --- Fe II ---
+  5325.553  5325.400  5325.800  Fe II
+  5991.376  5991.150  5991.550  Fe II
+  6084.111  6083.930  6084.330  Fe II
+  6432.680  6432.385  6433.020  Fe II
+  6456.383  6456.090  6456.670  Fe II

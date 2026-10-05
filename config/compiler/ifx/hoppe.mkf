@@ -1,0 +1,6 @@
+# Production, multi-host build -- the ifx counterpart to ifort/hoppe.mkf: an AVX
+# baseline plus an auto-dispatched AVX-512 code path. ifx has no
+# -qopt-assume-safe-padding, so that ifort flag is left out.
+OPT = -O3
+HW = -xAVX -axCORE-AVX512 -align array64byte -assume norealloc_lhs
+DEBUG = -traceback

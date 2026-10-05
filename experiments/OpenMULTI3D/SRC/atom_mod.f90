@@ -1199,13 +1199,13 @@ MODULE atom_mod
           !self%cdata(tri) = -1.0 ! flag non-classical recipe
 
           select case(trim(key))
-          case ('CE', 'CI')
+          case ('CE', 'CI', 'OHM', 'OHMEGA')
             if (self%ecol(tri) .and. console_on(ch_m3d, 2)) then
               write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
               call console_warn (ch_m3d, msg)
             endif
             self%ecol(tri) = .true.
-          case ('CH', 'CHI')
+          case ('CH', 'CHI', 'CH0')
             if (self%hcol(tri) .and. console_on(ch_m3d, 2)) then
               write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
               call console_warn (ch_m3d, msg)
@@ -1712,13 +1712,13 @@ MODULE atom_mod
         !self%cdata(tri) = -1.0 ! flag non-classical recipe
 
         select case(trim(key))
-        case ('CE', 'CI')
+        case ('CE', 'CI', 'OHM', 'OHMEGA')
           if (self%ecol(tri) .and. console_on(ch_m3d, 2)) then
             write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
               call console_warn (ch_m3d, msg)
           endif
           self%ecol(tri) = .true.
-        case ('CH', 'CHI')
+        case ('CH', 'CHI', 'CH0')
           if (self%hcol(tri) .and. console_on(ch_m3d, 2)) then
             write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
               call console_warn (ch_m3d, msg)

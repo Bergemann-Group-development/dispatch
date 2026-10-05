@@ -213,7 +213,7 @@ The non-LTE radiative transfer builds on the MULTI and Multi3D codes of Mats Car
 
 \subsection*{Conventions in this manual}
 
-Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. Wavelengths in all output are air wavelengths in {\AA}, whatever the vacuum or air convention of the input file (Sec.~\ref{sec:linelist}). \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
+Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. \Code{tumult.read} returns air wavelengths in {\AA}, whatever the vacuum or air convention of the input file (Sec.~\ref{sec:linelist}); the raw file \File{save/out\_lam.bin} holds vacuum wavelengths. \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Getting Started}\label{sec:start}
@@ -273,7 +273,7 @@ The editable install makes \Code{tumult} and \Code{TumultStudio} importable from
 
 \subsection{Input data}
 
-The repository tracks a minimal data set in \File{input/}: one MARCS solar model, four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
+The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data, line masks and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \input{tabs/input_data}
 
@@ -297,7 +297,7 @@ OMP_STACKSIZE=256M ./dispatch.x demo.nml
 
 On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated successfully.} An NLTE run that used up \fort{maxiter} without meeting \fort{convlim} instead ends with a warning that gives the last relative change. Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
 
-Three rules apply to every invocation. The namelist argument is mandatory (there is no default \File{input.nml}) and must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
+Three rules apply to every invocation. Pass the namelist as argument (without one, \File{input.nml} is read and the output is written directly into \fort{datadir}); it must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
 \subsection{Updating}
 
@@ -321,7 +321,7 @@ A run needs an atmosphere, optionally one or more model atoms, optionally a line
 &atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
 &nlte_params         convlim=1.0d-2 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
-!&spectrum_params    R_sampling=5e5 aa_blue=4840 aa_red=4880 /
+!&spectrum_params    R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
 \subsection{NLTE iterations}
@@ -423,14 +423,14 @@ The three broadening parameters of a line list, \fort{grad}, \fort{gvdw} and \fo
     \item[c] \citet{Unsold1955}; for $\log_{10}C_6$ also \citet{Gray2005}. $C_6=C_\mathrm{U}Z^2[(E_\mathrm{ion}-E_j)^{-2}-(E_\mathrm{ion}-E_i)^{-2}]$ with $C_\mathrm{U}=\SI{3.22e-31}{\centi\metre\tothe{6}\per\s\electronvolt\squared}$, where $E_i$ and $E_j$ are the lower and upper excitation energies, $E_\mathrm{ion}$ the ionisation energy and $Z$ the ionisation stage (1 for neutrals).
     \item[d] The temperature scaling follows from the impact widths $\Gamma_\mathrm{vdw}\propto\bar v^{3/5}$ and $\Gamma_\mathrm{stark}\propto v_e^{1/3}$ \citep{Unsold1955}. Line lists such as VALD \citep{RyabchikovaPiskunov2015} tabulate the damping in this form.
     \item[e] \citet{Unsold1955,Gray2005}. $v_e=(8kT/\pi m_e)^{1/2}$ is the mean electron speed.
-    \item[f] \citet{Cowley1971}. $n^*=Z[E_\mathrm{H}/(E_\mathrm{ion}-E_j)]^{1/2}$ with $E_\mathrm{H}=\SI{13.6}{eV}$. $c_Z=\SI{2.26e-7}{\radian\centi\metre\cubed\per\s}$ for $Z=1$ and $\SI{5.42e-7}{\radian\centi\metre\cubed\per\s}\,(Z+1)^{-2}$ for $Z>1$ (his value at \SI{e4}{K}, which he recommends at all temperatures). $\Gamma=0$ for $E_i\ge E_\mathrm{ion}$.
+    \item[f] \citet{Cowley1971}. $n^*=Z[E_\mathrm{H}/(E_\mathrm{ion}-E_j)]^{1/2}$ with $E_\mathrm{H}=\SI{13.6}{eV}$. $c_Z=\SI{2.26e-7}{\radian\centi\metre\cubed\per\s}$ for $Z=1$ and $\SI{5.42e-7}{\radian\centi\metre\cubed\per\s}\,(Z+1)^{-2}$ for $Z>1$ (his value at \SI{e4}{K}, which he recommends at all temperatures). $\Gamma=0$ for $E_j\ge E_\mathrm{ion}$.
 \end{description}
 
-Molecules receive no van der Waals broadening for $\gamma_\mathrm{vdw}=0$.
+Molecules receive van der Waals broadening only from the cross-section form ($\gamma_\mathrm{vdw}\ge 20$).
 
 \fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 
-\paragraph{Hydrogen lines.} \fort{hydrogen_vcs_table} selects Stark broadening with the tabulated profiles of Lemke (1997), and \fort{hydrogen_BPO} self-broadening. A NLTE hydrogen atom (for example \File{input/atoms/atom.h20}) is treated like any other model atom.
+\paragraph{Hydrogen lines.} \fort{hydrogen_vcs_table} selects Stark broadening with the tabulated profiles of Lemke (1997), and \fort{hydrogen_BPO} self-broadening. A NLTE hydrogen atom (for example \File{input/atoms/public/atom.h20}, which is downloaded) is treated like any other model atom.
 
 \subsection{Angle quadrature}\label{sec:angles}
 
@@ -528,7 +528,7 @@ END
 
 \subsection{Line list and isotope formats}\label{sec:linelist}
 
-The line list holds transitions that are treated in LTE (the NLTE atoms are excluded with \fort{exclude_elements}). It consists of one block per species in ascending air wavelength:
+The line list holds the transitions of all species. Lines of an NLTE atom's species take its departure coefficients in the output pass (Sec.~\ref{sec:nlteoutput}), so they stay in the list. It consists of one block per species in ascending air wavelength:
 
 \begin{minted}{Text}
 'Li I'
@@ -574,9 +574,9 @@ All files of a run are in \File{<datadir>/<name>/}. Use \Code{tumult.read} to ac
     \item \File{save/flux\_*.bin}, \File{save/ie\_*.bin}, \File{save/out\_lam.bin}: flux, intensities and the output wavelengths.
 \end{itemize}
 
-\paragraph{Saved populations.} \File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists the level energies in eV plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:nlteoutput}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows.
+\paragraph{Saved populations.} \File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists for each level its energy in eV above the ground state of its own ion plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:nlteoutput}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows.
 
-\paragraph{Layout of the saved files.} Every array is written per patch as raw single-precision Fortran-order stream data in \File{<label>\_XXXYYYZZZ.bin}, where \texttt{XXX}, \texttt{YYY} and \texttt{ZZZ} are the three-digit patch indices. The first row of the matching \File{<label>\_meta.txt} starts with an asterisk; each further row gives the file name, the bits per element and the array shape, and rows are appended as patches finish. The atmosphere (\File{atmos}) and the populations are split in $z$ into slabs, so a 3D run has one file per slab; \py{run.atmos.atmos_cuts} holds the cumulative number of depth points at the end of each slab. With \fort{rt_to_file}, the radiation field and the exit planes that frozen columns hand on are also written there (\File{Jnu}, \File{Jnu\_out} and \File{exit\_plane}, without meta rows unless \fort{save_Jnu=T}). Use \py{run.read_patch_save(label, zdim=...)} to assemble such arrays rather than reading the files directly.
+\paragraph{Layout of the saved files.} Every array is written per patch as raw single-precision Fortran-order stream data in \File{<label>\_ZZZWWW.bin}, where \texttt{ZZZ} is the three-digit index of the depth slab and \texttt{WWW} that of the frequency window (\texttt{000} for arrays without a frequency axis, such as \File{atmos\_001000.bin}). The first row of the matching \File{<label>\_meta.txt} starts with an asterisk; each further row gives the file name, the bits per element and the array shape, and rows are appended as patches finish. The atmosphere (\File{atmos}) and the populations are split in $z$ into slabs, so a 3D run has one file per slab; \py{run.atmos.atmos_cuts} holds the cumulative number of depth points at the end of each slab. With \fort{rt_to_file}, the radiation field and the exit planes that frozen columns hand on are also written there (\File{Jnu}, \File{Jnu\_out} and \File{exit\_plane}, without meta rows unless \fort{save_Jnu=T}). Use \py{run.read_patch_save(label, zdim=...)} to assemble such arrays rather than reading the files directly.
 
 The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (two for an LTE run), or the abundance sets of a \fort{set_file}. Optional fields (\fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu}, \fort{save_rates}, \fort{save_cntrbf}) are large; enable them only when needed.
 
@@ -584,7 +584,7 @@ The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (
 \section{Namelist Reference}\label{sec:namelists}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key triggers a warning, so misspelled keys are not silently ignored. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
+Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key stops the run at start-up with \Code{Fortran runtime error: Cannot match namelist object name}, followed by the key. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
 
 \input{tabs/namelist_groups}
 
@@ -721,7 +721,7 @@ From Python, \Code{tumult.launch(..., slurm\_script=...)} submits a namelist; se
 
 \subsection{Memory}\label{sec:Memory}
 
-\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_windows} lowers the estimate, down to a floor set by the model atoms. Unless \fort{n_windows} is set, the code starts from twice the thread count and doubles it until the estimate fits within 70\,\% of the limit, or picks the count with the lowest estimate if none does, and says so when it raised the count. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
+\textbf{Estimate and limit.} Before the dispatcher starts, the code prints the estimated peak (at console level 1 or higher) and, at level 2, the estimate by phase: the memory registered so far, the retained equation-of-state data, and for the NLTE and the output phase the number of working columns times their work and buffer arrays plus the atom arrays. The estimated peak is the largest phase total. If the estimate exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work. A negative value skips the check. Increasing \fort{n_windows} shrinks the work arrays of the columns, but every window keeps its own copy of the transitions that reach into it, so for large atoms the estimate can rise again. The atom arrays set a floor. Unless \fort{n_windows} is set, the code starts from twice the thread count and doubles it until the estimate fits within 70\,\% of the limit, or picks the count with the lowest estimate if none does, and says so when it raised the count. At the end of the run the code prints the registered peak (level 0 or higher) and, from level 1, the estimate beside it. Opacity caches and solver temporaries are not part of the estimate.
 
 \textbf{Registered arrays.} Every time the allocated memory crosses a multiple of \fort{gb_step} (GB), the code prints a line
 
@@ -792,7 +792,7 @@ The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded 
     \item \textbf{RT column} (\File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
 \end{itemize}
 
-A run is split in wavelength with \fort{n_windows}: the internal spectrum has \fort{n_windows} windows (with \fort{decouple_continuum=T} a second set of \fort{n_windows} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads and with \fort{n_windows}.
+A run is split in wavelength with \fort{n_windows}: the internal spectrum has \fort{n_windows} windows (with \fort{decouple_continuum=T} a second set of \fort{n_windows} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads; its dependence on \fort{n_windows} is described in Sec.~\ref{sec:Memory}.
 
 The column scheduler does not use MPI: the program stops with an error if started with more than one MPI rank.
 
