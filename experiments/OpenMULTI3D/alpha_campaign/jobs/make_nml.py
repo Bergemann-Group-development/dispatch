@@ -916,8 +916,7 @@ def dep4(models=(), tasks_file='b4/tasks_dep.txt'):
     quadrature on the MARCS twin, [Fe/H]-matched absmet), for the pilot and the
     [Fe/H] <= -3 models, or the ones named: b4/av3d/<model>/{mg,fe}.nml (replacing the
     first ones), the grid commands merged into lgrid/todo.txt and the model list
-    tasks_file for dep4_queue.sbatch (a running queue reads its list as it goes, so a
-    new list takes a new file)."""
+    tasks_file for queue.sbatch with STEPS=dep4."""
     pilot = [Path(f).name.replace('_new', '') for f, *_ in PILOT]
     rows = [r.split() for r in Path('avg3d/models.txt').read_text().splitlines()]
     todo, tasks = {}, []
@@ -1059,7 +1058,7 @@ def batch2_dep4(feh_max=-1.0):
     quadrature biased Delta_NLTE low (reports/2026-10-04_phase4.md, sections 8-9): line
     grids on the model itself, the absmet table nearest in [Fe/H].  Namelists
     b6/n1d/<name>_{mg,fe}.nml; b6/tasks_dep.txt lists 'name mg_grid fe_grid' for
-    dep4_queue.sbatch (KIND=marcs), which also runs the stage-2 SED (make_nml.py
+    queue.sbatch with STEPS=dep4 KIND=marcs, which also runs the stage-2 SED (make_nml.py
     b6_sed NAME)."""
     quiet = dict(save_linelist=False)
     todo, tasks = {}, []

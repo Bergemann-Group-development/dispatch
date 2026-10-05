@@ -11,6 +11,10 @@ from the wishlist only.
   the job logs, per-run timings and submission records (`logs/submitted_*.txt`).
 - `jobs/common.sh` sets `CAMPAIGN`, `WORK` and `BIN` (default `bin/current`) and refuses to
   run outside nodes 81-90.
+- `jobs/queue.sbatch LIST [THREADS]` runs task lists (see its header). Claims live in
+  `logs/claims_<list>`; the older runners used `logs/claims`, `claims_vmic`, `claims_dep4`
+  and `claims_dep4_b6`, so pass `CLAIMS=` to continue one of their lists. Pipelines per
+  line (departures then SED, a list regenerated at start) are step files in `jobs/steps/`.
 - Metal-poor absmet tables are in `$C/work/absmet/`; the solar table is
   `input/absmet_files/absmet`.
 
@@ -18,7 +22,7 @@ from the wishlist only.
 
 - **Login shell.** Jobs start with `#!/bin/bash -l` so that the Intel runtime is on the path.
 - **node83.** `/opt/intel/oneapi` is a stale NFS handle there, so ifort-built binaries fail
-  with `libiomp5.so: cannot open shared object file`. `run_queue.sbatch` puts
+  with `libiomp5.so: cannot open shared object file`. `jobs/queue.sbatch` puts
   `$C/lib/libiomp5.so` (copied from the login node's oneAPI 2024.0) on `LD_LIBRARY_PATH`.
   Python jobs run unchanged. The mount is still open with the administrators.
 - **Partial nodes.** Other users hold cores and memory on some nodes (node83 had four free

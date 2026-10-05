@@ -8,5 +8,5 @@ CAMPAIGN=/mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign
 cd "$CAMPAIGN/work"
 python3 ../jobs/make_nml.py batch1
 cd "$CAMPAIGN"
-sbatch --array=0-2 -t 01:00:00 -J b1_1dlte jobs/run_tasks.sbatch b1/tasks.txt 1
+sbatch --array=0-2 --exclusive -c 32 --mem=110G -t 01:00:00 -J b1_1dlte jobs/queue.sbatch b1/tasks.txt 1
 sbatch -t 01:00:00 -J b1_opac jobs/opacity_points.sbatch "-4 -3 -2 -1.5 -1 -0.5 0 0.5" 64

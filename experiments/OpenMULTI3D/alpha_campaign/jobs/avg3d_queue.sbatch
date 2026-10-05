@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # Own <3D> averages and their 1D runs, one model after another (claim-based like
-# run_queue.sbatch, so jobs on several nodes can share the list).  Per model of
+# queue.sbatch, so jobs on several nodes can share the list).  Per model of
 # work/avg3d/models.txt (make_nml.py avg3d): the atmosphere-only snapshot runs,
 # avg3d.py, the b4 <3D> LTE, Mg and Fe runs with the departure build (BIN, default
 # bin/current as batch 2), then the stage-2 SED with SED_BIN (f63e2fc95 as batch 2).
