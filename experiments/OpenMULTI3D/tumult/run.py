@@ -7,10 +7,11 @@ orchestration and analysis facade over them (lazy atmos/linelist/atom properties
 spectra, departures, contribution functions, plotting).
 """
 from .atom import AtomClass
-from .auxfuncs import (assign_group_indices, compute_tau_scale, empty, interp_tau,
+from .auxfuncs import (assign_group_indices, empty, interp_tau, optical_depth_from_top,
                        rotate_array)
 from .utils import pchip_mono
-from .physics import vac2air
+from .const import CC
+from .physics import air2vac, vac2air
 from .decorators import broadcast_arguments
 from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
@@ -676,12 +677,16 @@ class Run(object):
     #=====================================================================
     def get_slice(self, line=None, dlam=None, lam0=None, xmin=None, xmax=None):
         #-----------------------------------------------------------------
+        """Index range of ``self.lam`` selected by a line, a window or a centre and
+        half-width; a centre ``lam0`` alone selects the single nearest point (an int)."""
         slc = slice(None, None)
 
         if line is not None:
             line.prepare()
             slc = slice(line.ib, line.ir)
             lam0 = line.lam0
+        elif lam0 is not None and dlam is None and xmin is None and xmax is None:
+            return int(np.argmin(np.abs(self.lam - lam0)))
 
         if dlam is not None and lam0 is not None:
             xmin = lam0 - dlam
@@ -700,12 +705,31 @@ class Run(object):
     #=====================================================================
     def get_cntrbf(self, ang=None, imu=None, fmean=False, gmean=False,
                    slc=None, norm=False, **kwargs):
+        """Contribution function per unit log tau_500 of the main spectrum set.
+
+        Returns ``(ltau, cf)`` with ``cf`` shaped (wavelength, depth) in the units of
+        ``run.flux`` (no ray selection) or ``run.ie`` (``imu``/``ang``, averaged over the
+        selected rays). Integrated over ``ltau`` it gives the line depression
+        F_cnt - F (or I_cnt - I) under the default ``depression_cntrbf=T``, and the
+        emergent flux (intensity) otherwise.
+
+        dispatch saves, per ray and point, the source term of that quantity per unit
+        path length and per Hz together with the total opacity. Here the term is
+        attenuated by exp(-tau_nu) along the ray, mapped from path length to
+        log tau_500 (ds = ln10 tau_500 / (chi_500 mu) dlog tau_500) and converted to
+        per Angstrom. ``fmean`` integrates over the selected wavelengths, ``gmean``
+        averages a 3D run horizontally on surfaces of constant tau_500, and ``norm``
+        scales the result to unit area in ``ltau``.
+        """
         #-----------------------------------------------------------------
         mem  = self.read_patch_save('cntrbf', fdim=0, zdim=3, lazy=True)[-1]
         slc = slc if slc is not None else self.get_slice(**kwargs)
 
         lam = self.lam[slc]
-        cntrbf = mem[slc]
+        # an int selects one wavelength; read it as a length-one range
+        cntrbf = mem[slice(slc, slc+1) if isinstance(slc, (int, np.integer)) else slc]
+        per_aa = (CC*1e8 / air2vac(np.atleast_1d(lam))**2).reshape(
+            (-1,) + (1,)*(cntrbf.ndim - 3))
 
         ltau = self.atmos.ltau
         get_mean = gmean and self.atmos.dim == '3D'
@@ -723,8 +747,10 @@ class Run(object):
             angs = np.array(ang).squeeze()
             if angs.ndim == 0: angs = np.array([angs])
 
+        # the flux quadrature (run.flux = run.ie @ run.wts), or the mean of the rays
         wts = self.wts[angs]
-        wts = wts / np.sum(wts)
+        if ang is not None or imu is not None:
+            wts = wts / np.sum(wts)
 
         conversion = np.log(10) * self.atmos.tau / self.atmos.chi
 
@@ -733,9 +759,9 @@ class Run(object):
             cang = np.array(cntrbf[..., ang])
             cf, net_chi = np.moveaxis(cang, -1, 0)
             vec = self.vec[ang]
-            zz = self.atmos.zz / vec[-1] * 1e8
-            tau = compute_tau_scale(net_chi, zz, axis=-1)
-            cf = conversion * cf * np.exp(-tau)
+            path = self.atmos.zz / vec[-1] * 1e8
+            tau = optical_depth_from_top(net_chi, path, axis=-1)
+            cf = per_aa * conversion / vec[-1] * cf * np.exp(-tau)
             if self.atmos.dim == '3D':
                 vec = vec * np.array([-1, -1, 1])
                 cf = rotate_array(self.atmos.xx, self.atmos.yy, self.atmos.zz, cf, vec)
@@ -753,16 +779,27 @@ class Run(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
+        ltau = ltau.squeeze()
         cfunc = cfunc.squeeze()
         if cfunc.ndim>1 and fmean: cfunc = trapz(cfunc, x=lam, axis=0)
         if norm:
-            normalisation = abs(trapz(cfunc, x=ltau))
-            cfunc = cfunc / normalisation
-        return ltau, cfunc.squeeze()
+            normalisation = abs(trapz(cfunc, x=ltau, axis=-1))
+            cfunc = cfunc / np.expand_dims(normalisation, -1)
+        return ltau, cfunc
+
+    #=====================================================================
+    def _cntrbf_label(self):
+        """Axis label for the kind of contribution function the run saved."""
+        if self.nml['output_params'].get('depression_cntrbf', True):
+            return 'Depression contribution function'
+        return 'Intensity contribution function'
 
     #=====================================================================
     def plot_cntrbf(self, line=None, lam0=None, dlam=None, xmin=None, xmax=None,
                     slc=None, imu=None, ang=None, title=None, norm=False, **kwargs):
+        """Plot the contribution function against log tau_500 at one wavelength
+        (``lam0`` alone), or integrated over a range (``line``, ``lam0`` and ``dlam``,
+        ``xmin``/``xmax``); see :meth:`get_cntrbf`."""
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         from .plotting_scripts import set_title
@@ -772,7 +809,7 @@ class Run(object):
         lam = self.lam[slc]
         ltau, cf = self.get_cntrbf(slc=slc, imu=imu, ang=ang, gmean=True, fmean=True, norm=norm)
 
-        if type(slc) == int:
+        if isinstance(slc, (int, np.integer)):
             wave = rf'λ={lam:.3f}[Å]'
         else:
             wave = rf'λ={lam[0]:.2f}-{lam[-1]:.2f}[Å]'
@@ -786,27 +823,30 @@ class Run(object):
             angle = r'μ={:.2f}'.format(self.mus[imu])
 
         plt.xlabel(r'log$\tau_{500}$')
-        plt.ylabel('Contribution function')
+        plt.ylabel(self._cntrbf_label())
         set_title(title, default=wave + ', ' + angle)
         return plt.plot(ltau, cf, **kwargs)
 
 
     #=====================================================================
-    def hist_cntrbf(self, imu=None, ang=None, LTE=False, dlam=0.5, title=None, cmap='binary', **kwargs):
+    def plot_cntrbf_map(self, line=None, lam0=None, dlam=None, xmin=None, xmax=None,
+                        imu=None, ang=None, title=None, cmap='binary', **kwargs):
+        """Map the contribution function over wavelength and log tau_500, divided by
+        the continuum at each wavelength, so that a column integrates to the depth
+        1 - F/F_cnt of the normalised spectrum (with ``depression_cntrbf=T``)."""
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         from .plotting_scripts import set_title
-        xx, slc = self.get_xx(dlam=dlam)
-        slc = slice(slc.start-self.ib, slc.stop-self.ib)
+        slc = self.get_slice(line=line, dlam=dlam, lam0=lam0, xmin=xmin, xmax=xmax)
+        lam = self.lam[slc]
+        ltau, cf = self.get_cntrbf(slc=slc, imu=imu, ang=ang, gmean=True)
+        cnt = np.asarray(self._component(ang, imu, False, True, None)[0])[slc]
 
-        ltau, cf = self.get_cntrbf(imu=imu, ang=ang, LTE=LTE, mean=True, fslice=slc)
-
-        self.set_xaxis(xx, dlam=dlam)
+        plt.xlabel(r'$\lambda$ [Å]')
         plt.ylabel(r'log$\tau_{500}$')
-        set_title(title, default='Contribution function of ' + self.title)
-
-        X, Y, Z = *np.meshgrid(xx, ltau), cf.T
-        return plt.pcolormesh(X, Y, Z, cmap=cmap, edgecolors='face', **kwargs)
+        set_title(title, default=self._cntrbf_label())
+        return plt.pcolormesh(lam, ltau, (cf / cnt[:, None]).T, cmap=cmap,
+                              shading='nearest', **kwargs)
 
 
     #=================================================================

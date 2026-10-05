@@ -394,6 +394,19 @@ def compute_tau_scale (chi, zz, axis=-1):
     return tau
 
 #=====================================================================
+def optical_depth_from_top(chi, path, axis=-1):
+    """Trapezoidal optical depth along ``path`` (increasing outwards), zero at the
+    outermost point, as the formal solver integrates it. ``compute_tau_scale``
+    instead extrapolates a finite depth above the mesh, which suits a continuum
+    reference scale but not a strong line whose opacity is still large at the top."""
+    #-----------------------------------------------------------------
+    chi = np.moveaxis(np.asarray(chi), axis, -1)
+    dtau = 0.5*(chi[..., 1:] + chi[..., :-1]) * np.diff(path)
+    tau = np.zeros_like(chi)
+    tau[..., :-1] = np.cumsum(dtau[..., ::-1], axis=-1)[..., ::-1]
+    return np.moveaxis(tau, -1, axis)
+
+#=====================================================================
 def shift_interp(signal1, signal2, dx):
     #-----------------------------------------------------------------
     conv = np.convolve(signal1, signal2[::-1], mode='same')
