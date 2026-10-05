@@ -17,10 +17,15 @@ export TIMINGS=$CAMPAIGN/logs/timings_vmic_$SLURM_JOB_ID.txt
 CLAIMS=$CAMPAIGN/logs/claims_vmic
 mkdir -p "$CLAIMS"
 cd "$WORK"
-[ -n "$REGEN" ] && python3 $CAMPAIGN/jobs/make_nml.py vmic_grid
+# one array element regenerates the list, the others wait for it; each reads a private copy
+if [ -n "$REGEN" ]; then
+  if [ "${SLURM_ARRAY_TASK_ID:-0}" = 0 ]; then python3 $CAMPAIGN/jobs/make_nml.py vmic_grid; else sleep 120; fi
+fi
+LIST=$(mktemp) && cp "$WORK/b5/tasks_vmic.txt" $LIST
 while read -r nml; do
   [ -z "$nml" ] && continue
   grep -q 'OpenMULTI3D terminated' "$CAMPAIGN/logs/$(echo ${nml%.nml} | tr / _).log" 2>/dev/null && continue
   mkdir "$CLAIMS/$(echo ${nml%.nml} | tr / _)" 2>/dev/null || continue
   run "$nml" "$SLURM_CPUS_PER_TASK"
-done < "$WORK/b5/tasks_vmic.txt"
+done < $LIST
+rm -f $LIST
