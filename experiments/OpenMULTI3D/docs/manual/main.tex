@@ -315,6 +315,31 @@ Console output shows the iteration table (Sec.~\ref{sec:Time}). Follow the conve
 
 The output pass is configured in \fort{&rt_output_params} (angles, solver) and \fort{&spectrum_params} (wavelengths). Without \fort{&spectrum_params}, the spectrum is evaluated on the wavelength grid of the model atom. To synthesise a continuous window with the line list, uncomment the last two lines of the example above. The atom is then in NLTE and every line-list transition is in LTE. A window with an explicit grid lists wavelengths (\fort{daa}, \fort{nnu} or constant sampling resolving power \fort{R_sampling}, the grid step being $\lambda/R_\mathrm{sampling}$) and, for several windows, a \fort{window_file}.
 
+\subsection{Two-stage NLTE synthesis}\label{sec:twostage}
+
+Solving the statistical equilibrium needs only the atom's own transitions and a background. A spectrum over a wide window needs the full line list. The two are done in separate runs.
+
+\paragraph{Stage 1: departures.} A run with \fort{convlim>0}, one or several atoms, \fort{absmet_file} (Sec.~\ref{sec:absmet}) and no \fort{&spectrum_params}. Each depth patch writes its departure coefficients to \File{save/pop\_<atom>\_*.bin} when it stops iterating, \emph{before} the output pass. A job whose time limit ends during the output pass has therefore still produced usable departures, but one that ends during the iterations has produced none for the patches still iterating. Whether a run is usable can be read from \File{save/pop\_<atom>\_meta.txt}: it needs one row per row of \File{save/atmos\_meta.txt}. Departures of several atoms from different runs on the same atmosphere are combined by one folder holding \File{params.nml}, \File{atmos\_mesh.txt} and \File{save/} of one run, plus the \File{save/pop\_<atom>\_*} files of the others.
+
+\paragraph{Stage 2: spectrum.} A second run reads that folder as its atmosphere:
+
+\begin{minted}{Fortran}
+&atmos_params        atmos_format='save' atmos_file='data/stage1_run' read_departures=T /
+&atom_params         atom_file='...' disable_bb=T exclude_from_line_list=F /
+&rt_iteration_params maxiter=0 /
+&rt_output_params    maxiter=3 /
+&linelist_params     linelist_file='...' /
+&spectrum_params     window_file='...' R_sampling=2e5 /
+\end{minted}
+
+The saved atmosphere is frozen: temperature, electron density, density and microturbulence come from the folder, and \fort{vmic} in the namelist is not applied. \fort{disable_bb=T} keeps the atom's levels and continua but removes its own bound-bound transitions. \fort{exclude_from_line_list=F} keeps the atom's species in the line list, so that each of their lines is computed with the departure coefficients of its levels.
+
+\paragraph{Level matching.} The line list's \fort{i j} columns are not used. Each line's lower level is the \emph{nearest} atom level to $100\,\mathrm{stage}+E_\mathrm{low}/\si{\electronvolt}$, and the upper level is the nearest to that value plus $h\nu$ (\fort{find\_closest} in \File{HOP/linelist\_mod.f90}); the stage is part of the key, so levels of different ions cannot match. The match has no tolerance: a line whose level the atom lacks takes the departure of the nearest level, which may be several tenths of an eV away. Levels grouped into super-levels share one coefficient. Check the match before trusting a spectrum, for example with the fraction of strong lines within 0.01, 0.05 and \SI{0.2}{\electronvolt}. Two model atoms illustrate how the content varies: \fort{fe607a} has Fe\,\textsc{ii} super-levels without bound-bound transitions, and \fort{mg86e} has only the Mg\,\textsc{ii} ground level.
+
+\paragraph{The LTE partner.} An NLTE run writes a second spectrum, the LTE set (\py{crop(LTE=True)}), computed with $b=1$ for the atom. With the default \fort{exclude_from_line_list=T} the line list has no lines of the atom's element, and the LTE set contains the element only through the atom's own transitions. With the stage-2 settings above the LTE set contains all line-list lines of the species, so it is the matching LTE spectrum on the same mesh, line list and wavelengths. Its equivalent widths should reproduce a plain LTE run on the same line list to within about 1\,m{\AA}, which is a useful first acceptance test of a stage-2 setup. In 3D runs with \fort{sample_linelist=T} the LTE set was found to lack the NLTE species' lines (solar Mg\,\textsc{i}~5711: 2.7\,m{\AA} LTE against 106\,m{\AA} NLTE), so compare the equivalent widths of both sets before using the LTE partner there.
+
+\paragraph{Background consistency.} Both stages should use the same background: the same \fort{absmet_file}, a composition matching the model, and the same microturbulence. Run stage 1 on the absmet table nearest to the model's [Fe/H]; a solar table on a metal-poor model changed the Fe\,\textsc{i} corrections by 0.1--0.2\,dex.
+
 \subsection{Saving time and memory}
 
 \begin{itemize}
@@ -362,6 +387,15 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \input{tabs/opac_table_params}
 
+\paragraph{The absmet table.}\label{sec:absmet} \fort{absmet_file} names a MARCS/Turbospectrum metal-opacity table (unformatted sequential, read by \File{HOP/osmet\_mod.f90}): two text records with the species list, the microturbulence (\SI{1}{\km\per\s}), the grids in $\log P_6$ (18 nodes) and $T$ (17 nodes, \SIrange{500}{30000}{K}), the abundance record, and then one record per wavenumber with $\log_{10}\kappa$ per gram, at $R\approx 20000$ from \SI{910}{\AA} to \SI{200}{\micro\meter}. The opacity is interpolated bilinearly in ($\log P_6$, $T$) and linearly in frequency, and multiplied by the density. At most \texttt{mnu} (154000) frequencies are read.
+
+\begin{itemize}
+    \item \emph{Byte order.} The reader tries the native order and, if any of the four header records fails, reopens the file big-endian. The solar table \File{absmet} is little-endian; the metal-poor \File{m-1.00a+0.40\dots}, \File{m-2.00\dots} and \File{m-3.00\dots} tables are big-endian.
+    \item \emph{Composition.} A table has one fixed composition and carries no metallicity scaling. A run at another [Fe/H] with the solar table sees solar line blanketing. At $[\mathrm{Fe/H}]=-3$ this blankets the ultraviolet about $10^3$ times too strongly and made the Fe\,\textsc{i} NLTE corrections about 0.2\,dex too small. Choose the table nearest to the run's [Fe/H]; below $-3$ there is none, and the $-3$ table still over-blankets by about a factor of 10.
+    \item \emph{Use.} \fort{&rt_iteration_params\%include\_absmet} defaults to \fort{T}, so every NLTE iteration pass adds the table as LTE background; \fort{&rt_output_params\%include\_absmet} defaults to \fort{F} and the output pass takes its metal lines from the line list instead (table below). Without \fort{absmet_file} the iteration pass has no metal-line background.
+    \item \emph{Double counting.} The table is a sum over all species and cannot omit one. The lines of an NLTE atom's element are therefore in the background and in the atom's own transitions. Set \fort{include_absmet=F} in the iteration pass, and put a detailed line list into it (\fort{include_linelist=T}, with the atom's species excluded, which is the default), to avoid this. The line list costs 3--5 times more for Fe and about 80 times more for Mg and O in the iteration; a matched table costs nothing extra and agrees with the line list to about 0.006\,dex in the abundance correction at $R=20000$.
+\end{itemize}
+
 \input{tabs/rt_params}
 
 Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes. \fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
@@ -381,6 +415,8 @@ The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and 
 The format is chosen by \fort{atmos_format} (case-insensitive), or, if it is \fort{'unknown'}, from the file name.
 
 \input{tabs/atmos_formats}
+
+\paragraph{Microturbulence and density by format.} \fort{&atmos_params\%vmic} is applied only by the 1D readers. For \fort{marcs} the default $-1$ keeps the value from the file header and a value $\geq 0$ replaces it. \fort{text}, \fort{multi1d} and \fort{siu\_bin} read the microturbulence from the file (\fort{text}: column \texttt{vturb}) unless a value $\geq 0$ is set. The 3D readers (\fort{stagger}, \fort{stagger2}, \fort{multi}, \fort{m3dis}, \fort{co5bold}) supply none, so it is 0 and \fort{vmic} has no effect. A \fort{save} atmosphere takes temperature, electron density, density and microturbulence from the earlier run and ignores \fort{vmic}. \fort{multi1d} switches \fort{use_ne} on and \fort{use_rho} off, so its density comes from the equation of state and not from the file. The \fort{stagger2} reader reads the \File{mesh.*} file that belongs to the snapshot file. The microturbulence convention of an average atmosphere (for example rms or rms$/\sqrt{3}$) is a property of the file, not of the reader, and must be known when departures computed on different atmosphere sources are compared.
 
 The 1D text format has the model name in the first line, the number of depth points (optionally followed by [Fe/H]) in the second, and a row per depth point:
 
@@ -497,6 +533,12 @@ All files of a run are in \File{<datadir>/<name>/}. Use \Code{tumult.read} to ac
     \item \File{save/pop\_<atom>\_*.bin}: LTE populations and departure coefficients for each level.
     \item \File{save/flux\_*.bin}, \File{save/ie\_*.bin}, \File{save/out\_lam.bin}: flux, intensities and the output wavelengths.
 \end{itemize}
+
+\paragraph{Window and set files.} \fort{&spectrum_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches. \fort{&output_params\%set_file} lists the output sets, one row per set and element, as ``\texttt{set kind element da}'': \texttt{kind} is \texttt{continuum}, \texttt{lte} or \texttt{nlte}, \texttt{element} and \texttt{da} (the abundance offset in dex) are \texttt{-} for the unperturbed set. A set that perturbs several elements has one row per element with the same set number. Set numbers start at 1 and have to be contiguous, and a file with an abundance ladder needs exactly one unperturbed main set. The file has to be outside the run directory. The run writes the resulting layout to \File{sets.txt} in the same format, which \Code{tumult.read} uses to find the components (below).
+
+\paragraph{Saved populations.} \File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists the level energies in eV plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:twostage}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows.
+
+\paragraph{Layout of the \File{save/} files.} Every array is written per patch as raw single-precision Fortran-order stream data in \File{<label>\_XXXYYYZZZ.bin}, where \texttt{XXX}, \texttt{YYY} and \texttt{ZZZ} are the three-digit patch indices. The first row of the matching \File{<label>\_meta.txt} starts with an asterisk; each further row gives the file name, the bits per element and the array shape, and rows are appended as patches finish. The atmosphere (\File{atmos}) and the populations are split in $z$ into slabs, so a 3D run has one file per slab; \py{run.atmos.atmos_cuts} holds the cumulative number of depth points at the end of each slab. With \fort{rt_to_file}, the radiation field and the exit planes that frozen columns hand on are also written there (\File{Jnu}, \File{Jnu\_out} and \File{exit\_plane}, without meta rows unless \fort{save_Jnu=T}). Use \py{run.read_patch_save(label, zdim=...)} to assemble such arrays rather than reading the files directly.
 
 The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (two for an LTE run), or the abundance sets of a \fort{set_file}. Optional fields (\fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu}, \fort{save_rates}, \fort{save_cntrbf}) are large; enable them only when needed.
 
@@ -645,6 +687,8 @@ The options of \Code{crop} are as follows.
 \end{itemize}
 
 Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE populations), \py{run.get_depart(level, atom)} (departure coefficient against $\log\tau_{500}$) and \py{run.plot_depart(...)}, the Grotrian diagram \py{run.atoms[0].plot_grotrian()} and the atmosphere structure through \py{run.atmos} (slices, horizontal means, histograms; \File{tumult/atmos.py}). Contribution functions, per-ray profiles (\py{run.plot_resolved}) and centre-to-limb plots need the corresponding \fort{save_*} output.
+
+\paragraph{Sets, modes and departures.} \py{run.sets} is a list ordered by set number (so the index is the set number minus one) and includes the continuum; each entry is a dictionary with \py{kind} (\py{'continuum'}, \py{'lte'} or \py{'nlte'}) and \py{offsets} (element $\to$ dex). It is read from \File{sets.txt}; runs without that file fall back to a guess from the number of saved components, and \py{run.mode} is \py{"NLTE"} when the main set is an \texttt{nlte} set. \py{run.flux}, \py{run.flux_lte} and \py{run.flux_cnt} are the main, LTE and continuum components. \py{Spectrum.xdata} and \py{Spectrum.ydata} are the astropy quantities that \py{crop} returns for wavelength and flux, and \py{Spectrum.data} stacks them as a plain array. \py{run.get_depart(ilvl, iatom)} returns $(\log\tau_{500}, b)$; \py{iatom} defaults to 0, the first atom of the run, also when the run has several atoms, so pass the atom's id (for example \py{'O'}) in multi-atom runs.
 
 \subsection{Launching runs}
 
