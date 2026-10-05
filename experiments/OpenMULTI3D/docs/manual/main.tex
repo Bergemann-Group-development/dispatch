@@ -398,7 +398,7 @@ Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_en
 
 \input{tabs/rt_params}
 
-Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes. \fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. The solvers are described in Sec.~\ref{sec:numerics}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
+Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes. \fort{maxiter} counts the NLTE iterations in the first group and the extra iterations at fixed populations (scattering iterations) in the second. Each of these iterations is one more formal solution over the whole output wavelength grid, so the output pass costs about \fort{maxiter}$+1$ solutions; 0 gives only the final solution. The solvers are described in Sec.~\ref{sec:numerics}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
 
 \input{tabs/output_params}
 

@@ -50,6 +50,14 @@ from the wishlist only.
   code). None of these contain labels for the 2026 spectra.
 - From the wishlist, unconfirmed here: the FITS columns are big-endian and `mg_gspphot` is an absolute magnitude.
 
+## Code history worth knowing
+
+- `prune_top` (an electron-pressure cut in the Fortran 3D reader, 22e913959) was removed as
+  "a test, no longer used", not for a fault. dispatch.x's 3D readers have no depth limit,
+  and `nz` resamples the whole box. The depth crop is a data-side step, `jobs/crop3d.py`.
+- Two native HOP tests failed before the campaign: a stale `hop_opacity` golden and no host
+  caller for `hop_holtsmark`.
+
 ## Open items
 
 See `reports/2026-10-05_agent_wishlist.md` for the ranked list of tooling and documentation
