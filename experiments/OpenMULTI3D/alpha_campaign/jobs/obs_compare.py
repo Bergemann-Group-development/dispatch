@@ -2,6 +2,7 @@
 
     python obs_compare.py extract OUT.pkl            # cluster: line windows of the pilot runs
     python obs_compare.py compare WINDOWS.pkl OBS_DIR OUT.csv [TEFF LOGG MH]   # anywhere
+    python obs_compare.py plot OUT.csv FIG.png                    # median dA per line
 
 extract reads, per pilot model, the normalised flux within +-WIN A of every LINES_SED line
 of these spectra (pilot_compare.py has the same runs):
@@ -207,11 +208,42 @@ def summary(df):
         print('  [Mg/Fe]   ', (mg.mean() - fe.mean()).round(3).to_dict())
 
 
+def plot(csv, png, min_stars=50):
+    """Median dA over the stars per line and spectrum, one panel per model with at least
+    min_stars stars; the error bars are the half interquartile ranges."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    df = pd.read_csv(csv)
+    n = df.groupby('model').OBJECT.nunique()
+    models = [m for m in n.index if n[m] >= min_stars]
+    kinds = [k for k in KINDS if f'dA_{k}' in df]
+    fig, axs = plt.subplots(len(models), 1, figsize=(10, 2.6 * len(models)), sharex=True,
+                            squeeze=False)
+    for ax, model in zip(axs[:, 0], models):
+        g = df[df.model == model].groupby(['element', 'line'], sort=False)
+        labels = [f'{e} {l:.1f}' for e, l in g.groups]
+        x = np.arange(len(labels))
+        for i, k in enumerate(kinds):
+            q = g[f'dA_{k}'].quantile([0.25, 0.5, 0.75]).unstack()
+            ax.errorbar(x + (i - len(kinds) / 2) * 0.1, q[0.5], yerr=(q[0.75] - q[0.25]) / 2,
+                        fmt='o', ms=3, lw=0.8, label=k)
+        ax.axhline(0, color='grey', lw=0.5)
+        ax.set_ylabel('dA (dex)')
+        ax.set_title(f'{model}: {n[model]} stars', fontsize=9)
+    ax.set_xticks(x, labels, rotation=60, fontsize=8)
+    axs[0, 0].legend(ncol=len(kinds), fontsize=7)
+    fig.tight_layout()
+    fig.savefig(png, dpi=110)
+
+
 if __name__ == '__main__':
     if sys.argv[1:2] == ['extract'] and len(sys.argv) == 3:
         extract(sys.argv[2])
     elif sys.argv[1:2] == ['compare'] and len(sys.argv) in (5, 8):
         tol = tuple(float(v) for v in sys.argv[5:8]) or (150, 0.3, 0.3)
         compare(sys.argv[2], sys.argv[3], sys.argv[4], tol)
+    elif sys.argv[1:2] == ['plot'] and len(sys.argv) == 4:
+        plot(sys.argv[2], sys.argv[3])
     else:
         sys.exit(__doc__)
