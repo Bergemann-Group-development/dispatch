@@ -51,7 +51,9 @@ of make_nml.py vmic_grid (b5/vmic/<model>/{marcs,av3d}_v<vmic>): dA_3d_<kind>_v<
 A(3D) - A(1D at that vmic) per line.  Per snapshot and 1D kind it also fits the vmic at
 which the Fe I lines give one abundance (the minimum over vmic, interpolated in steps of
 0.05 km/s, of the spread of dA over the Fe I lines, which removes the trend with line
-strength) and records Delta_3D there (columns vfit_<kind>, dA_3d_<kind>_vfit).
+strength) and records Delta_3D there (columns vfit_<kind>, dA_3d_<kind>_vfit), and at the fixed MARCS
+convention of 1 km/s (log g >= 3.5) or 2 km/s (dA_3d_<kind>_conv).  Training uses the
+fitted-vmic value with vfit as a label; the convention value is kept alongside.
 """
 import os
 import re
@@ -382,6 +384,10 @@ def one_w(args):
             for lam0 in rows:
                 rows[lam0][f'vfit_{kind}'] = vfit
                 rows[lam0][f'dA_3d_{kind}_vfit'] = float(np.interp(vfit, grid, da[lam0]))
+                # the fixed MARCS convention, 1 km/s at log g >= 3.5 and 2 km/s below
+                vconv = 1.0 if float(logg) >= 3.5 else 2.0
+                rows[lam0][f'dA_3d_{kind}_conv'] = (float(np.interp(vconv, grid, da[lam0]))
+                                                    if grid[0] <= vconv <= grid[-1] else np.nan)
         return list(rows.values())
     except Exception as exc:
         print(f'skip {run}: {type(exc).__name__}: {exc}', flush=True)
