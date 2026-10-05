@@ -5,7 +5,8 @@ the MARCS twin, as abundance corrections.
     python pilot_compare.py OUT.csv
 
 3D runs (runs/p1sed/<model>/): <snap>_3dmg (true 3D Mg departures) or <snap>_3dmgfe (Mg
-and Fe), <snap>_map4mg / _map4mgfe (the own <3D> departures mapped in log tau_500).
+and Fe), with _3dmg4 / _3dmg4fe preferred (the metal-poor models' 3D Mg rerun with the
+phase-4 setup), <snap>_map4mg / _map4mgfe (the own <3D> departures mapped in log tau_500).
 In 1D every SED's LTE spectrum (crop(LTE=True)) is its own LTE partner.  The 3D SEDs'
 LTE spectra lack the lines of the NLTE species (Mg I 5711: 2.7 against 106 mA in the Sun,
 reports/2026-10-05_phase5.md, section 5), so 3D LTE comes from the plain 3D LTE run of
@@ -59,12 +60,13 @@ def main(out):
         one = {k: ews(f, LINES) for k, f in (('av', RUNS / f'b4/sed/av3d_{model}'), ('tw', tw))
                if done(f)}
         for snap in sorted({p.name.split('_')[0] for p in top.glob('s*_3dmg*')}):
-            true = top / f'{snap}_3dmgfe'
-            fe = done(true)
-            if not fe:
-                true = top / f'{snap}_3dmg'
-            if not done(true):
+            # the phase-4-setup 3D Mg reruns (_3dmg4*) take precedence
+            found = [f for f in (top / f'{snap}_{k}' for k in ('3dmg4fe', '3dmgfe', '3dmg4', '3dmg'))
+                     if done(f)]
+            if not found:
                 continue
+            true = found[0]
+            fe = true.name.endswith('fe')
             lines = [l for l in LINES if fe or l[0] == 'Mg']
             mapped = top / f'{snap}_map4mgfe' if fe else top / f'{snap}_map4mg'
             t = ews(true, lines)

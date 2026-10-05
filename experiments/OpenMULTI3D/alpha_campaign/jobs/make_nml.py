@@ -30,6 +30,8 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
     python3 make_nml.py batch2_dep4 [FEH]    # batch-2 MARCS departures at [Fe/H] <= FEH (-1) with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
+    python3 make_nml.py crop_test            # cropped-vs-uncropped 3D Fe agreement test on a 6x6 cut, into ctest/
+    python3 make_nml.py crop_test_dep        # its stage-2 departure folders, once the runs have finished
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
     python3 make_nml.py sed_validate         # cost/accuracy test of the 3D SED output-pass settings, into val/
 """
@@ -530,10 +532,15 @@ def pilot_sed(rt_maxiter=3):
             t1.append(str(nml))
         av_new = DATADIR / f'b4/av3d/{model}'
         for run in sorted((DATADIR / f'p1/{model}').glob('s*_mg')):
+            snap = run.name.split('_')[0]
+            # the phase-4-setup rerun (pilot_mg4) replaces the first 3D Mg run once
+            # solved; its SEDs are named _3dmg4 / _3dmg4fe
+            mg = '3dmg'
+            if solved(run.with_name(f'{snap}_mg4'), 'Mg'):
+                run, mg = run.with_name(f'{snap}_mg4'), '3dmg4'
             if not solved(run, 'Mg'):
                 continue                                   # still iterating
-            snap = run.name.split('_')[0]
-            nml = Path('p1sed') / model / f'{snap}_3dmg.nml'
+            nml = Path('p1sed') / model / f'{snap}_{mg}.nml'
             nml.write_text(sed3d(run, [PILOT_MG['file']], feh, comp))
             t3.append((0, rank[snap], str(nml)))
             if solved(av_new / 'mg', 'Mg'):
@@ -547,13 +554,13 @@ def pilot_sed(rt_maxiter=3):
             if solved(fe, 'Fe'):
                 if fe == fe4:
                     # the cropped Fe departures, mapped in height onto the Mg run's mesh
-                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}_fe4'
+                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}{mg[4:] and "_mg4"}_fe4'
                     combine_departures(dep, run, run)
                     maps.append(f'{fe4} {run} {dep} Fe')
                 else:
-                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
+                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}{mg[4:] and "_mg4"}'
                     combine_departures(dep, run, fe)
-                nml = Path('p1sed') / model / f'{snap}_3dmgfe.nml'
+                nml = Path('p1sed') / model / f'{snap}_{mg}fe.nml'
                 nml.write_text(sed3d(dep, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
                 t3.append((0, rank[snap], str(nml)))
                 if solved(av_new / 'mg', 'Mg') and solved(av_new / 'fe', 'Fe'):
@@ -1052,6 +1059,52 @@ def pilot_mg4(models=('t60g40m20', 't45g25m20')):
     print(f'{len(tasks)} 3D Mg namelists in p1/tasks_3d_mg4.txt')
 
 
+def crop_test(model='t60g40m20', tag='00091', n=6):
+    """The crop agreement test (reports/2026-10-06_phase6.md): the pilot's cropped 3D Fe
+    run (p1/<model>/s<tag>_fe4.nml) and 3D Mg run (_mg4) on an n x n horizontal
+    resample, departures only, populations saved every 5 iterations; Fe also on the
+    uncropped snapshot.  Stage 2 then takes the Mg departures with either the uncropped
+    Fe departures (sed_full) or the cropped ones mapped in height onto the full mesh
+    (sed_crop), as the pilot's Mg+Fe SEDs do.  sed_full_head is sed_full again, for a
+    build that leaves the atoms' lines to the line list (7ca07a472), and lte the plain 3D
+    LTE run (s<tag>_lte1) on the same cut, against which the SEDs' LTE spectra are checked.  Writes
+    ctest/<model>_s<tag>/*.nml; crop_test_dep then links the departure folders."""
+    src, out = Path('p1') / model, Path('ctest') / f'{model}_s{tag}'
+    out.mkdir(parents=True, exist_ok=True)
+    _, _, _, feh, alpha = next(p for p in PILOT if Path(p[0]).name.replace('_new', '') == model)
+
+    def cut(text):
+        text = re.sub(r'nx=\d+ ny=\d+', f'nx={n} ny={n}', text)
+        text = text.replace(group('output_params', rt_to_file=True),
+                            group('output_params', rt_to_file=True, save_every=5))
+        return with_rt_maxiter(text, 0)
+
+    fe = cut((src / f's{tag}_fe4.nml').read_text())
+    full = fe.replace("atmos_file='crop/", "atmos_file='stagger2/")
+    assert full != fe and 'save_every' in fe
+    (out / 'fe_crop.nml').write_text(fe)
+    (out / 'fe_full.nml').write_text(full)
+    (out / 'mg_full.nml').write_text(cut((src / f's{tag}_mg4.nml').read_text()))
+    lte = re.sub(r'nx=\d+ ny=\d+', f'nx={n} ny={n}', (src / f's{tag}_lte1.nml').read_text())
+    (out / 'lte.nml').write_text(lte)                 # the plain 3D LTE partner
+    comp = dict(alpha_enhancement=alpha) if alpha else None
+    atoms = [PILOT_MG['file'], PILOT_FE['file']]
+    for name in ('full', 'crop'):
+        text = sed_namelist_3d(DATADIR / out / f'dep_{name}', atoms, feh, comp)
+        (out / f'sed_{name}.nml').write_text(
+            text.replace('maxiter=3 save_linelist', 'maxiter=1 save_linelist'))
+    (out / 'sed_full_head.nml').write_text((out / 'sed_full.nml').read_text())
+    print(f'crop test namelists in {out}')
+
+
+def crop_test_dep(model='t60g40m20', tag='00091'):
+    """Departure folders of the crop test's stage 2: dep_full holds the Mg and the
+    uncropped Fe run, dep_crop the Mg run only (map_departures.py adds the cropped Fe)."""
+    runs = DATADIR / 'ctest' / f'{model}_s{tag}'
+    combine_departures(runs / 'dep_full', runs / 'mg_full', runs / 'fe_full')
+    combine_departures(runs / 'dep_crop', runs / 'mg_full', runs / 'mg_full')
+
+
 def batch2_dep4(feh_max=-1.0):
     """Batch 2's MARCS departures (A) again with the phase-4 setup, for every domain
     model at [Fe/H] <= feh_max, where the solar absmet table and the atoms' own
@@ -1114,6 +1167,10 @@ if __name__ == '__main__':
         pilot_fe4()
     elif sys.argv[1:2] == ['batch2_dep4']:          # batch2_dep4 [FEH_MAX]
         batch2_dep4(float(sys.argv[2]) if len(sys.argv) > 2 else -1.0)
+    elif sys.argv[1:2] == ['crop_test']:
+        crop_test()
+    elif sys.argv[1:2] == ['crop_test_dep']:
+        crop_test_dep()
     elif sys.argv[1:2] == ['b6_sed']:
         b6_sed(sys.argv[2])
     elif sys.argv[1:2] == ['vmic_grid']:
