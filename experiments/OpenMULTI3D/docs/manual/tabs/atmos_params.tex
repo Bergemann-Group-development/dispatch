@@ -13,6 +13,7 @@
 \fort{dims} & Number of vertical subdomains (slabs) the atmosphere is divided into (Sec.~\ref{sec:code}).\\
 \fort{amr} & How the z-slabs are graded: \fort{'P'} (default) equal steps of accumulated $|\Delta\log P_\mathrm{e}|$, \fort{'T'} accumulated $|\Delta\ln T|$, refined towards the surface, \fort{'Z'} equal index steps, \fort{''} no grading. Grading raises \fort{dims} to at least 8.\\
 {\fort{pchip_interpolation},\\\fort{log_interpolation}} & Interpolation of the model onto the mesh: PCHIP instead of linear in the vertical direction, and interpolation of $\ln T$, $\ln\rho$ and $\ln P_\mathrm{e}$ instead of the linear quantities (default \fort{T} for both).\\
+\fort{prune_top}, \fort{prune_tol} & 3D models: before the mesh is laid out, lower the box top to the highest plane in which at most a fraction \fort{prune_tol} (default 0) of the cells have $\ln P_\mathrm{e}$ at or below the topmost plane's mean (default \fort{F}). Needs \fort{use_ne=T}.\\
 \fort{read_departures} & Read departure coefficients stored with a saved atmosphere (format \fort{'save'}).\\
 \bottomrule
 \end{longtblr}

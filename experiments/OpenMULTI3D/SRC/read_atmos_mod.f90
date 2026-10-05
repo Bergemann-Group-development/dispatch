@@ -7,7 +7,7 @@ MODULE read_atmos_mod
   USE const_mod
   USE op_math_mod, only: linspace
   USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted
-  USE m3d_patch_mod, only: composition, use_ne, use_rho, make_eos
+  USE m3d_patch_mod, only: composition, use_ne, use_rho, make_eos, prune_top, prune_tol
   USE rt_params_mod, only: pivot_z, ray_offset
   USE ray_mod, only: one_dimensional
   USE composition_mod, only: composition_type
@@ -36,6 +36,7 @@ MODULE read_atmos_mod
     procedure :: release    => release_input_atmos
     procedure :: scale_box
     procedure :: thick2thin
+    procedure :: prune_top_planes
     procedure :: setup_amr_mesh
   end type input_atmos_t
 
@@ -806,6 +807,67 @@ contains
     self%sub_size = sub_edge(2:nsub+1) - sub_edge(1:nsub)
     self%sub_pos  = sub_edge(1:nsub) + 0.5*self%sub_size
   END SUBROUTINE setup_amr_mesh
+
+  !===============================================================================
+  !> Lower the top of the box to the highest plane whose columns all carry an
+  !> electron pressure above min_k <ln Pe>(k) -- the topmost plane's own
+  !> horizontal mean. Above that height the spread of ln Pe across a plane grows
+  !> much faster than the mean falls, so a large fraction of the columns sit
+  !> orders of magnitude below it; those cells have no counterpart in any 1D
+  !> model and their statistical equilibrium is radiatively controlled with
+  !> essentially no collisional damping. prune_tol relaxes "all" to "all but this
+  !> fraction".
+  !>
+  !> This lowers self%nz, and must therefore run after thick2thin (which decides
+  !> which end is the top) but BEFORE scale_box, which takes the box height from
+  !> zz(nz). The snapshot arrays are left at their full length; only the box
+  !> shrinks, so the interpolation simply stops sampling the planes above it.
+  !===============================================================================
+  SUBROUTINE prune_top_planes (self)
+    class(input_atmos_t), intent(inout), target :: self
+    real(4), dimension(:,:,:), pointer, contiguous :: lpe
+    real(4) :: thr
+    integer :: k, ktop, nxy, nbad, nz
+    !-----------------------------------------------------------------------------
+    if (.not. prune_top) return
+    if (self%nx*self%ny <= 1) return
+    if (.not. use_ne) then
+      call console_warn (ch_atmos, 'prune_top needs use_ne=T; no planes removed')
+      return
+    endif
+    nz = self%nz - 2*self%gz
+    lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
+    nxy = self%nx * self%ny
+    ! thick2thin has already put the deepest plane at index 1, so the mean is
+    ! smallest at the top and this is just <ln Pe> of the outermost plane
+    thr = huge(1.0)
+    do k=1, nz
+      thr = min(thr, sum(lpe(:,:,k)) / nxy)
+    end do
+
+    ktop = nz
+    do k=nz, 1, -1
+      nbad = count(lpe(:,:,k) <= thr)
+      if (nbad <= nint(prune_tol*nxy)) then
+        ktop = k
+        exit
+      endif
+    end do
+
+    if (ktop < nz) then
+      if (console_on(ch_atmos, 1)) then
+        write(console_unit,'(A,I0,A,I0,A,F6.2,A)') &
+          'prune_top: dropping ', nz-ktop, ' of ', nz, ' planes (', &
+          100.0*(nz-ktop)/nz, '% of the box height)'
+        write(console_unit,'(A,ES10.3,A,ES10.3)') &
+          '           min ln Pe at the new top ', minval(lpe(:,:,ktop)), &
+          ' vs ', minval(lpe(:,:,nz))
+      end if
+      self%nz = ktop + 2*self%gz
+    else
+      if (console_on(ch_atmos, 1)) write(console_unit,'(a)') 'prune_top: no planes removed'
+    endif
+  END SUBROUTINE prune_top_planes
 
   !===============================================================================
   !=============================================================================
