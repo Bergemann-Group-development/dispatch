@@ -578,7 +578,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
     if len(modes) != 1:
         raise ValueError("A synthesis batch must share one LTE/NLTE mode.")
     nlte = modes.pop() == "NLTE"
-    R = config.resolving_power
+    R = config.R_sampling
     settings_list = []
     layer = preset_settings(request, report=report)
     for values in values_list:
@@ -901,7 +901,7 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
     # spectrum grid without supplying its bounds, which DISPATCH cannot construct.
     atom_grid = not request.windows and (values.get('atom_lines') or values.get('only_atom'))
     if not atom_grid:
-        settings.setdefault('spectrum_params', {}).setdefault('R_sampling', config.resolving_power)
+        settings.setdefault('spectrum_params', {}).setdefault('R_sampling', config.R_sampling)
     if settings.get('spectrum_params', {}).get('R_sampling', _DEFAULT_R) <= 0:
         raise ValueError('Resolving power must be positive.')
     windows = request.windows

@@ -15,7 +15,7 @@ from tumult.synthesis import (Atmosphere, AtmosphereGrid, ResolvedSynthRequest, 
 
 
 def _request(atmosphere, tmp_path, windows=(), star=(5750, 4.5, 0, 1), **config):
-    config = SynthConfig(**{'root': tmp_path, 'cache': 'out', 'resolving_power': 50000,
+    config = SynthConfig(**{'root': tmp_path, 'cache': 'out', 'R_sampling': 50000,
                             **config})
     return SynthRequest(config=config, atmosphere=atmosphere, star=star, windows=windows)
 
@@ -298,14 +298,14 @@ def test_fit_synthesises_each_trial_point_as_the_request_over_the_span(tmp_path,
 
 
 @pytest.mark.parametrize('with_linelist', [False, True])
-def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
+def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
         tmp_path, with_linelist):
     from tumult.synthesis import snapshot
 
     atom = tmp_path / 'atom.ba'
     line_grid = tmp_path / 'line_grid.txt'
     request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
-                       star=(4548, 3.964, 0), resolving_power=1e6, linelist_skirt=0)
+                       star=(4548, 3.964, 0), R_sampling=1e6, linelist_skirt=0)
     run_values = {'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)}
     resolved = workflows.resolve_request(request, run_values)

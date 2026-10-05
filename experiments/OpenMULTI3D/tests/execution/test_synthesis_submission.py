@@ -10,7 +10,7 @@ from tumult.synthesis import Atmosphere, SynthConfig, SynthesisResult, SynthRequ
 
 
 def _request(atmosphere, tmp_path, windows=(), star=(5750, 4.5, 0, 1), **config):
-    config = SynthConfig(**{'root': tmp_path, 'cache': 'out', 'resolving_power': 50000,
+    config = SynthConfig(**{'root': tmp_path, 'cache': 'out', 'R_sampling': 50000,
                             **config})
     return SynthRequest(config=config, atmosphere=atmosphere, star=star, windows=windows)
 

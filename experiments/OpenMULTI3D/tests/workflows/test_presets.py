@@ -59,7 +59,7 @@ def test_request_settings_and_expert_override_presets(tmp_path, user_dir):
     from tumult.synthesis.workflows import resolve_request
     (user_dir / "wide.nml").write_text(
         "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 dlam=50 /\n")
-    config = SynthConfig(root=tmp_path, resolving_power=50_000,
+    config = SynthConfig(root=tmp_path, R_sampling=50_000,
                          expert={"linelist_params": {"dlam": 20}})
     request = SynthRequest(config=config, atmosphere="a.mod", star=STAR,
                            windows=[(5000, 5010)], presets=["wide"])

@@ -28,7 +28,7 @@ CONVENTIONS = ("[X/Fe]", "A(X)")
 ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
 PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
-               "abund_file": "abundances", "absmet": "absmet", "R": "resolving_power",
+               "abund_file": "abundances", "absmet": "absmet", "R": "R_sampling",
                "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
                "max_threads": "threads", "expert_settings": "expert"}
@@ -58,7 +58,7 @@ class SynthConfig:
 
     ``linelist`` is the transition list every synthesis draws from (a file or folder),
     ``abundances`` the standard composition, ``absmet`` the background opacity table (a
-    file for every metallicity or a folder keyed by [Fe/H]). ``resolving_power`` sets the
+    file for every metallicity or a folder keyed by [Fe/H]). ``R_sampling`` sets the
     spectrum sampling, ``linelist_skirt`` how far outside a window a transition may still
     contribute when the line list is pruned per atmosphere (0 disables pruning),
     ``abundance_step`` the lattice every abundance ladder is placed on, ``vmic_step`` the
@@ -75,7 +75,7 @@ class SynthConfig:
     linelist: Path | None = None
     abundances: Path | None = None
     absmet: Path | None = None
-    resolving_power: float = 300_000.0
+    R_sampling: float = 300_000.0
     linelist_skirt: float = 5.0
     abundance_step: float = 0.25
     vmic_step: float = 0.5
@@ -90,14 +90,14 @@ class SynthConfig:
         set_("cache", Path(self.cache).expanduser())
         for name in ("linelist", "abundances", "absmet"):
             set_(name, _path(getattr(self, name)))
-        set_("resolving_power", float(self.resolving_power))
+        set_("R_sampling", float(self.R_sampling))
         set_("linelist_skirt", _aa(self.linelist_skirt))
         set_("abundance_step", float(self.abundance_step))
         set_("vmic_step", float(self.vmic_step))
         set_("expert", {str(k): dict(v) for k, v in dict(self.expert or {}).items()})
         set_("preferences", dict(self.preferences or {}))
-        if not self.resolving_power > 0:
-            raise ValueError("resolving_power must be positive.")
+        if not self.R_sampling > 0:
+            raise ValueError("R_sampling must be positive.")
         if self.linelist_skirt < 0:
             raise ValueError("linelist_skirt must not be negative.")
         if not (self.abundance_step > 0 and self.vmic_step > 0):
@@ -118,7 +118,7 @@ class SynthConfig:
         """The preference dictionary the execution layer reads."""
         prefs = {
             "dispatch_cwd": str(self.root), "synth_output_dir": str(self.cache),
-            "R": self.resolving_power, "linelist_skirt_aa": self.linelist_skirt,
+            "R": self.R_sampling, "linelist_skirt_aa": self.linelist_skirt,
             "abund_step": self.abundance_step, "vmic_step": self.vmic_step,
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
             "expert_settings": self.expert,

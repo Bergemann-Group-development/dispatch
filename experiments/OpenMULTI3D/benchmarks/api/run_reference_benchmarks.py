@@ -135,7 +135,7 @@ def inputs(args):
     from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig
     config = SynthConfig(root=ROOT, cache=args.cache, linelist=args.linelist,
                          abundances=args.abundances, absmet=args.absmet,
-                         resolving_power=args.resolving_power,
+                         R_sampling=args.R_sampling,
                          linelist_skirt=args.line_list_skirt,
                          abundance_step=args.abundance_step, threads=args.threads)
     stars = [(Star(*stellar), Atmosphere(path)) for stellar, path in REFERENCE_STARS]
@@ -302,7 +302,7 @@ def parser():
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--wavelength", type=float, nargs=2, default=(4000.0, 9000.0),
                    metavar=("BLUE_AA", "RED_AA"))
-    p.add_argument("--resolving-power", type=float, default=100_000.0)
+    p.add_argument("--R-sampling", type=float, default=100_000.0)
     p.add_argument("--line-list-skirt", type=float, default=5.0)
     p.add_argument("--abundance-step", type=float, default=0.25)
     p.add_argument("--correction-limit", type=float, default=1.0)

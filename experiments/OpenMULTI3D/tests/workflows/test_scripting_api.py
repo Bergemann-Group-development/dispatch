@@ -26,7 +26,7 @@ STAR = Star(5777.0, 4.44, 0.0, 1.0)
 
 @pytest.fixture
 def config(tmp_path):
-    return SynthConfig(root=tmp_path, cache="synth", resolving_power=50_000)
+    return SynthConfig(root=tmp_path, cache="synth", R_sampling=50_000)
 
 
 @pytest.fixture

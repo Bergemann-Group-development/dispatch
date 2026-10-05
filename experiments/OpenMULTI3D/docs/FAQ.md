@@ -33,7 +33,7 @@ and `sparams.ionbalance`. The worked examples are the functions of
 from tumult import abundance, departures, sparams, synthesis
 from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig, SynthRequest
 
-config = SynthConfig(root=".", cache="synth", resolving_power=100_000,
+config = SynthConfig(root=".", cache="synth", R_sampling=100_000,
                      linelist="input/linelists/sun_3000-9000.txt",
                      abundances="input/abund/abund_magg22",
                      absmet="input/absmet_files/absmet", threads=8)
@@ -192,7 +192,7 @@ from tumult import synthesis
 from tumult.linemask import parse_linemask_file
 from tumult.synthesis import AtmosphereGrid, Star, SynthConfig, SynthRequest
 
-config = SynthConfig(root=".", cache="synth", resolving_power=300_000,
+config = SynthConfig(root=".", cache="synth", R_sampling=300_000,
                      linelist="input/linelists/sun_3000-9000.txt",
                      abundances="input/abund/abund_magg22", linelist_skirt=5.0)
 mset = parse_linemask_file("input/linemasks/Mg/mg-lmask.txt")

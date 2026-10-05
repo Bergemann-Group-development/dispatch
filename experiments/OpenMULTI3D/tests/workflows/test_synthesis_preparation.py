@@ -27,7 +27,7 @@ def _request(tmp_path, **config):
 
 
 def test_same_settings_for_single_and_batched_variants(calls, tmp_path):
-    request = _request(tmp_path, resolving_power=100000., threads=1)
+    request = _request(tmp_path, R_sampling=100000., threads=1)
     rv = {'mode': 'NLTE', 'abundances': 'Fe=0.2000', 'relative_abundances': True,
           'atoms': ['Fe.atom']}
     synth.compute(request, rv, 5000., 5001.)
@@ -43,7 +43,7 @@ def test_batch_rejects_mixed_modes_and_negative_resolution(calls, tmp_path):
     with pytest.raises(ValueError, match='mode'):
         synth.compute_batch(request, [{'mode': 'LTE'}, {'mode': 'NLTE', 'atoms': ['a']}])
     with pytest.raises(ValueError, match='positive'):
-        _request(tmp_path, resolving_power=-1.)
+        _request(tmp_path, R_sampling=-1.)
     assert not calls
 
 

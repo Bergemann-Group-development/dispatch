@@ -349,7 +349,7 @@ from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 config = SynthConfig(root=".", cache="quickstart_synth",
                      linelist="input/linelists/master_line.txt",
                      abundances="input/abund/abund_magg22",
-                     resolving_power=200_000)
+                     R_sampling=200_000)
 marcs = Atmosphere("input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_"
                    "n+0.00_o+0.00_r+0.00_s+0.00.mod")
 request = SynthRequest(config=config, atmosphere=marcs,
