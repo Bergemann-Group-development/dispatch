@@ -12,6 +12,7 @@
 #SBATCH -J alpha_dep4
 #SBATCH --partition=four-wks
 #SBATCH --nodes=1
+#SBATCH --nodelist=mpia-slurm-node[81-90]
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G

@@ -5,6 +5,7 @@
 #SBATCH -J place_stars
 #SBATCH --partition=four-wks
 #SBATCH --nodes=1
+#SBATCH --nodelist=mpia-slurm-node[81-90]
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G

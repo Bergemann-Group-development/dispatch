@@ -18,3 +18,11 @@ run () {
 
 # variant NML TAG: copy WORK/NML to a sibling NAME_TAG.nml (its own output folder)
 variant () { cp "$WORK/$1" "$WORK/${1%.nml}_$2.nml"; echo "${1%.nml}_$2.nml"; }
+
+# The campaign may only use nodes 81-90 (booked); a job that lands elsewhere stops here.
+if [ -n "$SLURM_JOB_ID" ]; then
+  case $(hostname -s) in
+    mpia-slurm-node8[1-9]|mpia-slurm-node90) ;;
+    *) echo "$(hostname -s) is outside nodes 81-90; stopping"; exit 1 ;;
+  esac
+fi
