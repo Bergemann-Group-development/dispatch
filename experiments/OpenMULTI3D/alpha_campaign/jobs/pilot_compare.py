@@ -1,30 +1,46 @@
-"""The pilot's stage-2 SEDs per Mg line: 3D NLTE on the snapshot's own departures
-against 3D on the mapped <3D> departures, 3D LTE, and 1D NLTE/LTE on the <3D> average
-and the MARCS twin, as abundance-like differences from 3D NLTE.
+"""The pilot's stage-2 SEDs per line: 3D NLTE on the snapshot's own departures against
+3D LTE, 3D on the mapped <3D> departures, and 1D NLTE/LTE on the own <3D> average and
+the MARCS twin, as abundance corrections.
 
     python pilot_compare.py OUT.csv
 
-Runs (runs/p1sed/<model>/): <snap>_3dmg (true 3D departures), <snap>_mapmg (mapped),
-marcs and av3d (1D, Mg and Fe departures).  The 3D runs carry Mg departures only, so
-only Mg lines are compared.  EWs and the curve-of-growth slope are those of
-delta_maps.py; the slope comes from the batch-1a run nearest to the model.
+3D runs (runs/p1sed/<model>/): <snap>_3dmg (true 3D Mg departures) or <snap>_3dmgfe (Mg
+and Fe), <snap>_map4mg / _map4mgfe (the own <3D> departures mapped in log tau_500).
+Every SED's LTE spectrum (crop(LTE=True)) is its own LTE partner, so NLTE and LTE share
+the line list, mesh and scattering setting.  1D: the own <3D> average's SED
+(b4/sed/av3d_<model>, phase-4 departure setup) and the MARCS twin's (b6/sed/<twin> at
+[Fe/H] <= -1, else p1sed/<model>/marcs).  Lines: Mg I, and Fe I where the 3D run has
+Fe departures; Fe II stays LTE (phase-4 decision 4) and is left out.
+
+Corrections, with corr(a, b) = A(a) - A(b) at the same EW (delta_maps.py):
+    D_nlte_<1d>   = A(1D NLTE) - A(1D LTE)
+    D_3d_lte_<1d> = A(3D LTE) - A(1D LTE)
+    D_total_<1d>  = A(3D NLTE) - A(1D LTE)
+    D_int_<1d>    = D_total - D_nlte - D_3d_lte  (the interaction term)
+    D_nlte_3d     = A(3D NLTE) - A(3D LTE)
+    D_map         = A(3D NLTE) - A(3D on mapped <3D> departures)
+<1d> is av (own <3D>) or tw (MARCS twin).  The slope comes from the batch-1a run nearest
+to the model.
 """
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 import tumult
 from delta_maps import RUNS, LINES_SED, ew, slopes, nearest_b1, corr
-from make_nml import PILOT
+from make_nml import PILOT, run_name
 
-MG = [l for l in LINES_SED if l[0] == 'Mg']
+LINES = [l for l in LINES_SED if l[0] in ('Mg', 'Fe')]
 
 
-def ews(folder):
+def ews(folder, lines):
     r = tumult.read(str(folder))
-    return {lam0: (ew(r, lam0, hw), ew(r, lam0, hw, LTE=True)) for _, lam0, hw in MG}
+    return {lam0: (ew(r, lam0, hw), ew(r, lam0, hw, LTE=True)) for _, lam0, hw in lines}
+
+
+def done(folder):
+    return (folder / 'save').is_dir() and any((folder / 'save').glob('flux_*.bin'))
 
 
 def main(out):
@@ -35,30 +51,41 @@ def main(out):
         top = RUNS / 'p1sed' / model
         teff = 5777 if model.startswith('t5777') else int(model[1:3]) * 100
         logg = int(model.split('g')[1][:2]) / 10
-        s = slopes(f'b1/hrs/{nearest_b1(teff, logg, feh, names)}', MG)
-        one = {k: ews(top / k) for k in ('marcs', 'av3d') if (top / k / 'save').is_dir()}
-        for true in sorted(top.glob('s*_3dmg')):
-            snap = true.name.split('_')[0]
-            mapped = top / f'{snap}_mapmg'
-            if not (true / 'save').is_dir() or not (mapped / 'save').is_dir():
+        s = slopes(f'b1/hrs/{nearest_b1(teff, logg, feh, names)}', LINES)
+        tw = RUNS / f'b6/sed/{run_name(Path(marcs))}' if feh <= -1 else top / 'marcs'
+        one = {k: ews(f, LINES) for k, f in (('av', RUNS / f'b4/sed/av3d_{model}'), ('tw', tw))
+               if done(f)}
+        for snap in sorted({p.name.split('_')[0] for p in top.glob('s*_3dmg*')}):
+            true = top / f'{snap}_3dmgfe'
+            fe = done(true)
+            if not fe:
+                true = top / f'{snap}_3dmg'
+            if not done(true):
                 continue
-            t, m = ews(true), ews(mapped)
-            for lam0 in t:
+            lines = [l for l in LINES if fe or l[0] == 'Mg']
+            mapped = top / f'{snap}_map4mgfe' if fe else top / f'{snap}_map4mg'
+            t = ews(true, lines)
+            m = ews(mapped, lines) if done(mapped) else {}
+            for e, lam0, _ in lines:
                 n3, l3 = t[lam0]
-                row = dict(model=model, snap=snap, teff=teff, logg=logg, feh=feh, line=lam0,
-                           slope=s[lam0], ew_3d_nlte=n3, ew_3d_lte=l3, ew_map_nlte=m[lam0][0],
-                           ew_map_lte=m[lam0][1])
-                # dA(x) = A(x) - A(3D NLTE) for the same observed EW: the bias of x
-                row['dA_map'] = corr(n3, m[lam0][0], s[lam0])
-                row['dA_3d_lte'] = corr(n3, l3, s[lam0])
-                for k, (n1, l1) in ((k, v[lam0]) for k, v in one.items()):
+                sl = s[lam0]
+                row = dict(model=model, snap=snap, teff=teff, logg=logg, feh=feh, element=e,
+                           line=lam0, slope=sl, fe_3d=fe, ew_3d_nlte=n3, ew_3d_lte=l3,
+                           D_nlte_3d=corr(n3, l3, sl))
+                if lam0 in m:
+                    row['ew_map_nlte'] = m[lam0][0]
+                    row['D_map'] = corr(n3, m[lam0][0], sl)
+                for k, v in one.items():
+                    n1, l1 = v[lam0]
                     row[f'ew_{k}_nlte'], row[f'ew_{k}_lte'] = n1, l1
-                    row[f'dA_{k}_nlte'] = corr(n3, n1, s[lam0])
-                    row[f'dA_{k}_lte'] = corr(n3, l1, s[lam0])
+                    row[f'D_nlte_{k}'] = corr(n1, l1, sl)
+                    row[f'D_3d_lte_{k}'] = corr(l3, l1, sl)
+                    row[f'D_total_{k}'] = corr(n3, l1, sl)
+                    row[f'D_int_{k}'] = row[f'D_total_{k}'] - row[f'D_nlte_{k}'] - row[f'D_3d_lte_{k}']
                 rows.append(row)
     df = pd.DataFrame(rows)
     df.to_csv(out, index=False, float_format='%.5g')
-    cols = [c for c in df.columns if c.startswith('dA_')]
+    cols = [c for c in df.columns if c.startswith('D_')]
     print(df[['model', 'snap', 'line'] + cols].round(3).to_string(index=False))
 
 

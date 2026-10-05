@@ -1,5 +1,5 @@
 #!/bin/bash -l
-# delta_maps.py for the given modes into runs/delta/<MODE><SUFFIX>.csv, e.g.
+# delta_maps.py (or pilot_compare.py for mode 'pilot') for the given modes into runs/delta/<MODE><SUFFIX>.csv, e.g.
 #   sbatch --nice=100 jobs/delta_maps.sbatch A2 N W X
 #   sbatch --nice=100 --export=ALL,LTE_IT1=1,SUFFIX=_it1 jobs/delta_maps.sbatch N W
 # The environment (B4_NLTE, LTE_IT1, OLD_SED, ONLY) passes through to delta_maps.py.
@@ -17,6 +17,8 @@ CL=/mnt/beegfs/gemini/groups/bergemann/users/hoppe/dispatch/experiments/OpenMULT
 mkdir -p $CAMPAIGN/runs/delta
 cd $CAMPAIGN/jobs
 for m in "$@"; do
-  PYTHONPATH=$CL:$CAMPAIGN/jobs OMP_NUM_THREADS=1 $CL/.venv/bin/python delta_maps.py $m \
+  script=delta_maps.py; arg=$m
+  [ "$m" = pilot ] && { script=pilot_compare.py; arg=; }     # mode 'pilot': pilot_compare.py
+  PYTHONPATH=$CL:$CAMPAIGN/jobs OMP_NUM_THREADS=1 $CL/.venv/bin/python $script $arg \
     $CAMPAIGN/runs/delta/${m}${SUFFIX:-_p5}.csv
 done
