@@ -9,8 +9,8 @@ and Fe), <snap>_map4mg / _map4mgfe (the own <3D> departures mapped in log tau_50
 In 1D every SED's LTE spectrum (crop(LTE=True)) is its own LTE partner.  The 3D SEDs'
 LTE spectra lack the lines of the NLTE species (Mg I 5711: 2.7 against 106 mA in the Sun,
 reports/2026-10-05_phase5.md, section 5), so 3D LTE comes from the plain 3D LTE run of
-the snapshot (runs/p1/<model>/<snap>_lte, no output scattering iteration; its VALD
-lines, not the model atom's).  1D: the own <3D> average's SED
+the snapshot (runs/p1/<model>/<snap>_lte1 with one output scattering iteration as the
+SEDs, else <snap>_lte with none; VALD lines, not the model atom's).  1D: the own <3D> average's SED
 (b4/sed/av3d_<model>, phase-4 departure setup) and the MARCS twin's (b6/sed/<twin> at
 [Fe/H] <= -1, else p1sed/<model>/marcs).  Lines: Mg I, and Fe I where the 3D run has
 Fe departures; Fe II stays LTE (phase-4 decision 4) and is left out.
@@ -68,7 +68,9 @@ def main(out):
             lines = [l for l in LINES if fe or l[0] == 'Mg']
             mapped = top / f'{snap}_map4mgfe' if fe else top / f'{snap}_map4mg'
             t = ews(true, lines)
-            lte3 = RUNS / f'p1/{model}/{snap}_lte'
+            lte3 = RUNS / f'p1/{model}/{snap}_lte1'           # one scattering iteration
+            if not done(lte3):
+                lte3 = RUNS / f'p1/{model}/{snap}_lte'
             r3 = tumult.read(str(lte3))
             t = {k: (v[0], ew(r3, k, hw)) for (_, k, hw), v in zip(lines, t.values())}
             m = ews(mapped, lines) if done(mapped) else {}
