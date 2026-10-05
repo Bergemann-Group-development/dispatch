@@ -26,6 +26,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
     python3 make_nml.py dep4_list FILE MODEL ...  # the same for the named models, listed in FILE
     python3 make_nml.py lte_it1              # the 1D LTE families with one output scattering iteration
+    python3 make_nml.py pilot_mg4            # 3D Mg of the metal-poor pilot models with the phase-4 setup
     python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
     python3 make_nml.py batch2_dep4          # batch-2 MARCS departures at [Fe/H] <= -1 with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
@@ -1020,6 +1021,33 @@ def lte_it1():
     print(f'{len(tasks)} LTE namelists with maxiter=1 in lte_it1_tasks.txt')
 
 
+def pilot_mg4(models=('t60g40m20', 't45g25m20')):
+    """The 3D Mg runs of the metal-poor pilot models again with the phase-4 departure
+    setup (Mg line grid on the MARCS twin, matched absmet), on the full (uncropped) mesh
+    that the stage-2 SEDs use: p1/<model>/s<snap>_mg4.nml, listed first snapshot first
+    in p1/tasks_3d_mg4.txt."""
+    mg = [t for t in Path('p1/tasks_3d_mg.txt').read_text().split()
+          if Path(t).parent.name in models]
+    info = {Path(f).name.replace('_new', ''): (f, m, feh, a) for f, m, _, feh, a in PILOT}
+    todo, tasks = {}, []
+    for t in mg:
+        model, tag = Path(t).parent.name, Path(t).name.split('_')[0][1:]
+        folder, marcs, feh, alpha = info[model]
+        snap = next((Path('stagger2') / folder).glob(f'atm3d.*_{tag}_*'))
+        logg = av3d_labels(model)[1]
+        grid, cmd = line_grid(PILOT_MG, Path(marcs), feh, alpha, 1.0 if logg >= 3.5 else 2.0)
+        todo[str(grid)] = cmd
+        new = Path('p1') / model / f's{tag}_mg4.nml'
+        new.write_text(with_rt_maxiter(namelist(
+            dict(atmos_format='stagger2', atmos_file=str(snap)), geometry='3d', feh=feh,
+            atom=in_3d(with_grid(PILOT_MG, grid)), absmet=absmet_for(feh),
+            composition=dict(alpha_enhancement=alpha) if alpha else None), 1))
+        tasks.append(str(new))
+    add_todo(todo)
+    Path('p1/tasks_3d_mg4.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} 3D Mg namelists in p1/tasks_3d_mg4.txt')
+
+
 def batch2_dep4(feh_max=-1.0):
     """Batch 2's MARCS departures (A) again with the phase-4 setup, for every domain
     model at [Fe/H] <= feh_max, where the solar absmet table and the atoms' own
@@ -1076,6 +1104,8 @@ if __name__ == '__main__':
         dep4(sys.argv[3:], sys.argv[2])
     elif sys.argv[1:2] == ['lte_it1']:
         lte_it1()
+    elif sys.argv[1:2] == ['pilot_mg4']:
+        pilot_mg4()
     elif sys.argv[1:2] == ['pilot_fe4']:
         pilot_fe4()
     elif sys.argv[1:2] == ['batch2_dep4']:
