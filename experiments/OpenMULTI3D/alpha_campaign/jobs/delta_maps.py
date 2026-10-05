@@ -200,10 +200,13 @@ def one_a(args):
     name, sed = args
     lines = LINES_O if sed == 'O' else LINES_SED if sed else LINES
     try:
-        s = slopes(f'b1/hrs/{name}', lines)
         if sed == 'O':
+            # the batch-1a runs have no O sets; the O lines are weak (EW below ~40 mA
+            # over the domain) and taken on the linear part of the curve of growth
+            s = {lam0: 1.0 for _, lam0, _ in lines}
             res = nlte_lte(f'b7/sed/{name}', lines)
         else:
+            s = slopes(f'b1/hrs/{name}', lines)
             res = (nlte_lte(marcs_sed(name), lines) if sed else
                    {**nlte_lte(f'b2/n1d/{name}_mg'), **nlte_lte(f'b2/n1d/{name}_fe')})
         return [dict(model=name, element=e, line=lam0, ew_lte=el_, ew_nlte=en, slope=s[lam0],
@@ -439,7 +442,7 @@ def main(which, out, nproc):
         elif which.startswith('A') or which == 'O':
             if which == 'O':
                 sed = 'O'
-                names = [n for n in names if (RUNS / f'b7/sed/{n}/save').is_dir()]
+                names = sorted(p.name for p in (RUNS / 'b7/sed').iterdir() if (p / 'save').is_dir())
             res = pool.map(one_a, [(n, sed) for n in names], chunksize=4)
             df = pd.DataFrame([r for rows in res for r in rows])
             lab = np.array([labels(n) for n in df['model']])
