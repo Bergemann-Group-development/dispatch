@@ -77,7 +77,8 @@ MODULE rt_patch_mod
   ! (m3d_patch_mod, set in composition_pre_init) equals n_windows for a contiguous output
   ! grid; a window_file grid gets a whole number of patches per window.
   !-----------------------------------------------------------------------------
-  public :: verify_output_patch_coverage, window_shape, slab_memory, trans_copy_bytes
+  public :: verify_output_patch_coverage, window_shape, slab_memory, trans_copy_bytes, &
+            point_table_bytes
 
   !-----------------------------------------------------------------------------
   ! What the memory of one slab depends on besides its cells: the frequency
@@ -316,10 +317,11 @@ contains
   !===============================================================================
   !> Leading registered RT allocations of this slab, in bytes, before its first
   !> execution; see slab_memory.  u_phase counts until the slab allocates it.
+  !> tables are the point tables of its window and depth slab (point_table_bytes).
   !===============================================================================
-  SUBROUTINE estimate_memory (self, work, retained, boundary, persistent)
+  SUBROUTINE estimate_memory (self, work, retained, boundary, persistent, tables)
     class(rt_patch_t), intent(in) :: self
-    real(8), intent(out) :: work, retained, boundary, persistent
+    real(8), intent(out) :: work, retained, boundary, persistent, tables
     type(slab_shape_t) :: shape
     integer :: i
     !-----------------------------------------------------------------------------
@@ -338,6 +340,7 @@ contains
     allocate(shape%get_rates, source=self%get_rates)
     call slab_memory (shape, self%n, self%ng, work, retained, boundary, persistent)
     if (associated(self%u_phase)) persistent = 0.d0
+    tables = point_table_bytes(shape, self%n)
   END SUBROUTINE estimate_memory
 
   !===============================================================================
@@ -394,12 +397,38 @@ contains
   END FUNCTION trans_copy_bytes
 
   !===============================================================================
+  !> Bytes of the 1D point tables a depth slab of n cells holds for the window of
+  !> this shape: the LTE background (bg_point_tables, chi_cont and sigma) and, in
+  !> the output pass, the detailed line opacity of every set with lines
+  !> (ll_point_tables, chi, eta and with line scattering chi_scat).  The slabs of
+  !> a window share them, so they count once per window and depth slab.  An
+  !> output window frees its tables after its final pass; without output Lambda
+  !> iterations they live only within that one execution and are not counted.  A
+  !> moving 1D atmosphere never fills the line-opacity store, which is counted
+  !> all the same.
+  !===============================================================================
+  FUNCTION point_table_bytes (shape, n) RESULT (bytes)
+    type(slab_shape_t), intent(in) :: shape
+    integer, intent(in) :: n(3)
+    real(8) :: bytes, field
+    !-----------------------------------------------------------------------------
+    bytes = 0.d0
+    if (.not. one_dimensional) return
+    if (shape%do_out_sp .and. rt_out%maxiter <= 0) return
+    field = real(storage_size(0.0_4)/8,8)*product(real(n,8))*shape%nf
+    if (.not. make_eos) bytes = 2*field
+    if (shape%do_out_sp .and. rt_out%include_linelist .and. .not. rt_out%sample_linelist) &
+      bytes = bytes + merge(3, 2, line_scattering)*field*count(output_set_kind /= set_continuum)
+  END FUNCTION point_table_bytes
+
+  !===============================================================================
   !> Leading registered RT allocations of a slab of n cells and ng ghost cells, in
   !> bytes, before the first execution.  Keep the array counts consistent with
   !> allocate_arrays and deallocate_arrays.  work is execution-local; retained
   !> survives between executions when rt_to_file is false; boundary is the
   !> buffer its column hands from slab to slab; persistent is the slab's
-  !> u_phase.  Opacity caches and solver temporaries are excluded.
+  !> u_phase.  The point tables (point_table_bytes), the sampled opacity tables
+  !> and solver temporaries are excluded.
   !===============================================================================
   SUBROUTINE slab_memory (shape, n, ng, work, retained, boundary, persistent)
     type(slab_shape_t), intent(in) :: shape

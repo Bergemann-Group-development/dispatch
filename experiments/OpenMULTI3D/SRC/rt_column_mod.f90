@@ -25,9 +25,11 @@ MODULE rt_column_mod
   USE list_mod, only: list_t
   USE shared_mod
   USE console_mod
-  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos, mem_limit_gb, n_windows
+  USE m3d_patch_mod, only: m3d_patch_t, hash_string, rotate_atmos, mem_limit_gb, n_windows, &
+                         n_windows_out
   USE rt_params_mod, only: rt_out
-  USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, slab_shape_t, window_shape, slab_memory, trans_copy_bytes
+  USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, slab_shape_t, window_shape, slab_memory, &
+                        trans_copy_bytes, point_table_bytes
   USE composition_patch_mod, only: composition_patch_t, slab_group_t, max_n_windows, set_n_windows_out
   USE nlte_patch_mod, only: nlte_patch_t
   implicit none
@@ -50,16 +52,20 @@ MODULE rt_column_mod
   ! The memory terms of report_memory_estimate, in bytes.  The phases are the EOS
   ! setup, the NLTE iteration and the output pass; index 1 of the RT terms is the
   ! NLTE phase, index 2 the output phase.  trans_copies are the transition copies
-  ! of slabs not made yet; those of existing slabs are part of os%gb.
+  ! of slabs not made yet; those of existing slabs are part of os%gb.  The point
+  ! tables of the internal windows (index 1) are kept to the end of the run, those
+  ! of the output windows (index 2) exist in the output phase.
   type :: memory_terms_t
     integer :: n_comp=0, n_column(2)=0
     real(8) :: eos_work=0d0, eos_retained=0d0, atom(2)=0d0, trans_copies=0d0
     real(8) :: max_work(2)=0d0, max_boundary(2)=0d0, sum_retained(2)=0d0, rt_persistent=0d0
+    real(8) :: point_tables(2)=0d0
   end type memory_terms_t
 
   ! With n_windows left at its default, the estimated peak must stay within this
-  ! fraction of the memory limit.  The estimate leaves out opacity caches and
-  ! solver temporaries and has come out about 10 % below the measured peak.
+  ! fraction of the memory limit.  The estimate leaves out the sampled opacity
+  ! tables and solver temporaries and has come out about 10 % below the measured
+  ! peak.
   real(8), parameter :: window_memory_fraction = 0.7d0
 
   public :: init_rt_columns, report_memory_estimate, check_memory_limit
@@ -457,7 +463,8 @@ END SUBROUTINE choose_n_windows
 !===============================================================================
 !> The RT terms of the slabs that create_rt_slabs would make for the current
 !> n_windows: a slab's shape depends on its window and direction, its cells on
-!> its depth slab.  Columns are counted once per (i_nu, i_mu).
+!> its depth slab.  Columns are counted once per (i_nu, i_mu), point tables once
+!> per i_nu.
 !===============================================================================
 SUBROUTINE predicted_rt_terms (comps, terms)
   type(composition_ptr_t), intent(in) :: comps(:)
@@ -466,8 +473,9 @@ SUBROUTINE predicted_rt_terms (comps, terms)
   type(slab_shape_t) :: shape
   real(8) :: work, retained, boundary, persistent
   integer :: c, g, i_nu, i_mu, k
-  logical :: new_column
+  logical :: new_column, new_window(-n_windows_out:2*n_windows)
   !-----------------------------------------------------------------------------
+  new_window = .true.
   allocate(groups, source=comps(1)%p%slab_groups())
   do g=1, size(groups)
     do i_mu=groups(g)%mu(1), groups(g)%mu(2)
@@ -484,7 +492,10 @@ SUBROUTINE predicted_rt_terms (comps, terms)
           terms%max_boundary(k) = max(terms%max_boundary(k), boundary)
           if (new_column) terms%n_column(k) = terms%n_column(k) + 1
           new_column = .false.
+          if (new_window(i_nu)) &
+            terms%point_tables(k) = terms%point_tables(k) + point_table_bytes(shape, comps(c)%p%n)
         end do
+        new_window(i_nu) = .false.
       end do
     end do
   end do
@@ -526,7 +537,8 @@ END SUBROUTINE fixed_memory_terms
 !> A phase holds, per busy thread, the workspace of one slab and the boundary
 !> buffer of its column, plus the retained RT fields of all slabs.  Slabs
 !> allocate u_phase when they first execute and keep it, so both RT phases
-!> count it for every slab.
+!> count it for every slab.  The output phase counts the point tables of all
+!> windows, as a window frees its own only after its final pass.
 !===============================================================================
 FUNCTION peak_estimate (terms, phase) RESULT (estimate)
   type(memory_terms_t), intent(in) :: terms
@@ -537,7 +549,8 @@ FUNCTION peak_estimate (terms, phase) RESULT (estimate)
   !-----------------------------------------------------------------------------
   p(1) = min(omp%nthreads, terms%n_comp)*terms%eos_work
   p(2:3) = min(omp%nthreads, terms%n_column)*(terms%max_work + terms%max_boundary) &
-         + terms%sum_retained + terms%rt_persistent + terms%atom
+         + terms%sum_retained + terms%rt_persistent + terms%atom &
+         + [terms%point_tables(1), sum(terms%point_tables)]
   estimate = os%gb + (terms%trans_copies + terms%eos_retained + maxval(p))/gib
   if (present(phase)) phase = p
 END FUNCTION peak_estimate
@@ -545,7 +558,7 @@ END FUNCTION peak_estimate
 !===============================================================================
 !> Per-rank estimate of the peak registered allocation (peak_estimate) of the
 !> slabs and patches in the task list.  Allocations outside Dispatch's registry,
-!> opacity caches, solver temporaries and, without rt_to_file, the exit plane
+!> sampled opacity tables, solver temporaries and, without rt_to_file, the exit plane
 !> an up column's frozen slabs retain are excluded, so this is an estimate, not an
 !> upper bound.
 !===============================================================================
@@ -555,12 +568,14 @@ SUBROUTINE report_memory_estimate (list, estimate)
   class(link_t), pointer :: link
   type(memory_terms_t) :: terms
   real(8), parameter :: gib=1024d0**3
-  real(8) :: work, retained, boundary, persistent, phase(3)
+  real(8) :: work, retained, boundary, persistent, tables, phase(3)
   integer :: workers(2), j, k
+  logical :: new_window(-n_windows_out:2*n_windows)
   character(len=6), parameter :: label(2) = ['NLTE  ', 'output']
   character(len=16) :: text
   !-----------------------------------------------------------------------------
   call fixed_memory_terms (list, terms)
+  new_window = .true.
   link => list%head
   do while (associated(link))
     if (link%task%is_clear(bits%remove+bits%external+bits%virtual)) then
@@ -569,12 +584,14 @@ SUBROUTINE report_memory_estimate (list, estimate)
         k = merge(2, 1, task%do_out_sp)
         terms%n_column(k) = terms%n_column(k) + 1
         do j=1, size(task%slab)
-          call task%slab(j)%p%estimate_memory(work, retained, boundary, persistent)
+          call task%slab(j)%p%estimate_memory(work, retained, boundary, persistent, tables)
           terms%rt_persistent = terms%rt_persistent + persistent
           terms%max_work(k) = max(terms%max_work(k), work)
           terms%sum_retained(k) = terms%sum_retained(k) + retained
           terms%max_boundary(k) = max(terms%max_boundary(k), boundary)
+          if (new_window(task%i_nu)) terms%point_tables(k) = terms%point_tables(k) + tables
         end do
+        new_window(task%i_nu) = .false.
       end select
     endif
     link => link%next
@@ -592,11 +609,11 @@ SUBROUTINE report_memory_estimate (list, estimate)
     '  (', min(omp%nthreads, terms%n_comp), ' concurrent composition patches)'
   do k=1, 2
     if (terms%n_column(k) == 0) cycle
-    write(console_unit,'(2x,a6,a,f10.4,a,i0,a,i0,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a)') label(k), &
+    write(console_unit,'(2x,a6,a,f10.4,a,i0,a,i0,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a,f8.4,a)') label(k), &
       ' phase                  ', phase(k+1)/gib, '  (', workers(k), ' of ', terms%n_column(k), &
       ' columns x (', terms%max_work(k)/gib, ' work + ', terms%max_boundary(k)/gib, ' buffer), ', &
       terms%sum_retained(k)/gib, ' retained, ', terms%rt_persistent/gib, ' u_phase, ', &
-      terms%atom(k)/gib, ' atom arrays)'
+      terms%atom(k)/gib, ' atom arrays, ', sum(terms%point_tables(1:k))/gib, ' point tables)'
   end do
   write(console_unit,'(a,f10.4)') '  estimated peak allocation     ', estimate
   flush(console_unit)
