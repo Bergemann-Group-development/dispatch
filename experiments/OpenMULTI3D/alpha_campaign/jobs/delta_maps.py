@@ -9,6 +9,7 @@ Delta_<3D> between each Stagger <3D> average and its MARCS twin (B).
     python delta_maps.py X OUT.csv      # Delta_3D in LTE: 3D snapshots against <3D>, MARCS
     python delta_maps.py N OUT.csv      # own <3D> averages (b4) against the Stagger files (b2)
     python delta_maps.py W OUT.csv      # Delta_3D in LTE against 1D on a vmic grid (b5)
+    python delta_maps.py O OUT.csv      # Delta_NLTE of the O lines over the MARCS grid (b7)
 
 Every EW is the integral of 1 - F/F_cont over the line's window around its centre, on
 the R=2e5 spectra.  The windows include blends, which are the same in both spectra of
@@ -54,6 +55,9 @@ which the Fe I lines give one abundance (the minimum over vmic, interpolated in 
 strength) and records Delta_3D there (columns vfit_<kind>, dA_3d_<kind>_vfit), and at the fixed MARCS
 convention of 1 km/s (log g >= 3.5) or 2 km/s (dA_3d_<kind>_conv).  Training uses the
 fitted-vmic value with vfit as a label; the convention value is kept alongside.
+
+O reads the O-window SEDs of make_nml.py o_dep4 (b7/sed/<model>, O departures only, the
+LINES_O windows) as A2 reads the Mg+Fe SEDs; the slopes come from the batch-1a O sets.
 """
 import os
 import re
@@ -81,6 +85,9 @@ LINES_SED = [('Mg', 5172.684, 1.5), ('Mg', 5528.405, 0.8), ('Mg', 5711.088, 0.4)
              ('Fe', 6430.846, 0.4), ('Fe', 6593.870, 0.4),
              ('FeII', 5234.625, 0.5), ('FeII', 6247.557, 0.4), ('FeII', 6432.680, 0.4),
              ('FeII', 6456.383, 0.4), ('FeII', 6516.080, 0.4)]
+# O I 6158 (the strongest member of the 6156-6158 triplet) and the forbidden [O I]
+# 6300 (Ni I blend, LTE in both spectra) and 6363, read by mode O from the O-window SEDs
+LINES_O = [('O', 6158.17, 0.3), ('O', 6300.30, 0.25), ('O', 6363.78, 0.25)]
 NAME = re.compile(r'[ps](?P<teff>\d+)_g(?P<logg>[+-]\d\.\d)_m[\d.]+_t\d\d_z(?P<feh>[+-]\d\.\d\d)$')
 
 
@@ -191,11 +198,14 @@ def labels(name):
 def one_a(args):
     PEAK.clear()
     name, sed = args
-    lines = LINES_SED if sed else LINES
+    lines = LINES_O if sed == 'O' else LINES_SED if sed else LINES
     try:
         s = slopes(f'b1/hrs/{name}', lines)
-        res = (nlte_lte(marcs_sed(name), lines) if sed else
-               {**nlte_lte(f'b2/n1d/{name}_mg'), **nlte_lte(f'b2/n1d/{name}_fe')})
+        if sed == 'O':
+            res = nlte_lte(f'b7/sed/{name}', lines)
+        else:
+            res = (nlte_lte(marcs_sed(name), lines) if sed else
+                   {**nlte_lte(f'b2/n1d/{name}_mg'), **nlte_lte(f'b2/n1d/{name}_fe')})
         return [dict(model=name, element=e, line=lam0, ew_lte=el_, ew_nlte=en, slope=s[lam0],
                      dA_nlte=corr(en, el_, s[lam0]), nlte_peak=PEAK.get(lam0, np.nan))
                 for lam0, (e, en, el_) in res.items()]
@@ -426,7 +436,10 @@ def main(which, out, nproc):
             todo = [(run, pairs[av], names) for run, av in lte3d_runs() if av in pairs]
             res = pool.map(one_x, todo, chunksize=1)
             df = pd.DataFrame([r for rows in res for r in rows])
-        elif which.startswith('A'):
+        elif which.startswith('A') or which == 'O':
+            if which == 'O':
+                sed = 'O'
+                names = [n for n in names if (RUNS / f'b7/sed/{n}/save').is_dir()]
             res = pool.map(one_a, [(n, sed) for n in names], chunksize=4)
             df = pd.DataFrame([r for rows in res for r in rows])
             lab = np.array([labels(n) for n in df['model']])
@@ -444,7 +457,7 @@ def main(which, out, nproc):
 
 
 if __name__ == '__main__':
-    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N'], ['W']):
+    if sys.argv[1:2] in (['A'], ['B'], ['A2'], ['B2'], ['V'], ['X'], ['N'], ['W'], ['O']):
         main(sys.argv[1], sys.argv[2], int(os.environ.get('SLURM_CPUS_PER_TASK', 1)))
     else:
         sys.exit(__doc__)

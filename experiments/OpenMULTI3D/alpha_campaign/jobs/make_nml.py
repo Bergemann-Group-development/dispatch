@@ -30,6 +30,8 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
     python3 make_nml.py batch2_dep4 [FEH]    # batch-2 MARCS departures at [Fe/H] <= FEH (-1) with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
+    python3 make_nml.py o_dep4               # O departures over the MARCS domain, into b7/
+    python3 make_nml.py o_sed NAME           # stage-2 SED of the O windows on a model's b7 departures
     python3 make_nml.py crop_test            # cropped-vs-uncropped 3D Fe agreement test on a 6x6 cut, into ctest/
     python3 make_nml.py crop_test_dep        # its stage-2 departure folders, once the runs have finished
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
@@ -281,6 +283,8 @@ HALTON_10 = [7, 2, 9, 5, 4, 8, 0, 6, 3, 1]
 # Ng every 20 iterations (as in the phase-0 3D Mg run) and a higher iteration limit.
 PILOT_MG = dict(element='Mg', file='input/atoms/atom.mg86e', nlte=dict(convlim=1e-4, convmax=1e-5))
 PILOT_FE = dict(element='Fe', file='input/atoms/atom.fe607a', nlte=dict(convlim=1e-3, convmax=1e-4))
+# O, as cheap as Mg, takes Mg's rule
+PILOT_O = dict(element='O', file='input/atoms/atom.o41f', nlte=dict(convlim=1e-4, convmax=1e-5))
 
 
 def in_3d(atom):
@@ -442,20 +446,22 @@ def combine_departures(folder, mg_run, fe_run):
             dst.symlink_to(src)
 
 
-def sed_namelist(dep_folder, composition=None, window='windows/hrs.txt', R=2e5):
+def sed_namelist(dep_folder, composition=None, window='windows/hrs.txt', R=2e5, atoms=None):
     """Stage 2 of the NLTE synthesis: the spectrum from the full FGK line list on the
     precomputed Mg and Fe departures.  The atoms keep their levels and continua but not
     their lines (disable_bb), and their species stay in the line list
     (exclude_from_line_list=F), so every Mg and Fe line of the list takes the departure
     coefficients of the atom levels nearest in energy.  The run's LTE spectrum
-    (crop(LTE=True)) is the matching LTE SED: same line list, mesh and wavelengths."""
+    (crop(LTE=True)) is the matching LTE SED: same line list, mesh and wavelengths.
+    atoms: the model atoms (default Mg and Fe)."""
+    atoms = atoms or [PILOT_MG['file'], PILOT_FE['file']]
     lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
              group('timer_params', sec_per_report=1e8, verbose=2),
              group('atmos_params', atmos_format='save', atmos_file=str(dep_folder),
                    read_departures=True),
              group('output_params', rt_to_file=False),
-             group('atom_params', atom_file=[PILOT_MG['file'], PILOT_FE['file']],
-                   disable_bb=True, exclude_from_line_list=False),
+             group('atom_params', atom_file=atoms, disable_bb=True,
+                   exclude_from_line_list=False),
              group('opac_table_params', absmet_file='input/absmet_files/absmet'),
              group('rt_iteration_params', maxiter=0),
              group('rt_output_params', maxiter=3, save_linelist=False),
@@ -1141,6 +1147,48 @@ def batch2_dep4(feh_max=-1.0):
     print(f'{len(tasks)} models in b6/tasks_dep.txt')
 
 
+def o_dep4(feh_max=0.5):
+    """O departures over the MARCS domain with the phase-4 setup (line grid on the model
+    with Mg's reference settings, [Fe/H]-matched absmet; reports/2026-10-04_phase4.md,
+    sections 7-9: separate solves are adequate for O), departures only:
+    b7/n1d/<name>_o.nml.  Stage 2 (o_sed) is a SED of the O windows alone (windows/o.txt:
+    O I 6156-6158, [O I] 6300, 6363) on the O departures, so it is independent of the Mg
+    and Fe departures; its blends are LTE in both spectra.  b7/tasks_dep.txt lists 'name
+    grid' for queue.sbatch with STEPS=odep."""
+    todo, tasks = {}, []
+    for path, alpha in domain_models():
+        m = MARCS_NAME.match(path.name)
+        teff, logg, feh = int(m['teff']), float(m['logg']), float(m['feh'])
+        if feh > feh_max:
+            continue
+        name = run_name(path)
+        atmos = dict(atmos_format='Marcs', atmos_file=f'marcs/{path.name}')
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        grid, cmd = line_grid(PILOT_O, path, feh, alpha, 1.0 if logg >= 3.5 else 2.0)
+        todo[str(grid)] = cmd
+        nml = Path('b7/n1d') / f'{name}_o.nml'
+        nml.parent.mkdir(parents=True, exist_ok=True)
+        nml.write_text(namelist(atmos, atom=dict(with_grid(PILOT_O, grid), departures_only=True),
+                                composition=comp, absmet=absmet_for(feh)))
+        tasks.append(f'{name} {grid}')
+    add_todo(todo)
+    tasks.sort(key=lambda t: (not t.startswith('s'), t))
+    Path('b7/tasks_dep.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} models in b7/tasks_dep.txt')
+
+
+def o_sed(name):
+    """Stage 2 of o_dep4 for one model: the O-window SED on its O departures,
+    b7/sed/<name>.nml."""
+    path = next(p for p, _ in domain_models() if run_name(p) == name)
+    alpha = float(MARCS_NAME.match(path.name)['alpha'])
+    nml = Path('b7/sed') / f'{name}.nml'
+    nml.parent.mkdir(parents=True, exist_ok=True)
+    nml.write_text(sed_namelist(DATADIR / f'b7/n1d/{name}_o', dict(alpha_enhancement=alpha) if alpha else None,
+                                window='windows/o.txt', atoms=[PILOT_O['file']]))
+    print(nml)
+
+
 def b6_sed(name):
     """Stage-2 SED (batch2_sed's settings) on the b6 departures of one MARCS model:
     b6/sed/<name>.nml, departures linked in runs/b6/dep/."""
@@ -1171,6 +1219,10 @@ if __name__ == '__main__':
         crop_test()
     elif sys.argv[1:2] == ['crop_test_dep']:
         crop_test_dep()
+    elif sys.argv[1:2] == ['o_dep4']:
+        o_dep4()
+    elif sys.argv[1:2] == ['o_sed']:
+        o_sed(sys.argv[2])
     elif sys.argv[1:2] == ['b6_sed']:
         b6_sed(sys.argv[2])
     elif sys.argv[1:2] == ['vmic_grid']:
