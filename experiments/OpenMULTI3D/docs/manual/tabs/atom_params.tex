@@ -12,6 +12,7 @@
 \fort{disable_bb} & Deactivate the atom's bound-bound transitions; its levels and continua stay (default \fort{F}). With \fort{read_departures} and \fort{exclude_from_line_list=F}, the spectrum then comes from the line list, whose lines of the atom's species take the departure coefficients of the levels nearest in energy (stage tagged).\\
 \fort{nq_fac}, \fort{nq_min}, \fort{nq_max} & Scale, floor and cap of the number of frequency points per line.\\
 \fort{line_grid_file} & One wavelength list (vacuum {\AA}, one value per line) that replaces the per-line frequency grids. \File{tumult/line\_quadrature.py} writes such files from HOP profiles.\\
+\fort{detailed\_absmet} & Take the frequency points of the bound-free spectrum from the \fort{absmet\_file} table inside each continuum of the atom (default \fort{F}), to test how much unresolved structure of $J_\nu$ matters for the photo-ionisation integral. Sec.~\ref{sec:absmet}.\\
 {\fort{overlapping_bb},\\\fort{overlapping_bf}} & Treat overlapping bound-bound or bound-free transitions together (default \fort{T}).\\
 \fort{use_classic_col} & Add approximate collision rates for transitions that have no electron or hydrogen rate in the atom file: Seaton ionisation and van Regemorter excitation by electrons, and Drawin rates for collisions with neutral hydrogen (default \fort{F}).\\
 \fort{colscale} & Factor applied to all collision rates (default 1).\\
