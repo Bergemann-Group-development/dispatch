@@ -118,7 +118,7 @@ OMP_STACKSIZE=256M ./dispatch.x demo.nml
 `demo.nml` synthesises the four Ba II lines of a six-level toy model atom
 (`input/atoms/atom.ba06`: 4554, 4934, 5853 and 6497 Å) in a MARCS solar model, in LTE
 and NLTE, without a background line list. It takes well under a minute (about one second
-on eight cores). `tumult.launch` sets the same `OMP_STACKSIZE` for every run it starts.
+on eight cores). `tm.launch` sets the same `OMP_STACKSIZE` for every run it starts.
 The run succeeded when the last line of the output is
 
 ```
@@ -128,13 +128,13 @@ OpenMULTI3D terminated successfully.
 and `data/demo/` holds the run. Then read the result from Python:
 
 ```python
-import tumult
+import tumult as tm
 
-run = tumult.read("data/demo")
+run = tm.read("data/demo")
 for lte in (True, False):
     core = run.crop(x0=4554.033, dx=1.0, LTE=lte).ydata.min()
     print("LTE " if lte else "NLTE", f"Ba II 4554 core flux {core:.3f}")
-print(tumult.HopEOS(feh=0.0).load_state([5777.0], rho=[2.5e-7]).ne)
+print(tm.HopEOS(feh=0.0).load_state([5777.0], rho=[2.5e-7]).ne)
 ```
 
 Expected output (the first import compiles numerical kernels and takes a few seconds):

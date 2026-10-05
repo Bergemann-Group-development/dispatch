@@ -94,9 +94,9 @@ register are left out, and the process RSS is correspondingly higher.
 ## 3. Load the output
 
 ```python
-import tumult
+import tumult as tm
 
-run = tumult.read("data/demo")
+run = tm.read("data/demo")
 print(run.mode, run.lam.size, run.lam.min(), run.lam.max())
 print(run.abundances["Ba"])
 ```
@@ -204,15 +204,15 @@ The exact values depend on the compiler and platform in the last digit.
 
 ## 6. Change the barium abundance
 
-`tumult.launch` writes a namelist from a default and a dictionary of overrides, runs
+`tm.launch` writes a namelist from a default and a dictionary of overrides, runs
 `dispatch.x` on it and returns the output folder. The tracked `demo.nml` stays as it is;
 the new namelist is written under the name you give:
 
 ```python
-folder, ran = tumult.launch("quickstart_ba_rich", default="demo.nml",
-                            nml_settings={"atom_params": {"abundance": 2.41}},
-                            verbose=1)
-rich = tumult.read(folder)
+folder, ran = tm.launch("quickstart_ba_rich", default="demo.nml",
+                        nml_settings={"atom_params": {"abundance": 2.41}},
+                        verbose=1)
+rich = tm.read(folder)
 print(rich.abundances["Ba"])
 ```
 
@@ -252,7 +252,7 @@ import numpy as np
 
 np.savetxt("quickstart_ba4554_nlte.txt", np.column_stack(nlte.values),
            header="air wavelength [AA]   normalised flux")
-back = tumult.load_file("quickstart_ba4554_nlte.txt")
+back = tm.load_file("quickstart_ba4554_nlte.txt")
 ```
 
 `Spectrum.save(path)` and `Spectrum.load(path)` round-trip the same object with its units
@@ -373,7 +373,7 @@ The stellar parameters are always given explicitly, since the workflow never rea
 from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17
 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects:
 `.spectrum` is the normalised flux over the window, `.runs` the native run folders under
-`data/quickstart_synth/` (readable with `tumult.read`, as in step 3) and `.provenance`
+`data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance`
 records the line-list pruning and whether departures were solved or reused. The first
 call takes a few seconds; repeating either call returns the cached result at once. The
 NLTE request solves the barium departures once and applies them in the formal solution
@@ -421,13 +421,13 @@ $ OMP_STACKSIZE=256M ./dispatch.x demo3d.nml
 The iteration blocks look like the 1D ones, and each takes far longer: every iteration
 solves the transfer along the angle quadrature through 900 columns instead of one, and
 the solution converged after 13 iterations in six and a half minutes on an eight-core
-laptop. The output is `data/demo3d/`. `tumult.read` opens it like a 1D run; the saved
+laptop. The output is `data/demo3d/`. `tm.read` opens it like a 1D run; the saved
 intensities and the flux are means over the horizontal plane, so the profile is the
 disc-integrated line of the whole snapshot:
 
 ```python
-run1d = tumult.read("data/demo")
-run3d = tumult.read("data/demo3d")
+run1d = tm.read("data/demo")
+run3d = tm.read("data/demo3d")
 
 run1d.get_line(4554.033).crop().plot(label="1D MARCS, NLTE")
 run3d.get_line(4554.033).crop().plot(label="3D snapshot, NLTE")

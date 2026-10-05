@@ -128,11 +128,11 @@ controlled separately.
 
 ### How do I read and plot the result?
 
-**Available.** Use `tumult.read` and `crop`; do not read the `save/*.bin` files by hand.
+**Available.** Use `tm.read` and `crop`; do not read the `save/*.bin` files by hand.
 
 ```python
-import tumult
-run = tumult.read('data/demo/')
+import tumult as tm
+run = tm.read('data/demo/')
 run.crop().plot()                                   # NLTE flux, normalised
 run.crop(x0=4554.033, dx=2.5, LTE=True).plot()      # LTE, ±2.5 Å around a line
 run.crop(imu=0, vdop=1.5).plot()                    # disk-centre intensity, Gaussian broadened
@@ -145,17 +145,17 @@ and `LTE`. `run.mus` lists the angle quadrature.
 
 ### How do I launch a namelist from Python with overrides?
 
-**Available.** `tumult.launch` layers `nml_settings` over a default namelist, runs
+**Available.** `tm.launch` layers `nml_settings` over a default namelist, runs
 `dispatch.x`, and returns without running when a completed output exists for that name.
 
 ```python
-folder, ran = tumult.launch('demo_run', default='demo.nml',
-                            nml_settings={'atom_params': {'convlim': 1e-3}})
-tumult.read(folder).crop().plot()
+folder, ran = tm.launch('demo_run', default='demo.nml',
+                        nml_settings={'atom_params': {'convlim': 1e-3}})
+tm.read(folder).crop().plot()
 ```
 
 `ran` is `False` when a cached run was served. `threads`, `run_async`, `slurm_script` and
-`cancel_token` are documented in `tumult/launch.py`. `tumult.monitor(folder)` returns a
+`cancel_token` are documented in `tumult/launch.py`. `tm.monitor(folder)` returns a
 `(done, total)` estimate for a running job.
 
 ### How do I find runs that are still going, whoever started them?
@@ -163,7 +163,7 @@ tumult.read(folder).crop().plot()
 **Available.** `dispatch.x` writes `job.nml` into its run directory at startup (process
 id, host, working directory, input file, start time, MPI size, thread count, Slurm job id,
 code hash) and rewrites it as `finished` on a normal exit, so a run started from a shell,
-a notebook or a batch script is as visible as one the GUI launched. `tumult.launch` adds
+a notebook or a batch script is as visible as one the GUI launched. `tm.launch` adds
 `job.json` with what dispatch cannot know (queued, cancelled, exit status).
 
 ```python
@@ -481,7 +481,7 @@ Missing pieces:
 
 - Iteration diagnostics (`progress`) are not shown in the GUI beyond the details modal.
 - A Slurm driver runs every native run of the workflow on its one allocation; per-run
-  `sbatch` through `tumult.launch(slurm_script=...)` is not connected to workflow records.
+  `sbatch` through `tm.launch(slurm_script=...)` is not connected to workflow records.
 - The daemon and a GUI server's own leaf jobs (broadening fits, line measurements) do not
   share in-flight runs; an identical run started by both at the same moment would collide
   in the cache folder. Finished runs are shared through the disk cache as before.
@@ -593,7 +593,7 @@ directories out of version control.
 
 **Partial.** `SynthesisResult` has the same shape for both geometries and the GUI adds either
 to the canvas with the same overlay, normalisation and measurement tools. Angle-resolved and
-spatially resolved 3D data remain reachable through `tumult.read(result.runs[i])`. Selecting
+spatially resolved 3D data remain reachable through `tm.read(result.runs[i])`. Selecting
 a saved 1D and 3D result side by side from a list of completed workflows is part of the
 missing Jobs view above.
 

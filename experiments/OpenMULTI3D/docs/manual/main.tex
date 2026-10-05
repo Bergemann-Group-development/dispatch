@@ -213,7 +213,7 @@ The non-LTE radiative transfer builds on the MULTI and Multi3D codes of Mats Car
 
 \subsection*{Conventions in this manual}
 
-Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. \Code{tumult.read} returns air wavelengths in {\AA}, whatever the vacuum or air convention of the input file (Sec.~\ref{sec:linelist}); the raw file \File{save/out\_lam.bin} holds vacuum wavelengths. \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
+Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. Python examples import the package as \py{import tumult as tm}. \Code{tm.read} returns air wavelengths in {\AA}, whatever the vacuum or air convention of the input file (Sec.~\ref{sec:linelist}); the raw file \File{save/out\_lam.bin} holds vacuum wavelengths. \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Getting Started}\label{sec:start}
@@ -295,9 +295,9 @@ python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
 OMP_STACKSIZE=256M ./dispatch.x demo.nml
 \end{minted}
 
-On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated successfully.} An NLTE run that used up \fort{maxiter} without meeting \fort{convlim} instead ends with a warning that gives the last relative change. Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tumult.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
+On eight cores it takes about a second. A successful run ends with the line \Code{OpenMULTI3D terminated successfully.} An NLTE run that used up \fort{maxiter} without meeting \fort{convlim} instead ends with a warning that gives the last relative change. Results are written to \File{data/demo/}. The spectra, populations and other results are read back with \Code{tm.read} (Sec.~\ref{sec:python}); Sec.~\ref{sec:output} lists the files.
 
-Three rules apply to every invocation. Pass the namelist as argument (without one, \File{input.nml} is read and the output is written directly into \fort{datadir}); it must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tumult.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
+Three rules apply to every invocation. Pass the namelist as argument (without one, \File{input.nml} is read and the output is written directly into \fort{datadir}); it must be a short relative path (a long absolute path aborts the run at start-up). \Code{datadir} inside the namelist may be an absolute path. \Code{OMP\_STACKSIZE=256M} is required for the OpenMP threads (\Code{tm.launch} sets it). Output goes to \File{<datadir>/<namelist name>/}.
 
 \subsection{Updating}
 
@@ -558,11 +558,11 @@ The reader tries the native order and, if any of the four header records fails, 
 
 \subsection{Window and set files}
 
-\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches. \Code{\&output\_params\%set\_file} lists the output sets, one row per set and element, as ``\texttt{set kind element da}'': \texttt{kind} is \texttt{continuum}, \texttt{lte} or \texttt{nlte}, \texttt{element} and \texttt{da} (the abundance offset in dex) are \texttt{-} for the unperturbed set. A set that perturbs several elements has one row per element with the same set number. Set numbers start at 1 and have to be contiguous, and a file with an abundance ladder needs exactly one unperturbed main set. The file has to be outside the run directory. The run writes the resulting layout to \File{sets.txt} in the same format, which \Code{tumult.read} uses to find the components (Sec.~\ref{sec:python}).
+\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches. \Code{\&output\_params\%set\_file} lists the output sets, one row per set and element, as ``\texttt{set kind element da}'': \texttt{kind} is \texttt{continuum}, \texttt{lte} or \texttt{nlte}, \texttt{element} and \texttt{da} (the abundance offset in dex) are \texttt{-} for the unperturbed set. A set that perturbs several elements has one row per element with the same set number. Set numbers start at 1 and have to be contiguous, and a file with an abundance ladder needs exactly one unperturbed main set. The file has to be outside the run directory. The run writes the resulting layout to \File{sets.txt} in the same format, which \Code{tm.read} uses to find the components (Sec.~\ref{sec:python}).
 
 \subsection{Output files}\label{sec:output}
 
-All files of a run are in \File{<datadir>/<name>/}. Use \Code{tumult.read} to access them (Sec.~\ref{sec:python}).
+All files of a run are in \File{<datadir>/<name>/}. Use \Code{tm.read} to access them (Sec.~\ref{sec:python}).
 
 \begin{itemize}
     \item \File{params.nml}, \File{job.nml}: the namelists of the run and the job record. \File{abund.txt}, \File{angle\_quadrature.txt}, \File{atmos\_mesh.txt}, \File{sets.txt}: the abundances used, the output rays, the z-slab mesh and the list of spectrum sets.
@@ -623,19 +623,19 @@ The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and 
 \section{Python and TumultStudio} \label{sec:python}
 %%%%%%%%%%%%%%%%%%%%%%
 
-All Python entry points live in the package \Code{tumult}. Activate the virtual environment first; scripts and notebooks may live anywhere.
+All Python entry points live in the package \Code{tumult}. The examples import it as \py{tm}. Activate the virtual environment first; scripts and notebooks may live anywhere.
 
 \subsection{Reading a run}
 
 \begin{minted}{Python}
 import astropy.units as u
-import tumult
+import tumult as tm
 
-run = tumult.read("data/demo")
+run = tm.read("data/demo")
 print(run.mode, run.lam.size, run.mus, run.abundances["Ba"])
 \end{minted}
 
-\Code{tumult.read} returns a run object with these main attributes: \py{run.nml} (all namelists with defaults, as a dictionary of dictionaries), \py{run.lam} (air wavelengths in {\AA}), \py{run.mode} (\py{"NLTE"} or \py{"LTE"}), \py{run.mus}, \py{run.abundances}, the arrays \py{run.flux}, \py{run.ie} (intensities, shape wavelength $\times$ ray) and, for NLTE runs, \py{run.flux_lte}, \py{run.ie_lte}, as well as the continuum counterparts \py{run.flux_cnt}, \py{run.ie_cnt}. The properties \py{run.atoms}, \py{run.atmos} and \py{run.llist} give the model atoms, the atmosphere and the line list written by the run. \Code{tumult.read\_list} reads several runs, and \Code{tumult.combine(runs, weights)} forms a weighted sum, for example to average snapshots.
+\Code{tm.read} returns a run object with these main attributes: \py{run.nml} (all namelists with defaults, as a dictionary of dictionaries), \py{run.lam} (air wavelengths in {\AA}), \py{run.mode} (\py{"NLTE"} or \py{"LTE"}), \py{run.mus}, \py{run.abundances}, the arrays \py{run.flux}, \py{run.ie} (intensities, shape wavelength $\times$ ray) and, for NLTE runs, \py{run.flux_lte}, \py{run.ie_lte}, as well as the continuum counterparts \py{run.flux_cnt}, \py{run.ie_cnt}. The properties \py{run.atoms}, \py{run.atmos} and \py{run.llist} give the model atoms, the atmosphere and the line list written by the run. \Code{tm.read\_list} reads several runs, and \Code{tm.combine(runs, weights)} forms a weighted sum, for example to average snapshots.
 
 \subsection{Spectra and line profiles}
 
@@ -674,17 +674,17 @@ Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE 
 
 \subsection{Launching runs}
 
-\py{tumult.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
+\py{tm.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
 
 \begin{minted}{Python}
-folder, ran = tumult.launch(
+folder, ran = tm.launch(
     "ba_test",
-    default=[tumult.preset("1d"), tumult.preset("nlte")],
+    default=[tm.preset("1d"), tm.preset("nlte")],
     nml_settings={"atom_params": {"abundance": 2.41}},
 )
 \end{minted}
 
-It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tumult.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tumult.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
+It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tm.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tm.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
 
 \subsection{Higher-level modules}
 
@@ -713,7 +713,7 @@ sbatch dispatch.slurm a.nml b.nml
 
 The parallelisation is shared-memory (OpenMP), so a run occupies one node. Choose the node by its memory: the pre-run memory estimate (Sec.~\ref{sec:Memory}) tells how much a run needs.
 
-From Python, \Code{tumult.launch(..., slurm\_script=...)} submits a namelist; see \File{docs/FAQ.md} for submitting workflows.
+From Python, \Code{tm.launch(..., slurm\_script=...)} submits a namelist; see \File{docs/FAQ.md} for submitting workflows.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Memory and Timing}
