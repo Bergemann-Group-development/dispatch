@@ -8,7 +8,12 @@ CL=/mnt/beegfs/gemini/groups/bergemann/users/hoppe/dispatch/experiments/OpenMULT
 SED_BIN=${SED_BIN:-$CAMPAIGN/bin/f63e2fc95}
 
 task_key () { echo "$1"; }
-task_done () { grep -qs 'OpenMULTI3D terminated' "$CAMPAIGN/logs/b7_sed_$1.log"; }
+# done: the SED terminated and read lines (a window file the reader mishandles gives
+# "0 of N lines read" and a line-free spectrum)
+task_done () {
+  local log=$CAMPAIGN/logs/b7_sed_$1.log
+  grep -qs 'OpenMULTI3D terminated' "$log" && ! grep -qs '^0 of .* lines read from linelist .*vald' "$log"
+}
 task () {
   local model=$1 g=$2 cmd
   if [ ! -f "$g/line_grid.txt" ]; then
@@ -16,7 +21,7 @@ task () {
     ( cd $CL && PYTHONPATH=$CL OMP_NUM_THREADS=1 $CL/.venv/bin/$cmd ) \
       > "$CAMPAIGN/logs/lgrid_$(basename $g).log" 2>&1 || { echo "$model: line grid $g failed"; return 1; }
   fi
-  run "b7/n1d/${model}_o.nml" "$NT"
+  grep -qs 'OpenMULTI3D terminated' "$CAMPAIGN/logs/b7_n1d_${model}_o.log" || run "b7/n1d/${model}_o.nml" "$NT"
   python3 $CAMPAIGN/jobs/make_nml.py o_sed "$model" > /dev/null && BIN=$SED_BIN run "b7/sed/$model.nml" "$NT"
   task_done "$model"
 }
