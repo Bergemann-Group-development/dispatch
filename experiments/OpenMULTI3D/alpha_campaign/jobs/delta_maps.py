@@ -95,10 +95,23 @@ def set_index(run, element, da):
     raise KeyError(f'no {element} {da:+} set')
 
 
+def it1(folder):
+    """With LTE_IT1=1, the rerun of a 1D LTE run with one output scattering iteration
+    (make_nml.py lte_it1): b1/hrs -> b1/hrs_it1, b5/vmic -> b5/vmic_it1, .../lte ->
+    b4|b2/twin .../lte -> lte_it1.  Other runs (3D LTE, the Stagger-file <3D> runs, SEDs)
+    are returned unchanged."""
+    if not os.environ.get('LTE_IT1'):
+        return folder
+    f = folder.replace('b1/hrs/', 'b1/hrs_it1/', 1).replace('b5/vmic/', 'b5/vmic_it1/', 1)
+    if f.endswith('/lte') and f.startswith(('b4/', 'b2/twin/')):
+        f += '_it1'
+    return f
+
+
 def slopes(b1_run, lines=LINES):
     """dlog(EW)/dA of every line from the +-0.3 sets of a batch-1a run (Fe sets for
     Fe II)."""
-    r = tumult.read(str(RUNS / b1_run))
+    r = tumult.read(str(RUNS / it1(b1_run)))
     out = {}
     for el, lam0, hw in lines:
         el = el[:2]
@@ -153,6 +166,16 @@ def flag_rows(df):
     return df
 
 
+def marcs_sed(name):
+    """Stage-2 SED folder of a batch-2 MARCS model: the b6 redo with the phase-4
+    departure setup where it exists ([Fe/H] <= -1, make_nml.py batch2_dep4), else
+    batch 2's.  OLD_SED=1 keeps batch 2's everywhere."""
+    b6 = f'b6/sed/{name}'
+    if not os.environ.get('OLD_SED') and (RUNS / b6 / 'save').is_dir():
+        return b6
+    return f'b2/sed/{name}'
+
+
 def corr(ew_a, ew_b, s):
     ok = ew_a > 0 and ew_b > 0 and np.isfinite(s) and s > 0
     return -(np.log10(ew_a) - np.log10(ew_b)) / s if ok else np.nan
@@ -169,7 +192,7 @@ def one_a(args):
     lines = LINES_SED if sed else LINES
     try:
         s = slopes(f'b1/hrs/{name}', lines)
-        res = (nlte_lte(f'b2/sed/{name}', lines) if sed else
+        res = (nlte_lte(marcs_sed(name), lines) if sed else
                {**nlte_lte(f'b2/n1d/{name}_mg'), **nlte_lte(f'b2/n1d/{name}_fe')})
         return [dict(model=name, element=e, line=lam0, ew_lte=el_, ew_nlte=en, slope=s[lam0],
                      dA_nlte=corr(en, el_, s[lam0]), nlte_peak=PEAK.get(lam0, np.nan))
@@ -197,7 +220,7 @@ def one_b(args):
         if sed:
             a = nlte_lte(f'b2/sed/av3d_{av}', lines)
             tw = (f'b2/sed/twin_{av}' if tw_mg.startswith('b2/twin/') else
-                  f'b2/sed/{Path(tw_mg).name[:-3]}' if tw_mg.startswith('b2/n1d/') else '-')
+                  marcs_sed(Path(tw_mg).name[:-3]) if tw_mg.startswith('b2/n1d/') else '-')
             b = nlte_lte(tw, lines) if tw != '-' else {k: (v[0], np.nan, np.nan) for k, v in a.items()}
         else:
             a = {**nlte_lte(f'{av_run}/mg'), **nlte_lte(f'{av_run}/fe')}
@@ -222,7 +245,7 @@ def one_b(args):
 
 
 def lte_ews(folder, lines=LINES_SED):
-    r = tumult.read(str(RUNS / folder))
+    r = tumult.read(str(RUNS / it1(folder)))
     return {lam0: ew(r, lam0, hw, LTE=True) for _, lam0, hw in lines}
 
 
@@ -293,7 +316,7 @@ def one_n(args):
     PEAK.clear()
     row, b1_names = args
     av, teff, logg, feh, alpha, av_run, tw_lte, tw_mg = row[:8]
-    if not (RUNS / f'b4/av3d/{av}/lte/save').is_dir():
+    if not (RUNS / it1(f'b4/av3d/{av}/lte') / 'save').is_dir():
         return []
     try:
         s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
@@ -304,7 +327,7 @@ def one_n(args):
         if (RUNS / f'{b4n}/sed/av3d_{av}/save').is_dir():
             sed = (nlte_lte(f'{b4n}/sed/av3d_{av}', LINES_SED), nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
             twn = (f'b2/sed/twin_{av}' if tw_mg.startswith('b2/twin/') else
-                   f'b2/sed/{Path(tw_mg).name[:-3]}' if tw_mg.startswith('b2/n1d/') else None)
+                   marcs_sed(Path(tw_mg).name[:-3]) if tw_mg.startswith('b2/n1d/') else None)
             twn = nlte_lte(twn, LINES_SED) if twn else None
         tau = tau_check(av)
         rows = []
@@ -343,7 +366,7 @@ def one_w(args):
                            element=e, line=lam0, ew_3d=x[lam0], slope=s[lam0])
                 for e, lam0, _ in LINES_SED}
         for kind in ('marcs', 'av3d'):
-            grid = [v for v in VMIC_GRID if (RUNS / f'b5/vmic/{av}/{kind}_v{v:.1f}/save').is_dir()]
+            grid = [v for v in VMIC_GRID if (RUNS / it1(f'b5/vmic/{av}/{kind}_v{v:.1f}') / 'save').is_dir()]
             if len(grid) < 2:
                 continue
             da = {}

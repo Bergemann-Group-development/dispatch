@@ -25,6 +25,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
     python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
     python3 make_nml.py dep4_list FILE MODEL ...  # the same for the named models, listed in FILE
+    python3 make_nml.py lte_it1              # the 1D LTE families with one output scattering iteration
     python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
     python3 make_nml.py batch2_dep4          # batch-2 MARCS departures at [Fe/H] <= -1 with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
@@ -988,6 +989,37 @@ def pilot_fe4(order=(2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13), ltau=CROP_LTAU)
     print(f'{len(tasks)} cropped 3D Fe namelists in p1/tasks_3d_fe4.txt')
 
 
+def with_rt_maxiter(text, it):
+    """A namelist with &rt_output_params maxiter=it (output scattering iterations)."""
+    if '&rt_output_params' not in text:
+        return text + group('rt_output_params', maxiter=it) + '\n'
+    text = re.sub(r'(&rt_output_params[^/]*?) ?maxiter=\d+', r'\1', text)
+    return text.replace('&rt_output_params', f'&rt_output_params maxiter={it}', 1)
+
+
+def lte_it1():
+    """The 1D LTE families again with one output scattering iteration, the setting of
+    the stage-2 SEDs (reports/2026-10-05_phase5.md, section 6): batch 1a (b1/hrs ->
+    b1/hrs_it1), the vmic-grid partners (b5/vmic -> b5/vmic_it1), the own <3D> LTE runs
+    (b4/av3d/<m>/lte -> lte_it1) and batch 2's own twins (b2/twin/<av>/lte -> lte_it1).
+    delta_maps.py reads them with LTE_IT1=1.  Writes lte_it1_tasks.txt."""
+    pairs = [(f, f.parent.with_name(f.parent.name + '_it1') / f.name)
+             for top in ('b1/hrs',) for f in sorted(Path(top).glob('*.nml'))]
+    pairs += [(f, Path(str(f).replace('b5/vmic/', 'b5/vmic_it1/', 1)))
+              for f in sorted(Path('b5/vmic').glob('*/*.nml'))]
+    pairs += [(f, f.with_name('lte_it1.nml'))
+              for top in ('b4/av3d', 'b2/twin') for f in sorted(Path(top).glob('*/lte.nml'))]
+    tasks = []
+    for src, dst in pairs:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(with_rt_maxiter(src.read_text(), 1))
+        tasks.append(str(dst))
+    # the b1 runs with their abundance sets are the long ones: first
+    tasks.sort(key=lambda t: (not t.startswith('b1/'), t))
+    Path('lte_it1_tasks.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} LTE namelists with maxiter=1 in lte_it1_tasks.txt')
+
+
 def batch2_dep4(feh_max=-1.0):
     """Batch 2's MARCS departures (A) again with the phase-4 setup, for every domain
     model at [Fe/H] <= feh_max, where the solar absmet table and the atoms' own
@@ -1042,6 +1074,8 @@ if __name__ == '__main__':
         dep4(sys.argv[2:])
     elif sys.argv[1:2] == ['dep4_list']:          # dep4_list TASKS_FILE MODEL ...
         dep4(sys.argv[3:], sys.argv[2])
+    elif sys.argv[1:2] == ['lte_it1']:
+        lte_it1()
     elif sys.argv[1:2] == ['pilot_fe4']:
         pilot_fe4()
     elif sys.argv[1:2] == ['batch2_dep4']:
