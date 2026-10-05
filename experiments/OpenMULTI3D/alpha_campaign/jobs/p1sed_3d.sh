@@ -8,7 +8,7 @@
 # Jnu set per final ray).  With LOCAL=1 a SED runs on the node's /scratch when it has
 # 150 GB free (its Jnu_out files reach about 120 GB; beegfs throughput varies with the
 # other users' load); everything but the Jnu files is copied back to runs/ afterwards.
-#   sbatch -w NODE -c 24 --mem=80G --time=4-00:00:00 --export=ALL,BIN=$C/bin/8ce90476b jobs/p1sed_3d.sh
+#   sbatch --nice=100 -c 32 --mem=110G --time=4-00:00:00 --export=ALL,BIN=$C/bin/8ce90476b jobs/p1sed_3d.sh
 #SBATCH -J p1sed_3d
 #SBATCH --partition=four-wks
 #SBATCH --nodes=1
@@ -25,6 +25,8 @@ echo "host $(hostname -s), $SLURM_CPUS_PER_TASK threads, BIN=$BIN"
 # the output scattering iterations: RT_MAXITER, else work/p1sed/rt_maxiter, else 3
 [ -z "$RT_MAXITER" ] && [ -f $WORK/p1sed/rt_maxiter ] && RT_MAXITER=$(cat $WORK/p1sed/rt_maxiter)
 cd $WORK && python3 $CAMPAIGN/jobs/make_nml.py pilot_sed ${RT_MAXITER:-3} || { echo 'pilot_sed failed; stale task list, stopping'; exit 1; }
+# loop over a private copy: another job's pilot_sed rewrites the list while this one reads it
+LIST=$(mktemp) && cp $WORK/p1sed/tasks_3d.txt $LIST
 while read -r nml; do
   [ -z "$nml" ] && continue
   log=$CAMPAIGN/logs/$(echo ${nml%.nml} | tr / _).log
@@ -49,4 +51,5 @@ while read -r nml; do
     run "$nml" $SLURM_CPUS_PER_TASK
   fi
   tail -1 $TIMINGS
-done < $WORK/p1sed/tasks_3d.txt
+done < $LIST
+rm -f $LIST

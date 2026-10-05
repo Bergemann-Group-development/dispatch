@@ -25,6 +25,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
     python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
     python3 make_nml.py dep4_list FILE MODEL ...  # the same for the named models, listed in FILE
+    python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
     python3 make_nml.py batch2_dep4          # batch-2 MARCS departures at [Fe/H] <= -1 with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
@@ -495,7 +496,7 @@ def solved(run, element):
 def pilot_sed(rt_maxiter=3):
     """Stage-2 SEDs of the pilot, Mg departures (Mg + Fe once a 3D Fe run has finished), all from the
     full line list: 1D on the MARCS twin and the <3D> average (b2-style combined Mg+Fe
-    departures), and per finished 3D Mg snapshot (a) on its own 3D departures and (b) on
+    departures), and per finished 3D Mg snapshot (a) on its own 3D departures (a cropped s<snap>_fe4 run mapped in height onto the Mg mesh) and (b) on
     the <3D> departures mapped to it in log tau_500 (map_departures.py, run by the job
     before the SED).  The mapped departures come from the own <3D> averages with density
     (b4/av3d/<model>, make_nml.py avg3d) into runs/p1sed/map4/<model>_s<snap>; the
@@ -539,10 +540,17 @@ def pilot_sed(rt_maxiter=3):
                 nml = Path('p1sed') / model / f'{snap}_map4mg.nml'
                 nml.write_text(sed3d(out, [PILOT_MG['file']], feh, comp))
                 t3.append((1 + rank[snap], 1, str(nml)))
-            fe = DATADIR / f'p1/{model}/{snap}_fe'
+            fe4 = DATADIR / f'p1/{model}/{snap}_fe4'           # cropped (pilot_fe4)
+            fe = fe4 if solved(fe4, 'Fe') else DATADIR / f'p1/{model}/{snap}_fe'
             if solved(fe, 'Fe'):
-                dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
-                combine_departures(dep, run, fe)
+                if fe == fe4:
+                    # the cropped Fe departures, mapped in height onto the Mg run's mesh
+                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}_fe4'
+                    combine_departures(dep, run, run)
+                    maps.append(f'{fe4} {run} {dep} Fe')
+                else:
+                    dep = DATADIR / 'p1sed/dep' / f'{model}_{snap}'
+                    combine_departures(dep, run, fe)
                 nml = Path('p1sed') / model / f'{snap}_3dmgfe.nml'
                 nml.write_text(sed3d(dep, [PILOT_MG['file'], PILOT_FE['file']], feh, comp))
                 t3.append((0, rank[snap], str(nml)))
@@ -941,6 +949,45 @@ def dep4(models=(), tasks_file='b4/tasks_dep.txt'):
     print(f'{len(tasks)} models in {tasks_file}, {len(todo)} line grids in lgrid/todo.txt')
 
 
+# The top of a 3D box is cut where the horizontal mean of log tau_500 reaches CROP_LTAU
+# before a 3D Fe run (crop3d.py; reports/2026-10-05_phase5.md, section 2): above it the
+# Fe statistical equilibrium is ill-conditioned and the runs stall at the 1 % level.
+CROP_LTAU = -5.0
+
+
+def pilot_fe4(order=(2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13), ltau=CROP_LTAU):
+    """The pilot's 3D Fe runs again, on snapshots cropped at <log tau_500> = ltau, with
+    the phase-4 departure setup (Fe line grid on the MARCS twin, matched absmet):
+    p1/<model>/s<snap>_fe4.nml for the entries of p1/tasks_3d_fe.txt in the given order
+    (first snapshots first).  Writes p1/tasks_3d_fe4.txt and crop/tasks.txt ('SNAP RUN
+    OUT LTAU', RUN the snapshot's 3D LTE run, for crop3d.sbatch); the grids go into
+    lgrid/todo.txt."""
+    fe = Path('p1/tasks_3d_fe.txt').read_text().split()
+    info = {Path(f).name.replace('_new', ''): (f, m, feh, a) for f, m, _, feh, a in PILOT}
+    todo, tasks, crops = {}, [], []
+    for i in order:
+        model, nml = Path(fe[i]).parent.name, Path(fe[i]).name
+        tag = nml.split('_')[0][1:]
+        folder, marcs, feh, alpha = info[model]
+        snap = next((Path('stagger2') / folder).glob(f'atm3d.*_{tag}_*'))
+        out = Path('crop') / folder
+        crops.append(f'{snap} {DATADIR}/p1/{model}/s{tag}_lte {CAMPAIGN}/work/{out} {ltau}')
+        teff, logg = av3d_labels(model)[:2]
+        grid, cmd = line_grid(PILOT_FE, Path(marcs), feh, alpha, 1.0 if logg >= 3.5 else 2.0)
+        todo[str(grid)] = cmd
+        comp = dict(alpha_enhancement=alpha) if alpha else None
+        atmos = dict(atmos_format='stagger2', atmos_file=str(out / snap.name))
+        new = Path('p1') / model / f's{tag}_fe4.nml'
+        new.write_text(namelist(atmos, geometry='3d', feh=feh, atom=in_3d(with_grid(PILOT_FE, grid)),
+                                composition=comp, absmet=absmet_for(feh)))
+        tasks.append(str(new))
+    add_todo(todo)
+    Path('crop').mkdir(exist_ok=True)
+    Path('crop/tasks.txt').write_text('\n'.join(crops) + '\n')
+    Path('p1/tasks_3d_fe4.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} cropped 3D Fe namelists in p1/tasks_3d_fe4.txt')
+
+
 def batch2_dep4(feh_max=-1.0):
     """Batch 2's MARCS departures (A) again with the phase-4 setup, for every domain
     model at [Fe/H] <= feh_max, where the solar absmet table and the atoms' own
@@ -995,6 +1042,8 @@ if __name__ == '__main__':
         dep4(sys.argv[2:])
     elif sys.argv[1:2] == ['dep4_list']:          # dep4_list TASKS_FILE MODEL ...
         dep4(sys.argv[3:], sys.argv[2])
+    elif sys.argv[1:2] == ['pilot_fe4']:
+        pilot_fe4()
     elif sys.argv[1:2] == ['batch2_dep4']:
         batch2_dep4()
     elif sys.argv[1:2] == ['b6_sed']:
