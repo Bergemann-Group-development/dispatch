@@ -28,7 +28,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py lte_it1              # the 1D LTE families with one output scattering iteration
     python3 make_nml.py pilot_mg4            # 3D Mg of the metal-poor pilot models with the phase-4 setup
     python3 make_nml.py pilot_fe4            # pilot 3D Fe on cropped snapshots with the phase-4 setup
-    python3 make_nml.py batch2_dep4          # batch-2 MARCS departures at [Fe/H] <= -1 with that setup, into b6/
+    python3 make_nml.py batch2_dep4 [FEH]    # batch-2 MARCS departures at [Fe/H] <= FEH (-1) with that setup, into b6/
     python3 make_nml.py b6_sed NAME          # stage-2 SED on a model's b6 departures
     python3 make_nml.py vmic_grid            # 1D MARCS and <3D> LTE on a vmic grid for every 3D LTE model, into b5/
     python3 make_nml.py sed_validate         # cost/accuracy test of the 3D SED output-pass settings, into val/
@@ -1108,8 +1108,8 @@ if __name__ == '__main__':
         pilot_mg4()
     elif sys.argv[1:2] == ['pilot_fe4']:
         pilot_fe4()
-    elif sys.argv[1:2] == ['batch2_dep4']:
-        batch2_dep4()
+    elif sys.argv[1:2] == ['batch2_dep4']:          # batch2_dep4 [FEH_MAX]
+        batch2_dep4(float(sys.argv[2]) if len(sys.argv) > 2 else -1.0)
     elif sys.argv[1:2] == ['b6_sed']:
         b6_sed(sys.argv[2])
     elif sys.argv[1:2] == ['vmic_grid']:
