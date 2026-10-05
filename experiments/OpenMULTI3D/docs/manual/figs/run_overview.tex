@@ -1,0 +1,32 @@
+% The stages of a run, as seen by a user (Sec. "A First Run"). The wavelength grids of
+% the two passes are in figs/passes.tex, the tasks in figs/tasks.tex.
+% Needs tikz with the libraries positioning, arrows.meta, calc and fit.
+\begingroup
+\newcommand{\kw}[1]{\texttt{#1}}
+\begin{adjustbox}{max width=\linewidth, max height=0.62\textheight}
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[length=2mm]},
+    box/.style={draw, rounded corners=4pt, align=center, inner sep=4pt, text width=3.6cm, minimum height=1.5cm},
+    arr/.style={->, thick},
+    lab/.style={font=\scriptsize, text=black!70, align=center},
+    node distance=9mm
+  ]
+  \node[box, fig orange] (in) {\textbf{Input}\\
+    \fignote{atmosphere, abundances, model atoms, line list, wavelengths}};
+  \node[box, fig orange, right=of in] (eos) {\textbf{Equation of state}\\
+    \fignote{HOP: ionisation, molecules, opacities on the mesh}};
+  \node[box, fig green, right=20mm of eos] (it) {\textbf{Iteration pass}\\
+    \fignote{statistical equilibrium of the model atoms}};
+  \node[box, fig red, right=20mm of it] (out) {\textbf{Output pass}\\
+    \fignote{emergent spectrum at fixed populations}};
+  \node[box, fig red, below=8mm of out] (sets) {\textbf{Spectrum sets}\\
+    \fignote{NLTE, LTE, continuum}};
+  \draw[arr] (in) -- (eos);
+  \draw[arr] (eos) -- (it) node[midway, above, lab] {\kw{convlim}\,$>$\,0};
+  \draw[arr] (it) -- (out) node[midway, above, lab] {populations};
+  \draw[arr] (eos.north) -- ++(0,6mm) -| (out.north) node[pos=0.25, above, lab] {\kw{convlim}\,=\,0: LTE only};
+  \draw[arr] (out) -- (sets);
+\end{tikzpicture}
+\end{adjustbox}
+\endgroup

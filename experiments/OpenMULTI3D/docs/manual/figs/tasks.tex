@@ -29,7 +29,7 @@
 
   % RT columns: x positions of the internal (up, down) and output (up, down, final) columns
   \def\colw{0.95}
-  \foreach \x/\name/\dir/\top in {8.0/iu/up/up, 9.1/id/down/down, 11.6/su/up/up, 12.7/sd/down/down, 14.1/fi/up/final} {
+  \foreach \x/\name/\dir/\top in {8.7/iu/up/up, 9.8/id/down/down, 12.3/su/up/up, 13.4/sd/down/down, 14.8/fi/up/final} {
     \node[column, minimum width=\colw cm, minimum height=4.5cm, anchor=north] (\name) at (\x,1.05) {};
     \node[lab, anchor=south] at (\name.north) {\kw{\top}};
     \node[slab] (\name top) at (\x,0) {};

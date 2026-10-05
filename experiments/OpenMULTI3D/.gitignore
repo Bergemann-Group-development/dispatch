@@ -16,6 +16,9 @@ docs/manual/*
 !docs/manual/ref.bib
 !docs/manual/tabs/
 !docs/manual/figs/
+# the figures of the worked example, drawn by figs/science_case.py; tracked so the
+# manual builds without the runs and the observed atlas
+!docs/manual/figs/mg_*.pdf
 !docs/notes/
 docs/notes/*
 !docs/notes/*.tex
