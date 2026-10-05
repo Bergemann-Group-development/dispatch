@@ -9,7 +9,7 @@ the snapshot), OUT the folder for the cropped atm3d/mesh pair; LTAU defaults to 
 The cut height is where the horizontal mean of log tau_500 over RUN's planes reaches
 LTAU.  The planes above it are dropped and a plane interpolated at the cut height
 (linear in height; log T, log n_e and log rho, linear velocities) becomes the new top,
-so the box ends at the cut.  The bottom and the horizontal mesh stay as they are, so
+so the box ends at the cut.  A box whose top lies below LTAU already is linked as it is.  The bottom and the horizontal mesh stay as they are, so
 the cropped and the full box share their columns and the heights below the cut.
 
 Why: in the top planes of the 3D boxes (log tau_500 < -6, T 2000-5700 K side by side,
@@ -73,8 +73,18 @@ def main(snap, run, out, ltau=-6.0):
 
     zr, lt = mean_ltau_profile(run)
     scale = H / zr[-1]                              # the run's top cell sits at the box top
-    if not (np.all(np.diff(lt) < 0) and lt[-1] < ltau < lt[0]):
-        sys.exit(f'{snap.name}: <log tau_500> not monotonic or {ltau} outside {lt[-1]:.2f}..{lt[0]:.2f}')
+    if not np.all(np.diff(lt) < 0):
+        sys.exit(f'{snap.name}: <log tau_500> is not monotonic in height')
+    out.mkdir(parents=True, exist_ok=True)
+    if ltau <= lt[-1]:
+        # the box already ends below the cut: the cropped snapshot is the snapshot
+        for f in (snap, mesh):
+            if not (out / f.name).exists():
+                (out / f.name).symlink_to(f.resolve())
+        with (out / 'crop.txt').open('a') as f:
+            f.write(f'{snap} {out / snap.name} {H:.6e} {H:.6e} {lt[-1]:.2f} {nz}\n')
+        print(f'{snap.name}: box top <log tau_500> {lt[-1]:.2f} is below {ltau}; not cropped')
+        return
     h_cut = np.interp(ltau, lt[::-1], zr[::-1]) * scale
 
     keep = h < h_cut                                # planes below the cut
@@ -94,7 +104,6 @@ def main(snap, run, out, ltau=-6.0):
         arrays.append(np.concatenate([t[:, :, None], kept] if top_first else [kept, t[:, :, None]], axis=2))
     z_new = np.r_[z_cut, z[idx]] if top_first else np.r_[z[idx], z_cut]
 
-    out.mkdir(parents=True, exist_ok=True)
     with (out / snap.name).open('wb') as f:
         for a in arrays:
             a.astype(np.float32).ravel(order='F').tofile(f)
