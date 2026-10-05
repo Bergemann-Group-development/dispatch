@@ -13,6 +13,12 @@ linear in log tau_500 and held constant beyond the 1D depth range.  log tau_500 
 vertical optical depth of each column, as tumult computes it from the saved 500 nm
 opacity (slot chi) of each run.
 
+A 3D RUN_1D (more than one column) is mapped column by column in height instead: the
+3D NLTE run of a snapshot cropped at the top (crop3d.py) onto the full mesh of the same
+snapshot (same columns, same bottom), log b linear in height and held at the cropped
+run's top value above the cut.  That puts departures solved in a cropped box on the mesh
+of the snapshot's other runs, e.g. for a Mg + Fe stage-2 SED.
+
 OUT gets params.nml, atmos_mesh.txt and save/atmos_* of RUN_3D as symlinks, and
 save/pop_<ELEMENT>_* written in the layout of a 3D NLTE run: one file per z-slab patch,
 (nx, ny, nz_patch, nlevel, 2, 1) float32, slot 2 the departures.  Only the departures of
@@ -36,6 +42,21 @@ def profile(run_1d, element):
     ltau = np.asarray(r.atmos.ltau, float).ravel()
     order = np.argsort(ltau)
     return ltau[order], np.log10(np.maximum(b[order], 1e-30))
+
+
+def columns(run_src, run_dst, element):
+    """log b of a 3D run on the heights of another 3D run of the same snapshot:
+    (nx, ny, nz_dst, level), held constant above the source's top."""
+    rs, rd = tumult.read(str(run_src)), tumult.read(str(run_dst))
+    pop = np.asarray(rs.read_patch_save(f'pop_{element}', folder=Path(run_src) / 'save', zdim=2))
+    lb = np.log10(np.maximum(pop[:, :, :, :, 1, 0], 1e-30))      # (nx, ny, nz_src, level)
+    zs, zd = np.asarray(rs.atmos.zz, float), np.asarray(rd.atmos.zz, float)
+    assert lb.shape[:2] == np.shape(rd.atmos.ltau)[:2], 'the runs must share their columns'
+    assert np.all(np.diff(zs) > 0) and np.all(np.diff(zd) > 0)
+    z = np.clip(zd, zs[0], zs[-1])
+    i = np.clip(np.searchsorted(zs, z) - 1, 0, len(zs) - 2)
+    w = ((z - zs[i]) / (zs[i + 1] - zs[i]))[None, None, :, None]
+    return (1 - w) * lb[:, :, i, :] + w * lb[:, :, i + 1, :], zs[-1], zd[-1]
 
 
 def write_patches(save, element, b3d, nz_patches):
@@ -67,7 +88,17 @@ def main(run_1d, run_3d, out, elements):
     ltau3 = np.asarray(r3.atmos.ltau, float)        # (nx, ny, nz), the unrotated mesh
     nz_patches = np.diff(np.r_[0, r3.atmos.atmos_cuts]).astype(int)
     assert nz_patches.sum() == ltau3.shape[2]
+    src_shape = np.shape(tumult.read(str(run_1d)).atmos.ltau)
     for el in elements:
+        if np.prod(src_shape[:-1]) > 1:                 # a 3D source: map in height
+            lb, top_src, top_dst = columns(run_1d, run_3d, el)
+            b3d = (10 ** lb).astype(np.float32)
+            write_patches(save, el, b3d, nz_patches)
+            ev = run_1d / 'save' / f'pop_{el}_ev.txt'
+            (save / ev.name).write_text(ev.read_text())
+            print(f'{el}: {lb.shape[3]} levels, 3D source top {top_src:.3f}, target top '
+                  f'{top_dst:.3f} (code length units); b {b3d.min():.3g}..{b3d.max():.3g} -> {save}')
+            continue
         lt1, lb1 = profile(run_1d, el)
         nlev = lb1.shape[1]
         b3d = np.empty(ltau3.shape + (nlev,), np.float32)
