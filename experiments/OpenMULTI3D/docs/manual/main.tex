@@ -621,12 +621,43 @@ corr = abundance.nlte_corrections(nlte, method="cog")
 An NLTE run iterates until the largest relative population change over all levels and grid points falls below \Code{\&nlte\_params\%convlim}, or until \Code{\&rt\_iteration\_params\%maxiter} iterations (99 unless set) have passed. Check every NLTE run before using its spectrum.
 
 \begin{itemize}
-    \item \textbf{Closing message.} A run that met \fort{convlim} ends with \Code{OpenMULTI3D terminated successfully.} One that used up \fort{maxiter} ends with a warning that gives the last relative change. Departures are written in both cases.
+    \item \textbf{Closing message.} A run that met \fort{convlim} ends with \Code{OpenMULTI3D terminated successfully.} One that used up \fort{maxiter} ends with a warning that gives the last relative change, and one stopped on request (Sec.~\ref{sec:stopping}) with a warning that begins \Code{OpenMULTI3D stopped on request}. Departures are written in all cases.
     \item \textbf{Iteration table.} At console level 0 and above each iteration prints a row with the iteration number, the largest relative population change, the level and the position where it occurs. Iterations accelerated by Ng's method carry an asterisk after the number.
     \item \textbf{Per-level report.} \File{convergence\_report\_NNN.txt} in the run directory gives the maximum change of every level, unweighted. It names the level that holds up convergence.
 \end{itemize}
 
 A level stuck at a large change, changes that alternate in sign and the per-patch test are explained in Sec.~\ref{sec:numerics}.
+
+\subsection{Stopping and continuing an NLTE run}\label{sec:stopping}
+A run writes the departures of each depth patch when that patch stops iterating. To end the iterations early with every patch's departures written, create the file \File{stop\_nlte.flag} in the run directory:
+
+\begin{minted}{bash}
+touch data/myrun/stop_nlte.flag             # stop iterating, then compute the spectrum
+echo exit > data/myrun/stop_nlte.flag       # stop iterating and skip the output pass
+\end{minted}
+
+The run looks for the file once per iteration, removes it, finishes the iteration under way and then ends the iterations as convergence would. A file left in the run directory from an earlier run is removed at the start. DISPATCH's own \File{stop.flag} instead aborts the run without writing departures.
+
+\fort{&output_params save_every=N} writes the populations every $N$ iterations as well, so that a run killed without warning (time limit, memory, node failure) leaves the departures of its last save. These intermediate files hold the populations on the model grid only; the ray-aligned copies (\fort{rotate_atmos=T}) are written at the end.
+
+To continue, start a new run on the saved departures, with iterations:
+
+\begin{minted}{Fortran}
+&atmos_params        atmos_format='save' atmos_file='data/myrun' read_departures=T /
+&rt_iteration_params maxiter=400 /
+\end{minted}
+
+The iterations start from the saved departure coefficients instead of LTE. The history of Ng's method and the iteration count start afresh. In a 1D test the iterations of the stopped run and of its continuation added up to those of an uninterrupted run, and the departures agreed to the precision of the saved files ($3\times10^{-7}$).
+
+Under Slurm, ask for a signal some time before the time limit and turn it into a stop request. The signal reaches only the batch shell, so \Code{dispatch.x} runs in the background:
+
+\begin{minted}{bash}
+#SBATCH --signal=B:USR1@3600
+trap 'touch data/myrun/stop_nlte.flag' USR1
+./dispatch.x myrun.nml & wait $!; wait $!
+\end{minted}
+
+The first \Code{wait} returns when the signal arrives, the second waits for the run to end. Leave enough time for the output pass, or write \Code{exit} to the file.
 
 \paragraph{Testing convergence.} Repeat the run with one setting refined at a time and compare the departure coefficients and the equivalent widths or abundance corrections of the lines of interest.
 
@@ -1247,7 +1278,7 @@ All files of a run are in \File{<datadir>/<name>/}. Use \Code{tm.read} to access
     \item \File{save/flux\_*.bin}, \File{save/ie\_*.bin}, \File{save/out\_lam.bin}: flux, intensities and the output wavelengths.
 \end{itemize}
 
-\paragraph{Saved populations.} \File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists for each level its energy in eV above the ground state of its own ion plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:nlteoutput}). Each depth patch writes its populations when it stops iterating, \emph{before} the output pass. A job whose time limit ends during the output pass has therefore still produced usable departures, but one that ends during the iterations has produced none for the patches still iterating. A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows. Departures of several atoms from different runs on the same atmosphere are combined by one folder holding \File{params.nml}, \File{atmos\_mesh.txt} and \File{save/} of one run, plus the \File{save/pop\_<atom>\_*} files of the others. A spectrum run with \fort{rotate_atmos=T} on departure coefficients saved without rotation reads the model named in the saved run's \File{params.nml} once more, and interpolates the ray-aligned copies of the atmosphere from it; the model must still be at that path.
+\paragraph{Saved populations.} \File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists for each level its energy in eV above the ground state of its own ion plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:nlteoutput}). Each depth patch writes its populations when it stops iterating, \emph{before} the output pass. A job whose time limit ends during the output pass has therefore still produced usable departures, but one that ends during the iterations has produced none for the patches still iterating, unless \fort{save_every} is set (Sec.~\ref{sec:stopping}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows. Departures of several atoms from different runs on the same atmosphere are combined by one folder holding \File{params.nml}, \File{atmos\_mesh.txt} and \File{save/} of one run, plus the \File{save/pop\_<atom>\_*} files of the others. A spectrum run with \fort{rotate_atmos=T} on departure coefficients saved without rotation reads the model named in the saved run's \File{params.nml} once more, and interpolates the ray-aligned copies of the atmosphere from it; the model must still be at that path.
 
 \paragraph{Layout of the saved files.} Every array is written per patch as raw single-precision Fortran-order stream data in \File{<label>\_ZZZWWW.bin}, where \texttt{ZZZ} is the three-digit index of the depth slab and \texttt{WWW} that of the frequency window (\texttt{000} for arrays without a frequency axis, such as \File{atmos\_001000.bin}). The first row of the matching \File{<label>\_meta.txt} starts with an asterisk; each further row gives the file name, the bits per element and the array shape, and rows are appended as patches finish. The atmosphere (\File{atmos}) and the populations are split in $z$ into slabs, so a 3D run has one file per slab; \py{run.atmos.atmos_cuts} holds the cumulative number of depth points at the end of each slab. With \fort{rt_to_file}, the radiation field and the exit planes that frozen columns hand on are also written there (\File{Jnu}, \File{Jnu\_out} and \File{exit\_plane}, without meta rows unless \fort{save_Jnu=T}). Use \py{run.read_patch_save(label, zdim=...)} to assemble such arrays rather than reading the files directly.
 

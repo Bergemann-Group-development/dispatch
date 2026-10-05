@@ -192,6 +192,10 @@ MODULE m3d_patch_mod
     ! convmax (premature_finish).  A run whose patches all finished that way never
     ! completes the iteration that would give it a final global change.
     integer, public, save :: nlte_last_iter=0, n_convmax_finished=0
+    ! A stop request (<run_dir>/stop_nlte.flag, see nlte_patch_t%execute) ends the
+    ! NLTE iterations as convergence would, so every depth patch writes its
+    ! departures.  With stop_exit the output pass is skipped as well.
+    logical, public, save :: stop_requested=.false., stop_exit=.false.
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
     ! Which preconditioning the bound-bound rates use.  'original' subtracts the
@@ -275,6 +279,8 @@ MODULE m3d_patch_mod
     real(4), public :: fixed_Jnu=-1.0
     ! Output-content selection formerly read via &atom_params
     logical, public, save :: save_populations=.true.
+    ! Write the populations every save_every iterations as well (0: only at the end)
+    integer, public, save :: save_every=0
     logical, public, save :: bound_free_in_output=.false.
     integer, public, save :: save_rates=0
     character(len=128), public :: atmos_format='unknown'
@@ -311,7 +317,7 @@ MODULE m3d_patch_mod
     namelist /output_params/ save_id, save_patch_kind, save_resolved, &
     save_cntrbf, depression_cntrbf, save_Inu, save_chi, save_Snu, save_Jnu, &
     rt_to_file, overlapping_bb_in_output, &
-    save_populations, save_rates, save_rate_matrix, bound_free_in_output, set_file
+    save_populations, save_every, save_rates, save_rate_matrix, bound_free_in_output, set_file
 
     namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
@@ -679,7 +685,10 @@ MODULE m3d_patch_mod
       write(console_unit, *) 'Update on', self%id, 'has begun', self%finished, self%time
     endif
     if (.not. self%is_finished()) then
-      if (converged .and. self%do_full_sp) then
+      ! After a stop request with stop_exit, the output-spectrum tasks finish
+      ! without running once every nlte_patch has written its departures
+      if ((converged .and. self%do_full_sp) .or. &
+          (stop_exit .and. nlte_finished .and. self%do_out_sp)) then
         call self%finish()
         self%print_update_info = .false.
         call print_execution_history(self, 'SKP')

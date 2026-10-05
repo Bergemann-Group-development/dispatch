@@ -24,7 +24,7 @@ PROGRAM dispatch
   USE timer_mod
   USE mpi_debug_mod
   USE m3d_patch_mod, only: write_linelist_out, n_nlte_patches, converged, convlim, convmax, &
-    nlte_last_change, nlte_last_iter, n_convmax_finished
+    nlte_last_change, nlte_last_iter, n_convmax_finished, stop_requested, stop_exit
   USE rt_params_mod, only: rt_iter
   USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
@@ -58,7 +58,13 @@ PROGRAM dispatch
   ! last of these never completes the iteration that would measure a final global
   ! change.  A run that used up its iterations says so with the change it ended on.
   write(nit,'(i0)') nlte_last_iter
-  if (n_nlte_patches == 0 .or. rt_iter%maxiter == 0 .or. converged .or. &
+  if (stop_requested) then
+    write(change,'(f10.2)') abs(nlte_last_change)*100
+    text = 'OpenMULTI3D stopped on request after ' // trim(nit) // ' NLTE iterations (largest ' // &
+      'relative change ' // trim(adjustl(change)) // ' %); departures written'
+    if (stop_exit) text = trim(text) // ', no output spectrum'
+    call console_warn (ch_m3d, trim(text))
+  else if (n_nlte_patches == 0 .or. rt_iter%maxiter == 0 .or. converged .or. &
       (nlte_last_change /= 0d0 .and. abs(nlte_last_change) < convlim)) then
     if (console_on(ch_m3d, 0)) write(console_unit,'(a)') 'OpenMULTI3D terminated successfully.'
   else if (n_convmax_finished == n_nlte_patches) then

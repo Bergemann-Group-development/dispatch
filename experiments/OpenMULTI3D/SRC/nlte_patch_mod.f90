@@ -27,7 +27,7 @@ MODULE nlte_patch_mod
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
     n_nlte_patches, release_output_tasks, &
-    save_populations, bound_free_in_output, save_rates
+    save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit
   USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
@@ -49,6 +49,7 @@ MODULE nlte_patch_mod
     real(8) :: local
     integer :: natom=0
     logical :: update_skipped=.false., atom_allocated=.false., molec
+    logical :: pop_meta_written=.false.   ! this patch has its rows in pop_<atom>_meta.txt
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -60,6 +61,7 @@ MODULE nlte_patch_mod
     procedure :: pre_init_spectrum
     procedure :: init_departures
     procedure :: write_populations
+    procedure :: check_stop_request
     procedure :: get_osmet_nu
     procedure :: exclude_double_continua
     procedure :: exclude_double_lines
@@ -83,6 +85,7 @@ MODULE nlte_patch_mod
   integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
+  logical, save :: stale_stop_checked=.false.
   logical, public, save :: external_sp=.false.
   ! The output pass takes the lines of the atom's species from the line list, with the
   ! atom's departure coefficients, instead of from the atom's own transitions:
@@ -461,7 +464,7 @@ contains
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, p(3), m(3), ng_epos(4), count
+    integer :: i, j, k, p(3), m(3), ng_epos(4), count, lunit
     real(8) :: ng_emax
     logical :: do_ng, locally_converged, found, last
     integer, save :: itimer=0
@@ -603,6 +606,8 @@ contains
           .and. .not. flux_convergence .and. self%iter < self%maxiter) then
         converged = .true.
       endif
+      if (last .and. .not. converged .and. self%iter < self%maxiter) &
+        call self%check_stop_request()
     endif
 
     ! locally_converged is population/convmax-based (premature_finish shortcut);
@@ -615,7 +620,25 @@ contains
       call self%finish()
     endif
 
-    if (self%iter == 0) call self%init_departures()
+    if (self%iter == 0) then
+      call self%init_departures()
+      ! a stop request left over from an earlier run in this folder is void
+      !$omp critical (stop_flag)
+      if (.not. stale_stop_checked) then
+        stale_stop_checked = .true.
+        if (os%exists(trim(io%run_dir)//'stop_nlte.flag')) then
+          open (newunit=lunit, file=trim(io%run_dir)//'stop_nlte.flag', status='old')
+          close (lunit, status='delete')
+          call console_warn (ch_m3d, 'removed a stop_nlte.flag left from an earlier run')
+        endif
+      endif
+      !$omp end critical (stop_flag)
+    endif
+
+    if (save_populations .and. save_every > 0 .and. self%iter > 0 .and. &
+        .not. self%is_finished()) then
+      if (mod(self%iter, save_every) == 0) call self%write_populations(intermediate=.true.)
+    endif
 
     ! Flux-convergence wind-down (one more population solve):
     ! rt_patch raised flux_conv_signal in the PREVIOUS iteration, after nlte_patch
@@ -871,8 +894,14 @@ contains
   END SUBROUTINE init_departures
 
   !===============================================================================
-  SUBROUTINE write_populations (self)
+  !> Write this patch's LTE populations and departure coefficients to
+  !> save/pop_<atom>_*.  An intermediate write (save_every) stores the unrotated
+  !> populations only; the ray-aligned slots keep 1 until the final write, which
+  !> follows project_populations.  Each write replaces the patch's file, and the
+  !> meta row is added once.
+  SUBROUTINE write_populations (self, intermediate)
     class(nlte_patch_t), intent(inout), target :: self
+    logical, intent(in), optional :: intermediate
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
@@ -887,7 +916,7 @@ contains
       n = shape(adata%nstar)
       nmu = size(self%departures, 2)
       allocate(out_mem(n(1), n(2), n(3), n(4), 2, nmu), source=1.0)
-      do m=1, nmu
+      do m=1, merge(1, nmu, shared%option(intermediate, .false.))
         if (m>1) adata => atom%rotated_data(m-1)
         do l=1, n(4)
           do z=1, n(3)
@@ -903,7 +932,7 @@ contains
         end do
       end do
 
-      call self%save6(out_mem, label='pop_'//trim(atom%id))
+      call self%save6(out_mem, label='pop_'//trim(atom%id), add2meta=.not. self%pop_meta_written)
       !$omp critical (write_atom_ev)
       if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
         open(newunit=lunit, file=trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt', form='formatted')
@@ -918,8 +947,45 @@ contains
       !$omp end critical (write_atom_ev)
       deallocate(out_mem)
     end do
+    self%pop_meta_written = .true.
     call trace%end()
   END SUBROUTINE write_populations
+
+  !===============================================================================
+  !> A stop request: the file <run_dir>/stop_nlte.flag, looked for by the last
+  !> nlte_patch of each iteration.  It ends the iterations the way convergence
+  !> does, so every depth patch finishes with this iteration's solve and writes
+  !> its departures.  The output pass then runs, unless the file's first word is
+  !> 'exit'.  The file is removed once read.
+  !===============================================================================
+  SUBROUTINE check_stop_request (self)
+    class(nlte_patch_t), intent(in) :: self
+    character(len=256) :: file
+    character(len=16) :: word, nit
+    logical :: exists
+    integer :: lunit, iostat
+    !-----------------------------------------------------------------------------
+    file = trim(io%run_dir)//'stop_nlte.flag'
+    inquire (file=trim(file), exist=exists)
+    if (.not. exists) return
+    word = ''
+    open (newunit=lunit, file=trim(file), form='formatted', status='old', iostat=iostat)
+    if (iostat == 0) then
+      read (lunit, *, iostat=iostat) word
+      close (lunit, status='delete')
+    endif
+    stop_exit = trim(word) == 'exit'
+    stop_requested = .true.
+    converged = .true.
+    write (nit, '(i0)') self%iter
+    if (stop_exit) then
+      call console_warn (ch_m3d, 'stop requested after iteration '//trim(nit)// &
+        ': departures are written and the output pass is skipped')
+    else
+      call console_warn (ch_m3d, 'stop requested after iteration '//trim(nit)// &
+        ': departures are written, then the output pass runs')
+    endif
+  END SUBROUTINE check_stop_request
 
   !====================================================================================
   SUBROUTINE project_populations(self)
