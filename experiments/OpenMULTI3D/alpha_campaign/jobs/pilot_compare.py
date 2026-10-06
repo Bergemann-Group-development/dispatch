@@ -33,7 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 import tumult
-from delta_maps import RUNS, LINES_SED, AV3D, ew, slopes, nearest_b1, corr, own_nlte
+from delta_maps import CAMPAIGN, RUNS, LINES_SED, AV3D, ew, slopes, nearest_b1, corr, own_nlte
 from make_nml import PILOT, run_name
 
 LINES = [l for l in LINES_SED if l[0] in ('Mg', 'Fe')]
@@ -45,7 +45,11 @@ def ews(folder, lines):
 
 
 def done(folder):
-    return (folder / 'save').is_dir() and any((folder / 'save').glob('flux_*.bin'))
+    """Spectra written, and the run's campaign log (logs/<runs path with _>.log), where
+    there is one, reports the end: a run still in its output pass is skipped."""
+    log = CAMPAIGN / 'logs' / (str(folder.relative_to(RUNS)).replace('/', '_') + '.log')
+    return ((folder / 'save').is_dir() and any((folder / 'save').glob('flux_*.bin')) and
+            (not log.exists() or 'OpenMULTI3D terminated' in log.read_text(errors='replace')))
 
 
 def main(out):
