@@ -284,14 +284,15 @@ def check_limits(atom, nist_limits, hop_limits=None, tolerance_ev=0.005):
     return tab, findings
 
 
-def partition_functions(lvl, temps):
+def partition_functions(lvl, temps, reference=None):
     """Partition function of each ion stage over ``temps`` from a level table with
-    columns ev (above the atom's ground), g and ion; energies relative to each stage's
-    first level."""
+    columns ev, g and ion. Energies count from ``reference`` (ion stage -> energy of
+    its ground state on the table's scale), by default from each stage's lowest level;
+    pass the reference of the unmerged atom when the ground term is a superlevel."""
     temps = np.atleast_1d(np.asarray(temps, float))
     out = {}
     for stage, grp in lvl.groupby('ion'):
-        ev = grp.ev.to_numpy() - grp.ev.min()
+        ev = grp.ev.to_numpy() - (grp.ev.min() if reference is None else reference[stage])
         out[int(stage)] = (grp.g.to_numpy()[:, None] * np.exp(-ev[:, None] * EE / (BK * temps[None, :]))).sum(0)
     return pd.DataFrame(out, index=pd.Index(temps, name='temp'))
 
@@ -594,8 +595,13 @@ def bf_tables(atom):
     for i, grp in atom.bft.groupby('i'):
         lam = grp.lam_air.to_numpy(float)
         alpha = grp.alpha.to_numpy(float)
-        order = np.argsort(lam)
-        out[int(i)] = (lam[order], alpha[order])
+        order = np.argsort(lam, kind='stable')
+        lam = lam[order]
+        # read_pandas and read_classic separate repeated wavelengths by 1e-6 AA
+        for k in range(1, len(lam)):
+            if lam[k] <= lam[k - 1]:
+                lam[k:] += lam[k - 1] - lam[k] + 1e-6
+        out[int(i)] = (lam, alpha[order])
     return out
 
 

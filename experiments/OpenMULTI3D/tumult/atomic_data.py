@@ -117,3 +117,21 @@ def read_topbase_photo(path):
         out[(mult, ell, par, ilv)] = (data[:, 0], data[:, 1])
         k += 3 + npts
     return out
+
+
+BAUTISTA_TEMPS = np.array([3000., 5000., 8000., 10000., 15000., 20000.])
+
+
+def read_bautista_ecs(folder):
+    """Fe I effective collision strengths of Bautista et al. (2017) between LS terms:
+    the term table (index -> term label such as 'a5D' or 'z7D*') and a table of
+    (lower, upper, upsilon at BAUTISTA_TEMPS)."""
+    terms = {}
+    for row in (Path(folder) / 'table4.dat').read_text().splitlines():
+        term = row[27:36].replace('^', '').replace(' ', '')
+        terms[int(row[0:2])] = term[:-1] + '*' if term.endswith('o') else term
+    ups = np.loadtxt(Path(folder) / 'table5.dat')
+    tab = pd.DataFrame(ups[:, 2:], columns=BAUTISTA_TEMPS)
+    tab.insert(0, 'upper', [terms[int(k)] for k in ups[:, 1]])
+    tab.insert(0, 'lower', [terms[int(k)] for k in ups[:, 0]])
+    return tab
