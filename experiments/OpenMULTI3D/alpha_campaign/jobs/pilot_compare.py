@@ -12,7 +12,8 @@ LTE spectra lack the lines of the NLTE species (Mg I 5711: 2.7 against 106 mA in
 reports/2026-10-05_phase5.md, section 5), so 3D LTE comes from the plain 3D LTE run of
 the snapshot (runs/p1/<model>/<snap>_lte1 with one output scattering iteration as the
 SEDs, else <snap>_lte with none; VALD lines, not the model atom's).  1D: the own <3D> average's SED
-(b4/sed/av3d_<model>, phase-4 departure setup) and the MARCS twin's (b6/sed/<twin> at
+(b4/sed/av3d_<model>, phase-4 departure setup; with $AV3D = b8 or b8g, the full-resolution
+average's single NLTE runs <AV3D>/av3d/<model>/{mg,fe}, delta_maps.own_nlte) and the MARCS twin's (b6/sed/<twin> at
 [Fe/H] <= -1, else p1sed/<model>/marcs).  Lines: Mg I, and Fe I where the 3D run has
 Fe departures; Fe II stays LTE (phase-4 decision 4) and is left out.
 
@@ -32,7 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 import tumult
-from delta_maps import RUNS, LINES_SED, ew, slopes, nearest_b1, corr
+from delta_maps import RUNS, LINES_SED, AV3D, ew, slopes, nearest_b1, corr, own_nlte
 from make_nml import PILOT, run_name
 
 LINES = [l for l in LINES_SED if l[0] in ('Mg', 'Fe')]
@@ -57,8 +58,14 @@ def main(out):
         logg = int(model.split('g')[1][:2]) / 10
         s = slopes(f'b1/hrs/{nearest_b1(teff, logg, feh, names)}', LINES)
         tw = RUNS / f'b6/sed/{run_name(Path(marcs))}' if feh <= -1 else top / 'marcs'
-        one = {k: ews(f, LINES) for k, f in (('av', RUNS / f'b4/sed/av3d_{model}'), ('tw', tw))
-               if done(f)}
+        one = {}
+        if AV3D == 'b4':
+            if done(RUNS / f'b4/sed/av3d_{model}'):
+                one['av'] = ews(RUNS / f'b4/sed/av3d_{model}', LINES)
+        elif (own := own_nlte(model)):
+            one['av'] = {lam0: v[1:] for lam0, v in own.items()}
+        if done(tw):
+            one['tw'] = ews(tw, LINES)
         for snap in sorted({p.name.split('_')[0] for p in top.glob('s*_3dmg*')}):
             # the phase-4-setup 3D Mg reruns (_3dmg4*) take precedence
             found = [f for f in (top / f'{snap}_{k}' for k in ('3dmg4fe', '3dmgfe', '3dmg4', '3dmg'))

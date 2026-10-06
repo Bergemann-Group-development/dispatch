@@ -39,13 +39,16 @@ its own vmic (b2/av3d/<av>/lte) and with its MARCS twin's constant vmic
 finished 3D LTE snapshot (x3d/, and the pilot's p1/<model>/s*_lte) against those three
 (dA_3d_av, dA_3d_avv, dA_3d_tw = A(3D) - A(1D)).
 
-N compares the own <3D> averages with density (make_nml.py avg3d, runs b4/) with the
-Stagger MULTI-format averages of batch 2: in LTE (lte runs) and, where b4 has them, in
-the stage-2 SEDs (NLTE and LTE).  dA_new_old = A(own) - A(Stagger file) at the same EW;
+N compares the own <3D> averages with density (runs $AV3D/av3d, default b4) with the
+Stagger MULTI-format averages of batch 2: in LTE (lte runs) and, where the own set has
+them, in NLTE and LTE (b4: the stage-2 SEDs; the full-resolution sets b8 and b8g of
+make_nml.py avg3d: the single mg and fe runs, whose spectra have the full line list).  dA_new_old = A(own) - A(Stagger file) at the same EW;
 dA_3d_* = A(own <3D>) - A(MARCS twin), the new Delta_<3D>.  $B4_NLTE names the runs/
 folder of the own averages' stage-2 SEDs (default b4; b4_defq holds those made with
 batch 2's departure setup, the like-for-like comparison).  It also records the run's
-log tau_500 against the file's at three temperatures (the phase-3 tau-scale check).
+log tau_500 against the file's (work/$AVG_DIR/<av>.atmos, default avg3d) at three
+temperatures (the phase-3 tau-scale check).  X adds the own average's LTE run as
+dA_3d_own where it exists.
 
 W reads every finished 3D LTE snapshot and its 1D LTE partners on the constant-vmic grid
 of make_nml.py vmic_grid (b5/vmic/<model>/{marcs,av3d}_v<vmic>): dA_3d_<kind>_v<vmic> =
@@ -88,6 +91,11 @@ LINES_SED = [('Mg', 5172.684, 1.5), ('Mg', 5528.405, 0.8), ('Mg', 5711.088, 0.4)
 # O I 6158 (the strongest member of the 6156-6158 triplet) and the forbidden [O I]
 # 6300 (Ni I blend, LTE in both spectra) and 6363, read by mode O from the O-window SEDs
 LINES_O = [('O', 6158.17, 0.3), ('O', 6300.30, 0.25), ('O', 6363.78, 0.25)]
+# The own <3D> averages: runs/$AV3D/av3d/<av>/ on the files work/$AVG_DIR/<av>.atmos.
+# b4 (phase 4) has lte/ and the stage-2 SEDs b4/sed; b8 (t4) and b8g (geo), from
+# make_nml.py avg3d with avg3d8/avg3d8g, have lte_it1/ and the single NLTE runs mg/, fe/.
+AV3D = os.environ.get('AV3D', 'b4')
+AVG_DIR = os.environ.get('AVG_DIR', 'avg3d')
 NAME = re.compile(r'[ps](?P<teff>\d+)_g(?P<logg>[+-]\d\.\d)_m[\d.]+_t\d\d_z(?P<feh>[+-]\d\.\d\d)$')
 
 
@@ -115,6 +123,25 @@ def it1(folder):
     if f.endswith('/lte') and f.startswith(('b4/', 'b2/twin/')):
         f += '_it1'
     return f
+
+
+def own_lte(av):
+    """The own average's 1D LTE run: lte (lte_it1 with LTE_IT1=1) in b4, lte_it1 in the
+    full-resolution sets."""
+    return f'{AV3D}/av3d/{av}/' + ('lte' if AV3D == 'b4' else 'lte_it1')
+
+
+def own_nlte(av):
+    """{line: (element, EW NLTE, EW LTE)} of a full-resolution set's single NLTE runs:
+    the Mg lines from mg/, Fe I and Fe II from fe/, or None while either is missing."""
+    folder = RUNS / AV3D / 'av3d' / av
+    if AV3D == 'b4' or not all((folder / el / 'save').is_dir() for el in ('mg', 'fe')):
+        return None
+    out = {}
+    for el in ('Mg', 'Fe'):
+        out.update(nlte_lte(f'{AV3D}/av3d/{av}/{el.lower()}',
+                            [l for l in LINES_SED if l[0][:2] == el]))
+    return out
 
 
 def slopes(b1_run, lines=LINES):
@@ -299,6 +326,8 @@ def one_x(args):
             one['avv'] = lte_ews(f'b3/av3d_vmic/{av}/lte')
         if tw_lte != '-':
             one['tw'] = lte_ews(tw_lte)
+        if (RUNS / it1(own_lte(av)) / 'save').is_dir():
+            one['own'] = lte_ews(own_lte(av))
         rows = []
         for e, lam0, _ in LINES_SED:
             r = dict(run=run, av3d=av, teff=float(teff), logg=float(logg), feh=float(feh),
@@ -316,8 +345,8 @@ def one_x(args):
 def tau_check(av):
     """Run log tau_500 of the own-average LTE run at the temperatures where the file
     has log tau = -3, -1, 0, and the run's top."""
-    f = np.loadtxt(CAMPAIGN / f'work/avg3d/{av}.atmos', skiprows=3)
-    a = tumult.read(str(RUNS / f'b4/av3d/{av}/lte')).atmos
+    f = np.loadtxt(CAMPAIGN / f'work/{AVG_DIR}/{av}.atmos', skiprows=3)
+    a = tumult.read(str(RUNS / it1(own_lte(av)))).atmos
     lt, t = np.ravel(a.ltau), np.ravel(a.temp)
     out = {'run_top': float(lt.min()), 'file_top': float(f[:, 0].min())}
     for x in (-3, -1, 0):
@@ -331,16 +360,18 @@ def one_n(args):
     PEAK.clear()
     row, b1_names = args
     av, teff, logg, feh, alpha, av_run, tw_lte, tw_mg = row[:8]
-    if not (RUNS / it1(f'b4/av3d/{av}/lte') / 'save').is_dir():
+    if not (RUNS / it1(own_lte(av)) / 'save').is_dir():
         return []
     try:
         s = slopes(f'b1/hrs/{nearest_b1(float(teff), float(logg), float(feh), b1_names)}', LINES_SED)
-        new, old = lte_ews(f'b4/av3d/{av}/lte'), lte_ews(f'{av_run}/lte')
+        new, old = lte_ews(own_lte(av)), lte_ews(f'{av_run}/lte')
         tw = lte_ews(tw_lte) if tw_lte != '-' else None
         sed = None
         b4n = os.environ.get('B4_NLTE', 'b4')            # b4_defq: the first departure setup
-        if (RUNS / f'{b4n}/sed/av3d_{av}/save').is_dir():
-            sed = (nlte_lte(f'{b4n}/sed/av3d_{av}', LINES_SED), nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
+        own = (nlte_lte(f'{b4n}/sed/av3d_{av}', LINES_SED)
+               if AV3D == 'b4' and (RUNS / f'{b4n}/sed/av3d_{av}/save').is_dir() else own_nlte(av))
+        if own and (RUNS / f'b2/sed/av3d_{av}/save').is_dir():
+            sed = (own, nlte_lte(f'b2/sed/av3d_{av}', LINES_SED))
             twn = (f'b2/sed/twin_{av}' if tw_mg.startswith('b2/twin/') else
                    marcs_sed(Path(tw_mg).name[:-3]) if tw_mg.startswith('b2/n1d/') else None)
             twn = nlte_lte(twn, LINES_SED) if twn else None

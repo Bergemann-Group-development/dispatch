@@ -2,7 +2,7 @@
 # delta_maps.py (or pilot_compare.py for mode 'pilot') for the given modes into runs/delta/<MODE><SUFFIX>.csv, e.g.
 #   sbatch --nice=100 jobs/delta_maps.sbatch A2 N W X
 #   sbatch --nice=100 --export=ALL,LTE_IT1=1,SUFFIX=_it1 jobs/delta_maps.sbatch N W
-# The environment (B4_NLTE, LTE_IT1, OLD_SED, ONLY) passes through to delta_maps.py.
+# The environment (AV3D, AVG_DIR, B4_NLTE, LTE_IT1, OLD_SED, ONLY) passes through to the scripts.
 #SBATCH -J alpha_delta
 #SBATCH --partition=four-wks
 #SBATCH --nodes=1
