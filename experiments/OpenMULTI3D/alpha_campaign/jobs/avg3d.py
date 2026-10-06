@@ -1,58 +1,62 @@
-"""<3D> averages from Stagger snapshots, with density.
+"""The campaign's <3D> average of one Stagger model, from its full-resolution snapshots.
 
-    python avg3d.py OUT.atmos FEH RUN [RUN ...]
+    python avg3d.py OUT.atmos FEH ALPHA SNAPSHOT [SNAPSHOT ...] [--real Q] [--top TOP]
 
-Each RUN is a dispatch.x run on one snapshot whose saved atmosphere carries T, n_e,
-rho, the velocities and the 500 nm opacity (any 3D run of the snapshot; make_nml.py
-avg3d writes cheap atmosphere-only runs).  The columns of all snapshots are pooled and
-averaged on surfaces of constant log tau_500 with tumult's AtmosClass.to_dispatch1d_atmos:
-geometric means of T, n_e and rho.  The result is dispatch.x's 'text' format (log tau_500,
-T, Pe, rho, vmic), which a run reads with atmos_format='text'; use_ne=F makes it take rho
-and recompute n_e from (T, rho).
+The snapshots (Stagger-grid-2 atm3d.* files, mesh.* beside them) are read with
+tumult.hop.read_atmosphere, their columns pooled and averaged with tumult.avg3d
+(reports/2026-10-06_avg3d_study.md): surfaces of log tau_500, T = <T^4>^(1/4), geometric
+rho and P_e, and the surface's log tau_500 as the depth column.  tau_500 comes from HOP's
+continuum opacity at [Fe/H] = FEH and [alpha/Fe] = ALPHA, tabulated in (T, rho) once per
+model.  No dispatch.x run and no resampling are involved.
 
-vmic follows the convention of the Stagger MULTI-format files, so that the two kinds of
-average differ in structure only: to_dispatch1d_atmos's vmic is the rms velocity of one
-component, sqrt((s_x^2 + s_y^2 + s_z^2)/3) on the tau surface, and the files' column is
-that divided by sqrt(3) to within 2 % in the solar, 5000 K giant and [Fe/H] = -2 models
-compared (phase 4).  Any other vmic is set in the run (the vmic grid of make_nml.py).
+The top surface is the one that a fraction Q of the columns reach (default 0.5, the median
+column top, at most log tau_500 = -5).  Shorter columns are continued above their top as
+TOP says (tumult.avg3d._on_surfaces): 'isothermal' (default) at their top temperature,
+'gradient' along the mean T, rho and P_e of the complete columns
+(reports/2026-10-06_phase7.md compares them).
 
-The MULTI-format Stagger <3D> files have no density, and dispatch.x rebuilds it from the
-averaged (T, n_e); in metal-poor atmospheres that compresses the tau scale above
-log tau -2 (phase 3).  These averages carry the density instead.
+The result is dispatch.x's 'text' format (log tau_500, T, P_e, rho, vmic), read with
+atmos_format='text' use_ne=F amr='T': rho given, n_e from the EOS.  vmic is the rms of
+the three velocity components on the surface divided by sqrt(3), the convention of the
+Stagger MULTI-format <3D> files.  Each call appends one summary line to OUT.atmos.txt:
+the settings, the top and bottom surfaces, the share of extended columns at the top
+and the snapshots.
 """
-import sys
+import argparse
 from pathlib import Path
 
-import numpy as np
-import tumult
-from tumult.atmos import AtmosClass
+from tumult import avg3d
+from tumult.hop import read_atmosphere
+
+RECIPE = dict(surface='tau500', recipe='t4')
 
 
-def pooled(runs):
-    """One AtmosClass holding the columns of every run side by side along x."""
-    atm = [tumult.read(r).atmos for r in runs]
-    out = AtmosClass()
-    out.dim = '3D'
-    for key in ('temp', 'ne', 'rho', 'vx', 'vy', 'vz', 'ltau'):
-        setattr(out, key, np.concatenate([np.asarray(getattr(a, key), float) for a in atm], axis=0))
-    return out
+def average(snapshots, feh, alpha, real=0.5, top='isothermal'):
+    atm = [read_atmosphere(str(f), 'stagger2') for f in snapshots]
+    table = avg3d.OpacityTable.for_snapshots(atm, feh=feh, alpha_enhancement=alpha)
+    cols = avg3d.Columns.concatenate([avg3d.columns(a, table) for a in atm])
+    return avg3d.surface_average(cols, real=real, top=top, **RECIPE)
 
 
-def vmic_stagger_files(atm):
-    """vmic [km/s] per tau surface on the Stagger files' scale: tumult's one-component
-    rms (to_dispatch1d_atmos) divided by sqrt(3)."""
-    var = 0.0
-    for v in ('vx', 'vy', 'vz'):
-        mean = atm.get_surf_mean('ltau', v)[1]
-        rms = atm.get_surf_mean('ltau', v, power=2)[1]
-        var = var + rms**2 - mean**2
-    return 1e-5 * np.sqrt(var / 3) / np.sqrt(3)
-
-
-def main(out, feh, runs):
-    atm = pooled(runs)
-    atm.to_dispatch1d_atmos(Path(out), FeH=feh, vmic=vmic_stagger_files(atm))
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    p.add_argument('out', type=Path)
+    p.add_argument('feh', type=float)
+    p.add_argument('alpha', type=float)
+    p.add_argument('snapshots', nargs='+', type=Path)
+    p.add_argument('--real', type=float, default=0.5)
+    p.add_argument('--top', choices=avg3d.TOPS, default='isothermal')
+    a = p.parse_args(argv)
+    av = average(a.snapshots, a.feh, a.alpha, a.real, a.top)
+    avg3d.write_text(a.out, av, a.feh, depth='tau')
+    line = (f'{a.out.name} snapshots={len(a.snapshots)} real={a.real} top={a.top} '
+            f'ltau_top={av["x"][0]:.3f} ltau_bottom={av["x"][-1]:.3f} '
+            f'extended_at_top={av["extrapolated"][0]:.3f} '
+            f'{" ".join(f.name for f in a.snapshots)}')
+    with open(a.out.with_suffix(a.out.suffix + '.txt'), 'a') as f:
+        f.write(line + '\n')
+    print(line)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2], sys.argv[3:])
+    main()

@@ -55,3 +55,30 @@ def test_temperature_recipes_are_ordered_power_means(surface):
     newx = np.linspace(np.max(x[:, 0]), np.min(x[:, -1]), 30)      # no extension
     t = {r: avg3d.surface_average(cols, surface, r, newx=newx)['temp'] for r in avg3d.RECIPES}
     assert np.all(t['geo'] < t['lin']) and np.all(t['lin'] < t['t4'])
+
+
+def test_gradient_top_continues_short_columns_like_complete_ones():
+    """Columns of one atmosphere that end at different heights: on tau surfaces above
+    the short columns' tops, the 'gradient' continuation reproduces the complete columns
+    (the same atmosphere), which the isothermal one does not where T falls outward."""
+    h, nz = 1.5e7, 400
+    parts = []
+    for ztop in (1.5e8, 1.5e8, 0.8e8, 0.6e8):                 # two complete, two short
+        z = np.linspace(ztop, -1.0e8, nz)
+        lnrho = np.log(1e-7) - z / h
+        temp = 5000.0 * (1 + 0.3 * np.tanh(-z / 5e7))
+        tau = avg3d.optical_depth(0.3 * np.exp(lnrho), lnrho, z)
+        zero = np.zeros((1, nz))
+        parts.append(avg3d.Columns(temp=temp[None], rho=np.exp(lnrho)[None],
+                                   pe=1e-3 * np.exp(lnrho)[None] * temp, z=z[None],
+                                   vx=zero, vy=zero, vz=zero, ltau500=np.log10(tau)[None],
+                                   ltauross=np.log10(tau)[None]))
+    cols = avg3d.Columns.concatenate(parts)
+    x = avg3d.surface_coordinate(cols, 'tau500')
+    newx = np.linspace(x[0, 0] + 0.1, x[:, -1].min(), 60)
+    exact = np.interp(newx, x[0], np.log(cols.temp[0]))
+    grad = avg3d.surface_average(cols, 'tau500', 'geo', newx=newx, top='gradient')
+    iso = avg3d.surface_average(cols, 'tau500', 'geo', newx=newx, top='isothermal')
+    assert grad['extrapolated'][0] == 0.5
+    np.testing.assert_allclose(np.log(grad['temp']), exact, atol=2e-4)
+    assert np.max(np.abs(np.log(iso['temp']) - exact)) > 0.01

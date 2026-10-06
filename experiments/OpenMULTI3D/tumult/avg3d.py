@@ -35,13 +35,14 @@ from scipy.interpolate import RectBivariateSpline
 from .hop import HopEOS, read_atmosphere
 
 __all__ = ['OpacityTable', 'Columns', 'columns', 'surface_average', 'write_text',
-           'ROSS_LAM', 'RECIPES', 'SURFACES']
+           'ROSS_LAM', 'RECIPES', 'SURFACES', 'TOPS']
 
 #: vacuum wavelengths [AA] of the approximate Rosseland mean, clear of the H edges
 ROSS_LAM = np.array([3000., 4000., 5000., 6500., 8500., 11000., 15000., 20000.])
 LAM500 = 5001.39   # 500 nm air, in vacuum, as HOP's chi500 (ref_lam = 5000 air)
 RECIPES = ('geo', 't4', 'lin')
 SURFACES = ('tau500', 'tauross', 'lpe')
+TOPS = ('isothermal', 'gradient')
 HC_K = 1.438776877e8   # h c / k [AA K]
 
 
@@ -183,13 +184,22 @@ def columns(atm, table):
                    *map(flat, v), np.log10(tau500), np.log10(tauross))
 
 
-def _on_surfaces(cols, x, newx):
+def _on_surfaces(cols, x, newx, top='isothermal'):
     """Every column's state at the surface values ``newx`` of its coordinate ``x``
-    (log10, increasing downward).  Above a column's top it continues as the isothermal,
-    chi-proportional-to-rho atmosphere the top boundary of :func:`optical_depth`
-    assumes: T and the velocities constant, rho, P_e and tau proportional to each other
-    (so all three shift by the same dex as the coordinate), the height rising by the
-    density scale height per e-fold."""
+    (log10, increasing downward).  Above a column's top it is continued (``top``):
+
+    - ``'isothermal'``: as the isothermal, chi-proportional-to-rho atmosphere the top
+      boundary of :func:`optical_depth` assumes: T and the velocities constant, rho, P_e
+      and tau proportional to each other (so all three shift by the same dex as the
+      coordinate), the height rising by the density scale height per e-fold;
+    - ``'gradient'``: along the mean run with ``x`` of the complete columns (those that
+      reach ``newx[0]``), offset to join the column at its own top.  This applies to
+      ln T, ln rho, ln P_e, the height and log tau_500; the velocities stay constant.
+      A short column then cools outward like its complete neighbours instead of
+      staying at its top temperature.
+    """
+    if top not in TOPS:
+        raise ValueError(f'unknown top {top!r}; one of {TOPS}')
     ln10 = np.log(10.0)
     lrho, lpe, ltemp = np.log(cols.rho), np.log(cols.pe), np.log(cols.temp)
     keys = ('ltemp', 'lrho', 'lpe', 'z', 'vx', 'vy', 'vz', 'ltau500')
@@ -199,14 +209,26 @@ def _on_surfaces(cols, x, newx):
     for i in range(x.shape[0]):
         for k in keys:
             out[k][i] = np.interp(newx, x[i], src[k][i])
+    short = x[:, 0] > newx[0]
+    if top == 'gradient' and short.any():
+        complete = ~short
+        if not complete.any():
+            raise ValueError('no column reaches the top surface; use top=\'isothermal\'')
+        for k in ('ltemp', 'lrho', 'lpe', 'z', 'ltau500'):
+            mean = out[k][complete].mean(axis=0)
+            for i in np.flatnonzero(short):
+                above = newx < x[i, 0]
+                join = np.interp(x[i, 0], newx, mean)
+                out[k][i, above] = src[k][i, 0] + mean[above] - join
+        return out
+    for i in np.flatnonzero(short):
         above = newx < x[i, 0]
-        if above.any():
-            shift = newx[above] - x[i, 0]                 # dex, negative
-            out['lrho'][i, above] = lrho[i, 0] + ln10 * shift
-            out['lpe'][i, above] = lpe[i, 0] + ln10 * shift
-            out['ltau500'][i, above] = cols.ltau500[i, 0] + shift
-            h = (cols.z[i, 0] - cols.z[i, 1]) / max(lrho[i, 1] - lrho[i, 0], 1e-2)
-            out['z'][i, above] = cols.z[i, 0] - h * ln10 * shift
+        shift = newx[above] - x[i, 0]                     # dex, negative
+        out['lrho'][i, above] = lrho[i, 0] + ln10 * shift
+        out['lpe'][i, above] = lpe[i, 0] + ln10 * shift
+        out['ltau500'][i, above] = cols.ltau500[i, 0] + shift
+        h = (cols.z[i, 0] - cols.z[i, 1]) / max(lrho[i, 1] - lrho[i, 0], 1e-2)
+        out['z'][i, above] = cols.z[i, 0] - h * ln10 * shift
     return out
 
 
@@ -217,28 +239,31 @@ def surface_coordinate(cols, surface):
     return np.maximum.accumulate(x, axis=-1)
 
 
-def default_surfaces(x, surface, npoint=101):
-    """``npoint`` surface values from the median top of the columns (for tau, at
-    most up to log tau = -5) down to the shallowest bottom (for tau, at most 2)."""
-    lo, hi = np.median(x[:, 0]), x[:, -1].min()
+def default_surfaces(x, surface, npoint=101, real=0.5):
+    """``npoint`` surface values from the top that a fraction ``real`` of the columns
+    reach (0.5: the median column top; for tau, at most up to log tau = -5) down to the
+    shallowest bottom (for tau, at most 2)."""
+    lo, hi = np.quantile(x[:, 0], real), x[:, -1].min()
     if surface != 'lpe':
         lo, hi = max(lo, -5.0), min(hi, 2.0)
     return np.linspace(lo, hi, npoint)
 
 
-def surface_average(cols, surface='tau500', recipe='geo', newx=None, npoint=101):
+def surface_average(cols, surface='tau500', recipe='geo', newx=None, npoint=101,
+                    real=0.5, top='isothermal'):
     """Horizontal averages on surfaces of constant ``surface``.
 
-    ``newx``: the surface values (default :func:`default_surfaces`); columns whose top
-    lies below a surface are extended upward isothermally (:func:`_on_surfaces`).
+    ``newx``: the surface values (default :func:`default_surfaces` with ``real``);
+    columns whose top lies below a surface are extended upward as ``top`` says
+    (:func:`_on_surfaces`).
     Returns a dict of 1D arrays, top first: x (the surface value), temp, rho, pe, z
     (mean height), ltau500 (mean log tau_500 on the surface), vmic [km/s] (avg3d.py's
     convention) and extrapolated (the fraction of columns extended at each surface).
     """
     x = surface_coordinate(cols, surface)
     if newx is None:
-        newx = default_surfaces(x, surface, npoint)
-    on = _on_surfaces(cols, x, newx)
+        newx = default_surfaces(x, surface, npoint, real)
+    on = _on_surfaces(cols, x, newx, top)
     geo = lambda k: np.exp(on['l' + k].mean(axis=0))      # noqa: E731
     lin = lambda k: np.exp(on['l' + k]).mean(axis=0)      # noqa: E731
     if recipe == 'geo':
