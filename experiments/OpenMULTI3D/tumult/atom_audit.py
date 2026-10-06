@@ -271,17 +271,44 @@ def check_limits(atom, nist_limits, hop_limits=None, tolerance_ev=0.005):
         rows.append(row)
     tab = pd.DataFrame(rows)
     tab['offset_ev'] = tab.atom_ev - tab.nist_ev
+    fractions = stage_fractions(atom, {r.ion: r.nist_ev for r in tab.itertuples()})
+    tab['upper_fraction'] = [fractions.get(r.ion + 1, np.nan) for r in tab.itertuples()]
     for r in tab.itertuples():
         if abs(r.offset_ev) > tolerance_ev:
             sev = 'serious' if abs(r.offset_ev) > 0.05 else 'moderate'
+            # the offset matters through the transitions into the upper stage, and those
+            # only as far as that stage holds the element
+            if r.upper_fraction < 1e-3:
+                sev = 'minor'
             findings.append(Finding('ionisation energy', sev,
                                     f'ion {r.ion}: {r.atom_ev:.4f} eV in the atom, {r.nist_ev:.4f} eV '
                                     f'in NIST ({r.offset_ev:+.4f} eV, LTE stage ratio x'
-                                    f'{np.exp(-r.offset_ev / (BK * 5800 / EE)):.3f} at 5800 K)'))
+                                    f'{np.exp(-r.offset_ev / (BK * 5800 / EE)):.3f} at 5800 K); ion {r.ion + 1} '
+                                    f'holds {r.upper_fraction:.2g} of the element at {STAGE_TEMP:.0f} K, '
+                                    f'Pe = {STAGE_PE:g} dyn/cm2'))
         if hop_limits is not None and abs(r.atom_ev - r.hop_ev) > tolerance_ev:
             findings.append(Finding('ionisation energy vs EOS', 'moderate',
                                     f'ion {r.ion}: atom {r.atom_ev:.4f} eV, HOP absdat {r.hop_ev:.4f} eV'))
     return tab, findings
+
+
+STAGE_TEMP = 6500.0    # [K] and
+STAGE_PE = 10.0        # [dyn/cm2]: a warm dwarf photosphere, to weigh ion stages
+
+
+def stage_fractions(atom, limits, temp=STAGE_TEMP, pe=STAGE_PE):
+    """LTE (Saha) fraction of the element in each ion stage of the atom, with the
+    atom's own partition functions and the ionisation energies ``limits`` (stage ->
+    eV) at ``temp`` and electron pressure ``pe``."""
+    zz = partition_functions(atom.lvl, [temp]).iloc[0]
+    ne = pe / (BK * temp)
+    saha = 2 * (2 * PI * EM * BK * temp / HH**2)**1.5 / ne
+    stages = sorted(zz.index)
+    rel = [1.0]
+    for s in stages[:-1]:
+        rel.append(rel[-1] * zz[s + 1] / zz[s] * saha * np.exp(-limits.get(s, np.inf) * EE / (BK * temp)))
+    rel = np.array(rel) / np.sum(rel)
+    return dict(zip(stages, rel))
 
 
 def partition_functions(lvl, temps, reference=None):
@@ -414,9 +441,15 @@ def line_table(atom):
     return bbt
 
 
-def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3):
+def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3, classic=False):
     """Bound-bound transitions: level indices, frequency consistency, f-values,
-    duplicates."""
+    duplicates.
+
+    For a ``classic`` atom read_classic derives line frequencies from the level energies,
+    so the wavelength checks only matter once the atom is converted to the pandas format
+    (whose read_pandas converts tabulated air wavelengths); they are then minor."""
+    pandas_only = ' (classic format: dispatch uses the level energies; this applies after conversion to pandas)'
+    pandas_only = pandas_only if classic else ''
     bbt = line_table(atom)
     findings = []
     nk = len(atom.lvl)
@@ -437,11 +470,12 @@ def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3):
         # exp(dE/kT): the line frequency and the level energies disagree
         dev = (HC_AA_EV / mis.lam_vac - HC_AA_EV / mis.lam_ritz_vac).abs()
         sev = 'serious' if (dev > 0.01).any() else 'moderate'
+        sev = 'minor' if classic else sev
         uv = mis[mis.lam_ritz_vac < 2000]
         findings.append(Finding('line wavelength vs levels', sev,
                                 f'{len(mis)} lines whose wavelength (as dispatch reads it) differs from the '
                                 f'level energies by more than {lam_tolerance:.0e} (max {dev.max():.3f} eV; '
-                                f'{len(uv)} of them below 2000 AA)', len(mis),
+                                f'{len(uv)} of them below 2000 AA){pandas_only}', len(mis),
                                 [f"{r.Index}: {r.lam_vac:.3f} vs Ritz {r.lam_ritz_vac:.3f}" for r in
                                  mis.reindex(dev.sort_values(ascending=False).index).itertuples()]))
     if 'evi' in bbt:
@@ -467,9 +501,9 @@ def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3):
     pole = bbt[((bbt.lam_ritz_vac > 1590) & (bbt.lam_ritz_vac < 1620))
                | ((bbt.lam_ritz_vac > 850) & (bbt.lam_ritz_vac < 905))]
     if len(pole):
-        findings.append(Finding('air wavelengths near a pole', 'serious',
+        findings.append(Finding('air wavelengths near a pole', 'minor' if classic else 'serious',
                                 f'{len(pole)} lines near 877 or 1603 AA, where the air/vacuum formula of '
-                                'physics.vac2air and handyfuncs_mod%air2vac diverges', len(pole),
+                                f'physics.vac2air and handyfuncs_mod%air2vac diverges{pandas_only}', len(pole),
                                 [f"{r.Index}: {r.lam_ritz_vac:.2f} AA" for r in pole.itertuples()]))
     nq = bbt.nq.clip(lower=0).sum()
     findings.append(Finding('line frequencies', 'info',
@@ -477,8 +511,31 @@ def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3):
     return bbt, findings
 
 
+def nist_to_atom(atom, nist_levels, stage, term_window_ev=0.15, energy_tolerance_ev=0.003):
+    """For each NIST level of one stage, the atom level that represents it: the level
+    of the same LS symmetry nearest in energy within ``term_window_ev`` (a term or
+    superlevel holds fine-structure levels some way from its mean energy), else the
+    nearest level within ``energy_tolerance_ev``, else -1."""
+    lvl = atom.lvl
+    sel = lvl.index[lvl.ion == stage].to_numpy()
+    ev = lvl.ev[sel].to_numpy() - lvl.ev[sel].min()
+    terms = [label_term(str(lvl.label[i])) for i in sel]
+    nist = nist_levels[nist_levels.ion == stage]
+    out = np.full(len(nist), -1)
+    for k, (e, t) in enumerate(zip(nist.ev.to_numpy(), nist.term.astype(str))):
+        dist = np.abs(ev - e)
+        term = label_term(t)
+        same = np.array([term is not None and a == term for a in terms])
+        cand = np.where(same & (dist <= term_window_ev))[0]
+        if len(cand):
+            out[k] = sel[cand[dist[cand].argmin()]]
+        elif dist.min() <= energy_tolerance_ev:
+            out[k] = sel[dist.argmin()]
+    return nist.ev.to_numpy(), out
+
+
 def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf=None,
-                     strength_temperature=5000.0):
+                     strength_temperature=5000.0, nist_levels=None):
     """Atom lines of one ion stage against a line list (columns lam0 [AA] in air above
     2000 AA and vacuum below, evi [eV], loggf).
 
@@ -489,6 +546,10 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
     pair (gf adds over components) and compared with the atom's gf. A list transition
     with both levels in the atom but no atom transition is missing; its LTE strength
     proxy, gf exp(-E_low/kT), ranks it against the atom's own lines.
+
+    With ``nist_levels`` the line-list energies are first identified with NIST levels
+    (within ``energy_tolerance_ev``) and these with atom levels by :func:`nist_to_atom`,
+    so that the components of a term-merged atom level find it.
     """
     lvl = atom.lvl
     sel = lvl.index[lvl.ion == stage].to_numpy()
@@ -502,7 +563,13 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
     def assign(energy):
         k = np.abs(energy[:, None] - ev[None, :]).argmin(1)
         ok = np.abs(energy - ev[k]) <= energy_tolerance_ev
-        return np.where(ok, sel[k], -1)
+        out = np.where(ok, sel[k], -1)
+        if nist_levels is not None and (nist_levels.ion == stage).any():
+            nist_ev, nist_atom = nist_to_atom(atom, nist_levels, stage, energy_tolerance_ev=energy_tolerance_ev)
+            kn = np.abs(energy[:, None] - nist_ev[None, :]).argmin(1)
+            hit = np.abs(energy - nist_ev[kn]) <= energy_tolerance_ev
+            out = np.where(hit & (nist_atom[kn] >= 0), nist_atom[kn], out)
+        return out
 
     tab = pd.DataFrame(dict(lam0=llist.lam0.to_numpy(), evi=lo, loggf=llist.loggf.to_numpy(),
                             i=assign(lo), j=assign(up)))
@@ -522,7 +589,9 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
     findings = []
     both = comp.dropna(subset=['gf_atom', 'gf_list'])
     off = both[both.dloggf.abs() > 0.3]
-    findings.append(Finding('f-values vs line list', 'moderate' if len(off) else 'info',
+    # a systematic offset (gf stored as f, log gf of another source) rather than scatter
+    sev = 'serious' if len(both) >= 5 and abs(both.dloggf.median()) > 0.3 else ('moderate' if len(off) else 'info')
+    findings.append(Finding('f-values vs line list', sev,
                             f'ion {stage}: {len(both)} atom transitions found in the line list; '
                             f'{len(off)} differ by more than 0.3 dex in gf (median {both.dloggf.median():+.3f} dex)',
                             len(off), [f"{i}-{j} {r.lam0:.2f} AA: {r.dloggf:+.2f}" for (i, j), r in
@@ -590,8 +659,26 @@ def check_level_matching(atom, nist_levels, llist, stage, strong_loggf=-1.0, tol
                                  and atom_term[1:] == terms[n][1:] and abs(keys[i] - 100 * stage - ev) < 0.002)))
     tab = pd.DataFrame(rows)
     findings = []
+    # without labels: how far the level whose departure an end takes lies from it
+    sel = atom.lvl.ion.to_numpy() == stage
+    top = keys[sel].max() - 100 * stage
+    offs = []
+    for evs in (ev_lo, ev_up):
+        near = keys[sel][np.abs(keys[sel][None, :] - (100 * stage + evs)[:, None]).argmin(1)]
+        offs.append(near - 100 * stage - evs)
+    offs = np.abs(np.concatenate(offs))
+    above = int((np.concatenate([ev_lo, ev_up]) > top + 0.01).sum())
+    if len(offs):
+        frac10 = (offs > 0.1).mean()
+        sev = 'serious' if frac10 > 0.05 else ('moderate' if (offs > 0.01).mean() > 0.05 else 'info')
+        findings.append(Finding('line-list level offsets', sev,
+                                f'ion {stage}: of {len(offs)} ends of the {len(lines)} lines with loggf > '
+                                f'{strong_loggf}, {(offs > 0.01).mean():.1%} take the departure of a level more '
+                                f'than 0.01 eV away and {frac10:.1%} more than 0.1 eV; {above} ends lie above '
+                                f'the atom\'s highest level of the stage ({top:.3f} eV)', int((offs > 0.1).sum())))
     if len(tab):
-        bad = tab[~tab.same_term & tab.level_label.map(lambda l: label_term(l) is not None)]
+        bad = tab[~tab.same_term & tab.level_label.map(lambda l: label_term(l) is not None)
+                  & tab.nist_term.map(lambda t: label_term(str(t)) is not None)]
         sev = 'serious' if len(bad) else 'info'
         findings.append(Finding('line-list level matching', sev,
                                 f'ion {stage}: {len(tab)} ends of {len(lines)} lines with loggf > {strong_loggf} '
@@ -940,6 +1027,39 @@ def van_regemorter(f, dev, temps):
     return 14.5 * c0 * ryd_k / np.sqrt(tt) * RYDV / dev * f * pp
 
 
+def check_ch_multiplicity(atom, col, vals, rtol=1e-6):
+    """Hydrogen collision records that repeat one term-to-term rate for every
+    fine-structure pair. gencol takes a CH value as the downward rate of that pair, so a
+    copied term rate multiplies the total rate out of each upper level by the number of
+    lower components; the term rate should be shared by statistical weight."""
+    from .atom_build import fine_structure_groups
+    group = np.empty(len(atom.lvl), int)
+    for k, members in enumerate(fine_structure_groups(atom)):
+        group[members] = k
+    ch = col[col.key == 'CH'].copy()
+    if not len(ch):
+        return []
+    ch['glo'] = group[ch.lo]
+    ch['ghi'] = group[ch.hi]
+    copied = []
+    factors = []
+    for (glo, ghi), grp in ch.groupby(['glo', 'ghi']):
+        if len(grp) < 2 or glo == ghi:
+            continue
+        rows = vals[col.index.get_indexer(grp.index)]
+        per_upper = grp.groupby('hi').size().mean()
+        if per_upper > 1 and np.allclose(rows, rows[0], rtol=rtol, atol=0):
+            copied.append((int(grp.lo.min()), int(grp.hi.min()), len(grp)))
+            factors.append(per_upper)
+    if not copied:
+        return []
+    return [Finding('hydrogen collision multiplicity', 'moderate',
+                    f'{len(copied)} term pairs repeat one CH value for each of their fine-structure pairs; '
+                    f'the downward rate out of an upper level is then {np.mean(factors):.1f}x the term rate '
+                    f'on average (max {np.max(factors):.0f}x)', len(copied),
+                    [f"{a}-{b} ({n} records)" for a, b, n in copied])]
+
+
 def check_collisions(atom, slope_limit=2.5):
     """Collision data: coverage of the radiative transitions, duplicates, positivity,
     plausibility of the temperature dependence and agreement of CE with van Regemorter
@@ -981,15 +1101,32 @@ def check_collisions(atom, slope_limit=2.5):
         findings.append(Finding('duplicate collisions', 'serious',
                                 f'{len(both)} level pairs carry both CE and OHM records (both are added)',
                                 len(both)))
-    slopes = []
+    cross = col[col.key.isin(['CE', 'OHM', 'OHMEGA', 'CH']) & (lvl.ion.to_numpy()[lo] != lvl.ion.to_numpy()[hi])]
+    if len(cross):
+        findings.append(Finding('collision levels', 'serious',
+                                f'{len(cross)} excitation records connect two ion stages', len(cross),
+                                [f"{r.key} {r.lo}-{r.hi}" for r in cross.itertuples()]))
+    # temperature behaviour: the slope d ln q / d ln T over the whole table, and the
+    # activation energy E_act of q ~ T^b exp(-E_act/kT) fitted over the photospheric
+    # range. An exothermic coefficient has |E_act| of a few tenths of an eV at most;
+    # E_act = -dE means the table carries a spurious exp(+dE/kT) (an upward rate stored
+    # as a downward one, fe607a), E_act >> 0 a rate suppressed at low temperature.
     lnt = np.log(temps)
+    win = (temps >= 2000) & (temps <= 20000)
+    if win.sum() < 4:
+        win = np.ones_like(temps, bool)
+    design = np.vstack([np.ones(win.sum()), lnt[win], -EE / (BK * temps[win])]).T
+    logq = np.full(vals.shape, np.nan)
     for k, r in enumerate(col.itertuples()):
-        if np.any(vals[k] <= 0):
-            slopes.append(np.nan)
-            continue
-        q = exothermic_coefficient(r.key, vals[k], temps, r.dev, gg[r.lo], gg[r.hi])
-        slopes.append(np.polyfit(lnt, np.log(q), 1)[0])
-    col['slope'] = slopes
+        if np.all(vals[k] > 0):
+            logq[k] = np.log(exothermic_coefficient(r.key, vals[k], temps, r.dev, gg[r.lo], gg[r.hi]))
+    ok = np.isfinite(logq).all(1)
+    col['slope'] = np.nan
+    col['e_act'] = np.nan
+    if ok.any():
+        col.loc[ok, 'slope'] = np.polyfit(lnt, logq[ok].T, 1)[0]
+        if len(temps) >= 4:
+            col.loc[ok, 'e_act'] = np.linalg.lstsq(design, logq[ok][:, win].T, rcond=None)[0][2]
     findings.append(Finding('collision temperatures', 'info',
                             f'{len(temps)} temperatures {temps.min():.0f} .. {temps.max():.0f} K; '
                             'outside this range gencol holds the tabulated value constant'))
@@ -1003,6 +1140,26 @@ def check_collisions(atom, slope_limit=2.5):
                                 f'{len(steep)} beyond +-{slope_limit}', len(steep),
                                 [f"{r.lo}-{r.hi} dE={r.dev:.2f} eV slope {r.slope:+.1f}" for r in
                                  steep.reindex(steep.slope.abs().sort_values(ascending=False).index).itertuples()]))
+        act = grp[grp.e_act.notna()]
+        upward = act[(act.dev > 0.3) & ((act.e_act + act.dev).abs() < 0.3 * act.dev)]
+        if key in ('CE', 'OHM', 'OHMEGA', 'CH') and len(upward):
+            findings.append(Finding(f'collision Boltzmann factor {key}', 'serious',
+                                    f'{len(upward)} of {len(grp)} records (dE > 0.3 eV) have an activation '
+                                    'energy within 30% of -dE: the table carries an extra exp(+dE/kT), as an '
+                                    'upward rate stored where gencol expects a downward one would', len(upward),
+                                    [f"{r.lo}-{r.hi} dE={r.dev:.2f} eV E_act={r.e_act:+.2f} eV" for r in
+                                     upward.sort_values('dev', ascending=False).itertuples()]))
+        hot = act[act.e_act > 0.5]
+        if len(hot):
+            dex = (hot.e_act * EE / (BK * 5000.0)).median() / np.log(10)
+            findings.append(Finding(f'collision activation energy {key}', 'serious' if len(hot) > 0.1 * len(act)
+                                    else 'moderate',
+                                    f'{len(hot)} of {len(act)} records have an exothermic coefficient that '
+                                    f'falls as exp(-E_act/kT) with E_act > 0.5 eV (median {hot.e_act.median():.2f} eV, '
+                                    f'i.e. {dex:.1f} dex suppression at 5000 K relative to a flat rate)',
+                                    len(hot), [f"{r.lo}-{r.hi} dE={r.dev:.2f} eV E_act={r.e_act:+.2f} eV" for r in
+                                               hot.sort_values('e_act', ascending=False).itertuples()]))
+    findings += check_ch_multiplicity(atom, col, vals)
     # coverage of radiative transitions
     if hasattr(atom, 'bbt'):
         pairs = set(zip(atom.bbt.i, atom.bbt.j))
@@ -1010,6 +1167,8 @@ def check_collisions(atom, slope_limit=2.5):
             have = set(zip(col.lo[col.key.isin(keys)], col.hi[col.key.isin(keys)]))
             miss = pairs - have
             sev = 'info' if not miss else ('moderate' if len(miss) > 0.1 * len(pairs) else 'minor')
+            if pairs and len(miss) == len(pairs):
+                sev = 'serious'
             findings.append(Finding(f'{name} excitation coverage', sev,
                                     f'{len(pairs) - len(miss)} of {len(pairs)} radiative pairs have {"/".join(keys)} '
                                     'data (the rest get none unless use_classic_col)', len(miss)))
@@ -1019,6 +1178,8 @@ def check_collisions(atom, slope_limit=2.5):
         have = set(col.lo[col.key.isin(keys)])
         miss = [i for i in ionisable if i not in have]
         sev = 'info' if not miss else ('moderate' if name.startswith('electron') else 'minor')
+        if ionisable and len(miss) == len(ionisable) and name.startswith('electron'):
+            sev = 'serious'
         findings.append(Finding(f'{name} coverage', sev,
                                 f'{len(ionisable) - len(miss)} of {len(ionisable)} ionisable levels have '
                                 f'{"/".join(keys)} data', len(miss), miss))
@@ -1051,15 +1212,16 @@ def check_collisions(atom, slope_limit=2.5):
 # ---------------------------------------------------------------------------------------
 # driver
 # ---------------------------------------------------------------------------------------
-def audit(atom, nist_levels=None, nist_limits=None, linelists=None, temp=5800.0):
+def audit(atom, nist_levels=None, nist_limits=None, linelists=None, temp=5800.0, classic=False):
     """Run every check that the given data allow. ``linelists`` maps an ion stage to a
-    line-list table for that stage. Returns {name: table} and the findings."""
+    line-list table for that stage; ``classic`` says the atom was read from the classic
+    format. Returns {name: table} and the findings."""
     tables = {}
     findings = []
-    for name, func in (('levels', check_levels), ('lines', check_lines)):
-        tab, fnd = func(atom)
-        tables[name] = tab
-        findings += fnd
+    tables['levels'], fnd = check_levels(atom)
+    findings += fnd
+    tables['lines'], fnd = check_lines(atom, classic=classic)
+    findings += fnd
     tab, fnd = check_bf(atom, temp=temp)
     tables['bf'] = tab
     findings += fnd
@@ -1078,7 +1240,7 @@ def audit(atom, nist_levels=None, nist_limits=None, linelists=None, temp=5800.0)
         tables['nist_match'] = tab
         findings += fnd
     for stage, llist in (linelists or {}).items():
-        tab, fnd = compare_linelist(atom, llist, stage)
+        tab, fnd = compare_linelist(atom, llist, stage, nist_levels=nist_levels)
         tables[f'linelist_{stage}'] = tab
         findings += fnd
         if nist_levels is not None:
@@ -1109,8 +1271,9 @@ def main(argv=None):
         linelists = {}
         for path in args.linelist:
             linelists.update(atomic_data.linelist_by_stage(path, atom.id, stages[:-1]))
-    _, findings = audit(atom, nist_levels, nist_limits, linelists, temp=args.temp)
-    if not is_pandas_format(args.atom_file):
+    classic = not is_pandas_format(args.atom_file)
+    _, findings = audit(atom, nist_levels, nist_limits, linelists, temp=args.temp, classic=classic)
+    if classic:
         findings += check_comments(args.atom_file)[1]
     print(f'{args.atom_file}: {len(atom.lvl)} levels, {len(getattr(atom, "bbt", []))} lines')
     for f in findings:
