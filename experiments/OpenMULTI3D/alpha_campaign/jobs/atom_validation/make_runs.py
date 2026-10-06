@@ -42,7 +42,7 @@ LADDER = (-0.6, -0.4, -0.2, 0.2, 0.4, 0.6)
 BLEND_FREE = -5.0
 CLV_MU = (1.0, 0.99, 0.98, 0.97, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1)
 ATMOS = ('av3d', 'marcs')
-R_SAMPLING = 2e5
+R_SAMPLING = 6e5                   # ~0.01 A, as fine as the observed spectra
 TIO_BELOW = 4200                   # Teff [K] below which the TiO bands are added
 # relative cost per run (fe607a ~300 s, the others ~90 s at 2 threads in the audit)
 COST = {'Fe': 4, 'Mg': 1, 'Ca': 1, 'Si': 1, 'Al': 1, 'Mn': 1}

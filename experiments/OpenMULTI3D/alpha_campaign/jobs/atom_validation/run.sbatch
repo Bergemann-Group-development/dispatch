@@ -23,7 +23,7 @@ ln -sfn "$WORK/input" input
 ln -sfn "$WORK/absmet" absmet
 ln -sfn "$CAMPAIGN/runs/atom_audit/atoms" atoms
 ln -sfn "$CAMPAIGN/scratch/atom_audit/public" public
-bin_info
+echo "binary: $BIN ($(cat "$BIN/REVISION" 2>/dev/null))"
 ulimit -s unlimited
 one () {
   local nml=$1 name; name=${nml#nml/}; name=${name%.nml}; name=${name//\//_}
