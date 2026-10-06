@@ -40,7 +40,7 @@ from tumult.spectrum import Spectrum
 
 HERE = Path(__file__).parent
 C_KMS = 299792.458
-FWHM_GRID = np.arange(2.0, 22.01, 0.5)          # km/s
+FWHM_GRID = np.arange(0.5, 22.01, 0.25)         # km/s
 SHIFT_GRID = np.arange(-6.0, 6.01, 0.25)        # km/s
 RENORM_MAX = 0.02
 CONT_LEVEL = 0.995
@@ -230,6 +230,7 @@ def invert(df):
 # --- solar centre-to-limb variation ---------------------------------------------------
 
 IAG_MU = (1.0, 0.99, 0.98, 0.97, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35, 0.3, 0.2)
+TAKEDA_FWHM = 3.0                               # km/s, sets the initial window only
 KPNO_MU = {1.0: 'kpn_o_mu1_intensity.txt', 0.2: 'kpn_o_mu02_intensity.txt'}
 
 
@@ -258,7 +259,8 @@ def clv_observations(spectra_dir, lam_air):
 
 def measure_clv(lines, runs, extract_dir, spectra_dir):
     """Observed and synthetic EWs of the CLV lines at every observed mu."""
-    fe_run = runs[(runs.element == 'Fe') & (runs.atmos == 'av3d')].iloc[0]
+    fe_runs = runs[(runs.element == 'Fe') & (runs.atmos == 'av3d')]
+    fe_run = (fe_runs if len(fe_runs) else runs).iloc[0]
     fe = load_synth(extract_dir / f'{fe_run["name"]}.npz')
     obs = clv_observations(spectra_dir, np.concatenate([load_synth(extract_dir / f'{n}.npz')['lam']
                                                         for n in runs.name]))
@@ -310,9 +312,9 @@ def read_takeda(path):
                 out[code] = pd.DataFrame(rows, columns=['mu', 'w'])
             code, rows = line.split('file name:')[1].split('.dat')[0].strip(), []
         elif line[:2].isdigit():
-            v = line.split()
-            if float(v[4]) > 0:
-                rows.append((float(v[2]), float(v[4])))
+            v = line.split()                     # point, sin, cos, log eps, log W, W, ...
+            if float(v[5]) > 0:
+                rows.append((float(v[2]), float(v[5])))
     if code:
         out[code] = pd.DataFrame(rows, columns=['mu', 'w'])
     return out
@@ -320,8 +322,8 @@ def read_takeda(path):
 
 def takeda_abundances(lines, runs, extract_dir, takeda_file):
     """A(mu) of every Takeda line: their EW of the line itself against the line's own
-    synthetic EW (all lines minus the element removed, over the whole synthesised piece),
-    interpolated linearly in mu between the run's angles."""
+    synthetic EW (all lines minus the element removed) between the flux maxima either
+    side of the line, interpolated linearly in mu between the run's angles."""
     data = read_takeda(takeda_file)
     rows = []
     for r in runs.itertuples():
@@ -335,11 +337,12 @@ def takeda_abundances(lines, runs, extract_dir, takeda_file):
             seg = next((b for b in bounds if b[0] < ln.lam < b[1]), None)
             if obs is None or seg is None or obs.empty:
                 continue
-            sel = (lam >= seg[0]) & (lam <= seg[1])
+            i_ref = set_index(syn, 'lte', 0.0)
+            spans = [line_window(lam, syn['spec'][k, i_ref], ln.lam, TAKEDA_FWHM, seg) for k in range(len(syn['mu']))]
             for kind in ('nlte', 'lte'):
                 da, idx = ladder(syn, kind)
-                w_mu = np.array([[1e3 * np.trapezoid(syn['spec'][k, i_free][sel] - syn['spec'][k, i][sel], lam[sel])
-                                  for i in idx] for k in range(len(syn['mu']))])           # (nmu, nda)
+                w_mu = np.array([[ew(lam, 1 + syn['spec'][k, i] - syn['spec'][k, i_free], lo, hi) for i in idx]
+                                 for k, (lo, hi) in enumerate(spans)])                  # (nmu, nda)
                 for o in obs.itertuples():
                     wsyn = np.array([np.interp(o.mu, syn['mu'][order], w_mu[order, j]) for j in range(len(da))])
                     if not np.all(wsyn > 0):
@@ -348,6 +351,30 @@ def takeda_abundances(lines, runs, extract_dir, takeda_file):
                     rows.append(dict(source='Takeda', element=r.element, ion=ln.ion, lam=ln.lam, evi=ln.evi,
                                      atom=r.atom, atmos=r.atmos, kind=kind, mu=o.mu, w_obs=o.w, a=res['a'],
                                      rew=res['rew'], oor=res['out_of_range']))
+    return pd.DataFrame(rows)
+
+
+def invert_clv(df):
+    """``invert`` for the CLV EWs: one 'star' per (source, mu)."""
+    df = df.assign(star=df.source + '|' + df.mu.map('{:.2f}'.format), spectrum=df.source)
+    res = invert(df)
+    res[['source', 'mu']] = res.star.str.split('|', expand=True)
+    res['mu'] = res.mu.astype(float)
+    return res.drop(columns='star')
+
+
+def clv_slopes(res, value='a_nlte'):
+    """Per line and run: slope dA/dmu over mu = 0.2..1 and A(mu <= 0.3) - A(mu = 1)."""
+    rows = []
+    for key, g in res.groupby(['source', 'element', 'ion', 'lam', 'atom', 'atmos']):
+        g = g[np.isfinite(g[value])]
+        if len(g) < 2 or g.mu.max() < 0.99:
+            continue
+        coef = np.polyfit(g.mu, g[value], 1)
+        limb = g[g.mu <= 0.3][value].mean()
+        rows.append(dict(zip(['source', 'element', 'ion', 'lam', 'atom', 'atmos'], key), n_mu=len(g),
+                         slope=coef[0], limb_minus_centre=limb - g[g.mu >= 0.99][value].mean(),
+                         a_centre=g[g.mu >= 0.99][value].mean()))
     return pd.DataFrame(rows)
 
 
@@ -383,16 +410,86 @@ def metrics(g):
     return pd.Series(out)
 
 
-def paired_bootstrap(a_lines, b_lines, stat):
-    """Bootstrap the difference stat(b) - stat(a) over lines common to both atoms."""
-    common = a_lines.index.intersection(b_lines.index)
-    a, b = a_lines.loc[common], b_lines.loc[common]
+# --- original against repaired ---------------------------------------------------------
+
+PAIRS = {'Fe': [('fe607a_pd', 'fe607a_fix')], 'Mg': [('mg86d', 'mg86e_fixed'), ('mg86e_pd', 'mg86e_fixed')],
+         'Ca': [('ca105b_pd', 'ca105b_fix')], 'Si': [('si340_pd', 'si340_ce')],
+         'Al': [('al_qmh_pd', 'al_qmh_ci')], 'Mn': [('mn281kbc_pd', 'mn281kbc_dedup')]}
+STATS = {
+    'mean_I': lambda d: d[d.ion == 1].a_nlte.mean(),
+    'ion_bal': lambda d: d[d.ion == 2].a_nlte.mean() - d[d.ion == 1].a_nlte.mean(),
+    'chi_slope_I': lambda d: _ls(d[d.ion == 1], 'evi'),
+    'rew_slope_I': lambda d: _ls(d[d.ion == 1], 'rew'),
+    'lam_slope_I': lambda d: _ls(d[d.ion == 1], 'lam', 1e-3),
+    'sd_I': lambda d: d[d.ion == 1].a_nlte.std(ddof=1),
+}
+
+
+def _ls(d, col, scale=1.0):
+    x = d[col].to_numpy(float) * scale
+    return np.polyfit(x, d.a_nlte.to_numpy(float), 1)[0] if len(d) >= 4 and np.ptp(x) > 0 else np.nan
+
+
+def compare(res, met, refs):
+    """Per star and pair: each metric for both atoms, the paired-bootstrap error of the
+    difference (lines common to both, so the observational error largely cancels) and the
+    metric's own error (lines resampled for one atom: observation plus fit)."""
+    use = res[res.clean & ~res.mismatch].set_index(['star', 'element', 'atmos', 'atom', 'ion', 'lam'])
+    rows = []
+    for el, pairs in PAIRS.items():
+        for orig, rep in pairs:
+            for (star, atmos), _ in use.xs(el, level='element').groupby(level=['star', 'atmos']):
+                try:
+                    a = use.loc[(star, el, atmos, orig)].reset_index()
+                    b = use.loc[(star, el, atmos, rep)].reset_index()
+                except KeyError:
+                    continue
+                a, b = a.set_index(['ion', 'lam']), b.set_index(['ion', 'lam'])
+                for name, stat in STATS.items():
+                    if not np.isfinite(stat(a.reset_index())):
+                        continue
+                    da, sig_d = _paired(a, b, stat)
+                    own = _own(b, stat)
+                    rows.append(dict(element=el, orig=orig, rep=rep, star=star, atmos=atmos, metric=name,
+                                     value_orig=stat(a.reset_index()), value_rep=stat(b.reset_index()),
+                                     delta=da, sig_delta=sig_d, sig_metric=own,
+                                     n_lines=len(a.index.intersection(b.index))))
+    return pd.DataFrame(rows)
+
+
+def _paired(a, b, stat):
+    common = a.index.intersection(b.index)
+    a, b = a.loc[common].reset_index(), b.loc[common].reset_index()
     draws = []
     for _ in range(N_BOOT):
         pick = RNG.integers(0, len(common), len(common))
         draws.append(stat(b.iloc[pick]) - stat(a.iloc[pick]))
-    draws = np.array(draws, float)
-    return stat(b) - stat(a), np.nanstd(draws)
+    return stat(b) - stat(a), float(np.nanstd(draws))
+
+
+def _own(b, stat):
+    b = b.reset_index()
+    draws = [stat(b.iloc[RNG.integers(0, len(b), len(b))]) for _ in range(N_BOOT)]
+    return float(np.nanstd(draws))
+
+
+def star_to_star(met, refs, stars):
+    """[X/H] relative to the run's own Sun (same atom and atmosphere), against GBS."""
+    m = met.reset_index()
+    sun = m[m.star == 'Sun'].set_index(['element', 'atom', 'atmos'])
+    rows = []
+    for r in m.itertuples():
+        key = (r.element, r.atom, r.atmos)
+        if key not in sun.index or not np.isfinite(r.mean_I):
+            continue
+        ref = refs[(refs.star == r.star) & (refs.element == r.element)].iloc[0]
+        st = stars[stars.star == r.star].iloc[0]
+        xh = r.mean_I - sun.loc[key, 'mean_I']
+        rows.append(dict(star=r.star, element=r.element, atom=r.atom, atmos=r.atmos, group=st.group,
+                         teff=st.teff, logg=st.logg, feh=st.feh, xh=xh, xh_gbs=ref.xh_ref,
+                         e_gbs=ref.e_xh, d_gbs=xh - ref.xh_ref, a_sun=sun.loc[key, 'mean_I'],
+                         ion_bal=getattr(r, 'ion_bal', np.nan), chi_slope=r.chi_slope_I))
+    return pd.DataFrame(rows)
 
 
 def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
@@ -429,6 +526,15 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
         met = use.groupby(['star', 'element', 'atom', 'atmos']).apply(metrics, include_groups=False)
         met.to_csv(out_dir / 'metrics.csv')
         print(f'{len(res)} line results, {len(use)} clean; metrics in {out_dir / "metrics.csv"}')
+        refs = pd.read_csv(run_dir / 'reference_abundances.csv')
+        compare(res, met, refs).to_csv(out_dir / 'compare.csv', index=False)
+        star_to_star(met, refs, stars).to_csv(out_dir / 'star_to_star.csv', index=False)
+    if 'clv' in steps:
+        clv_runs = pd.read_csv(run_dir / 'runs_clv.csv')
+        ed = run_dir / 'extract' / 'clv'
+        measure_clv(lines, clv_runs, ed, spectra_dir).to_csv(out_dir / 'clv_ew.csv', index=False)
+        takeda_abundances(lines, clv_runs, ed, spectra_dir / 'Takeda' / 'all_clvdata').to_csv(
+            out_dir / 'clv_takeda.csv', index=False)
 
 
 if __name__ == '__main__':
