@@ -10,7 +10,8 @@ uncertain and a table cannot carry them at an affordable number of frequencies.
 import numpy as np
 import pandas as pd
 
-from .atom_audit import (CC, bf_interpolate, bf_tables, compare_bf_reference, continuum_level,
+from .fast_atom import PandasAtom
+from .atom_audit import (CC, bf_interpolate, bf_tables, compare_bf_reference, continuum_level, ion_ground,
                          term_ranks)
 
 
@@ -112,6 +113,28 @@ def drop_duplicate_collisions(col):
     lo = np.minimum(col.i, col.j)
     hi = np.maximum(col.i, col.j)
     return col[~pd.DataFrame(dict(k=col.key, lo=lo, hi=hi)).duplicated()].reset_index(drop=True)
+
+
+
+def prune(atom, keep_lines, keep_levels):
+    """The atom with only the bound-bound transitions in ``keep_lines`` (mask over
+    atom.bbt) and the levels in ``keep_levels`` (mask over atom.lvl). Every stage's ground
+    level is kept, since the continua and the collisional ionisation end there. A removed
+    level takes its lines, bound-free table and collision records with it; the remaining
+    levels are renumbered."""
+    keep_levels = np.asarray(keep_levels, bool).copy()
+    keep_levels[list(ion_ground(atom).values())] = True
+    gone = np.flatnonzero(~keep_levels)
+    out = PandasAtom.from_pandas(atom.id, atom.abnd, atom.ai, atom.lvl.copy(),
+                                 bbt=atom.bbt[np.asarray(keep_lines, bool)
+                                              & keep_levels[atom.bbt.i] & keep_levels[atom.bbt.j]].copy(),
+                                 bft=atom.bft[keep_levels[atom.bft.i]].copy(),
+                                 col=atom.col[keep_levels[atom.col.i] & keep_levels[atom.col.j]].copy())
+    out.remove_levels(gone)
+    out.nk = len(out.lvl)
+    out.nline = len(out.bbt)
+    out.ncol = len(out.col)
+    return out
 
 
 # ---------------------------------------------------------------------------------------

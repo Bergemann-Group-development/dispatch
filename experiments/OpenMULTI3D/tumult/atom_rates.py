@@ -115,3 +115,71 @@ def transition_relevance(rates, departure_floor=1e-3):
 def departures(rates):
     """Departure coefficients b = n/n* (nk, nz)."""
     return rates['pop'] / rates['nstar']
+
+
+
+def diagnostic_relevance(rates, sources, departure_floor=1e-3):
+    """Influence of every level and radiative transition on the departure coefficients
+    of the diagnostic levels, maximised over depth.
+
+    ``sources`` (nk, nz) marks, per depth, the levels whose b the diagnostic lines take
+    there (both ends of each line, over the depths where it forms). Statistical
+    equilibrium splits the net flow F_k = 1/2 sum |net| through level k over its level
+    pairs; c(a -> b) = (|net_rad(a,b)| + |net_col(a,b)|) / F_a is the part of a's flow
+    that passes through b. A level's influence I_k is the largest product of c along a
+    path from a source level to k (1 for the sources), found as a shortest path in -ln c:
+    a level whose flow reaches the sources only through branches that each carry a small
+    part of the flow there cannot move their b much. A radiative transition (i, j)
+    carries max(I_i |net| / F_i, I_j |net| / F_j), its share of the flow of a level
+    weighted by that level's influence; for a transition between two sources this is the
+    local share of :func:`transition_relevance`. Depths without sources, or where no level
+    departs from LTE by more than ``departure_floor`` (|ln b|), do not count.
+
+    Returns (influence (nk,), relevance (nrad,), depth where each transition's relevance
+    peaks (nrad,))."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import dijkstra
+    rad, col, ii, jj = net_rates(rates)
+    nk, nz = rates['pop'].shape
+    irad, jrad = rates['irad'], rates['jrad']
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lnb = np.abs(np.log(rates['pop'] / rates['nstar']))
+    a = np.concatenate([irad, ii])
+    b = np.concatenate([jrad, jj])
+    influence = np.zeros(nk)
+    relevance = np.zeros(len(irad))
+    peak = np.zeros(len(irad), int)
+    for z in range(nz):
+        src = np.flatnonzero(sources[:, z])
+        if len(src) == 0 or not np.nanmax(lnb[:, z]) > departure_floor:
+            continue
+        w = np.concatenate([np.abs(rad[:, z]), np.abs(col[:, z])])
+        pair = coo_matrix((w, (a, b)), shape=(nk, nk)).tocsr()
+        pair = (pair + pair.T).tocoo()
+        flow = np.zeros(nk)
+        np.add.at(flow, pair.row, 0.5 * pair.data)
+        frac = pair.data / np.maximum(flow[pair.row], 1e-300)
+        ok = frac > 0
+        # -ln(frac) >= 0 since |net(a,b)| <= 2 F_a; the offset keeps zero-cost edges,
+        # which a sparse graph would drop, in the graph
+        cost = np.maximum(-np.log(np.minimum(frac[ok], 1.0)), 0) + 1e-12
+        graph = coo_matrix((cost, (pair.row[ok], pair.col[ok])), shape=(nk, nk)).tocsr()
+        infl = np.exp(-dijkstra(graph, directed=True, indices=src, min_only=True))
+        infl[src] = 1.0
+        influence = np.maximum(influence, infl)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            net = np.abs(rad[:, z])
+            rel = np.maximum(np.nan_to_num(infl[irad] * net / flow[irad]),
+                             np.nan_to_num(infl[jrad] * net / flow[jrad]))
+        better = rel > relevance
+        relevance[better], peak[better] = rel[better], z
+    return influence, relevance, peak
+
+
+def level_index(keys, stage, ev):
+    """Atom levels that line-list levels take their departure coefficients from: the
+    nearest of the departure ``keys`` (100 * stage + energy above the stage ground [eV],
+    :func:`tumult.atom_audit.level_keys`) to 100 * stage + ev, as ``find_closest`` in
+    HOP/linelist_mod.f90 matches them."""
+    target = 100 * np.asarray(stage, float) + np.asarray(ev, float)
+    return np.abs(keys[None, :] - target[:, None]).argmin(1)
