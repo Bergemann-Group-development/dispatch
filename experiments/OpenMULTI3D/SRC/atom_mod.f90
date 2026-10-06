@@ -564,8 +564,12 @@ MODULE atom_mod
               ! iteration after iteration empties its column of the rate matrix, and
               ! can never come back, since the update is multiplicative (b = b*e).
               ! min_pop_frac of the atoms in the cell is far below anything that
-              ! contributes to an opacity or a rate.
-              where (nstar > 0) b = max(b, min_pop_frac*adata%totn(x,y,z)/nstar)
+              ! contributes to an opacity or a rate.  The floor in b is capped at 1:
+              ! a level whose LTE population is itself below the floor (the 2p5 nl
+              ! levels of Na II, 33 eV above their ground, are 1e-80 of the Na in a
+              ! cool atmosphere) would otherwise get b of 1e50, which the real(4)
+              ! departure coefficients of the radiative transfer cannot hold.
+              where (nstar > 0) b = max(b, min(1d0, min_pop_frac*adata%totn(x,y,z)/nstar))
 
               if (check_NaN) then
                 call check_array(e, 'population correction', check_zero=.true., abort=.false., ok=ok)
