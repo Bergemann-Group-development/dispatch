@@ -156,6 +156,8 @@ MODULE atom_mod
       procedure :: normalize_profiles
       procedure :: update_populations
       procedure :: setup_transition_matrix
+      procedure :: collision_rates
+      procedure :: write_rates
       procedure :: read_classic
       procedure :: read_pandas
       procedure :: prepare_damping
@@ -716,15 +718,7 @@ MODULE atom_mod
 
     ! one can switch off the collisional rates by setting cswitch to 0
     if (cswitch > 0) then
-      self%data%c = 0.d0
-
-      if (use_classic_col) then
-        call self%classic_col(comp,x,y,z)
-      endif
-
-      if (associated(self%coll)) then
-        call self%gencol(comp,x,y,z)
-      endif
+      call self%collision_rates(comp,x,y,z)
 
       do j=1, self%nlevel
       do i=1, self%nlevel
@@ -760,6 +754,79 @@ MODULE atom_mod
     endif
   END SUBROUTINE setup_transition_matrix
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  ! Collision rate coefficients of one cell into self%data%c, in the convention of the
+  ! rate matrix: c(j,i) is the coefficient [1/s] from level i to level j.
+  !====================================================================================
+  SUBROUTINE collision_rates (self, comp, x, y, z)
+    class(atom_type), target :: self
+    class(composition_type) :: comp
+    integer, intent(in) :: x, y, z
+    !----------------------------------------------------------------------------------
+    self%data%c = 0.d0
+    if (use_classic_col) call self%classic_col(comp,x,y,z)
+    if (associated(self%coll)) call self%gencol(comp,x,y,z)
+  END SUBROUTINE collision_rates
+
+  !====================================================================================
+  ! Rate diagnostics for model-atom reduction (&output_params save_net_rates).  Called
+  ! after each population update, it replaces rad_file with the state of this update:
+  !   int32  nlevel, nrad, nx, ny, nz, iter
+  !   int32  irad(nrad), jrad(nrad)           lower and upper level (1-based)
+  !   real64 n(nx,ny,nz,nlevel)               populations after the update [cm^-3]
+  !   real64 nstar(nx,ny,nz,nlevel)           LTE populations [cm^-3]
+  !   real32 rij(nx,ny,nz,nrad), rji(...)     radiative rate coefficients [1/s]
+  ! so that n_i*rij - n_j*rji is the net radiative rate of each transition.  Inactive
+  ! transitions have zero coefficients.  col_file, written once, holds the collision
+  ! coefficients, which do not depend on the populations:
+  !   int32  nlevel, nx, ny, nz
+  !   real32 cup(nx,ny,nz,npair)              upward coefficient i->j [1/s] for every
+  !                                           pair i<j, ordered j-major (j=2..nk, i<j)
+  ! The downward coefficient follows from detailed balance, cup*nstar_i/nstar_j, which
+  ! is how gencol and classic_col form it.  The files grow with nlevel**2 per cell and
+  ! are meant for 1D models.
+  !====================================================================================
+  SUBROUTINE write_rates (self, comp, rad_file, col_file, iter)
+    class(atom_type), target :: self
+    class(composition_type) :: comp
+    character(len=*), intent(in) :: rad_file, col_file
+    integer, intent(in) :: iter
+    real(4), dimension(:,:,:,:), allocatable :: cup
+    integer :: m(3), nk, x, y, z, i, j, k, lunit
+    !----------------------------------------------------------------------------------
+    m = shape(self%data%totn)
+    nk = self%nlevel
+    open(newunit=lunit, file=trim(rad_file), access='stream', form='unformatted', status='replace')
+    write(lunit) int(nk,4), int(self%nrad,4), int(m,4), int(iter,4)
+    write(lunit) int(self%irad,4), int(self%jrad,4)
+    write(lunit) self%data%b * self%data%nstar
+    write(lunit) self%data%nstar
+    write(lunit) self%data%gamma_ij, self%data%gamma_ji
+    close(lunit)
+
+    if (os%exists(trim(col_file))) return
+    allocate(cup(m(1), m(2), m(3), nk*(nk-1)/2))
+    do z=1, m(3)
+      do y=1, m(2)
+        do x=1, m(1)
+          call self%collision_rates(comp, x, y, z)
+          k = 0
+          do j=2, nk
+            do i=1, j-1
+              k = k + 1
+              cup(x,y,z,k) = real(self%data%c(j,i))
+            end do
+          end do
+        end do
+      end do
+    end do
+    open(newunit=lunit, file=trim(col_file), access='stream', form='unformatted', status='replace')
+    write(lunit) int(nk,4), int(m,4)
+    write(lunit) cup
+    close(lunit)
+    deallocate(cup)
+  END SUBROUTINE write_rates
 
   !====================================================================================
   SUBROUTINE check_ionisation_thresholds(self, element)
@@ -1081,7 +1148,7 @@ MODULE atom_mod
               write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
                             ' wavelengths are not unique; shifted by 1e-6'
               call console_warn (ch_m3d, msg)
-              cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
+              cnt%lam_input(j:cnt%nnu) = cnt%lam_input(j:cnt%nnu) + 1.0d-6
             endif
           end do
 
@@ -1520,8 +1587,8 @@ MODULE atom_mod
           cnt%nnu = nnu
           call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
           call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-          cnt%lam_input(2:nnu) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
-          cnt%lam_input(1) = thresh_aa
+          cnt%lam_input(1:nnu-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+          cnt%lam_input(nnu) = thresh_aa
           cnt%alpha_input = Kramer(cnt%lam_input, self%ev(cnt%j) - self%ev(cnt%i))
           cnt%alpha0 = cnt%alpha_input(nnu)
           j = j+1

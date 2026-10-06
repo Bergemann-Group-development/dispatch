@@ -283,6 +283,9 @@ MODULE m3d_patch_mod
     integer, public, save :: save_every=0
     logical, public, save :: bound_free_in_output=.false.
     integer, public, save :: save_rates=0
+    ! Write per-transition radiative and collisional rates after every population
+    ! update (atom_type%write_rates), for model-atom reduction studies in 1D
+    logical, public, save :: save_net_rates=.false.
     character(len=128), public :: atmos_format='unknown'
     character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
@@ -317,7 +320,8 @@ MODULE m3d_patch_mod
     namelist /output_params/ save_id, save_patch_kind, save_resolved, &
     save_cntrbf, depression_cntrbf, save_Inu, save_chi, save_Snu, save_Jnu, &
     rt_to_file, overlapping_bb_in_output, &
-    save_populations, save_every, save_rates, save_rate_matrix, bound_free_in_output, set_file
+    save_populations, save_every, save_rates, save_rate_matrix, save_net_rates, &
+    bound_free_in_output, set_file
 
     namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &

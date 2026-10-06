@@ -27,7 +27,8 @@ MODULE nlte_patch_mod
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
     n_nlte_patches, release_output_tasks, &
-    save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit
+    save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
+    save_net_rates
   USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
@@ -465,6 +466,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
     integer :: i, j, k, p(3), m(3), ng_epos(4), count, lunit
+    character(len=32) :: rates_tag
     real(8) :: ng_emax
     logical :: do_ng, locally_converged, found, last
     integer, save :: itimer=0
@@ -500,6 +502,12 @@ contains
         call atom%normalize_profiles(self%iter)
         diag_zs = self%zs
         call atom%update_populations(comp, self%local, self%pcheck, cij, cji, w, c)
+
+        if (save_net_rates) then
+          write(rates_tag,'(a,"_",i5.5,".bin")') trim(atom%id), self%zs
+          call atom%write_rates(comp, trim(io%run_dir)//'save/rates_'//trim(rates_tag), &
+                                trim(io%run_dir)//'save/colrates_'//trim(rates_tag), self%iter)
+        endif
 
         if (save_rates==k) then
           call self%save3(real(adata%gamma_ij(:,:,:,linecheck)), label='rij')
