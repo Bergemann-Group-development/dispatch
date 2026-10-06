@@ -2889,7 +2889,8 @@ contains
     class(cont_type), pointer :: cont
     real(4), dimension(:), allocatable :: w_alpha, wmunu
     real(4) :: ni, nj, tmp, eta_fac, q, phi
-    real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
+    real(4) :: g_ij, vij, vji, sum_abs, sum_ems, sum_pre
+    real(8) :: g_ji, h_kT, v8, tail_ems, tail_pre, lte_ratio
     integer :: i, j, fs, fe
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -2897,7 +2898,15 @@ contains
     call trace%begin (trim(self%kind)//'%bound_free_rates', itimer=itimer)
     allocate(wmunu(self%fs:self%fe))
     allocate(w_alpha(self%fs:self%fe))
-    ! Computing bound-free radiative rates based on half integrated mean intensity
+    ! Computing bound-free radiative rates based on half integrated mean intensity.
+    !
+    ! The recombination coefficient is the unscaled emission sum times the LTE ratio
+    ! n*_i/n*_j, and the sum carries exp(-h nu/kT).  The ratio overflows real(4) for
+    ! a continuum whose upper level is far above the lower one (it is e**(chi/kT)),
+    ! and the Boltzmann factor beta is clamped at tiny(1.0) above h nu = 87 kT.  The
+    ! product is physical, so each cell forms it in real(8): the frequencies where
+    ! beta is clamped use the exact factor, and the ratio is applied here, before
+    ! the rate is stored as real(4).
     do j=1, size(trans%cont)
       cont => trans%cont(j)
       if (.not. cont%active) cycle
@@ -2913,29 +2922,39 @@ contains
             sum_abs = 0.0
             sum_ems = 0.0
             sum_pre = 0.0
+            tail_ems = 0d0
+            tail_pre = 0d0
+            h_kT = h_k / real(self%m3d_parent%composition%temp(x,y,z), 8)
 
             do f=fs, fe
               associate(Jnu=>self%Jnu(f,x,y,z,self%i_set_main), beta=>self%beta(f,x,y,z), &
                         Psi=>self%PsiJ(f,x,y,z,self%i_set_main))
                 vij = w_alpha(f)
-                vji = vij * beta
                 phi = Psi * cont%alpha(f)
                 sum_abs = sum_abs + vij * Jnu
-                sum_ems = sum_ems + vji * (Jnu + 1.0)
-                sum_pre = sum_pre + vji * phi
+                if (beta > tiny(1.0)) then
+                  vji = vij * beta
+                  sum_ems = sum_ems + vji * (Jnu + 1.0)
+                  sum_pre = sum_pre + vji * phi
+                else
+                  v8 = real(vij, 8) * exp(-real(self%nu(f), 8) * h_kT)
+                  tail_ems = tail_ems + v8 * (Jnu + 1.0)
+                  tail_pre = tail_pre + v8 * phi
+                endif
               end associate
             end do
 
             g_ij = sum_abs
-            g_ji = sum_ems
+            g_ji = real(sum_ems, 8) + tail_ems
 
             if (preconditioning) then
               g_ij = g_ij - sum_pre * adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
-              g_ji = g_ji - sum_pre * adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
+              g_ji = g_ji - (real(sum_pre, 8) + tail_pre) * adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
             endif
 
+            lte_ratio = adata%nstar(x,y,z,cont%i) / adata%nstar(x,y,z,cont%j)
             trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
-            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + real(g_ji * lte_ratio, 4)
           end do
         end do
       end do
