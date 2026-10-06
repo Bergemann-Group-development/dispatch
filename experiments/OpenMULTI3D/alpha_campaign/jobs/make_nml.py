@@ -67,7 +67,7 @@ def group(name, **keys):
     return f'&{name} {body} /'
 
 
-def linelist_group(linelist, exclude=''):
+def linelist_group(linelist):
     keys = {}
     if linelist == 'full':
         keys['linelist_folder'] = MASTER
@@ -75,8 +75,6 @@ def linelist_group(linelist, exclude=''):
         keys['linelist_file'] = [f'{MASTER}/{f}' for f in FGK_LINELISTS]
     else:                                    # a single (pruned) file
         keys['linelist_file'] = linelist
-    if exclude:
-        keys['exclude_elements'] = exclude
     return group('linelist_params', **keys)
 
 
@@ -86,7 +84,8 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     """One run.  geometry '1d' applies the 1d preset (nz=64, exit planes in memory),
     '3d' the 3d preset (30x30x96, tabulated opacities, rotated rays, exit planes on
     disk).  atom: a model atom for NLTE, solved and synthesised in one run (nlte
-    preset), with its element excluded from the line list; atom['nlte'] adds to
+    preset); the atom's element stays in the line list, because the output pass takes its
+    lines from there (output_from_line_list); atom['nlte'] adds to
     &nlte_params, atom['maxiter'] sets the iteration limit and atom['grid'] names a
     line_grid_file.  absmet: the background line-opacity table of the iteration pass.  output / rt_output: keys
     added to &output_params / &rt_output_params (a group counts only once)."""
@@ -108,10 +107,7 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     if geometry == '3d':
         rt_it.update(sample_back_opac=True, sample_linelist=True)
         rt_out.update(sample_back_opac=True, sample_linelist=True)
-    exclude = ''
     if atom:
-        element = atom['element']
-        exclude = element
         keys = dict(atom_file=atom['file'])
         if 'grid' in atom:
             keys['line_grid_file'] = atom['grid']
@@ -128,7 +124,7 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     if rt_out:
         lines.append(group('rt_output_params', **rt_out))
     if linelist and not (atom and atom.get('departures_only')):
-        lines.append(linelist_group(linelist, exclude))
+        lines.append(linelist_group(linelist))
         lines.append(group('spectrum_params', window_file=window, R_sampling=R))
     if composition:
         lines.append(group('composition_params', **composition))
