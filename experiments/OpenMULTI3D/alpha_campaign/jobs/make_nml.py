@@ -21,7 +21,7 @@ argument stays a short relative path (SUBAGENTS.md) while the outputs land under
     python3 make_nml.py pilot_sed [N]    # stage 2 for the pilot: 1D, 3D and mapped-<3D> 3D SEDs (N output scattering iterations)
     python3 make_nml.py vmic_av3d        # <3D> LTE with the MARCS twin's constant vmic, into b3/
     python3 make_nml.py lte3d LABELS [LIST]  # 3D LTE, first snapshot of each Stagger model near 4MOST stars, into x3d/
-    python3 make_nml.py avg3d [MODEL ...]     # own <3D> averages with density: snapshot runs, 1D LTE/Mg/Fe, into avg3d/ and b4/
+    python3 make_nml.py avg3d [--recipe R] [MODEL ...]  # full-resolution <3D> averages and their 1D LTE/Mg/Fe runs, into avg3d8/ and b8/ (geo: avg3d8g/, b8g/)
     python3 make_nml.py avg3d_sed MODEL      # stage-2 SED on a model's b4 departures, once they exist
     python3 make_nml.py dep4 [MODEL ...]     # b4 Mg/Fe departures with line grids and matched absmet
     python3 make_nml.py dep4_list FILE MODEL ...  # the same for the named models, listed in FILE
@@ -718,25 +718,31 @@ def avg3d_models():
     return list(dict.fromkeys(names))
 
 
-def avg3d(models=()):
-    """Own <3D> averages, with density, for the Stagger models of avg3d_models() (or
-    the ones named).  Per model:
+# The <3D> averages of phase 7 (avg3d.py on the full-resolution snapshots): recipe ->
+# (work/ folder of the averages, runs/ and work/ folder of their 1D runs)
+AVG3D_SETS = {'t4': ('avg3d8', 'b8'), 'geo': ('avg3d8g', 'b8g')}
 
-    - avg3d/<model>/s<snap>.nml: atmosphere-only runs (a 0.5 A window, no line list) on
-      AVG_SNAPSHOTS snapshots, through the 3d preset's 30x30x96 resampling and the
-      model's composition; each saves T, n_e, rho, velocities and chi_500.
-    - avg3d.py pools their columns into runs/../work/avg3d/<model>.atmos (log tau_500
-      surfaces; text format).
-    - b4/av3d/<model>/{lte,mg,fe}.nml: the batch-2 <3D> runs on that file (Mg and Fe
-      for the pilot and [Fe/H] <= -3 only), which a run
-      reads with use_ne=F (rho given, n_e from the EOS) and amr='T' (the default
-      pressure-based depth sampling needs n_e).
 
-    Writes avg3d/models.txt (model, [Fe/H], the snapshot namelists) for avg3d.sh."""
-    rows = []
+def avg3d(models=(), recipe='t4'):
+    """Own <3D> averages from the full-resolution snapshots (avg3d.py, tumult.avg3d) for
+    the Stagger models of avg3d_models() (or the ones named), and their 1D runs.  With
+    the folders of AVG3D_SETS[recipe] = (AVG, RUNS):
+
+    - AVG/models.txt: one row per model, 'name [Fe/H] [alpha/Fe] snapshot ...', with
+      AVG_SNAPSHOTS snapshots evenly spaced over the model's sequence;
+      avg3d_queue.sbatch turns each row into AVG/<model>.atmos.
+    - RUNS/av3d/<model>/lte_it1.nml: 1D LTE with one output scattering iteration (the
+      setting of the 3D LTE runs it is paired with), for every model;
+      mg.nml, fe.nml: NLTE Mg and Fe with the phase-4 departure setup (dep4), for the
+      pilot and [Fe/H] <= -3.  Each NLTE run writes the NLTE and the LTE spectrum of the
+      full line list, so no stage-2 SED is needed.
+    - RUNS/tasks.txt: the namelists, Fe first; lgrid/todo.txt gains missing grids.
+
+    The files are read with use_ne=F (rho given, n_e from the EOS) and amr='T'."""
+    avg_dir, runs = AVG3D_SETS[recipe]
     folders = stagger_models()
     pilot = {Path(f).name.replace('_new', '') for f, *_ in PILOT}
-    missing = []
+    rows, tasks, todo, missing = [], [], {}, []
     for name in (models or avg3d_models()):
         if name not in folders:
             missing.append(name)                    # a <3D> file without snapshots
@@ -746,39 +752,39 @@ def avg3d(models=()):
         snaps = sorted(folders[name].glob('atm3d.*'))
         pick = sorted({round(i * (len(snaps) - 1) / (AVG_SNAPSHOTS - 1))
                        for i in range(AVG_SNAPSHOTS)}) if len(snaps) > AVG_SNAPSHOTS else range(len(snaps))
-        nmls = []
-        for i in pick:
-            snap = snaps[i]
-            nml = Path('avg3d') / name / f's{snap.name.split("_")[1]}.nml'
-            nml.parent.mkdir(parents=True, exist_ok=True)
-            atmos = dict(atmos_format='stagger2', atmos_file=str(snap), FeH=feh, nx=30, ny=30, nz=96)
-            lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
-                     group('timer_params', sec_per_report=1e8, verbose=2),
-                     group('atmos_params', **atmos),
-                     group('spectrum_params', aa_blue=5000.0, aa_red=5000.5, daa=0.1)]
-            if comp:
-                lines.append(group('composition_params', **comp))
-            nml.write_text('\n'.join(lines) + '\n')
-            nmls.append(str(nml))
-        atmos = dict(atmos_format='text', atmos_file=f'avg3d/{name}.atmos', FeH=feh, use_ne=False, amr='T')
-        quiet = dict(save_linelist=False)
-        out = Path('b4/av3d') / name
+        rows.append(f'{name} {feh} {alpha} ' + ' '.join(str(snaps[i]) for i in pick))
+        atmos = dict(atmos_format='text', atmos_file=f'{avg_dir}/{name}.atmos', FeH=feh,
+                     use_ne=False, amr='T')
+        out = Path(runs) / 'av3d' / name
         out.mkdir(parents=True, exist_ok=True)
-        (out / 'lte.nml').write_text(namelist(atmos, composition=comp, rt_output=quiet))
-        if name in pilot or feh <= -3:            # the 3D LTE extension needs LTE only
-            for el, atom in (('mg', PILOT_MG), ('fe', PILOT_FE)):
-                (out / f'{el}.nml').write_text(namelist(atmos, atom=atom, composition=comp, rt_output=quiet))
-        rows.append(f'{name} {feh} ' + ' '.join(nmls))
-    listing = Path('avg3d/models.txt')
-    old = {r.split()[0]: r for r in listing.read_text().splitlines()} if listing.exists() else {}
-    old.update({r.split()[0]: r for r in rows})
-    listing.write_text('\n'.join(old.values()) + '\n')
-    print(f'{len(rows)} models in avg3d/models.txt; no snapshots for', ' '.join(missing) or 'none')
+        quiet = dict(save_linelist=False)
+        (out / 'lte_it1.nml').write_text(with_rt_maxiter(
+            namelist(atmos, composition=comp, rt_output=quiet), 1))
+        tasks.append(str(out / 'lte_it1.nml'))
+        if name in pilot or feh <= -3:
+            marcs = nearest_marcs(teff, logg, feh)
+            if marcs is None:
+                print(f'{name}: no MARCS model for the line grid; LTE only')
+                continue
+            for el, atom in (('fe', PILOT_FE), ('mg', PILOT_MG)):
+                grid, cmd = line_grid(atom, marcs, feh, alpha, 1.0 if logg >= 3.5 else 2.0)
+                todo[str(grid)] = cmd
+                (out / f'{el}.nml').write_text(namelist(
+                    atmos, atom=with_grid(atom, grid), composition=comp, rt_output=quiet,
+                    absmet=absmet_for(feh)))
+                tasks.append(str(out / f'{el}.nml'))
+    Path(avg_dir).mkdir(exist_ok=True)
+    Path(avg_dir, 'models.txt').write_text('\n'.join(rows) + '\n')
+    tasks.sort(key=lambda t: (not t.endswith('fe.nml'), t))
+    Path(runs, 'tasks.txt').write_text('\n'.join(tasks) + '\n')
+    add_todo(todo)
+    print(f'{len(rows)} models in {avg_dir}/models.txt, {len(tasks)} namelists in '
+          f'{runs}/tasks.txt; no snapshots for', ' '.join(missing) or 'none')
 
 
 def avg3d_sed(name):
     """Stage-2 SED (batch2_sed's settings) on the Mg and Fe departures of the b4 run of
-    one own average: b4/sed/av3d_<model>.nml, departures linked in runs/b4/dep/."""
+    one phase-4 own average: b4/sed/av3d_<model>.nml, departures linked in runs/b4/dep/."""
     teff, logg, feh, alpha = av3d_labels(name)
     comp = dict(alpha_enhancement=alpha) if alpha else None
     dep = DATADIR / 'b4/dep' / f'av3d_{name}'
@@ -1225,8 +1231,12 @@ if __name__ == '__main__':
         vmic_grid()
     elif sys.argv[1:2] == ['sed_validate']:
         sed_validate()
-    elif sys.argv[1:2] == ['avg3d']:
-        avg3d(sys.argv[2:])
+    elif sys.argv[1:2] == ['avg3d']:              # avg3d [--recipe geo] [MODEL ...]
+        args = sys.argv[2:]
+        recipe = 't4'
+        if args[:1] == ['--recipe']:
+            recipe, args = args[1], args[2:]
+        avg3d(args, recipe)
     elif sys.argv[1:2] == ['avg3d_sed']:
         avg3d_sed(sys.argv[2])
     elif sys.argv[1:2] == ['lte3d']:

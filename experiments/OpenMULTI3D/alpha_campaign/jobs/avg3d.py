@@ -1,11 +1,13 @@
 """The campaign's <3D> average of one Stagger model, from its full-resolution snapshots.
 
     python avg3d.py OUT.atmos FEH ALPHA SNAPSHOT [SNAPSHOT ...] [--real Q] [--top TOP]
+                    [--recipe t4|geo]
 
 The snapshots (Stagger-grid-2 atm3d.* files, mesh.* beside them) are read with
 tumult.hop.read_atmosphere, their columns pooled and averaged with tumult.avg3d
-(reports/2026-10-06_avg3d_study.md): surfaces of log tau_500, T = <T^4>^(1/4), geometric
-rho and P_e, and the surface's log tau_500 as the depth column.  tau_500 comes from HOP's
+(reports/2026-10-06_avg3d_study.md): surfaces of log tau_500, T = <T^4>^(1/4) (geometric
+with --recipe geo), geometric rho and P_e, and the surface's log tau_500 as the depth
+column.  tau_500 comes from HOP's
 continuum opacity at [Fe/H] = FEH and [alpha/Fe] = ALPHA, tabulated in (T, rho) once per
 model.  No dispatch.x run and no resampling are involved.
 
@@ -28,14 +30,11 @@ from pathlib import Path
 from tumult import avg3d
 from tumult.hop import read_atmosphere
 
-RECIPE = dict(surface='tau500', recipe='t4')
-
-
-def average(snapshots, feh, alpha, real=0.5, top='isothermal'):
+def average(snapshots, feh, alpha, real=0.5, top='isothermal', recipe='t4'):
     atm = [read_atmosphere(str(f), 'stagger2') for f in snapshots]
     table = avg3d.OpacityTable.for_snapshots(atm, feh=feh, alpha_enhancement=alpha)
     cols = avg3d.Columns.concatenate([avg3d.columns(a, table) for a in atm])
-    return avg3d.surface_average(cols, real=real, top=top, **RECIPE)
+    return avg3d.surface_average(cols, 'tau500', recipe, real=real, top=top)
 
 
 def main(argv=None):
@@ -46,10 +45,11 @@ def main(argv=None):
     p.add_argument('snapshots', nargs='+', type=Path)
     p.add_argument('--real', type=float, default=0.5)
     p.add_argument('--top', choices=avg3d.TOPS, default='isothermal')
+    p.add_argument('--recipe', choices=('t4', 'geo'), default='t4')
     a = p.parse_args(argv)
-    av = average(a.snapshots, a.feh, a.alpha, a.real, a.top)
+    av = average(a.snapshots, a.feh, a.alpha, a.real, a.top, a.recipe)
     avg3d.write_text(a.out, av, a.feh, depth='tau')
-    line = (f'{a.out.name} snapshots={len(a.snapshots)} real={a.real} top={a.top} '
+    line = (f'{a.out.name} recipe={a.recipe} snapshots={len(a.snapshots)} real={a.real} top={a.top} '
             f'ltau_top={av["x"][0]:.3f} ltau_bottom={av["x"][-1]:.3f} '
             f'extended_at_top={av["extrapolated"][0]:.3f} '
             f'{" ".join(f.name for f in a.snapshots)}')
