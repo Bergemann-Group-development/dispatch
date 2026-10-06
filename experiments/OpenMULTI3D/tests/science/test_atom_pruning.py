@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from tumult.atom_build import prune
-from tumult.atom_rates import diagnostic_relevance
+from tumult.atom_rates import diagnostic_relevance, removable
 from tumult.fast_atom import PandasAtom
 
 ATOM_FILE = Path(__file__).resolve().parents[2] / "input" / "atoms" / "atom.o41f"
@@ -35,7 +35,8 @@ def test_influence_follows_the_flow_into_the_diagnostic_levels():
                          (5, 6, 1.0), (5, 6, -1.0)], 7)
     sources = np.zeros((7, 1), bool)
     sources[0] = True
-    influence, relevance, _ = diagnostic_relevance(rates, sources)
+    influence, ends = diagnostic_relevance(rates, sources)
+    relevance = ends.max(1)
     branch = 0.01 / 1.01
     assert np.allclose(influence[:3], 1)
     assert np.allclose(influence[3:5], branch)
@@ -49,8 +50,8 @@ def test_influence_follows_the_flow_into_the_diagnostic_levels():
 
 def test_relevance_ignores_depths_without_diagnostic_levels():
     rates = cycle_rates([(0, 1, 1.0), (1, 2, 1.0), (0, 2, -1.0)], 3)
-    influence, relevance, _ = diagnostic_relevance(rates, np.zeros((3, 1), bool))
-    assert not influence.any() and not relevance.any()
+    influence, ends = diagnostic_relevance(rates, np.zeros((3, 1), bool))
+    assert not influence.any() and not ends.any()
 
 
 def test_pruned_atom_drops_a_level_with_its_transitions():
@@ -75,3 +76,12 @@ def test_pruned_atom_drops_a_level_with_its_transitions():
     assert np.allclose(np.sort(out.lvl.ev.to_numpy()[out.bbt.j] - out.lvl.ev.to_numpy()[out.bbt.i]),
                        np.sort(old_ev[kept.j] - old_ev[kept.i]))
     assert out.bbt.i.max() < len(out.lvl) and out.col[['i', 'j']].to_numpy().max() < len(out.lvl)
+
+
+def test_removal_budget_bounds_the_sum_per_level():
+    # four transitions into level 0, each carrying 0.4 of the budget there
+    ends = np.array([[0.04, 0.0], [0.04, 0.0], [0.04, 0.0], [0.0, 0.5]])
+    lower = np.array([0, 0, 0, 1])
+    upper = np.array([2, 3, 4, 0])
+    gone = removable(ends, lower, upper, 5, budget=0.1)
+    assert gone.tolist() == [True, True, False, False]

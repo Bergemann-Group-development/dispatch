@@ -130,25 +130,29 @@ def diagnostic_relevance(rates, sources, departure_floor=1e-3):
     path from a source level to k (1 for the sources), found as a shortest path in -ln c:
     a level whose flow reaches the sources only through branches that each carry a small
     part of the flow there cannot move their b much. A radiative transition (i, j)
-    carries max(I_i |net| / F_i, I_j |net| / F_j), its share of the flow of a level
-    weighted by that level's influence; for a transition between two sources this is the
-    local share of :func:`transition_relevance`. Depths without sources, or where no level
-    departs from LTE by more than ``departure_floor`` (|ln b|), do not count.
+    carries I_i |net| / F_i through its lower and I_j |net| / F_j through its upper level,
+    its share of the flow of that level weighted by the level's influence; for a
+    transition between two sources the larger of the two is the local share of
+    :func:`transition_relevance`. The two are kept apart so that a pruning can add up
+    what it removes from each level. Depths without sources, or where no level departs
+    from LTE by more than ``departure_floor`` (|ln b|), do not count.
 
-    Returns (influence (nk,), relevance (nrad,), depth where each transition's relevance
-    peaks (nrad,))."""
+    Returns (influence (nk,), relevance through the lower and the upper level, each
+    maximised over depth (nrad, 2))."""
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import dijkstra
     rad, col, ii, jj = net_rates(rates)
     nk, nz = rates['pop'].shape
-    irad, jrad = rates['irad'], rates['jrad']
+    # a continuum without a final level (the top stage's ground) has jrad = -1 and no rates
+    valid = rates['jrad'] >= 0
+    irad, jrad = rates['irad'][valid], rates['jrad'][valid]
+    rad = rad[valid]
     with np.errstate(divide='ignore', invalid='ignore'):
         lnb = np.abs(np.log(rates['pop'] / rates['nstar']))
     a = np.concatenate([irad, ii])
     b = np.concatenate([jrad, jj])
     influence = np.zeros(nk)
-    relevance = np.zeros(len(irad))
-    peak = np.zeros(len(irad), int)
+    relevance = np.zeros((len(irad), 2))
     for z in range(nz):
         src = np.flatnonzero(sources[:, z])
         if len(src) == 0 or not np.nanmax(lnb[:, z]) > departure_floor:
@@ -169,11 +173,12 @@ def diagnostic_relevance(rates, sources, departure_floor=1e-3):
         influence = np.maximum(influence, infl)
         with np.errstate(divide='ignore', invalid='ignore'):
             net = np.abs(rad[:, z])
-            rel = np.maximum(np.nan_to_num(infl[irad] * net / flow[irad]),
-                             np.nan_to_num(infl[jrad] * net / flow[jrad]))
-        better = rel > relevance
-        relevance[better], peak[better] = rel[better], z
-    return influence, relevance, peak
+            rel = np.stack([np.nan_to_num(infl[irad] * net / flow[irad]),
+                            np.nan_to_num(infl[jrad] * net / flow[jrad])], axis=1)
+        relevance = np.maximum(relevance, rel)
+    out = np.zeros((len(valid), 2))
+    out[valid] = relevance
+    return influence, out
 
 
 def level_index(keys, stage, ev):
@@ -183,3 +188,21 @@ def level_index(keys, stage, ev):
     HOP/linelist_mod.f90 matches them."""
     target = 100 * np.asarray(stage, float) + np.asarray(ev, float)
     return np.abs(keys[None, :] - target[:, None]).argmin(1)
+
+
+def removable(ends, lower, upper, nk, budget):
+    """Transitions that can go together: in order of rising relevance, each transition is
+    removed while the relevance removed through each of its levels (``ends`` (n, 2)
+    through the lower and the upper level, as :func:`diagnostic_relevance` gives them)
+    adds up to at most ``budget`` per level. Summing bounds the joint effect of many small
+    removals on one level, which a cut on each transition's relevance alone does not.
+    Returns a mask of the removable transitions."""
+    removed = np.zeros(nk)
+    out = np.zeros(len(ends), bool)
+    for t in np.argsort(ends.max(1), kind='stable'):
+        i, j = lower[t], upper[t]
+        if removed[i] + ends[t, 0] <= budget and removed[j] + ends[t, 1] <= budget:
+            removed[i] += ends[t, 0]
+            removed[j] += ends[t, 1]
+            out[t] = True
+    return out
