@@ -1004,6 +1004,25 @@ def pilot_fe4(order=(2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13), ltau=CROP_LTAU)
     print(f'{len(tasks)} cropped 3D Fe namelists in p1/tasks_3d_fe4.txt')
 
 
+def pilot_fe4_save(first=3, every=5):
+    """The pilot_fe4 namelists from line `first` (0-based) of p1/tasks_3d_fe4.txt on,
+    rewritten in place for a build with periodic saves (1631491e2) and complete
+    single-run spectra (7ca07a472): populations every `every` iterations, and no
+    exclude_elements, so the output pass has the Fe lines in NLTE and LTE.  The earlier
+    tasks keep their namelists (their runs exist).  Lists the rewritten ones in
+    p1/tasks_3d_fe4_save.txt."""
+    tasks = Path('p1/tasks_3d_fe4.txt').read_text().split()[first:]
+    for t in tasks:
+        text = Path(t).read_text()
+        new = re.sub(r" exclude_elements='[^']*'", '', text)
+        new = new.replace(group('output_params', rt_to_file=True),
+                          group('output_params', rt_to_file=True, save_every=every))
+        assert 'exclude_elements' not in new and f'save_every={every}' in new, t
+        Path(t).write_text(new)
+    Path('p1/tasks_3d_fe4_save.txt').write_text('\n'.join(tasks) + '\n')
+    print(f'{len(tasks)} 3D Fe namelists with save_every={every} in p1/tasks_3d_fe4_save.txt')
+
+
 def with_rt_maxiter(text, it):
     """A namelist with &rt_output_params maxiter=it (output scattering iterations)."""
     if '&rt_output_params' not in text:
@@ -1215,6 +1234,8 @@ if __name__ == '__main__':
         pilot_mg4()
     elif sys.argv[1:2] == ['pilot_fe4']:
         pilot_fe4()
+    elif sys.argv[1:2] == ['pilot_fe4_save']:
+        pilot_fe4_save()
     elif sys.argv[1:2] == ['batch2_dep4']:          # batch2_dep4 [FEH_MAX]
         batch2_dep4(float(sys.argv[2]) if len(sys.argv) > 2 else -1.0)
     elif sys.argv[1:2] == ['crop_test']:
