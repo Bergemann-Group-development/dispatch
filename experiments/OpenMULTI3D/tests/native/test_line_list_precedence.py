@@ -33,15 +33,16 @@ pytestmark = [
 ]
 
 
-def _run(tmp_path, name, extra):
+def _run(tmp_path, name, extra, atom=True, rt=''):
     work = tmp_path / name
     work.mkdir()
     (work / 'input').symlink_to(ROOT / 'input')
     (work / 'r.nml').write_text(f"""
 &io_params datadir='{work / 'data'}' gb_step=6.0 do_trace=F /
 &atmos_params atmos_format='marcs' atmos_file='{MARCS}' /
-&atom_params atom_file='{ATOM}' use_atom_abnd=T {extra} /
-&nlte_params convlim=1d-2 /
+{f"&atom_params atom_file='{ATOM}' {extra} /" if atom else ''}
+{"&nlte_params convlim=1d-2 /" if atom else ''}
+&rt_output_params {rt} /
 &linelist_params linelist_file='{LINELIST}' /
 &spectrum_params R_sampling=5e5 aa_blue=4549 aa_red=4559 /
 """)
@@ -62,3 +63,22 @@ def test_list_line_takes_the_atoms_departures(tmp_path):
     assert 'excluding all Ba lines from line list' in old_log
     assert _core_shift(from_list) == pytest.approx(_core_shift(from_atom), abs=5e-3)
     assert _core_shift(from_list) < -0.02
+
+
+def _equivalent_width(spectrum):
+    y, x = (np.asarray(getattr(a, 'value', a)) for a in (spectrum.ydata, spectrum.xdata))
+    return float(np.trapezoid(1 - y, x))
+
+
+def test_lte_set_with_sampled_line_list_matches_plain_lte(tmp_path):
+    """The LTE set of an NLTE run keeps the atom's species in the sampled-table path.
+
+    ``sample_linelist`` leaves the departure species out of the sampled table; the LTE
+    set must add them back with b=1, so that it reproduces a plain LTE run on the same
+    line list and wavelengths.
+    """
+    _, plain = _run(tmp_path, 'plain', '', atom=False)
+    _, sampled = _run(tmp_path, 'sampled', '', rt='sample_linelist=T sample_back_opac=T')
+    reference = _equivalent_width(plain.crop())
+    assert reference > 0
+    assert _equivalent_width(sampled.crop(LTE=True)) == pytest.approx(reference, rel=2e-2)
