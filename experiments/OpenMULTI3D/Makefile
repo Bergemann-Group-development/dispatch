@@ -70,6 +70,17 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
 # compile order relative to its ancestor needs stating explicitly too.
 rt_solvers_mod.o: rt_patch_mod.o
 
+# The commit hash and branch reach the compiler as -DHASH and -DBRANCH. io_mod.f90 prints
+# them in the start banner and job_record_mod.f90 records the hash, but make cannot see a
+# changed -D value, so an incremental build in a checkout that moved to another commit
+# would keep the old stamp. The stamp file changes with them and both objects depend on it.
+HASH_STAMP := $(BUILD)/hash.stamp
+$(HASH_STAMP): FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(HASH) $(BRANCH)' | cmp -s - $@ || echo '$(HASH) $(BRANCH)' > $@
+FORCE:
+io_mod.o job_record_mod.o: $(HASH_STAMP)
+
 # Fortran INCLUDE files: the compiler's .d files only feed the link list here, so
 # their includers are named explicitly
 rt_solvers_mod.o bftrans_mod.o level_mod.o: HOP/exp_neg.inc

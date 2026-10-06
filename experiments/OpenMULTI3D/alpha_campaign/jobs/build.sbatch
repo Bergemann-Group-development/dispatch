@@ -27,5 +27,8 @@ echo "revision $rev"; git status --short | head
 ls -l dispatch.x HOP/standalone/build/libhop.so HOP/standalone/build/hop_prune.x
 mkdir -p "$CAMPAIGN/bin/$rev"
 cp -p dispatch.x HOP/standalone/build/libhop.so HOP/standalone/build/hop_prune.x "$CAMPAIGN/bin/$rev/"
+# REVISION names the commit and tree of the sources, which jobs/common.sh logs. The start
+# banner of dispatch.x prints the same hash (the Makefile rebuilds it when HEAD moves).
+echo "$(git rev-parse HEAD) tree $(git rev-parse 'HEAD^{tree}')$([ -n "$(git status --porcelain --untracked-files=no)" ] && echo ' (modified)')" > "$CAMPAIGN/bin/$rev/REVISION"
 [ "${SET_CURRENT:-0}" = 1 ] && ln -sfn "$rev" "$CAMPAIGN/bin/current"
 echo "frozen in $CAMPAIGN/bin/$rev"

@@ -9,8 +9,19 @@ from the wishlist only.
 - `$C = /mnt/beegfs/gemini/groups/bergemann/users/hoppe/alpha_campaign` on the cluster.
   `$C/bin/<hash>` holds frozen builds, `$C/work` the namelists and run folders, `$C/logs`
   the job logs, per-run timings and submission records (`logs/submitted_*.txt`).
-- `jobs/common.sh` sets `CAMPAIGN`, `WORK` and `BIN` (default `bin/current`) and refuses to
-  run outside nodes 81-90.
+- `jobs/common.sh` sets `CAMPAIGN`, `WORK` and `BIN` (default `bin/current`, overridable
+  with `--export=ALL,BIN=$C/bin/<hash>`) and refuses to run outside nodes 81-90. It prints
+  one `binary:` line at the start of the job output and as the first line of every run log
+  (`logs/<run>.log`): the resolved directory, the commit from the `REVISION` file that
+  `jobs/build.sbatch` writes into each frozen build (older builds: the directory name) and
+  the md5 of `dispatch.x`. Check that line before trusting a result; a job that does not
+  export `BIN` runs whatever `bin/current` points to when it starts.
+- Frozen builds are named by the commit hash and report it in the `DISPATCH code framework`
+  banner and in `job.nml` (`DISPATCH_HASH`). The Makefile rebuilds `io_mod.o` and
+  `job_record_mod.o` when HEAD moves; before that rule, an incremental build in `$C/src`
+  kept the hash of the first commit it had compiled (`bin/4890f9fde` printed `f63e2fc9`).
+  Builds before this change can carry a stale banner hash; the directory name and
+  `REVISION` are the reliable record.
 - `jobs/queue.sbatch LIST [THREADS]` runs task lists (see its header). Claims live in
   `logs/claims_<list>`; the older runners used `logs/claims`, `claims_vmic`, `claims_dep4`
   and `claims_dep4_b6`, so pass `CLAIMS=` to continue one of their lists. Pipelines per
@@ -32,6 +43,15 @@ from the wishlist only.
   `ulimit -s unlimited`.
 - **Allowed nodes.** Campaign jobs name `--nodelist=mpia-slurm-node[81-90]`. A job without a
   node list landed eight tasks on node47.
+- **Node rule** (replaces the earlier weekday rule of `--nice` and at most four whole
+  nodes). On nodes 81-90 (87 is down, 89 does not exist):
+  1. Always leave at least one usable node completely idle, counting other users' jobs.
+     A node that is down or drained does not count as idle.
+  2. Claim whole nodes (`-c` equal to the node's cores, memory to match), never half a node.
+  3. A node that our jobs already partly occupy may be filled up.
+  Before submitting, count the idle nodes: `nodes-free` (skill `mpia-cluster`) lists each
+  node with its cores held by us and by others, and says whether one more whole node may be
+  claimed. With a single idle node left, fill a partly used node of ours or wait.
 
 ## 4MOST data
 
