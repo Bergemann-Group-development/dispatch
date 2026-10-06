@@ -10,6 +10,7 @@
 \Code{Fortran runtime error: End of record} at start & The namelist path is too long. Use a short relative path (\fort{datadir} may be absolute).\\
 Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_windows}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
 Run aborts while reading the line list & HOP aborts on an unreadable list. The first line of each block must be a quoted species label (Sec.~\ref{sec:linelist}).\\
+\Code{has records in the requested wavelength windows, but none was selected} & The line-list selection failed for a list that covers the windows; the run stops instead of writing a line-free spectrum. Report it with the namelist and window file. A warning \Code{no line of ... lies in the requested windows} means the list simply has no line there.\\
 NLTE iterations do not converge & Read \File{convergence\_report\_NNN.txt} for the offending level (Sec.~\ref{sec:convergence}); Sec.~\ref{sec:numerics} lists the remedies.\\
 \SetCell[c=2]{l}{\textit{Python and TumultStudio}} & \\
 \Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}. \Code{HopEOS.opacity} with \Code{nprocs}$>1$ starts worker processes and needs an \texttt{if \_\_name\_\_ == '\_\_main\_\_'} guard in the script.\\
