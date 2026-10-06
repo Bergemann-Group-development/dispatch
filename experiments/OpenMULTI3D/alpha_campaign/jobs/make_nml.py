@@ -86,8 +86,8 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
     disk).  atom: a model atom for NLTE, solved and synthesised in one run (nlte
     preset); the atom's element stays in the line list, because the output pass takes its
     lines from there (output_from_line_list); atom['nlte'] adds to
-    &nlte_params, atom['maxiter'] sets the iteration limit and atom['grid'] names a
-    line_grid_file.  absmet: the background line-opacity table of the iteration pass.  output / rt_output: keys
+    &nlte_params, atom['maxiter'] sets the iteration limit, atom['grid'] names a
+    line_grid_file and atom['abundance'] sets the element's absolute A(X).  absmet: the background line-opacity table of the iteration pass.  output / rt_output: keys
     added to &output_params / &rt_output_params (a group counts only once)."""
     lines = [group('io_params', datadir=str(DATADIR), do_trace=False),
              group('timer_params', sec_per_report=1e8, verbose=2)]
@@ -111,6 +111,8 @@ def namelist(atmos, window='windows/hrs.txt', R=2e5, linelist='fgk', geometry='1
         keys = dict(atom_file=atom['file'])
         if 'grid' in atom:
             keys['line_grid_file'] = atom['grid']
+        if 'abundance' in atom:
+            keys['abundance'] = atom['abundance']
         lines.append(group('atom_params', **keys))
         lines.append(group('nlte_params', **{'convlim': 1e-3, **atom.get('nlte', {})}))
         lines.append(group('opac_table_params', absmet_file=absmet))
