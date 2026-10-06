@@ -43,6 +43,7 @@ C_KMS = 299792.458
 FWHM_GRID = np.arange(0.5, 22.01, 0.25)         # km/s
 SHIFT_GRID = np.arange(-6.0, 6.01, 0.25)        # km/s
 RENORM_MAX = 0.02
+SPECTRUM_TOL = 0.08
 CONT_LEVEL = 0.995
 MISMATCH = 'mismatch_'
 N_BOOT = 1000
@@ -192,6 +193,20 @@ def measure_star(star, lines, runs, extract_dir, spectra_dir):
     return pd.DataFrame(rows)
 
 
+def drop_discrepant(df):
+    """Spectra of a star whose EWs differ systematically from the star's other spectra
+    (median ratio to the per-line median off by more than SPECTRUM_TOL) are left out."""
+    keep = []
+    for star, g in df.groupby('star'):
+        med = g.groupby(['element', 'ion', 'lam', 'atom', 'atmos']).w_obs.transform('median')
+        ratio = (g.w_obs / med).groupby(g.spectrum).median()
+        bad = ratio[(ratio - 1).abs() > SPECTRUM_TOL]
+        for f, r in bad.items():
+            print(f'{star}: {f} left out (EW ratio to the other spectra {r:.3f})')
+        keep.append(g[~g.spectrum.isin(bad.index)])
+    return pd.concat(keep)
+
+
 def invert(df):
     """Combine the spectra of each (star, line, run) and invert the NLTE and LTE ladders."""
     wcols = [c for c in df if c.startswith('w_nlte') or c.startswith('w_lte')]
@@ -221,7 +236,7 @@ def invert(df):
         w0 = g[f'w_lte+0.0'].iloc[0]
         row['blend'] = g.w_free.iloc[0] / w0 if w0 > 0 else np.inf
         flags, clean = screen(w_mean, row['blend'], first.lam)
-        row['flags'] = ';'.join(flags)
+        row['screen'] = ';'.join(flags)
         row['clean'] = clean and not row.get('oor_nlte', True) and np.isfinite(row.get('a_nlte', np.nan))
         out.append(row)
     return pd.DataFrame(out)
@@ -410,6 +425,23 @@ def metrics(g):
     return pd.Series(out)
 
 
+def select_common(res):
+    """The metric line set: clean and well matched for every atom of the element in that
+    star and atmosphere, and within 3 sigma (MAD) of the LTE median, which is the same for
+    all atoms, so every atom is measured on the same lines."""
+    ok = res.clean & ~res.mismatch
+    keys = ['star', 'element', 'atmos', 'ion', 'lam']
+    n_atoms = res.groupby(['element']).atom.transform('nunique')
+    good = ok.groupby([res[k] for k in keys]).transform('sum') == n_atoms
+    use = res[ok & good].copy()
+    grp = use.groupby(['star', 'element', 'atmos', 'ion']).a_lte
+    dev = (use.a_lte - grp.transform('median')).abs()
+    mad = 1.4826 * (use.a_lte - grp.transform('median')).abs().groupby(
+        [use.star, use.element, use.atmos, use.ion]).transform('median')
+    use['outlier'] = dev > 3 * np.maximum(mad, 0.02)
+    return use[~use.outlier]
+
+
 # --- original against repaired ---------------------------------------------------------
 
 PAIRS = {'Fe': [('fe607a_pd', 'fe607a_fix')], 'Mg': [('mg86d', 'mg86e_fixed'), ('mg86e_pd', 'mg86e_fixed')],
@@ -434,9 +466,11 @@ def compare(res, met, refs):
     """Per star and pair: each metric for both atoms, the paired-bootstrap error of the
     difference (lines common to both, so the observational error largely cancels) and the
     metric's own error (lines resampled for one atom: observation plus fit)."""
-    use = res[res.clean & ~res.mismatch].set_index(['star', 'element', 'atmos', 'atom', 'ion', 'lam'])
+    use = select_common(res).set_index(['star', 'element', 'atmos', 'atom', 'ion', 'lam'])
     rows = []
     for el, pairs in PAIRS.items():
+        if el not in use.index.get_level_values('element'):
+            continue
         for orig, rep in pairs:
             for (star, atmos), _ in use.xs(el, level='element').groupby(level=['star', 'atmos']):
                 try:
@@ -513,7 +547,7 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
             print(f'{s.star}: measured')
     if 'metrics' in steps:
         ews = pd.concat([pd.read_csv(p) for p in sorted(out_dir.glob('ew_*.csv'))])
-        res = invert(ews)
+        res = invert(drop_discrepant(ews))
         mism = lines.set_index(['element', 'ion', 'lam'])
         flags = []
         for r in res.itertuples():
@@ -522,7 +556,8 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
             flags.append(bool(mism.loc[key, col]) if key in mism.index and col in mism else False)
         res['mismatch'] = flags
         res.to_csv(out_dir / 'line_abundances.csv', index=False)
-        use = res[res.clean & ~res.mismatch]
+        use = select_common(res)
+        use.to_csv(out_dir / 'line_abundances_used.csv', index=False)
         met = use.groupby(['star', 'element', 'atom', 'atmos']).apply(metrics, include_groups=False)
         met.to_csv(out_dir / 'metrics.csv')
         print(f'{len(res)} line results, {len(use)} clean; metrics in {out_dir / "metrics.csv"}')
