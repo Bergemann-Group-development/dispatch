@@ -723,7 +723,7 @@ def avg3d_models():
 AVG3D_SETS = {'t4': ('avg3d8', 'b8'), 'geo': ('avg3d8g', 'b8g')}
 
 
-def avg3d(models=(), recipe='t4'):
+def avg3d(models=(), recipe='t4', nlte_feh=-1.0):
     """Own <3D> averages from the full-resolution snapshots (avg3d.py, tumult.avg3d) for
     the Stagger models of avg3d_models() (or the ones named), and their 1D runs.  With
     the folders of AVG3D_SETS[recipe] = (AVG, RUNS):
@@ -734,8 +734,8 @@ def avg3d(models=(), recipe='t4'):
     - RUNS/av3d/<model>/lte_it1.nml: 1D LTE with one output scattering iteration (the
       setting of the 3D LTE runs it is paired with), for every model;
       mg.nml, fe.nml: NLTE Mg and Fe with the phase-4 departure setup (dep4), for the
-      pilot and [Fe/H] <= -3.  Each NLTE run writes the NLTE and the LTE spectrum of the
-      full line list, so no stage-2 SED is needed.
+      pilot and [Fe/H] <= nlte_feh (the models of b4 with NLTE).  Each NLTE run writes
+      the NLTE and the LTE spectrum of the full line list, so no stage-2 SED is needed.
     - RUNS/tasks.txt: the namelists, Fe first; lgrid/todo.txt gains missing grids.
 
     The files are read with use_ne=F (rho given, n_e from the EOS) and amr='T'."""
@@ -761,7 +761,7 @@ def avg3d(models=(), recipe='t4'):
         (out / 'lte_it1.nml').write_text(with_rt_maxiter(
             namelist(atmos, composition=comp, rt_output=quiet), 1))
         tasks.append(str(out / 'lte_it1.nml'))
-        if name in pilot or feh <= -3:
+        if name in pilot or feh <= nlte_feh:
             marcs = nearest_marcs(teff, logg, feh)
             if marcs is None:
                 print(f'{name}: no MARCS model for the line grid; LTE only')
