@@ -1027,6 +1027,28 @@ def van_regemorter(f, dev, temps):
     return 14.5 * c0 * ryd_k / np.sqrt(tt) * RYDV / dev * f * pp
 
 
+OUTLIER_DEX = 1.5
+
+
+def node_outliers(logq, temps, limit_dex=OUTLIER_DEX):
+    """(record, node, deviation [dex]) of tabulated nodes that lie more than
+    ``limit_dex`` off the straight line in ln q against 1/T through their two
+    neighbours (the next two for an end node). A smooth rate coefficient, Boltzmann
+    factor included, is close to such a line over one node spacing."""
+    if len(temps) < 3 or not len(logq):
+        return np.empty((0, 3))
+    x = 1 / np.asarray(temps, float)
+    out = []
+    for n in range(len(x)):
+        a, b = (n - 1, n + 1) if 0 < n < len(x) - 1 else ((1, 2) if n == 0 else (n - 2, n - 1))
+        w = (x[n] - x[a]) / (x[b] - x[a])
+        dev = (logq[:, n] - (logq[:, a] + w * (logq[:, b] - logq[:, a]))) / np.log(10)
+        for k in np.where(np.abs(dev) > limit_dex)[0]:
+            out.append((k, n, dev[k]))
+    out = np.array(out) if out else np.empty((0, 3))
+    return out[np.argsort(-np.abs(out[:, 2]))] if len(out) else out
+
+
 def check_ch_multiplicity(atom, col, vals, rtol=1e-6):
     """Hydrogen collision records that repeat one term-to-term rate for every
     fine-structure pair. gencol takes a CH value as the downward rate of that pair, so a
@@ -1121,6 +1143,22 @@ def check_collisions(atom, slope_limit=2.5):
         if np.all(vals[k] > 0):
             logq[k] = np.log(exothermic_coefficient(r.key, vals[k], temps, r.dev, gg[r.lo], gg[r.hi]))
     ok = np.isfinite(logq).all(1)
+    jumps = node_outliers(logq[ok], temps)
+    if len(jumps):
+        bad = col[ok].iloc[jumps[:, 0]]
+        # a node acts between its neighbours (beyond the grid for an end node); only
+        # nodes acting above 3000 K reach stellar photospheres
+        node = jumps[:, 1].astype(int)
+        reach = np.where(node == len(temps) - 1, np.inf, temps[np.minimum(node + 1, len(temps) - 1)])
+        hot = np.unique(jumps[reach > 3000, 0])
+        findings.append(Finding('collision table outliers', 'serious' if len(hot) else 'minor',
+                                f'{len(np.unique(jumps[:, 0]))} records have a temperature node more than '
+                                f'{OUTLIER_DEX:g} dex off the line through its neighbours (in log q against 1/T), '
+                                f'{len(hot)} of them acting above 3000 K; gencol interpolates through such a node '
+                                'and holds an end node constant beyond the grid',
+                                len(hot),
+                                [f"{r.key} {r.lo}-{r.hi} at {temps[n]:.0f} K: {d:+.1f} dex"
+                                 for r, n, d in zip(bad.itertuples(), jumps[:, 1].astype(int), jumps[:, 2])]))
     col['slope'] = np.nan
     col['e_act'] = np.nan
     if ok.any():
