@@ -502,17 +502,19 @@ MODULE atom_mod
                 endif
               endif
 
-              if (check_NaN) then
-                ! only NaN/Inf are fatal here; zero or negative corrections are
-                ! absorbed by the exponential damping below
-                call check_array(e, 'lineq solution', abort=.false., ok=ok)
-                if (.not.ok) then
-                  write(msg,'(a,3(1x,i0))') 'invalid lineq solution at x,y,z =', x, y, z
-                  call console_error (msg)
-                  error stop
-                endif
+              ! A non-finite solution means the rate matrix overflowed or is singular
+              ! (an Inf rate coefficient is enough).  The limiter below would pass a NaN
+              ! on and the population floor would then replace it, leaving every level
+              ! of the cell at min_pop_frac and the run reporting a zero change, so
+              ! this stops the run instead.
+              if (.not. all(abs(e) <= huge(1d0))) then
+                write(msg,'(a,a,a,3(1x,i0),a,i0,a)') 'statistical equilibrium of ', trim(self%id), &
+                  ' has no finite solution at x,y,z =', x, y, z, ' (', count(.not. (abs(e) <= huge(1d0))), &
+                  ' levels); check the rate coefficients for overflow'
+                call console_error (msg)
+                error stop
               endif
-              
+
               ! Limit how far one iteration may move a population.  Corrections in
               ! [elo, eup] pass through untouched; outside that range both branches
               ! join on smoothly (value and slope), and saturate at 0.37*elo below and
