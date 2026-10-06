@@ -1197,6 +1197,7 @@ contains
     type(rt_params_t), pointer :: rtp
     logical :: use_linelist, sample_ll, do_scat, use_store
     integer :: i, i_seg, x, y, z, f
+    real(4), allocatable :: scat_lte(:,:,:,:)
     real(dp), allocatable :: window_lam(:)
     !-----------------------------------------------------------------------------
     ! A continuum set carries the background only, in the scattering iterations as
@@ -1260,6 +1261,33 @@ contains
           call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
             departures=departures, only_departures=.true., i_set=i_set, &
             window_lam=window_lam)
+        end associate
+      endif
+      ! (c) the LTE companion set: the table leaves the departure-carrying species
+      ! out, so their lines are added in detail with b=1, exactly as the detailed
+      ! line list does for this set (including the scattering split)
+      if (self%set_kind(i_set) == set_lte .and. self%has_nlte_set .and. &
+          associated(self%m3d_parent%departures)) then
+        i = merge(i_mu+1, 1, do_rotate_atmos)
+        associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
+          if (do_scat) then
+            allocate(scat_lte, mold=self%chi_scat)
+            scat_lte = 0.
+            call compute_epsilon_stage(1, self%sub_sp%nu, comp%temp, comp%ne, &
+              self%one_m_eps(:,:,:,:,1))
+            call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
+              self%one_m_eps(:,:,:,:,2))
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+              only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
+              one_m_eps=self%one_m_eps, chi_scat=scat_lte, beta=self%beta, &
+              i_set=i_set, window_lam=window_lam)
+            self%chi_scat = self%chi_scat + scat_lte
+            deallocate(scat_lte)
+          else
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+              only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
+              i_set=i_set, window_lam=window_lam)
+          endif
         end associate
       endif
     endif
