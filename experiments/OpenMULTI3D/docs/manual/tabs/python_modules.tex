@@ -7,7 +7,8 @@ Module & Purpose\\
 \Code{tumult.abundance} & Abundances from equivalent widths (curve-of-growth inversion on shared abundance rungs) or direct profile fits; NLTE corrections.\\
 \Code{tumult.departures} & Departure coefficients for a model atmosphere from NLTE solutions, and the departure-grid interface.\\
 \Code{tumult.sparams} & Stellar parameters by ionisation balance.\\
-\Code{tumult.hop} & \Code{HopEOS}: equation of state, opacities and line strengths from \File{libhop.so}.\\
+\Code{tumult.hop} & \Code{HopEOS}: equation of state, opacities and line strengths from \File{libhop.so}; \Code{read\_atmosphere} reads a model in any \Code{atmos\_format} with dispatch.x's own reader.\\
+\Code{tumult.avg3d} & Horizontal averages of 3D snapshots at full resolution on surfaces of $\tau_{500}$, an approximate Rosseland $\tau$ or $P_e$, written as \Code{text} models.\\
 \Code{tumult.prune} & Pruned line lists through \File{hop\_prune.x}.\\
 \Code{tumult.linelist}, \Code{tumult.linemask} & Line-list readers (TS, VALD, linemake, MOOG and native formats) and line masks.\\
 \Code{tumult.korg} & Comparison with Korg.jl.\\
