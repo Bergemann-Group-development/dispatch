@@ -43,11 +43,13 @@ class FastAtom(object):
         levels = read_table(atom_file, header=2, nrows=self.nk, names=names)
         names = ['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'grad', 'gvdw', 'gstk', 'profile']
         dtype = [int, int, float, int, float, float, int, float, float, float, str]
-        dtype = {k:v for k, v in zip(names, dtype)}
-        bb     = read_table(atom_file, header=2+self.nk, nrows=self.nline, names=names, dtype=dtype)
+        bb = pd.DataFrame(self._line_records(atom_file), columns=names)
+        bb = bb.astype({k: v for k, v in zip(names, dtype)})
         levels['ev'] = levels.ecm * CC*HH/EE
-        bb.i = bb.i-1
-        bb.j = bb.j-1
+        # read_classic orders each pair itself, whichever level a record names first
+        lo = np.minimum(bb.i, bb.j)
+        bb['j'] = np.maximum(bb.i, bb.j) - 1
+        bb['i'] = lo - 1
         Ei = levels.iloc[bb.i].ecm.values
         Ej = levels.iloc[bb.j].ecm.values
         bb['kr'] = range(self.nline)
@@ -59,6 +61,29 @@ class FastAtom(object):
         self.lvl = levels
         self.bbt = bb
         self.trans = TransFactory(self)
+
+    def _line_records(self, atom_file):
+        """The first eleven fields of each bound-bound record, as read_classic reads
+        them: comment and blank lines are skipped, and a record with iw >= 2 is followed
+        by iw component rows (read without skipping comments), which are passed over."""
+        with open(atom_file) as f:
+            rows = iter(f.readlines())
+        def entry():
+            for row in rows:
+                if row.strip() and not row.lstrip().startswith('*'):
+                    return row
+            raise ValueError(f'{atom_file}: fewer bound-bound records than nline')
+        for _ in range(3 + self.nk):
+            entry()
+        out = []
+        for _ in range(self.nline):
+            words = entry().replace("'", ' ').split()
+            words += ['VOIGT'] * (11 - len(words))
+            out.append(words[:11])
+            if int(float(words[6])) >= 2:
+                for _ in range(int(float(words[6]))):
+                    next(rows)
+        return out
 
     def load_sp(self, lam, qnorm):
         self.qnorm = qnorm * 1e5 / CC
