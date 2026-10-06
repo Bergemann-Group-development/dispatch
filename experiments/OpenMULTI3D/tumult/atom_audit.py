@@ -546,6 +546,63 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
     return comp, findings
 
 
+def level_keys(atom):
+    """dispatch's departure keys (atom_mod%ev_keys): 100 * stage plus the energy above
+    the ground level of the level's stage [eV]."""
+    lvl = atom.lvl
+    grounds = ion_ground(atom)
+    ev0 = np.array([lvl.ev[grounds[int(s)]] for s in lvl.ion])
+    return 100 * lvl.ion.to_numpy(float) + lvl.ev.to_numpy(float) - ev0
+
+
+def check_level_matching(atom, nist_levels, llist, stage, strong_loggf=-1.0, tolerance_ev=0.003):
+    """Which atom levels the line list's lines take their departure coefficients from.
+
+    An NLTE synthesis gives each line-list line the departure coefficients of the atom
+    levels nearest in energy to its lower and upper level (``find_closest`` in
+    HOP/linelist_mod.f90, without a tolerance). For the lines with loggf above
+    ``strong_loggf`` this finds the NIST level of each end (within ``tolerance_ev``) and
+    reports ends whose matched atom level has a different LS symmetry
+    (:func:`label_term`); a level of the other multiplicity within 0.002 eV counts as a
+    match, since singlets and triplets of high l are degenerate and often merged."""
+    from .atomic_data import ts_vacuum_wavelength
+    keys = level_keys(atom)
+    nist = nist_levels[nist_levels.ion == stage]
+    lines = llist[llist.loggf > strong_loggf]
+    ev_lo = lines.evi.to_numpy(float)
+    ev_up = ev_lo + HC_AA_EV / ts_vacuum_wavelength(lines.lam0)
+    terms = [label_term(t) for t in nist.term]
+    rows = []
+    for end, evs in (('lower', ev_lo), ('upper', ev_up)):
+        near = np.abs(keys[None, :] - (100 * stage + evs)[:, None]).argmin(1)
+        dn = np.abs(nist.ev.to_numpy()[None, :] - evs[:, None])
+        kn = dn.argmin(1)
+        for k, (lam, ev, i, n) in enumerate(zip(lines.lam0, evs, near, kn)):
+            if dn[k, n] > tolerance_ev or int(atom.lvl.ion[i]) != stage:
+                continue
+            atom_term = label_term(str(atom.lvl.label[i]))
+            rows.append(dict(lam0=lam, loggf=lines.loggf.iloc[k], end=end, ev=ev, level=i,
+                             level_label=str(atom.lvl.label[i]).strip(), offset_ev=keys[i] - 100 * stage - ev,
+                             nist_term=nist.term.iloc[n],
+                             # singlet and triplet of a high-l configuration are degenerate
+                             same_term=atom_term == terms[n] or (
+                                 atom_term is not None and terms[n] is not None
+                                 and atom_term[1:] == terms[n][1:] and abs(keys[i] - 100 * stage - ev) < 0.002)))
+    tab = pd.DataFrame(rows)
+    findings = []
+    if len(tab):
+        bad = tab[~tab.same_term & tab.level_label.map(lambda l: label_term(l) is not None)]
+        sev = 'serious' if len(bad) else 'info'
+        findings.append(Finding('line-list level matching', sev,
+                                f'ion {stage}: {len(tab)} ends of {len(lines)} lines with loggf > {strong_loggf} '
+                                f'have a NIST level; {len(bad)} take the departure of a level of another LS term '
+                                f'(median |offset| of those {bad.offset_ev.abs().median() if len(bad) else 0:.3f} eV)',
+                                len(bad), [f'{r.lam0:.2f} AA {r.end} {r.nist_term} {r.ev:.3f} eV -> '
+                                           f'{r.level_label} ({r.offset_ev:+.3f} eV)'
+                                           for r in bad.sort_values('loggf', ascending=False).itertuples()]))
+    return tab, findings
+
+
 def check_comments(atom_file, lam_tolerance=1e-3, loggf_tolerance=0.05):
     """Lines of a classic MULTI atom whose comment (the source line list, as most atom
     builders write it) disagrees with the data dispatch.x uses: the Ritz wavelength of
@@ -1024,6 +1081,10 @@ def audit(atom, nist_levels=None, nist_limits=None, linelists=None, temp=5800.0)
         tab, fnd = compare_linelist(atom, llist, stage)
         tables[f'linelist_{stage}'] = tab
         findings += fnd
+        if nist_levels is not None:
+            tab, fnd = check_level_matching(atom, nist_levels, llist, stage)
+            tables[f'level_matching_{stage}'] = tab
+            findings += fnd
     findings.sort(key=lambda f: SEVERITIES.index(f.severity))
     return tables, findings
 
@@ -1033,8 +1094,9 @@ def main(argv=None):
     from . import atomic_data
     parser = argparse.ArgumentParser(description='Sanity checks for a model atom')
     parser.add_argument('atom_file', type=Path)
-    parser.add_argument('--nist', type=Path, help='folder with NIST ASD level tables (atomic_data.fetch_nist_levels)')
-    parser.add_argument('--linelist', type=Path, help='line list in Turbospectrum format')
+    parser.add_argument('--nist', type=Path, help='folder with NIST ASD level tables, e.g. MgI_levels.csv (atomic_data.read_nist_levels)')
+    parser.add_argument('--linelist', type=Path, nargs='+',
+                        help='line lists in Turbospectrum format (one file or one per species)')
     parser.add_argument('--temp', type=float, default=5800.0)
     args = parser.parse_args(argv)
     atom = load_atom(args.atom_file)
@@ -1044,7 +1106,9 @@ def main(argv=None):
         nist_levels, nist_limits = atomic_data.nist_levels_for_atom(args.nist, atom.id, stages)
     linelists = None
     if args.linelist:
-        linelists = atomic_data.linelist_by_stage(args.linelist, atom.id, stages[:-1])
+        linelists = {}
+        for path in args.linelist:
+            linelists.update(atomic_data.linelist_by_stage(path, atom.id, stages[:-1]))
     _, findings = audit(atom, nist_levels, nist_limits, linelists, temp=args.temp)
     if not is_pandas_format(args.atom_file):
         findings += check_comments(args.atom_file)[1]

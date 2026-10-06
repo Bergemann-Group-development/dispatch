@@ -88,10 +88,10 @@ def topbase_continua(atom, topbase, stage, width=0.03, rtol=0.03, threshold_tole
         new[i] = (lam_new, sig_new)
         row = dict(i=i, label=lvl.label[i].strip(), threshold_offset=off, npts_old=len(old.get(i, ((), ()))[0]),
                    npts_new=len(lam_new), npts_ref=len(lam_ref))
-        for name, (ll, ss) in (('new', (lam_new, sig_new)), ('old', old.get(i))):
-            if ll is None:
+        for name, table in (('new', (lam_new, sig_new)), ('old', old.get(i))):
+            if table is None:
                 continue
-            cmp = compare_bf_reference(ll, ss, lam_ref, sig_ref, temps=(6000.,))
+            cmp = compare_bf_reference(*table, lam_ref, sig_ref, temps=(6000.,))
             row[f'{name}_vs_raw'] = cmp['rate_6000']
         row['smooth_vs_raw'] = compare_bf_reference(lam_ref, smooth, lam_ref, sig_ref, temps=(6000.,))['rate_6000']
         rows.append(row)
@@ -231,7 +231,8 @@ def merge_levels(atom, groups, temp_lines=5500.0, rtol_bf=0.03):
         lam_vac = HC_AA_EV / (new_lvl.ev[up] - new_lvl.ev[lo])
         row = strongest.copy()
         row['i'], row['j'] = lo, up
-        row['lam0'] = float(vac2air(lam_vac)) if lam_vac > 2000 else lam_vac
+        # read_pandas applies air2vac at every wavelength
+        row['lam0'] = float(vac2air(lam_vac))
         row['evi'] = new_lvl.ev[lo]
         row['loggf'] = np.log10(f_ij * new_lvl.g[lo]) if lo == I else np.log10(f_ij * new_lvl.g[I])
         rows.append(row)
@@ -341,3 +342,69 @@ def term_members(atom):
         key = re.sub(r'([SPDFGHIKLMNOQ])\d+(/\d)?(\*?)\s*$', r'\1\3', str(l).split('=')[-1].strip())
         out.setdefault((int(atom.lvl.ion[i]), key), []).append(i)
     return out
+
+
+# ---------------------------------------------------------------------------------------
+# assembling an atom
+# ---------------------------------------------------------------------------------------
+def match_lines(atom, lines, stage, tolerance_ev=0.005):
+    """Bound-bound table rows for the lines of one ion stage from a line list
+    (:func:`tumult.atomic_data.linelist_by_stage`: lam0 in TS convention, evi above the
+    stage's ground [eV], loggf, gvdw, grad, gstk).
+
+    The lower level is the level of that stage nearest to evi and the upper level the
+    one nearest to evi + h nu, both within ``tolerance_ev``. The list's upper_g column
+    is 1 throughout the Turbospectrum lists and is not used. Components between the same levels
+    (isotopes, hyperfine structure) add their gf. The wavelength is the Ritz one of the
+    two levels, converted to air at every wavelength because read_pandas converts
+    lam_air back with air2vac throughout; that conversion fails near its poles at 877 and
+    1603 AA (:func:`tumult.atom_audit.check_lines`). Returns the rows and the lines left
+    unmatched."""
+    from .atom_audit import HC_AA_EV
+    from .atomic_data import ts_vacuum_wavelength
+    from .physics import vac2air
+    lvl = atom.lvl
+    sel = np.where(lvl.ion.to_numpy() == stage)[0]
+    ev0 = lvl.ev[sel[0]]
+    ev_rel = lvl.ev.to_numpy(float)[sel] - ev0
+    lam_vac = ts_vacuum_wavelength(lines.lam0)
+    ev_up = lines.evi.to_numpy(float) + HC_AA_EV / lam_vac
+    lo = np.abs(ev_rel[None, :] - lines.evi.to_numpy(float)[:, None]).argmin(1)
+    dup = np.abs(ev_rel[None, :] - ev_up[:, None])
+    up = dup.argmin(1)
+    good = ((np.abs(ev_rel[lo] - lines.evi) < tolerance_ev)
+            & (dup[np.arange(len(up)), up] < tolerance_ev) & (up != lo))
+    tab = lines[good].copy()
+    tab['i'], tab['j'] = sel[lo[good]], sel[up[good]]
+    tab['gf'] = 10**tab.loggf
+    rows = []
+    for (i, j), comp in tab.groupby(['i', 'j']):
+        strongest = comp.loc[comp.gf.idxmax()]
+        lam = HC_AA_EV / (lvl.ev[j] - lvl.ev[i])
+        rows.append(dict(i=i, j=j, lam0=float(vac2air(lam)), evi=lvl.ev[i],
+                         loggf=np.log10(comp.gf.sum()), grad=strongest.grad, gvdw=strongest.gvdw,
+                         gstk=strongest.gstk))
+    return pd.DataFrame(rows), lines[~good]
+
+
+def seaton_ci(atom, temps, gaunt=(0.1, 0.2, 0.3)):
+    """gencol CI records for every level with a continuum from the approximation of
+    Seaton (1962) as used by Allen (1973): the ionisation rate per electron is
+    1.55e13 g sigma_0 exp(-u) / (u sqrt(T)) cm^3/s with u = E_bind / kT, sigma_0 the
+    threshold photoionisation cross section [cm^2] of the atom's own table and g the
+    mean Gaunt factor of the stage (``gaunt``: neutral, singly, doubly ionised)."""
+    from .atom_audit import bf_tables
+    temps = np.asarray(temps, float)
+    cont = continuum_level(atom)
+    tables = bf_tables(atom)
+    lvl = atom.lvl
+    rows = []
+    for i, (lam, alpha) in tables.items():
+        if cont[i] < 0:
+            continue
+        sigma0 = alpha[np.argmax(lam)]
+        u = (lvl.ev[cont[i]] - lvl.ev[i]) * 11604.518 / temps
+        # cup = ct sqrt(T) exp(-dE/kT) in gencol's form
+        ct = 1.55e13 * gaunt[int(lvl.ion[i]) - 1] * sigma0 / (u * temps)
+        rows.append(['CI', i, cont[i]] + list(ct))
+    return pd.DataFrame(rows, columns=['key', 'i', 'j'] + [f'{t:.1f}' for t in temps])
