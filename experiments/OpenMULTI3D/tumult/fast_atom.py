@@ -126,7 +126,18 @@ class PandasAtom(object):
         return self
   
     @classmethod
-    def from_old(cls, atom_file, use_comment_lam0=True):
+    def from_old(cls, atom_file, use_comment_lam0=False):
+        """Convert a classic MULTI atom.
+
+        dispatch.x takes the frequencies of a classic atom's lines from the level
+        energies, so ``lam0`` is the Ritz wavelength in air by default;
+        ``use_comment_lam0`` takes the wavelength from each line's comment instead (some
+        atoms give vacuum wavelengths there below 2000 AA). Hydrogenic continua become
+        tables on the nodes read_classic builds for them. Collision records on several
+        TEMP grids are interpolated onto the union of the grids with dispatch's scheme,
+        which is exact on each record's own nodes.
+        """
+        from .atom_audit import collision_interpolate
         self = cls()
         atom = AtomClass(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
         fast = FastAtom(atom_file)
@@ -143,32 +154,42 @@ class PandasAtom(object):
 
         bb['evi'] = self.lvl.ev[bb.i].values
         bb = bb[['i', 'j', 'lam0', 'evi', 'loggf', 'grad', 'gvdw', 'gstk', 'nq', 'qmax', 'q0', 'profile']]
-        bb.i = bb.i
-        bb.j = bb.j
         self.bbt = bb
 
-        bf = pd.DataFrame()
-        cont = atom.trans[atom.nline:]
-        if len(cont) > 0:
-            if hasattr(cont[0], 'lam'):
-                bf['i'] = np.concatenate([[c.i for i in range(c.nq)] for c in cont])
-                bf['lam_air'] = np.concatenate([c.lam for c in cont])
-                bf['alpha'] = np.concatenate([c.alfac for c in cont])
-                self.bft = bf
+        # read_pandas reads the bf wavelengths as given (vacuum), like read_classic
+        lams, alphas, lows = [], [], []
+        for c in atom.trans[atom.nline:]:
+            if c.qmax < 0:
+                lam, alpha = c.lam, c.alfac
+            else:
+                # read_classic: nq points linear in wavelength from qmax to the edge,
+                # alpha0 (lam/lam0)^3
+                lam = np.linspace(c.qmax, c.alamb, c.nq)
+                alpha = c.fosc * (lam / c.alamb)**3
+            lams.append(lam)
+            alphas.append(alpha)
+            lows.append(np.full(len(lam), c.i))
+        if lams:
+            self.bft = pd.DataFrame(dict(i=np.concatenate(lows), lam_air=np.concatenate(lams),
+                                         alpha=np.concatenate(alphas)))
 
         if len(atom.colls) > 0:
-            ctemp = atom.colls[0].coltemp
-            crate = np.array([c.colrate for c in atom.colls])
-            cl = pd.DataFrame(data=crate, columns=ctemp)
-            cl['key'] = [c.key for c in atom.colls]
-            cl['i'] = [c.lower.i for c in atom.colls]
-            cl['j'] = [c.upper.i for c in atom.colls]
-            index = list(cl.columns[-3:]) + list(cl.columns[:-3])
-            self.col = cl[index]
+            temps = np.unique(np.concatenate([c.coltemp for c in atom.colls]))
+            rates = []
+            for c in atom.colls:
+                if np.array_equal(c.coltemp, temps):
+                    rates.append(np.asarray(c.colrate, float))
+                else:
+                    rates.append(collision_interpolate(c.coltemp, c.colrate, temps, c.key))
+            cl = pd.DataFrame(data=np.array(rates), columns=temps)
+            cl.insert(0, 'j', [c.upper.i for c in atom.colls])
+            cl.insert(0, 'i', [c.lower.i for c in atom.colls])
+            cl.insert(0, 'key', [c.key for c in atom.colls])
+            self.col = cl
 
         self.post_init()
         return self
-  
+
     @classmethod
     def from_pandas(cls, id, abnd, ai, lvl, bbt=None, bft=None, col=None):
         self = cls()
