@@ -8,6 +8,9 @@ cffi in ABI mode, exposing the same composition_type solves that dispatch.x uses
   readable as the array properties temp/rho/ne/pe/pg/energy/chi500), and compute
   opacities on a wavelength grid (``opacity``, the one entry point for continuum,
   sampled metal-line and line-list opacity).
+- :func:`read_atmosphere` parses a model-atmosphere file (MARCS, text, MULTI 1D,
+  the Stagger, Stagger-grid-2, MULTI/M3DIS and CO5BOLD snapshots, SIU) with the
+  reader dispatch.x uses, at the file's full resolution.
 - :func:`logstep` / :func:`wavelength_grid` build the ln(T) x ln(rho) node grid
   and the &spectrum_params wavelength grid a dispatch run would tabulate on, so a
   dispatch EOS/opacity table can be reproduced without running dispatch.x.
@@ -38,8 +41,8 @@ os.environ.setdefault('OMP_PROC_BIND', 'false')
 import cffi
 import numpy as np
 
-__all__ = ['HopEOS', 'HopError', 'logstep', 'wavelength_grid', 'freq_split',
-           'find_library', 'find_header', 'open_library']
+__all__ = ['HopEOS', 'HopError', 'AtmosphereFile', 'read_atmosphere', 'logstep',
+           'wavelength_grid', 'freq_split', 'find_library', 'find_header', 'open_library']
 
 _EXP_DIR = Path(__file__).resolve().parents[1]
 _STANDALONE = _EXP_DIR / 'HOP' / 'standalone'
@@ -670,6 +673,64 @@ class HopEOS:
             self.close()
         except Exception:
             pass
+
+
+class AtmosphereFile:
+    """A model atmosphere as :func:`read_atmosphere` parsed it.
+
+    Arrays have shape (nx, ny, nz) (1, 1, nz for a 1D model), float32 as the Fortran
+    reader holds them, in the file's own depth orientation: ``ltemp``, ``lpe``, ``lrho``
+    are ln T [K], ln P_e [dyn/cm2], ln rho [g/cm3] (``lpe``/``lrho`` only where
+    ``has_pe``/``has_rho``); ``vx, vy, vz`` [cm/s]; ``vmic`` [km/s]; ``xx, yy, zz``
+    the axes (cm for the 3D formats, the depth column for the 1D ones).  ``gz`` ghost
+    zones sit at each end in z (Stagger), ``feh`` is the file's [Fe/H] or None and
+    ``abund`` MARCS's log eps for Z=1..92 or None.
+    """
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+    @property
+    def shape(self):
+        return self.ltemp.shape
+
+
+def read_atmosphere(path, atmos_format='unknown', snap=0, use_aux=True):
+    """Parse a model-atmosphere file with dispatch.x's reader (HOP/atmos_reader_mod).
+
+    ``atmos_format`` takes the &atmos_params names; 'unknown' infers it from the name
+    as dispatch.x does.  ``snap`` and ``use_aux`` select a snapshot of the original
+    Stagger format and whether it takes T and n_e from its .aux file.  Needs no
+    HopEOS instance.  Returns an :class:`AtmosphereFile`.
+    """
+    ffi, lib = open_library()
+    dims = ffi.new('int[8]')
+    status = lib.hop_atmos_read(_c_str(atmos_format), _c_str(path), int(snap),
+                                int(bool(use_aux)), dims)
+    _check(lib, status, 'hop_atmos_read')
+    nx, ny, nz, gz, has_pe, has_rho, has_feh, n_abund = list(dims)
+
+    def get(name, n):
+        out = np.empty(n, np.float32)
+        _check(lib, lib.hop_atmos_get(_c_str(name), n, ffi.from_buffer('float *', out)),
+               f'hop_atmos_get({name!r})')
+        return out
+
+    ncell = nx * ny * nz
+    try:
+        fields = {k: get(k, ncell).reshape((nx, ny, nz), order='F')
+                  for k in ('ltemp', 'lpe', 'lrho', 'vx', 'vy', 'vz', 'vmic')}
+        fields.update(xx=get('xx', nx), yy=get('yy', ny), zz=get('zz', nz))
+        feh = float(get('feh', 1)[0]) if has_feh else None
+        abund = get('abund', n_abund) if n_abund else None
+    finally:
+        lib.hop_atmos_free()
+    if not has_pe:
+        fields['lpe'] = None
+    if not has_rho:
+        fields['lrho'] = None
+    return AtmosphereFile(gz=gz, has_pe=bool(has_pe), has_rho=bool(has_rho), feh=feh,
+                          abund=abund, **fields)
 
 
 def _opacity_chunk(job, hop=None):

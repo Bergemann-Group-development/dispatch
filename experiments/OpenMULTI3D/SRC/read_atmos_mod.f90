@@ -11,7 +11,9 @@ MODULE read_atmos_mod
   USE rt_params_mod, only: pivot_z, ray_offset
   USE ray_mod, only: one_dimensional
   USE composition_mod, only: composition_type
-  USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file
+  USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file, &
+    read_stagger_file, read_stagger2_file, read_multi_snapshot_file, read_co5bold_file, &
+    read_siu_bin_file
   USE console_mod
   implicit none
   private
@@ -40,15 +42,6 @@ MODULE read_atmos_mod
     procedure :: setup_amr_mesh
   end type input_atmos_t
 
-  ! stagger coefficients
-  real(4), parameter :: uul = 1.0e+8      ! length
-  real(4), parameter :: uur = 1.0e-7      ! density
-  real(4), parameter :: luul = log(uul)
-  real(4), parameter :: luur = log(uur)
-  real(4), parameter :: uut = 1.0e2       ! time
-  real(4), parameter :: uuv = uul / uut   ! velocity
-  real(4), parameter :: uue = uuv**2      ! internal energy per unit mass
-  character(len=256), save :: mesh_file, snap_file, data_file, aux_file
   real(4), public :: timestamp=-1.0
   logical, public, save :: log_interpolation=.true.
   logical, public, save :: pchip_interpolation=.true.
@@ -67,300 +60,62 @@ MODULE read_atmos_mod
 contains
 
   !===============================================================================
+  !> The model formats are parsed by atmos_reader_mod (shared with hop_prune.x and
+  !> libhop); the routines below apply the namelist overrides and move the result
+  !> into ia.
+  !===============================================================================
   SUBROUTINE read_co5bold(atmos_file)
     character(len=*), intent(in) :: atmos_file
-    real(4), dimension(:,:,:), allocatable :: over_rho
-    integer :: lunit, iostat, nsub
-    real(8) :: ds(3)
-    integer :: n(3), nx, ny, nz
+    type(atmos_data_t) :: atmos
+    integer :: ierr
+    character(len=512) :: msg
     !-----------------------------------------------------------------------------
-    open(newunit=lunit, file=atmos_file, form='unformatted', access='stream')
-    read(lunit) timestamp
-    read(lunit) nx, ny, nz
-
-    call ia%allocate(nx, ny, nz)
-
-    read(lunit) ia%xx, ia%yy, ia%zz
-    read(lunit) ia%ltemp
-    read(lunit) ia%lrho
-    read(lunit) ia%lpe
-    read(lunit) ia%vx ! this is px
-    read(lunit) ia%vy ! this is py
-    read(lunit) ia%vz ! this is pz
-
-    allocate(over_rho, source=exp(-ia%lrho))
-    ia%vx = ia%vx * over_rho
-    ia%vy = ia%vy * over_rho
-    ia%vz = ia%vz * over_rho
-    close(lunit)
+    call read_co5bold_file(atmos_file, atmos, ierr, msg)
+    call adopt(atmos, ierr, msg)
+    timestamp = atmos%timestamp
   END SUBROUTINE read_co5bold
 
+  !===============================================================================
+  !> use_ne enters as the request and leaves true only where the snapshot has an
+  !> .aux file to take n_e from.
   !===============================================================================
   SUBROUTINE read_stagger(stagger_file, snap, use_ne)
     character(len=*), intent(in) :: stagger_file
     integer, intent(in) :: snap
     logical, intent(inout) :: use_ne
-    real(8) :: ds(3)
-    integer :: n(3), nx, ny, nz
+    type(atmos_data_t) :: atmos
+    integer :: ierr, itimer=0
+    character(len=512) :: msg
     !-----------------------------------------------------------------------------
-    mesh_file = trim(stagger_file) // '.msh'
-    write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
-    write(data_file, '(A,A)') trim(snap_file), '.dat'
-    write(aux_file,  '(A,A)') trim(snap_file), '.aux'
-    call read_stagger_mesh()
-    call read_stagger_data(use_ne)
+    call trace%begin('read_stagger_data', itimer=itimer)
+    call read_stagger_file(stagger_file, snap, use_ne, atmos, ierr, msg)
+    call adopt(atmos, ierr, msg)
+    use_ne = atmos%has_pe
+    call trace%end(itimer)
   END SUBROUTINE read_stagger
 
   !===============================================================================
-  SUBROUTINE read_stagger_dim(nx, ny, nz, lunit_out)
-    integer, intent(out) :: nx, ny, nz
-    integer :: lunit, iostat
-    integer, optional :: lunit_out
-    !-----------------------------------------------------------------------------
-    call os%check_file(mesh_file)
-    open(newunit=lunit, file=mesh_file, iostat=iostat, convert='big_endian', form='unformatted')
-
-    ! read first entry in mesh file
-    read(unit=lunit, iostat=iostat) nx, nz, ny ! y is z in stagger
-
-    if (present(lunit_out)) then
-      lunit_out = lunit
-    else
-      close(lunit)
-    endif
-  END SUBROUTINE read_stagger_dim
-
-!===============================================================================
-!> Reading mesh file
-!===============================================================================
-  SUBROUTINE read_stagger_mesh()
-    real(4), allocatable, dimension(:) :: xdn, dxidxup, dxidxdn, dx, dxdn
-    real(4), allocatable, dimension(:) :: ydn, dyidyup, dyidydn, dy, dydn
-    real(4), allocatable, dimension(:) :: zdn, dzidzup, dzidzdn, dz, dzdn
-    real(4), allocatable, dimension(:) :: zm
-    integer :: lunit, iostat, nx, ny, nz
-    !-----------------------------------------------------------------------------
-    call read_stagger_dim(nx, ny, nz, lunit_out=lunit)
-    call ia%allocate(nx, ny, nz)
-    ia%gz = 5 ! stagger has 5 ghost zones on each side
-
-    allocate(xdn, dxidxup, dxidxdn, dx, dxdn, mold=ia%xx)
-    allocate(ydn, dyidyup, dyidydn, dy, dydn, mold=ia%yy)
-    allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=ia%zz)
-
-    read (unit=lunit, iostat=iostat) dx, dxdn, ia%xx, xdn, dxidxup, dxidxdn
-    read (unit=lunit, iostat=iostat) dz, dzdn, ia%zz, zdn, dzidzup, dzidzdn ! y is z in stagger
-    read (unit=lunit, iostat=iostat) dy, dydn, ia%yy, ydn, dyidyup, dyidydn
-    ! close mesh file
-    close(unit=lunit)
-    ia%xx = uul * ia%xx
-    ia%yy = uul * ia%yy
-    ia%zz = uul * ia%zz
-  END SUBROUTINE read_stagger_mesh
-
-!===============================================================================
-!> Reading data and aux file
-!===============================================================================
-  SUBROUTINE read_stagger_data(use_ne)
-    logical, intent(inout) :: use_ne
-    real(4), dimension(:,:,:), allocatable :: ppx, ppy, ppz, lne, rho
-    integer :: iostat, lunit, recl
-    integer :: nx, ny, nz, m(3), i, j, k
-    integer, save :: itimer
-    real(4) :: const, over_rho
-    !-----------------------------------------------------------------------------
-    call trace%begin('read_stagger_data', itimer=itimer)
-    call read_stagger_dim(nx, ny, nz)
-
-    m = [nx, ny, nz]
-    allocate(ppx(nx,ny,nz))
-    allocate(ppy(nx,ny,nz))
-    allocate(ppz(nx,ny,nz))
-    allocate(rho(nx,ny,nz))
-    allocate(lne(nx,ny,nz))
-
-    recl = kind(1.0)*product(m)
-    use_ne = use_ne .and. os%exists(aux_file)
-
-    !=============================================================================
-    ! Reading data file
-    !-----------------------------------------------------------------------------
-    call os%check_file(data_file)
-    open(newunit=lunit, file=data_file, iostat=iostat, convert='big_endian', &
-      form='unformatted', status='old', access='direct', recl=recl)
-
-    ! 1: density
-    ! 2: momentum per unit volume in direction x
-    ! 3: momentum per unit volume in direction y
-    ! 4: momentum per unit volume in direction z
-    ! 5: internal energy per unit volume
-    ! 6: temperature
-
-    read (unit=lunit, iostat=iostat, rec=1) rho
-    read (unit=lunit, iostat=iostat, rec=2) ppx
-    read (unit=lunit, iostat=iostat, rec=3) ppz ! y is z in stagger
-    read (unit=lunit, iostat=iostat, rec=4) ppy ! z is y in stagger
-    !read (unit=lunit, iostat=iostat, rec=5) ie
-    if (.not. use_ne) then
-      read (unit=lunit, iostat=iostat, rec=6) ia%ltemp ! this is temp
-      ia%ltemp = log(ia%ltemp)
-    endif
-    ! close data file
-    close(unit=lunit)
-
-    if (use_ne) then
-      !=============================================================================
-      ! Reading aux file
-      !-----------------------------------------------------------------------------
-      call os%check_file(aux_file)
-      open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
-        form='unformatted', status='old', access='direct', recl=recl)
-
-      ! 1: ln total pressure (gas + rad)
-      ! 2: ln Rosseland extinction coeff.
-      ! 3: ln Temperature
-      ! 4: ln electron number density
-      ! 5: ln Planck-averaged extinction coeff.
-      ! 6: ln extinction coeff at 500 nm
-
-      read (unit=lunit, iostat=iostat, rec=3) ia%ltemp
-      read (unit=lunit, iostat=iostat, rec=4) lne
-      ! close aux file
-      close(unit=lunit)
-      !=============================================================================
-    else
-      ia%lpe = 0
-    endif
-
-    ! "un"-staggering vectors relative to scalars
-    call xup_set(ppx, ia%vx)
-
-    ! transposing data (y to z)
-    call transpose_stagger(rho)
-    call transpose_stagger(ia%ltemp)
-    if (use_ne) call transpose_stagger(lne)
-
-    call transpose_stagger(ia%vx)
-    call transpose_stagger(ppy)
-    call transpose_stagger(ppz)
-
-    call yup_set(ppy, ia%vy)
-    call zup_set(ppz, ia%vz)
-
-    const = -3.0 * luul + log(BK)
-    do k=1, nz
-      do j=1, ny
-        do i=1, nx
-          over_rho = uuv / rho(i,j,k)
-          ia%lrho (i,j,k) = log(rho(i,j,k)) + luur
-          ia%vx   (i,j,k) = ia%vx(i,j,k) * over_rho
-          ia%vy   (i,j,k) = ia%vy(i,j,k) * over_rho
-          ia%vz   (i,j,k) = ia%vz(i,j,k) * over_rho
-          if (use_ne) then
-            ia%lpe(i,j,k) = lne(i,j,k) + const + ia%ltemp(i,j,k)
-          endif
-        end do
-      end do
-    end do
-
-    call trace%end(itimer)
-  END SUBROUTINE read_stagger_data
-
-  !===============================================================================
   SUBROUTINE read_multi_snapshot(atmos_file)
-    integer :: lunit, nx, ny, nz
     character(len=*) :: atmos_file
-    real(4), dimension(:,:,:), allocatable :: ne, temp, rho, vx, vy, vz
+    type(atmos_data_t) :: atmos
+    integer :: ierr
+    character(len=512) :: msg
     !-----------------------------------------------------------------------------
-    ! Open atmosphere file and read MHD variables
-    !-----------------------------------------------------------------------------
-    if (endswith(trim(atmos_file), '.atmos')) then
-      atmos_file = atmos_file(1:len_trim(atmos_file)-6)
-    elseif (endswith(trim(atmos_file), '.mesh')) then
-      atmos_file = atmos_file(1:len_trim(atmos_file)-5)
-    endif
-    call os%check_file(trim(atmos_file) // '.mesh')
-    open(file=trim(atmos_file) // '.mesh', newunit=lunit, form='FORMATTED')
-    read(lunit, *) nx, ny, nz
-
-    call ia%allocate(nx, ny, nz)
-    allocate(temp, ne, vx, vy, vz, rho, mold=ia%lrho)
-
-    read(lunit, *) ia%xx
-    read(lunit, *) ia%yy
-    read(lunit, *) ia%zz
-    close(lunit)
-
-    call os%check_file(trim(atmos_file) // '.atmos')
-    open(file=trim(atmos_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
-    read(lunit) ne
-    read(lunit) temp
-    read(lunit) ia%vx
-    read(lunit) ia%vy
-    read(lunit) ia%vz
-    read(lunit) rho
-    close(lunit)
-
-    ia%lpe = log(ne * BK * temp)
-    ia%ltemp = log(temp)
-    ia%lrho  = log(rho)
+    call read_multi_snapshot_file(atmos_file, atmos, ierr, msg)
+    call adopt(atmos, ierr, msg)
   END SUBROUTINE read_multi_snapshot
 
   !===============================================================================
   SUBROUTINE read_stagger2(atmos_file)
-    integer :: lunit, nx, ny, nz, pos
     character(len=*) :: atmos_file
-    real(4), dimension(:), allocatable :: xx, yy, zz
-    real(4), dimension(:,:,:), allocatable :: ne, temp, rho, vx, vy, vz
+    type(atmos_data_t) :: atmos
+    integer :: ierr
+    character(len=512) :: msg
     !-----------------------------------------------------------------------------
-    ! Open atmosphere file and read MHD variables
-    !-----------------------------------------------------------------------------
-    pos = index(atmos_file, 'atm3d.')
-    mesh_file = atmos_file(1:pos-1) // 'mesh.' // atmos_file(pos+6:)
-    call os%check_file(mesh_file)
-    open(file=mesh_file, newunit=lunit, form='FORMATTED')
-
-    read(lunit, *) nx
-    allocate(xx(nx))
-    read(lunit, *) xx
-
-    read(lunit, *) ny
-    allocate(yy(ny))
-    read(lunit, *) yy
-
-    read(lunit, *) nz
-    allocate(zz(nz))
-    read(lunit, *) zz
-    close(lunit)
-
-    call ia%allocate(nx, ny, nz)
-    ia%xx = xx
-    ia%yy = yy
-    ia%zz = zz
-
-    allocate(temp, ne, vx, vy, vz, rho, mold=ia%lrho)
-    call os%check_file(atmos_file)
-    open(file=atmos_file, newunit=lunit, form='unformatted', access='stream')
-    read(lunit) ne
-    read(lunit) temp
-    read(lunit) vx
-    read(lunit) vy
-    read(lunit) vz
-    read(lunit) rho
-    close(lunit)
-
-    ia%vx = vx * 1e5
-    ia%vy = vy * 1e5
-    ia%vz = vz * 1e5
-    ia%lpe = log(ne * BK * temp)
-    ia%ltemp = log(temp)
-    ia%lrho  = log(rho)
+    call read_stagger2_file(atmos_file, atmos, ierr, msg)
+    call adopt(atmos, ierr, msg)
   END SUBROUTINE read_stagger2
 
-  !===============================================================================
-  !===============================================================================
-  !> The 1D text formats are parsed by atmos_reader_mod (shared with hop_prune.x);
-  !> the routines below apply the namelist overrides and copy the result into ia.
   !===============================================================================
   SUBROUTINE read_marcs (file, FeH, vmic, abund)
     character(len=*), intent(in) :: file
@@ -428,8 +183,8 @@ contains
   END SUBROUTINE read_multi_1d
 
   !===============================================================================
-  !> Run one atmos_reader_mod parser and move its columns into ia, stopping on a
-  !> parse failure the way the readers always have.
+  !> Run one atmos_reader_mod parser of a single-file format and move the result
+  !> into ia.
   !===============================================================================
   SUBROUTINE read_parsed(reader, atmos_file, atmos)
     interface
@@ -447,141 +202,48 @@ contains
     character(len=512) :: msg
     !-----------------------------------------------------------------------------
     call reader(atmos_file, atmos, ierr, msg)
+    call adopt(atmos, ierr, msg)
+  END SUBROUTINE read_parsed
+
+  !===============================================================================
+  !> Stop on a parse failure the way the readers always have, else copy the parsed
+  !> columns and mesh into ia.
+  !===============================================================================
+  SUBROUTINE adopt(atmos, ierr, msg)
+    type(atmos_data_t), intent(in) :: atmos
+    integer, intent(in) :: ierr
+    character(len=*), intent(in) :: msg
+    !-----------------------------------------------------------------------------
     if (ierr /= 0) then
       call console_error (trim(msg))
       error stop 'atmosphere read failed'
     endif
     call ia%allocate(atmos%nx, atmos%ny, atmos%nz)
+    ia%gz    = atmos%gz
+    ia%xx    = atmos%xx
+    ia%yy    = atmos%yy
     ia%zz    = atmos%zz
+    ia%vx    = atmos%vx
+    ia%vy    = atmos%vy
     ia%vz    = atmos%vz
     ia%vmic  = atmos%vmic
     ia%ltemp = atmos%ltemp
     ia%lpe   = atmos%lpe
     ia%lrho  = atmos%lrho
-  END SUBROUTINE read_parsed
+  END SUBROUTINE adopt
 
   !===============================================================================
   SUBROUTINE read_siu_bin(atmos_file, vmic)
     character(len=*) :: atmos_file
     real(4), intent(in) :: vmic
-    integer :: lunit, nz, nel, nmol, nbreak
-    integer :: i, j, k, recl
-    character(128) :: text
-    real(4), parameter :: ln10 = log(10.0)
-    integer, dimension(:), allocatable :: at_idx, at_nion, break
-    real(4), dimension(:), allocatable :: kappa500, pgas
+    type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
-    call os%check_file(atmos_file)
-    open(file=atmos_file, newunit=lunit, form='unformatted', access='stream')
-
-    read(lunit) recl ! skip the record length in stream access
-    read(lunit) nz, nel, nmol, nbreak
-
-    call ia%allocate(1,1,nz)
-    allocate(kappa500(nz), pgas(nz))
-    allocate(at_idx(nel), at_nion(nel))
-    allocate(break(nbreak))
-
-    read(lunit) at_idx   ! Atomic number of the elements
-    read(lunit) at_nion  ! Number of ionisation stages considered for each element
-    read(lunit) break    ! break points in tau scale for MARCS
-    read(lunit) ia%zz    ! log10(tau500)
-    read(lunit) ia%ltemp ! log10(temperature)
-    read(lunit) kappa500 ! log10(kappa500)
-    read(lunit) ia%lpe   ! log10(electron pressure)
-    read(lunit) pgas     ! p gas MARCS
-    read(lunit) pgas     ! p gas MARCS (not sure why this appears twice)
-    read(lunit) ia%lrho  ! log10(density)
-    ! the data goes on, but we have everything we need
-    close(lunit)
-
-    ! convert from log10() to ln
-    ia%ltemp = ia%ltemp * ln10
-    ia%lpe   = ia%lpe   * ln10
-    ia%lrho  = ia%lrho  * ln10
+    call read_parsed(read_siu_bin_file, atmos_file, atmos)
     if (vmic >= 0) then
       ia%vmic  = vmic
     endif
   END SUBROUTINE read_siu_bin
 
-  !===============================================================================
-  SUBROUTINE xup_set (f, fp)
-    ! f is centered on (i-.5,j,k), fifth order stagger
-    real(4), dimension(:,:,:), intent(in) :: f
-    real(4), dimension(:,:,:), intent(out) :: fp
-    integer :: j, k
-    !--------------------------------------------------------------------------
-    do k=1, size(f, 3)
-      do j=1, size(f, 2)
-        call destagger_vector(f(:,j,k), fp(:,j,k))
-      end do
-    end do
-  END SUBROUTINE xup_set
-
-  !===============================================================================
-  SUBROUTINE yup_set (f, fp)
-    ! f is centered on (i-.5,j,k), fifth order stagger
-    real(4), dimension(:,:,:), intent(in) :: f
-    real(4), dimension(:,:,:), intent(out) :: fp
-    integer :: i, k
-    !--------------------------------------------------------------------------
-    do k=1, size(f, 3)
-      do i=1, size(f, 1)
-        call destagger_vector(f(i,:,k), fp(i,:,k))
-      end do
-    end do
-  END SUBROUTINE yup_set
-
-  !===============================================================================
-  SUBROUTINE zup_set (f, fp)
-    ! f is centered on (i-.5,j,k), fifth order stagger
-    real(4), dimension(:,:,:), intent(in) :: f
-    real(4), dimension(:,:,:), intent(out) :: fp
-    integer :: i, j
-    !--------------------------------------------------------------------------
-    do j=1, size(f, 2)
-      do i=1, size(f, 1)
-        call destagger_vector(f(i,j,:), fp(i,j,:))
-      end do
-    end do
-  END SUBROUTINE zup_set
-
-  !===============================================================================
-  SUBROUTINE destagger_vector(f, fout)
-    real, dimension(:), intent(in)  :: f
-    real, dimension(:), intent(out) :: fout
-    integer :: i, n, j, idx
-    real(4), parameter :: c = 3./256.
-    real(4), parameter :: b = -25./256.
-    real(4), parameter :: a = 0.5-b-c
-    real(4) :: wts(-2:3)=[c,b,a,a,b,c]
-    ! ----------------------------------------------------------------------------
-    n = size(f,1)
-    fout = 0
-    do i=1, n
-      do j=-2,3
-        idx = i + j
-        if (idx<1) then
-          idx = n + idx
-        elseif (idx>n) then
-          idx = idx-n
-        endif
-        fout(i) = fout(i) + wts(j) * f(idx)
-      end do
-    end do
-  END SUBROUTINE destagger_vector
-
-  !===============================================================================
-  SUBROUTINE transpose_stagger(f)
-    real, dimension(:,:,:), intent(inout)  :: f
-    integer :: i, itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin('transpose_stagger', itimer=itimer)
-    do i=1, size(f, 1)
-      f(i, :, :) = transpose(f(i, :, :))
-    end do
-    call trace%end(itimer)
-  END SUBROUTINE transpose_stagger
 
   !===============================================================================
   SUBROUTINE allocate_input_atmos(self, nx, ny, nz)
