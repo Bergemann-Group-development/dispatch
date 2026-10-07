@@ -21,8 +21,7 @@ column is either the surface's own log tau_500 (``depth='tau'``, only for
 ``'tau500'``, as the Stagger <3D> models do) or the mean height in cm (``depth='z'``),
 which dispatch.x takes as a geometric scale and integrates its own tau along.  A run
 reads it with ``atmos_format='text' use_ne=F amr='T'``: rho given, n_e from the EOS.
-vmic follows alpha_campaign/jobs/avg3d.py: the rms of the three velocity components on
-the surface, divided by sqrt(3) (the convention of the Stagger <3D> files).
+vmic is the rms of the three velocity components on the surface, divided by sqrt(3) (the convention of the Stagger <3D> files).
 """
 from __future__ import annotations
 

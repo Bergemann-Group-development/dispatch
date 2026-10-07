@@ -20,11 +20,6 @@ docs/manual/*
 # figures drawn by figs/science_case.py, so the manual builds without the runs and
 # the observed atlas
 !docs/manual/figs/**
-# each note is a directory: its .tex, the built .pdf and the vector figures in figs/
-!docs/notes/
-docs/notes/**/*.*
-!docs/notes/**/*.tex
-!docs/notes/**/*.pdf
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
@@ -96,10 +91,5 @@ benchmarks/*
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml
 
-# The alpha campaign: reports and job scripts are source; its runs stay on the cluster.
-!alpha_campaign/
-alpha_campaign/*
-!alpha_campaign/reports/
-!alpha_campaign/jobs/
-!alpha_campaign/jobs/**
-alpha_campaign/jobs/**/__pycache__/
+# Agents' scratch work, campaign scripts, reports and notes stay untracked
+# (scratch/, alpha_campaign/, docs/notes/); the parent rules already ignore them.

@@ -1,3 +1,0 @@
-# O lines in the HRS red arm (air, Angstrom): O I 6156-6158, [O I] 6300, 6363. One window:
-# with three narrow ones the Intel builds read no lines at all (reports/2026-10-06_phase6.md)
-6150 6370
