@@ -23,7 +23,7 @@ A line counts as clean when ``tumult.abundance.screen`` passes (EW >= 5 mA, log(
 levels are more than 0.1 eV off (``select_lines.py``) are kept out of the metrics and
 reported separately.
 
-    python analyse.py LINES_DIR RUN_DIR SPECTRA_DIR OUT_DIR [stars|clv|metrics ...]
+    python analyse.py LINES_DIR RUN_DIR SPECTRA_DIR OUT_DIR [stars|metrics|robustness|clv|clv_metrics ...]
 
 RUN_DIR holds runs_<batch>.csv, reference_abundances.csv and extract/<batch>/*.npz.
 """
@@ -246,6 +246,78 @@ def invert(df):
     return pd.DataFrame(out)
 
 
+# --- window robustness -------------------------------------------------------------------
+
+REPAIRED = {'Fe': 'fe607a_fix', 'Mg': 'mg86e_fixed', 'Ca': 'ca105b_fix', 'Si': 'si340_ce',
+            'Al': 'al_qmh_ci', 'Mn': 'mn281kbc_dedup'}
+ROBUST_STARS = ('Sun', 'epsEri', 'HD140283', 'Arcturus', 'HD122563')
+EDGE_STEPS = (-0.5, -0.25, 0.25, 0.5)        # move of each edge outward, in FWHM (negative narrows)
+SHIFT_STEPS = (-0.25, 0.25)                  # shift of the whole window, in FWHM
+CONT_STEPS = (-0.01, -0.005, 0.005, 0.01)    # relative change of the continuum level
+
+
+def _perturbed(lo, hi, fw):
+    """(test, step, lo, hi, continuum factor) of the nominal window and its perturbations."""
+    yield 'nominal', 0.0, lo, hi, 1.0
+    for d in EDGE_STEPS:
+        if hi - lo + 2 * d * fw > 0.5 * fw:
+            yield 'edges', d, lo - d * fw, hi + d * fw, 1.0
+    for d in SHIFT_STEPS:
+        yield 'shift', d, lo + d * fw, hi + d * fw, 1.0
+    for d in CONT_STEPS:
+        yield 'continuum', d, lo, hi, 1.0 + d
+
+
+def window_tests(ews, use, runs, extract_dir, spectra_dir):
+    """NLTE abundance of each used line and spectrum with the window edges moved, the window
+    shifted and the continuum level changed, the observed and all synthetic EWs integrated
+    over the same perturbed window. Repaired atoms, <3D>, the stars of ROBUST_STARS."""
+    keys = ['star', 'element', 'ion', 'lam', 'atom', 'atmos']
+    sel = ews[ews.star.isin(ROBUST_STARS) & (ews.atmos == 'av3d') & ews.atom.isin(REPAIRED.values())]
+    sel = sel.merge(use[keys], on=keys)
+    obs_cache, rows = {}, []
+    for (star, spectrum, atom), g in sel.groupby(['star', 'spectrum', 'atom']):
+        run = runs[(runs.star == star) & (runs.atom == atom) & (runs.atmos == 'av3d')].iloc[0]
+        syn = load_synth(extract_dir / f'{run["name"]}.npz')
+        lam = syn['lam']
+        if spectrum not in obs_cache:
+            obs_cache[spectrum] = read_obs(spectra_dir / spectrum)
+        lam_o, flux_o = obs_cache[spectrum]
+        first = g.iloc[0]
+        lam_o = lam_o / (1 + first['shift'] / C_KMS)
+        spec_b = broaden(lam, syn['spec'], first.fwhm)
+        da, idx = ladder(syn, 'nlte')
+        for ln in g.itertuples():
+            fw = ln.fwhm / C_KMS * ln.lam
+            for test, step, lo, hi, fac in _perturbed(ln.lo, ln.hi, fw):
+                w_obs = ew(lam_o, flux_o / (ln.norm * fac), lo, hi)
+                wsyn = np.array([ew(lam, spec_b[i], lo, hi) for i in idx])
+                a = (cog_invert(ln.a_ref + da, wsyn, w_obs, 0.0, ln.lam)['a']
+                     if w_obs > 0 and np.all(wsyn > 0) else np.nan)
+                rows.append(dict(star=star, spectrum=spectrum, element=ln.element, ion=ln.ion, lam=ln.lam,
+                                 atom=atom, test=test, step=step, w_obs=w_obs, a=a))
+    out = pd.DataFrame(rows)
+    nominal = out[out.test == 'nominal'].set_index(['spectrum', 'element', 'ion', 'lam']).a
+    out['delta'] = out.a - nominal.reindex(pd.MultiIndex.from_frame(out[['spectrum', 'element', 'ion', 'lam']])).to_numpy()
+    return out
+
+
+def spectrum_abundances(ews, use):
+    """NLTE abundance of each used line from each spectrum on its own (repaired atoms,
+    <3D>, stars with several spectra), and its offset from the mean over the spectra."""
+    keys = ['star', 'element', 'ion', 'lam', 'atom', 'atmos']
+    sel = ews[(ews.atmos == 'av3d') & ews.atom.isin(REPAIRED.values())].merge(use[keys], on=keys)
+    sel = sel[sel.groupby('star').spectrum.transform('nunique') > 1]
+    cols = sorted([c for c in sel if c.startswith('w_nlte')], key=lambda c: float(c[6:]))
+    da = np.array([float(c[6:]) for c in cols])
+    wsyn = sel[cols].to_numpy(float)
+    a = np.array([cog_invert(ar + da, ws, w, 0.0, lam)['a'] if w > 0 and np.all(ws > 0) else np.nan
+                  for ar, ws, w, lam in zip(sel.a_ref, wsyn, sel.w_obs, sel.lam)])
+    out = sel[keys + ['spectrum', 'w_obs']].assign(a=a, instrument=sel.spectrum.str.split('/').str[0])
+    out['offset'] = out.a - out.groupby(keys).a.transform('mean')
+    return out
+
+
 # --- solar centre-to-limb variation ---------------------------------------------------
 
 IAG_MU = (1.0, 0.99, 0.98, 0.97, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35, 0.3, 0.2)
@@ -411,11 +483,14 @@ def mismatched(lines, df):
 CLV_MU_MIN = 0.2          # the innermost observed angle; the <3D> runs reach 0.1
 
 
-def clv_line_slopes(lines, ew_res, takeda):
-    """Per line, atom, atmosphere and LTE/NLTE: dA/dmu over mu >= CLV_MU_MIN for IAG, KPNO
-    (clean at every observed angle) and Takeda (inside the ladder at every angle), on lines
-    that pass for every atom of the element and are not mismatched."""
-    keys = ['source', 'element', 'ion', 'lam', 'atom', 'atmos']
+CLV_KEYS = ['source', 'element', 'ion', 'lam', 'atom', 'atmos']
+
+
+def clv_common(lines, ew_res, takeda):
+    """A(mu) at mu >= CLV_MU_MIN, one row per line, atom, atmosphere, LTE/NLTE and angle, for
+    the lines that are usable at every angle (IAG, KPNO: clean; Takeda: inside the ladder)
+    for every atom of the element and are not mismatched."""
+    keys = CLV_KEYS
     ew_res = ew_res[ew_res.mu >= CLV_MU_MIN].copy()
     ew_res['ok'] = ew_res.clean & ~mismatched(lines, ew_res)
     long = pd.concat([ew_res.assign(kind=k, a=ew_res[f'a_{k}'], ok=ew_res.ok & ew_res[f'oor_{k}'].eq(False))[keys + ['kind', 'mu', 'a', 'rew', 'ok']]
@@ -428,7 +503,12 @@ def clv_line_slopes(lines, ew_res, takeda):
     long = long[line_ok]
     n_atoms = long.groupby('element').atom.transform('nunique')
     common = long.groupby(['source', 'element', 'ion', 'lam', 'atmos', 'kind']).atom.transform('nunique') == n_atoms
-    long = long[common]
+    return long[common]
+
+
+def clv_line_slopes(long):
+    """Per line, atom, atmosphere and LTE/NLTE of ``clv_common``: dA/dmu and A(mu = 1)."""
+    keys = CLV_KEYS
     rows = []
     for key, g in long.groupby(keys + ['kind']):
         if g.mu.max() < 0.99 or g.mu.min() > 0.31:
@@ -495,21 +575,28 @@ def metrics(g):
     return pd.Series(out)
 
 
-def select_common(res):
-    """The metric line set: clean and well matched for every atom of the element in that
-    star and atmosphere, and within 3 sigma (MAD) of the LTE median, which is the same for
-    all atoms, so every atom is measured on the same lines."""
+def flag_common(res):
+    """``res`` with two flags: ``common``, the line is clean and well matched for every
+    atom of the element in that star and atmosphere; ``outlier``, a common line more than
+    3 sigma (MAD) from the LTE median, which is the same for all atoms."""
     ok = res.clean & ~res.mismatch
     keys = ['star', 'element', 'atmos', 'ion', 'lam']
     n_atoms = res.groupby(['element']).atom.transform('nunique')
-    good = ok.groupby([res[k] for k in keys]).transform('sum') == n_atoms
-    use = res[ok & good].copy()
-    grp = use.groupby(['star', 'element', 'atmos', 'ion']).a_lte
-    dev = (use.a_lte - grp.transform('median')).abs()
-    mad = 1.4826 * (use.a_lte - grp.transform('median')).abs().groupby(
-        [use.star, use.element, use.atmos, use.ion]).transform('median')
-    use['outlier'] = dev > 3 * np.maximum(mad, 0.02)
-    return use[~use.outlier]
+    out = res.assign(common=ok & (ok.groupby([res[k] for k in keys]).transform('sum') == n_atoms))
+    use = out[out.common]
+    med = use.groupby(['star', 'element', 'atmos', 'ion']).a_lte.transform('median')
+    dev = (use.a_lte - med).abs()
+    mad = 1.4826 * dev.groupby([use.star, use.element, use.atmos, use.ion]).transform('median')
+    out['outlier'] = False
+    out.loc[use.index, 'outlier'] = dev > 3 * np.maximum(mad, 0.02)
+    return out
+
+
+def select_common(res):
+    """The metric line set: common lines that are not outliers, so every atom is measured
+    on the same lines."""
+    out = flag_common(res)
+    return out[out.common & ~out.outlier]
 
 
 # --- original against repaired ---------------------------------------------------------
@@ -624,6 +711,7 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
         ews = pd.concat([pd.read_csv(p) for p in sorted(out_dir.glob('ew_*.csv'))])
         res = invert(drop_discrepant(ews))
         res['mismatch'] = mismatched(lines, res)
+        res = flag_common(res)
         res.to_csv(out_dir / 'line_abundances.csv', index=False)
         use = select_common(res)
         use.to_csv(out_dir / 'line_abundances_used.csv', index=False)
@@ -633,6 +721,12 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
         refs = pd.read_csv(run_dir / 'reference_abundances.csv')
         compare(res, met, refs).to_csv(out_dir / 'compare.csv', index=False)
         star_to_star(met, refs, stars).to_csv(out_dir / 'star_to_star.csv', index=False)
+    if 'robustness' in steps:
+        ews = drop_discrepant(pd.concat([pd.read_csv(p) for p in sorted(out_dir.glob('ew_*.csv'))]))
+        use = pd.read_csv(out_dir / 'line_abundances_used.csv')
+        spectrum_abundances(ews, use).to_csv(out_dir / 'spectrum_abundances.csv', index=False)
+        window_tests(ews, use, runs, run_dir / 'extract' / 'b', spectra_dir).to_csv(
+            out_dir / 'window_tests.csv', index=False)
     if 'clv' in steps:
         clv_runs = pd.read_csv(run_dir / 'runs_clv.csv')
         ed = run_dir / 'extract' / 'clv'
@@ -642,7 +736,9 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
     if 'clv_metrics' in steps:
         res = invert_clv(pd.read_csv(out_dir / 'clv_ew.csv'))
         res.to_csv(out_dir / 'clv_lines.csv', index=False)
-        sl = clv_line_slopes(lines, res, pd.read_csv(out_dir / 'clv_takeda.csv'))
+        long = clv_common(lines, res, pd.read_csv(out_dir / 'clv_takeda.csv'))
+        long.to_csv(out_dir / 'clv_common.csv', index=False)
+        sl = clv_line_slopes(long)
         sl.to_csv(out_dir / 'clv_slopes.csv', index=False)
         clv_compare(sl).to_csv(out_dir / 'clv_compare.csv', index=False)
 
