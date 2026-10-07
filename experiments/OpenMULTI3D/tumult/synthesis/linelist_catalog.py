@@ -25,22 +25,26 @@ from . import remote
 @dataclass(frozen=True)
 class ShareFolder:
     """A folder of a public Seafile share link: ``server`` and share ``token`` address
-    the share, ``path`` the folder within it."""
+    the share, ``path`` the folder within it. A ``nested`` folder is read with its
+    sub-folders, and its files are named by their path below ``path``."""
     id: str
     name: str
     server: str
     token: str
     path: str
     citation: str
+    nested: bool = False
 
     @property
     def page(self):
         """Where the share is browsed."""
         return f"{self.server}/d/{self.token}/?p={urllib.parse.quote(self.path.rstrip('/'))}"
 
-    def listing_url(self):
+    def listing_url(self, sub=""):
+        """The listing of ``path``, or of its sub-folder ``sub`` (ending in ``/``)."""
         return (f"{self.server}/api/v2.1/share-links/{self.token}/dirents/?"
-                + urllib.parse.urlencode({"path": self.path}, quote_via=urllib.parse.quote))
+                + urllib.parse.urlencode({"path": self.path + sub},
+                                         quote_via=urllib.parse.quote))
 
     def file_url(self, name):
         return (f"{self.server}/d/{self.token}/files/?"
@@ -57,8 +61,9 @@ SOURCE = ShareFolder(
 
 @dataclass(frozen=True)
 class RemoteList:
-    """One line-list file of the share: its ``name`` under the folder, ``size`` in bytes
-    as the share reports it, and the ``url`` it downloads from."""
+    """One file of the share: its ``name`` under the folder (a relative path in a
+    ``nested`` source), ``size`` in bytes as the share reports it, and the ``url`` it
+    downloads from."""
     name: str
     size: int
     url: str
@@ -84,14 +89,21 @@ class Listing:
 
 
 def list_files(source=SOURCE, cancel=None):
-    """Read the share folder once: its files with their sizes. Sub-folders are not
-    descended; the readers take a folder's direct children. ``cancel`` is a
-    :class:`~.cancel.CancelToken` checked before the request."""
-    if cancel is not None:
-        cancel.check()
-    entries = remote.read_json(source.listing_url())["dirent_list"]
-    files = [RemoteList(e["file_name"], int(e["size"]), source.file_url(e["file_name"]))
-             for e in entries if not e["is_dir"]]
+    """Read the share folder once: its files with their sizes. Sub-folders are descended
+    only for a ``nested`` source; the line-list readers take a folder's direct children.
+    ``cancel`` is a :class:`~.cancel.CancelToken` checked before each request."""
+    files = []
+    folders = [""]
+    while folders:
+        sub = folders.pop()
+        if cancel is not None:
+            cancel.check()
+        for e in remote.read_json(source.listing_url(sub))["dirent_list"]:
+            if not e["is_dir"]:
+                name = sub + e["file_name"]
+                files.append(RemoteList(name, int(e["size"]), source.file_url(name)))
+            elif source.nested:
+                folders.append(f"{sub}{e['folder_name']}/")
     return Listing(source, sorted(files, key=lambda f: f.name))
 
 
