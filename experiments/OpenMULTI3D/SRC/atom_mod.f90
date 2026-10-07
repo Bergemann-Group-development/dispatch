@@ -323,13 +323,15 @@ MODULE atom_mod
   SUBROUTINE normalize_profiles(self, iter)
     class(atom_type), target :: self
     class(atom_data_t), pointer :: adata
-    class(transition_type), pointer :: line
+    class(transition_type), pointer :: line, cont
     integer, intent(in) :: iter
+    real(8), dimension(:,:,:,:), pointer, contiguous :: nstar
     real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(8) :: gij
     integer :: i
     ! ----------------------------------------------------------------------------
     adata => self%data
+    nstar => adata%nstar
     gamma_ij => adata%gamma_ij
     gamma_ji => adata%gamma_ji
 
@@ -359,6 +361,14 @@ MODULE atom_mod
       gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
     end do
     
+    do i=i, self%nrad
+      cont => self%trans%cont(i-self%nline)
+      if (.not. cont%active) cycle
+      ! the unscaled rate carries exp(-h nu/kT), so the LTE ratio is formed in
+      ! real(8) and only the physical rate is stored
+      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * (nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j))
+    end do
+
     if (allocated(adata%oldb)) then
       do i=1, self%nlevel
         adata%oldb(:,:,:,i,1) = adata%oldb(:,:,:,i,2)
