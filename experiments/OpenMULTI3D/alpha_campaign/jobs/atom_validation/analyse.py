@@ -102,7 +102,10 @@ def ladder(synth, kind):
 # --- observed spectra -------------------------------------------------------------------
 
 def read_obs(path):
-    data = np.loadtxt(path)
+    # Two UVES-POP files (betHyi, HD84937) contain a 256 KiB block of NUL bytes;
+    # the lines it overwrote are dropped and leave a gap in the spectrum.
+    text = Path(path).read_bytes().decode('ascii', 'replace').splitlines()
+    data = np.loadtxt([ln for ln in text if '\x00' not in ln and '\ufffd' not in ln], usecols=(0, 1))
     lam, flux = data[:, 0], data[:, 1]
     keep = np.isfinite(flux) & (flux > 0)
     order = np.argsort(lam[keep])
@@ -394,6 +397,72 @@ def clv_slopes(res, value='a_nlte'):
     return pd.DataFrame(rows)
 
 
+
+def mismatched(lines, df):
+    """Whether each row's line is flagged as mis-matched to its atom's levels."""
+    mism = lines.set_index(['element', 'ion', 'lam'])
+    flags = []
+    for r in df.itertuples():
+        key, col = (r.element, r.ion, round(r.lam, 4)), MISMATCH + r.atom
+        flags.append(bool(mism.loc[key, col]) if key in mism.index and col in mism else False)
+    return pd.Series(flags, index=df.index)
+
+
+CLV_MU_MIN = 0.2          # the innermost observed angle; the <3D> runs reach 0.1
+
+
+def clv_line_slopes(lines, ew_res, takeda):
+    """Per line, atom, atmosphere and LTE/NLTE: dA/dmu over mu >= CLV_MU_MIN for IAG, KPNO
+    (clean at every observed angle) and Takeda (inside the ladder at every angle), on lines
+    that pass for every atom of the element and are not mismatched."""
+    keys = ['source', 'element', 'ion', 'lam', 'atom', 'atmos']
+    ew_res = ew_res[ew_res.mu >= CLV_MU_MIN].copy()
+    ew_res['ok'] = ew_res.clean & ~mismatched(lines, ew_res)
+    long = pd.concat([ew_res.assign(kind=k, a=ew_res[f'a_{k}'], ok=ew_res.ok & ew_res[f'oor_{k}'].eq(False))[keys + ['kind', 'mu', 'a', 'rew', 'ok']]
+                      for k in ('nlte', 'lte')])
+    tk = takeda[(takeda.mu >= CLV_MU_MIN)].assign(ok=lambda d: d.oor.eq(False) & np.isfinite(d.a))
+    tk = tk[[c for c in tk.columns if c in keys + ['kind', 'mu', 'a', 'rew', 'ok']]]
+    tk = tk.assign(ok=tk.ok & ~mismatched(lines, tk))
+    long = pd.concat([long, tk])
+    line_ok = long.groupby(keys + ['kind']).ok.transform('all')
+    long = long[line_ok]
+    n_atoms = long.groupby('element').atom.transform('nunique')
+    common = long.groupby(['source', 'element', 'ion', 'lam', 'atmos', 'kind']).atom.transform('nunique') == n_atoms
+    long = long[common]
+    rows = []
+    for key, g in long.groupby(keys + ['kind']):
+        if g.mu.max() < 0.99 or g.mu.min() > 0.31:
+            continue
+        coef = np.polyfit(g.mu, g.a, 1)
+        rows.append(dict(zip(keys + ['kind'], key), n_mu=len(g), slope=coef[0],
+                         a_centre=g[g.mu >= 0.99].a.mean(), rew=g[g.mu >= 0.99].rew.mean()))
+    return pd.DataFrame(rows)
+
+
+def clv_compare(sl):
+    """Per source, element, atmosphere and kind: mean dA/dmu and A(mu=1) for each atom with
+    its bootstrap error over lines, and the paired original-repaired difference."""
+    rows = []
+    for el, pairs in PAIRS.items():
+        for orig, rep in pairs:
+            for (src, atmos, kind), g in sl[sl.element == el].groupby(['source', 'atmos', 'kind']):
+                a = g[g.atom == orig].set_index(['ion', 'lam'])
+                b = g[g.atom == rep].set_index(['ion', 'lam'])
+                common = a.index.intersection(b.index)
+                if len(common) < 2:
+                    continue
+                a, b = a.loc[common], b.loc[common]
+                for col in ('slope', 'a_centre'):
+                    x, y = a[col].to_numpy(), b[col].to_numpy()
+                    pick = RNG.integers(0, len(x), (N_BOOT, len(x)))
+                    rows.append(dict(element=el, orig=orig, rep=rep, source=src, atmos=atmos, kind=kind,
+                                     metric=col, n_lines=len(x), value_orig=x.mean(), value_rep=y.mean(),
+                                     sig_metric=float(np.std(y[pick].mean(axis=1))),
+                                     delta=y.mean() - x.mean(),
+                                     sig_delta=float(np.std((y - x)[pick].mean(axis=1)))))
+    return pd.DataFrame(rows)
+
+
 # --- metrics ----------------------------------------------------------------------------
 
 def slope(x, y, w):
@@ -546,7 +615,7 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
     if 'stars' in steps:
         from multiprocessing import Pool
         todo = [(s, lines, runs[runs.star == s.star], run_dir / 'extract' / 'b', spectra_dir,
-                 out_dir / f'ew_{s.star}.csv') for s in stars.itertuples(index=False)
+                 out_dir / f'ew_{s.star}.csv') for _, s in stars.iterrows()
                 if not (out_dir / f'ew_{s.star}.csv').exists()]
         with Pool(N_PROC) as pool:
             for msg in pool.imap_unordered(_measure_one, todo):
@@ -554,17 +623,11 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
     if 'metrics' in steps:
         ews = pd.concat([pd.read_csv(p) for p in sorted(out_dir.glob('ew_*.csv'))])
         res = invert(drop_discrepant(ews))
-        mism = lines.set_index(['element', 'ion', 'lam'])
-        flags = []
-        for r in res.itertuples():
-            col = MISMATCH + r.atom
-            key = (r.element, r.ion, round(r.lam, 4))
-            flags.append(bool(mism.loc[key, col]) if key in mism.index and col in mism else False)
-        res['mismatch'] = flags
+        res['mismatch'] = mismatched(lines, res)
         res.to_csv(out_dir / 'line_abundances.csv', index=False)
         use = select_common(res)
         use.to_csv(out_dir / 'line_abundances_used.csv', index=False)
-        met = use.groupby(['star', 'element', 'atom', 'atmos']).apply(metrics, include_groups=False)
+        met = use.groupby(['star', 'element', 'atom', 'atmos']).apply(metrics, include_groups=False).unstack()
         met.to_csv(out_dir / 'metrics.csv')
         print(f'{len(res)} line results, {len(use)} clean; metrics in {out_dir / "metrics.csv"}')
         refs = pd.read_csv(run_dir / 'reference_abundances.csv')
@@ -576,6 +639,12 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
         measure_clv(lines, clv_runs, ed, spectra_dir).to_csv(out_dir / 'clv_ew.csv', index=False)
         takeda_abundances(lines, clv_runs, ed, spectra_dir / 'Takeda' / 'all_clvdata').to_csv(
             out_dir / 'clv_takeda.csv', index=False)
+    if 'clv_metrics' in steps:
+        res = invert_clv(pd.read_csv(out_dir / 'clv_ew.csv'))
+        res.to_csv(out_dir / 'clv_lines.csv', index=False)
+        sl = clv_line_slopes(lines, res, pd.read_csv(out_dir / 'clv_takeda.csv'))
+        sl.to_csv(out_dir / 'clv_slopes.csv', index=False)
+        clv_compare(sl).to_csv(out_dir / 'clv_compare.csv', index=False)
 
 
 if __name__ == '__main__':
