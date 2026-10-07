@@ -358,19 +358,19 @@ python -m ipykernel install --user --name openmulti3d
 
 \subsection{Input data}\label{sec:inputdata}
 
-The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data, line masks and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:studio}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
+The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:studio}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \input{tabs/input_data}
 
-The first three datasets are fetched with
+The datasets the examples of this manual use are fetched with
 \begin{minted}{bash}
-python -m tumult.synthesis.input_data fetch linelists atoms absmet
+python -m tumult.synthesis.input_data fetch linelists atoms absmet linemasks kpno
 \end{minted}
 and the grids with
 \begin{minted}{bash}
 python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
 \end{minted}
-(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The first three datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code reads it from (\File{input/linelists/master\_linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}). \Code{list} shows the files, \Code{--file NAME} selects single files and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
+(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The \Code{input\_data} datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code and the examples of this manual read it from (\File{input/linelists/master\_linelists/}, \File{input/linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}, \File{input/linemasks/}, \File{input/windows/}, \File{input/spectra/}, \File{input/spectra/IAG/}, \File{input/spectra/GBSv3/}). \Code{list} shows the files, \Code{--file NAME} selects single files (\Code{Mg/mg-lmask.txt} for a line mask) and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
 
 
 \subsection{Updating}
@@ -729,7 +729,7 @@ Its syntheses, fits and corrections are the workflows of Sec.~\ref{sec:pyworkflo
 \section{A Worked Example: Magnesium in the Sun}\label{sec:example}
 %%%%%%%%%%%%%%%%%%%%%%
 
-This section follows a typical NLTE analysis from the model atom to an abundance: the Mg\,\textsc{i} lines at 5172.7, 5528.4 and 5711.1\,{\AA} in the solar flux spectrum, computed with the 86-level atom \File{atom.mg86g} on the solar MARCS model. \File{docs/manual/figs/science\_case.py} runs every step and draws the figures of this section with the plotting methods of \Code{tumult} (Sec.~\ref{sec:plotting}); the code below is taken from it. The eight 1D runs take about 15\,s on a laptop. The observed spectrum is the KPNO solar flux atlas \citep{Kurucz2005} from 4000 to 9000\,{\AA}, in air wavelengths and normalised to the continuum, in \File{docs/data/KPNO\_4000\_9000.txt}.
+This section follows a typical NLTE analysis from the model atom to an abundance: the Mg\,\textsc{i} lines at 5172.7, 5528.4 and 5711.1\,{\AA} in the solar flux spectrum, computed with the 86-level atom \File{atom.mg86g} on the solar MARCS model. \File{docs/manual/figs/science\_case.py} runs every step and draws the figures of this section with the plotting methods of \Code{tumult} (Sec.~\ref{sec:plotting}); the code below is taken from it. The eight 1D runs take about 15\,s on a laptop. The observed spectrum is the KPNO solar flux atlas \citep{Kurucz2005} from 4000 to 9000\,{\AA}, in air wavelengths and normalised to the continuum, in \File{input/spectra/KPNO\_4000\_9000.txt} (dataset \Code{kpno}, Sec.~\ref{sec:inputdata}).
 
 \subsection{The runs}
 
@@ -757,7 +757,7 @@ def launch(name, abundance, cntrbf=False):
 run = launch("mg_sun", 7.58, cntrbf=True)
 abnds = np.round(np.arange(7.28, 7.89, 0.1), 2)
 ladder = [launch(f"mg_sun_A{round(a*100)}", a) for a in abnds]
-obs = tm.load_spectrum("docs/data/KPNO_4000_9000.txt")
+obs = tm.load_spectrum("input/spectra/KPNO_4000_9000.txt")
 \end{minted}
 
 \py{run} is the reference run at the solar abundance $A(\mathrm{Mg})=7.58$. \py{ladder} holds the runs for the curves of growth, from 7.28 to 7.88 in steps of 0.1\,dex. Each abundance is a run of its own, so each solves its own statistical equilibrium. \py{obs} is the observed spectrum as a \Code{Spectrum}, with the same cropping and measuring methods as a run's spectrum.

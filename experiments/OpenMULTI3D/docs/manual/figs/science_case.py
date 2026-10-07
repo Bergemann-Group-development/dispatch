@@ -10,8 +10,8 @@ Run from the experiment directory with the virtual environment active:
 
 It launches the 1D NLTE runs of the example (a few seconds each on a laptop) and the 3D
 run (about 10 s on eight threads) into data/manual/ and writes the figures next to this
-script. The observation is the KPNO solar flux atlas of Kurucz (2005) in docs/data/ (air
-wavelengths, normalised flux).
+script. The observation is the KPNO solar flux atlas of Kurucz (2005) in input/spectra/ (air
+wavelengths, normalised flux; input_data dataset kpno).
 """
 from pathlib import Path
 
@@ -25,7 +25,7 @@ import tumult as tm
 from tumult.linemask import parse_linemask_file
 
 FIGS = Path(__file__).resolve().parent
-ATLAS = Path("docs/data/KPNO_4000_9000.txt")
+ATLAS = Path("input/spectra/KPNO_4000_9000.txt")
 ATMOSPHERE = ("./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00"
               "_o+0.00_r+0.00_s+0.00.mod")
 SNAPSHOT = "input/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis"
