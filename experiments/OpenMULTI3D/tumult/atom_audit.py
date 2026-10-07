@@ -515,7 +515,13 @@ def nist_to_atom(atom, nist_levels, stage, term_window_ev=0.15, energy_tolerance
     """For each NIST level of one stage, the atom level that represents it: the level
     of the same LS symmetry nearest in energy within ``term_window_ev`` (a term or
     superlevel holds fine-structure levels some way from its mean energy), else the
-    nearest level within ``energy_tolerance_ev``, else -1."""
+    nearest level within ``energy_tolerance_ev`` whose symmetry does not contradict the
+    NIST term, else -1.
+
+    The energy fallback accepts a level when either term is unknown (no LS label, a
+    superlevel) or when the two differ in multiplicity only, since singlets and triplets
+    of high l are degenerate and sources label them differently. A level of another L or
+    parity does not represent the NIST level: Mg I 3p2 3P lies within 3 meV of 3s7s 3S."""
     lvl = atom.lvl
     sel = lvl.index[lvl.ion == stage].to_numpy()
     ev = lvl.ev[sel].to_numpy() - lvl.ev[sel].min()
@@ -529,15 +535,19 @@ def nist_to_atom(atom, nist_levels, stage, term_window_ev=0.15, energy_tolerance
         cand = np.where(same & (dist <= term_window_ev))[0]
         if len(cand):
             out[k] = sel[cand[dist[cand].argmin()]]
-        elif dist.min() <= energy_tolerance_ev:
-            out[k] = sel[dist.argmin()]
+            continue
+        compatible = np.array([term is None or a is None or a[1:] == term[1:] for a in terms])
+        near = np.where(compatible & (dist <= energy_tolerance_ev))[0]
+        if len(near):
+            out[k] = sel[near[dist[near].argmin()]]
     return nist.ev.to_numpy(), out
 
 
 def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf=None,
                      strength_temperature=5000.0, nist_levels=None):
     """Atom lines of one ion stage against a line list (columns lam0 [AA] in air above
-    2000 AA and vacuum below, evi [eV], loggf).
+    2000 AA and vacuum below, evi [eV], loggf; optionally term_lo and term_up, the LS
+    terms of the two levels as VALD gives them, e.g. '3P*').
 
     Each line-list transition is mapped to atom levels by its lower energy and the upper
     energy E_low + hc/lambda, within ``energy_tolerance_ev`` of an atom level of that
@@ -549,7 +559,12 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
 
     With ``nist_levels`` the line-list energies are first identified with NIST levels
     (within ``energy_tolerance_ev``) and these with atom levels by :func:`nist_to_atom`,
-    so that the components of a term-merged atom level find it.
+    so that the components of a term-merged atom level find it. An end that NIST
+    identifies with a level the atom does not represent lies outside the atom, even when
+    a level of another term is within the tolerance. With term columns an end is
+    identified with the nearest NIST level of its own term when one is within the
+    tolerance: the singlet and triplet levels of high l (Mg I nf 1F and 3F) lie closer
+    than the energy a wavelength and lower level give.
     """
     lvl = atom.lvl
     sel = lvl.index[lvl.ion == stage].to_numpy()
@@ -560,19 +575,29 @@ def compare_linelist(atom, llist, stage, energy_tolerance_ev=0.003, strong_loggf
     lo = llist.evi.to_numpy()
     up = lo + HC_AA_EV / lam_vac
 
-    def assign(energy):
+    def assign(energy, terms):
         k = np.abs(energy[:, None] - ev[None, :]).argmin(1)
         ok = np.abs(energy - ev[k]) <= energy_tolerance_ev
         out = np.where(ok, sel[k], -1)
         if nist_levels is not None and (nist_levels.ion == stage).any():
             nist_ev, nist_atom = nist_to_atom(atom, nist_levels, stage, energy_tolerance_ev=energy_tolerance_ev)
-            kn = np.abs(energy[:, None] - nist_ev[None, :]).argmin(1)
-            hit = np.abs(energy - nist_ev[kn]) <= energy_tolerance_ev
-            out = np.where(hit & (nist_atom[kn] >= 0), nist_atom[kn], out)
+            dist = np.abs(energy[:, None] - nist_ev[None, :])
+            if terms is not None:
+                nist_terms = [label_term(str(t)) for t in nist_levels.term[nist_levels.ion == stage]]
+                line_terms = [label_term(str(t)) for t in terms]
+                same = np.array([[t is not None and t == n for n in nist_terms] for t in line_terms],
+                                dtype=bool).reshape(dist.shape)
+                own = np.where(same, dist, np.inf)
+                dist = np.where((own.min(1) <= energy_tolerance_ev)[:, None], own, dist)
+            kn = dist.argmin(1)
+            hit = dist[np.arange(len(kn)), kn] <= energy_tolerance_ev
+            out = np.where(hit, nist_atom[kn], out)
         return out
 
+    has_terms = {'term_lo', 'term_up'} <= set(llist.columns)
     tab = pd.DataFrame(dict(lam0=llist.lam0.to_numpy(), evi=lo, loggf=llist.loggf.to_numpy(),
-                            i=assign(lo), j=assign(up)))
+                            i=assign(lo, llist.term_lo.to_numpy() if has_terms else None),
+                            j=assign(up, llist.term_up.to_numpy() if has_terms else None)))
     tab['gf'] = 10**tab.loggf
     tab['strength'] = tab.gf * np.exp(-tab.evi * EE / (BK * strength_temperature))
     mapped = tab[(tab.i >= 0) & (tab.j >= 0) & (tab.i != tab.j)].copy()
