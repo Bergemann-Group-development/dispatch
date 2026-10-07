@@ -1113,7 +1113,7 @@ The three broadening parameters of a line list, \fort{grad}, \fort{gvdw} and \fo
     \item[f] \citet{Cowley1971}. $n^*=Z[E_\mathrm{H}/(E_\mathrm{ion}-E_j)]^{1/2}$ with $E_\mathrm{H}=\SI{13.6}{eV}$. $c_Z=\SI{2.26e-7}{\radian\centi\metre\cubed\per\s}$ for $Z=1$ and $\SI{5.42e-7}{\radian\centi\metre\cubed\per\s}\,(Z+1)^{-2}$ for $Z>1$ (his value at \SI{e4}{K}, which he recommends at all temperatures). $\Gamma=0$ for $E_j\ge E_\mathrm{ion}$.
 \end{description}
 
-Molecules receive van der Waals broadening only from the cross-section form ($\gamma_\mathrm{vdw}\ge 20$). A molecular line with $\gamma_\mathrm{stk}=0$ gets the estimate of note f, with the molecule's ionisation energy from the sixth header field of \fort{molec_file}; a molecule without that field gets none. \fort{molecule_damping_estimates=F} withholds the estimate from all molecular lines, as the MULTI and Turbospectrum presets do.
+For molecular lines, $E_\mathrm{ion}$ is the molecule's ionisation energy, the sixth header field of \fort{molec_file}, and $Z$ is 1 (2 for a molecular ion). A molecular line gets the van der Waals cross-section form ($\gamma_\mathrm{vdw}\ge 20$), the Uns\"old estimate of note c for $0<\gamma_\mathrm{vdw}<20$ and the Stark estimate of note f for $\gamma_\mathrm{stk}=0$; the negative $\gamma_\mathrm{vdw}$ forms are not applied to molecules. A molecule without an ionisation energy gets neither estimate. \fort{molecule_damping_estimates=F} withholds both estimates from all molecular lines, as the MULTI and Turbospectrum presets do.
 
 \fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 
