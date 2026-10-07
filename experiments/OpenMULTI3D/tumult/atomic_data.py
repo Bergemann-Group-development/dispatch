@@ -78,6 +78,42 @@ def nist_levels_for_atom(folder, atom_id, stages):
     return pd.concat(tabs, ignore_index=True), limits
 
 
+def _vald_designation(row):
+    """'  LS        3d6.(5D).4s\\ (4D).5s g5D' -> ('LS', '3d6.(5D).4s\\ (4D).5s', 'g5D')."""
+    part = row.strip().split(None, 1)
+    if len(part) < 2:
+        return (part[0] if part else ''), '', ''
+    cfg, _, term = part[1].rpartition(' ')
+    return part[0], cfg.strip(), term
+
+
+def read_vald_long(path, species=None):
+    """VALD3 extract in long format (air wavelengths, energies in eV; ``.gz`` read as
+    such): one row per transition with element, ion, lam [A], loggf, elow, eup [eV],
+    j_lo, j_up, lgrad, stark, vdw (VALD's damping columns), coupling, config and term of
+    both levels, and the reference row. species: e.g. {'Fe 1', 'Fe 2'} to keep only those.
+    """
+    import gzip
+    path = Path(path)
+    text = (gzip.open(path, 'rt') if path.suffix == '.gz' else open(path)).read().splitlines()
+    rows = []
+    for k, r in enumerate(text):
+        if not re.match(r"'[A-Z][a-z]? +\d+'", r):
+            continue
+        p = [x.strip() for x in r.split(',')]
+        name = p[0].strip("'")
+        if species and name not in species:
+            continue
+        el, ion = name.split()
+        lo, up = _vald_designation(text[k + 1]), _vald_designation(text[k + 2])
+        rows.append(dict(element=el, ion=int(ion), lam=float(p[1]), loggf=float(p[2]), elow=float(p[3]),
+                         j_lo=float(p[4]), eup=float(p[5]), j_up=float(p[6]), lgrad=float(p[10]),
+                         stark=float(p[11]), vdw=float(p[12]), coupling_lo=lo[0], config_lo=lo[1], term_lo=lo[2],
+                         coupling_up=up[0], config_up=up[1], term_up=up[2],
+                         ref=' '.join(text[k + 3].strip("'_ ").split())))
+    return pd.DataFrame(rows)
+
+
 def linelist_by_stage(path, atom_id, stages):
     """Lines of an element from a Turbospectrum line list, one table per ion stage with
     columns lam0 [AA], evi [eV], loggf. Isotopic components stay separate rows."""
