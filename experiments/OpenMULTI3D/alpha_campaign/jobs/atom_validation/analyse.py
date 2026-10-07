@@ -47,6 +47,7 @@ SPECTRUM_TOL = 0.08
 CONT_LEVEL = 0.995
 MISMATCH = 'mismatch_'
 N_BOOT = 1000
+N_PROC = 6
 RNG = np.random.default_rng(1)
 
 
@@ -526,6 +527,15 @@ def star_to_star(met, refs, stars):
     return pd.DataFrame(rows)
 
 
+def _measure_one(args):
+    star, lines, runs, extract_dir, spectra_dir, target = args
+    missing = [n for n in runs.name if not (extract_dir / f'{n}.npz').exists()]
+    if missing:
+        return f'{star.star}: {len(missing)} runs not extracted, skipped'
+    measure_star(star, lines, runs, extract_dir, spectra_dir).to_csv(target, index=False)
+    return f'{star.star}: measured'
+
+
 def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
     lines_dir, run_dir, spectra_dir, out_dir = map(Path, (lines_dir, run_dir, spectra_dir, out_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -534,17 +544,13 @@ def main(lines_dir, run_dir, spectra_dir, out_dir, *steps):
     runs = pd.read_csv(run_dir / 'runs_b.csv')
     steps = steps or ('stars', 'metrics')
     if 'stars' in steps:
-        for s in stars.itertuples():
-            target = out_dir / f'ew_{s.star}.csv'
-            if target.exists():
-                continue
-            sel = runs[runs.star == s.star]
-            have = [(run_dir / 'extract' / 'b' / f'{n}.npz').exists() for n in sel.name]
-            if not all(have):
-                print(f'{s.star}: {sum(have)}/{len(have)} runs extracted, skipped')
-                continue
-            measure_star(s, lines, sel, run_dir / 'extract' / 'b', spectra_dir).to_csv(target, index=False)
-            print(f'{s.star}: measured')
+        from multiprocessing import Pool
+        todo = [(s, lines, runs[runs.star == s.star], run_dir / 'extract' / 'b', spectra_dir,
+                 out_dir / f'ew_{s.star}.csv') for s in stars.itertuples(index=False)
+                if not (out_dir / f'ew_{s.star}.csv').exists()]
+        with Pool(N_PROC) as pool:
+            for msg in pool.imap_unordered(_measure_one, todo):
+                print(msg)
     if 'metrics' in steps:
         ews = pd.concat([pd.read_csv(p) for p in sorted(out_dir.glob('ew_*.csv'))])
         res = invert(drop_discrepant(ews))
