@@ -20,10 +20,11 @@ docs/manual/*
 # figures drawn by figs/science_case.py, so the manual builds without the runs and
 # the observed atlas
 !docs/manual/figs/**
+# each note is a directory: its .tex, the built .pdf and the vector figures in figs/
 !docs/notes/
-docs/notes/*
-!docs/notes/*.tex
-!docs/notes/*.pdf
+docs/notes/**/*.*
+!docs/notes/**/*.tex
+!docs/notes/**/*.pdf
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
