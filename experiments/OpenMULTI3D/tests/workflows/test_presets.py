@@ -103,3 +103,11 @@ def test_a_comment_may_hold_an_apostrophe():
     text = "! the atom's own lines\n&linelist_params linelist_file='' dlam=5 /\n"
     assert NameList.from_string(text) == {"linelist_params": {"linelist_file": "",
                                                               "dlam": 5}}
+
+
+@pytest.mark.parametrize("name", ["multi1d", "multi3d", "turbospectrum"])
+def test_comparison_presets_withhold_molecular_damping_estimates(name):
+    """MULTI and Turbospectrum estimate no damping of molecular lines from the molecule's
+    ionisation energy, so the presets that reproduce them switch HOP's estimate off."""
+    settings = presets.load(name).settings
+    assert settings["composition_params"]["molecule_damping_estimates"] is False

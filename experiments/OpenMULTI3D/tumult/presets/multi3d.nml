@@ -39,4 +39,5 @@
   absdat_file = 'input/absdat'
   abund_file = 'input/abund/legacy_abund'
   molec_file = 'input/molec_data.txt'
+  molecule_damping_estimates = .false.
 /
