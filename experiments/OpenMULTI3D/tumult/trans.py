@@ -165,9 +165,16 @@ class Transition(object):
         return spec
     
     #=====================================================================
-    def get_clv(self, **kwargs):
+    def get_clv(self, dlam=None, **kwargs):
+        """Equivalent width [mÅ] at each μ of the run (:meth:`Run.get_clv`), over the
+        line's own wavelength range or, with ``dlam``, over lam0 ± dlam [Å]."""
         #-----------------------------------------------------------------
-        xx, yy = self.run.get_clv(line=self, **kwargs)
+        self.prepare()
+        if dlam is None:
+            kwargs['line'] = self
+        else:
+            kwargs['window'] = (self.lam0 - dlam, self.lam0 + dlam)
+        xx, yy = self.run.get_clv(**kwargs)
         return xx, yy
 
     #=====================================================================
@@ -210,18 +217,6 @@ class Transition(object):
 
         return xx, mask
         
-    #=====================================================================
-    def calc_weq(self, **kwargs):
-        #-----------------------------------------------------------------
-        return calc_weq(self, **kwargs)
-    
-    #=====================================================================
-    def calc_weq_depart(self, **kwargs):
-        #-----------------------------------------------------------------
-        NLTE = self.calc_weq(**kwargs)
-        LTE = self.calc_weq(LTE=True, **kwargs)
-        return NLTE/LTE
-
     #=====================================================================
     def calc_blueshift(self, dvel=4, **kwargs):
         #-----------------------------------------------------------------

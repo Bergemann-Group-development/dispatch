@@ -9,7 +9,7 @@ spectra, departures, contribution functions, plotting).
 from .atom import AtomClass
 from .auxfuncs import (assign_group_indices, empty, interp_tau, optical_depth_from_top,
                        rotate_array)
-from .utils import pchip_mono
+from ._abundance_numerics import cog_invert
 from .const import CC
 from .physics import air2vac, vac2air
 from .decorators import broadcast_arguments
@@ -507,25 +507,21 @@ class Run(object):
 
     #=====================================================================
     def get_cog_corr(self, element, LTE_runs, **kwargs):
+        """NLTE abundance correction of this run's spectrum on the LTE curve of growth
+        of ``LTE_runs``: the LTE abundance that reproduces this run's equivalent width,
+        subtracted from this run's abundance of ``element``.
+
+        ``kwargs`` select the line as in :meth:`crop` (``window=``, ``line=``, ...); the
+        equivalent widths [mÅ] are trapezoidal integrals of the normalised depression
+        over that range. ``LTE_runs`` may be NLTE runs, whose LTE sets are used.
+        """
         #-----------------------------------------------------------------
-        weq = self.calc_weq(norm=True, **kwargs)
+        weq = self.crop(**kwargs).measure(profile="trapz").maa
         abnd = self.abundances[element]
-
-        lte_abnd = np.zeros(len(LTE_runs))
-        lte_weqs = np.zeros(len(LTE_runs))
-        for i, run in enumerate(LTE_runs):
-            lte_abnd[i] = run.abundances[element]
-            lte_weqs[i] = run.calc_weq(norm=True, LTE=True, **kwargs)
-
-        order = np.argsort(lte_weqs)
-        lte_weqs = lte_weqs[order]
-        lte_abnd = lte_abnd[order]
-
-        # invert on the LTE curve of growth in reduced EW (log W; the line's λ only shifts
-        # the abscissa by a constant) with the shape-preserving PCHIP interpolant, as the
-        # abundance pipeline does (tumult.abundance.cog_invert)
-        a0 = float(pchip_mono(np.log10(lte_weqs), lte_abnd)(np.log10(weq)))
-        corr = abnd - a0
+        lte_abnd = np.array([r.abundances[element] for r in LTE_runs])
+        lte_weqs = np.array([r.crop(LTE=True, **kwargs).measure(profile="trapz").maa
+                             for r in LTE_runs])
+        corr = abnd - cog_invert(lte_abnd, lte_weqs, weq)["a"]
 
         return corr, lte_weqs, lte_abnd, weq, abnd
 
@@ -537,7 +533,7 @@ class Run(object):
         plt.scatter(lte_weqs, lte_abnd, label='LTE', color='cornflowerblue')
         label = 'NLTE\n∆A={:.2f}'.format(corr)
         plt.scatter(weq, abnd, label=label, color='k')
-        plt.xlabel(r'W$_{eq}$')
+        plt.xlabel(r'W$_{eq}$ [mÅ]')
         plt.ylabel('A({})'.format(element))
 
         a0 = abnd - corr
@@ -563,8 +559,11 @@ class Run(object):
 
     #=================================================================
     def get_clv(self, center_diff=False, **kwargs):
+        """Equivalent width [mÅ] of the spectrum :meth:`crop` selects with ``kwargs``,
+        at each μ of the run; ``center_diff`` subtracts the width at the first μ."""
         xx = self.mus
-        yy = self.calc_weq(imu=np.arange(len(xx)), **kwargs)
+        yy = np.array([self.crop(imu=i, **kwargs).measure(profile="trapz").maa
+                       for i in range(len(xx))])
         if center_diff: yy = yy - yy[0]
         return xx, yy
 
@@ -850,19 +849,6 @@ class Run(object):
 
 
     #=================================================================
-    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', label=None, **kwargs):
-        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
-        from .plotting_scripts import get_plt_kwargs
-        crop_kwargs = {k:v for k, v in kwargs.items() if k not in get_plt_kwargs()}
-        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, **crop_kwargs)
-        if label is None:
-            label = ', '.join([f'{k}={v:.2f}' for k, v in p.items()])
-        else:
-            label = ', '.join([label,] + [f'{k}={v:.2f}' for k, v in p.items()])
-        return plt.plot(oxx, fitted, label=label, **plot_kwargs)
-
-    #=================================================================
     def get_duration(self, string=True):
         from datetime import timedelta
 
@@ -933,41 +919,3 @@ class Run(object):
             self.lam = self.run0.lam
 
         return self
-
-#=====================================================================
-def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):
-    #-----------------------------------------------------------------
-    import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
-    weq1 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run1.line]
-    weq2 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run2.line]
-    maxw = np.max([weq1, weq2])
-    minw = np.min([weq1, weq2])
-    plt.plot([minw, maxw], [minw, maxw], zorder=-10, color='lightgrey', linestyle='--')
-    plt.plot(weq1, weq2, marker='.', linestyle='none', **kwargs)
-
-    def compare_dict(x, y):
-        diff_x = {k: x[k] for k in x if k in y and x[k] != y[k]}
-        diff_y = {k: y[k] for k in y if k in y and x[k] != y[k]}
-        return diff_x, diff_y
-
-    def cstrip(val):
-        if type(val)==str:
-            val = val.strip()
-        return val
-
-    x = run1.nml
-    y = run2.nml
-
-    diff_dict_x = {}
-    diff_dict_y = {}
-
-    for key, val in x.items():
-        diff_x, diff_y = compare_dict(x[key], y[key])
-        if len(diff_x) > 0:
-            diff_dict_x = dict(diff_dict_x, **diff_x)
-            diff_dict_y = dict(diff_dict_y, **diff_y)
-
-    xlabel = '\n'.join(['{:}={:}'.format(key, cstrip(val)) for key, val in diff_dict_x.items()])
-    ylabel = '\n'.join(['{:}={:}'.format(key, cstrip(val)) for key, val in diff_dict_y.items()])
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)

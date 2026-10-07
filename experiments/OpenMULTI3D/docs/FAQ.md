@@ -40,7 +40,7 @@ config = SynthConfig(root=".", cache="synth", R_sampling=100_000,
 grid = AtmosphereGrid("input/atmos/MARCS")
 request = SynthRequest(config=config, atmosphere=grid, star=Star(5700, 4.3, -0.1, 1.2))
 
-kpno = "/path/to/KPNO_4000_9000.txt"
+kpno = "docs/data/KPNO_4000_9000.txt"
 star = sparams.ionbalance(request, target=kpno,
                           line_mask="input/linemasks/Fe/fe-balance-test.txt",
                           method="cog", background_lines=False)
