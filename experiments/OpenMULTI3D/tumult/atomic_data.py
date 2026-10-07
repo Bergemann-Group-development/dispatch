@@ -79,8 +79,9 @@ def nist_levels_for_atom(folder, atom_id, stages):
 
 
 def _vald_designation(row):
-    """'  LS        3d6.(5D).4s\\ (4D).5s g5D' -> ('LS', '3d6.(5D).4s\\ (4D).5s', 'g5D')."""
-    part = row.strip().split(None, 1)
+    """'  LS        3d6.(5D).4s\\ (4D).5s g5D' -> ('LS', '3d6.(5D).4s\\ (4D).5s', 'g5D').
+    Extracts returned by email quote the row; the quotes are dropped."""
+    part = row.strip().strip("'").split(None, 1)
     if len(part) < 2:
         return (part[0] if part else ''), '', ''
     cfg, _, term = part[1].rpartition(' ')
