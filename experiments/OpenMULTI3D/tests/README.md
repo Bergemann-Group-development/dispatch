@@ -12,7 +12,7 @@ concern.
 | `execution/` | Scheduler, subprocess, daemon, cancellation, restart. | a POSIX process environment |
 | `studio/` | TumultStudio components and real Bokeh documents. | the `gui` extra |
 | `browser/` | Short journeys through the real TumultStudio app. | `node` with the `playwright` package and its Chromium |
-| `native/` | HOP ABI, EOS and opacity, small real Dispatch workflows, and tests of files in the local input bundle. | a built `libhop`/`dispatch.x`/`hop_prune.x`, and the input bundle (`input/linemasks/` is not tracked) |
+| `native/` | HOP ABI, EOS and opacity, small real Dispatch workflows, and tests of files in the local input bundle. | a built `libhop`/`dispatch.x`/`hop_prune.x`, and the input bundle (`input/linemasks/` comes from `input_data fetch linemasks`) |
 
 `support/` holds small factories used by more than one module; import them normally, as
 `from tests.support.<module> import ...`. `fixtures/` holds reviewed example inputs and
