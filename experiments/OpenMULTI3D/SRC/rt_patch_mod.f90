@@ -14,7 +14,7 @@ MODULE rt_patch_mod
   USE patch_mod, only: patch_t
   USE interpol_mod, only: pchip_mono
   USE handyfuncs_mod
-  USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
+  USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type, radiative_cut
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
@@ -2366,6 +2366,7 @@ contains
     integer, intent(in) :: i_set
     class(cont_type), pointer :: cont
     real(4) :: ni, nj, tmp, alpha
+    real(8) :: dev
     integer :: i, fs, fe
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -2383,11 +2384,16 @@ contains
       fe = cont%ired
 
       if (allocated(adata%b)) then
+        dev = atom%ev(cont%j) - atom%ev(cont%i)
         do z=1, self%nz
           do y=1, self%ny
             do x=1, self%nx
               ni  = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i) * pop_ratio(x,y,z)
               tmp = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j) * pop_ratio(x,y,z)
+              ! ehat holds eta/beta, which for a cut continuum (see radiative_cut) is
+              ! the overflowing n_j n*_i/n*_j.  Its source function is below
+              ! exp(-cut_x) b_j/b_i of 2h nu^3/c^2, so the continuum only absorbs.
+              if (radiative_cut(dev, comp%e_kT(x,y,z))) tmp = 0
               do f=fs, fe
                 alpha = cont%alpha(f)
                 self%xhat(f,x,y,z) = self%xhat(f,x,y,z) + alpha * ni
@@ -2890,6 +2896,7 @@ contains
     real(4), dimension(:), allocatable :: w_alpha, wmunu
     real(4) :: ni, nj, tmp, eta_fac, q, phi
     real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
+    real(8) :: dev
     integer :: i, j, fs, fe
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -2897,7 +2904,10 @@ contains
     call trace%begin (trim(self%kind)//'%bound_free_rates', itimer=itimer)
     allocate(wmunu(self%fs:self%fe))
     allocate(w_alpha(self%fs:self%fe))
-    ! Computing bound-free radiative rates based on half integrated mean intensity
+    ! Computing bound-free radiative rates based on half integrated mean intensity.
+    ! Cells where radiative_cut holds get no radiative rates: the emission sum would
+    ! be built from clamped beta and its LTE ratio overflows real(4).  The atom's
+    ! rate matrix puts a detailed-balance pair in their place.
     do j=1, size(trans%cont)
       cont => trans%cont(j)
       if (.not. cont%active) cycle
@@ -2906,10 +2916,12 @@ contains
       fe = cont%ired
       wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
       w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
+      dev = atom%ev(cont%j) - atom%ev(cont%i)
 
       do z=1,self%nz
         do y=1,self%ny
           do x=1,self%nx
+            if (radiative_cut(dev, self%m3d_parent%composition%e_kT(x,y,z))) cycle
             sum_abs = 0.0
             sum_ems = 0.0
             sum_pre = 0.0

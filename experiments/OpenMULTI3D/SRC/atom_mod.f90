@@ -32,6 +32,7 @@ MODULE atom_mod
     ! *******************************************************************
     implicit none
     private
+    public :: radiative_cut
 
     !---------------------------------------------------------------------
     type, public, extends(spectrum_type) :: atomic_spectrum_type
@@ -212,6 +213,21 @@ MODULE atom_mod
     ! convmax are not held hostage by levels with no effect on any opacity.
     !---------------------------------------------------------------------------
     real(8), public :: max_update=1d2, min_pop_frac=1d-30, conv_pop_floor=1d-8
+    !---------------------------------------------------------------------------
+    ! A transition whose threshold lies above cut_x kT cannot be formed in
+    ! real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
+    ! a continuum the LTE ratio n*_i/n*_j ~ exp(h nu0/kT), which turns the stored
+    ! emission sum into the recombination rate, overflows.  For a line the
+    ! upward and downward rates cancel to within real(4) rounding, which leaves
+    ! a manifold of levels connected only by such lines (the 2p5 nl levels of
+    ! Na II) free to drift by orders of magnitude per iteration.  In such a cell
+    ! n*_j/n*_i is below exp(-cut_x), and setup_transition_matrix replaces the
+    ! radiative rates by a pair in detailed balance: A_ji downward for a line,
+    ! bf_cut_rate [1/s] for a continuum, whose rates bound_free_rates leaves at
+    ! zero.  The pair ties the upper level to the lower one, which is all these
+    ! levels need: they hold less than exp(-cut_x) of the lower level's atoms.
+    !---------------------------------------------------------------------------
+    real(8), parameter :: cut_x=80d0, bf_cut_rate=1d0
     !---------------------------------------------------------------------------
     ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
     ! so the natural damping is geometric: e -> e**sor_w, which is exactly
@@ -675,7 +691,7 @@ MODULE atom_mod
     class(transition_type), pointer :: trans
     real(8), dimension(:), pointer :: b, nstar
     real(4), dimension(:), pointer :: rij, rji
-    real(8) :: totn
+    real(8) :: totn, e_kT, cut_rate
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
     logical :: abort, ok, db_here
@@ -687,6 +703,7 @@ MODULE atom_mod
     db_here = diag_db
     if (db_here) db_here = all([x,y,z] == pcheck)
     totn = self%data%totn(x,y,z)
+    e_kT = comp%e_kT(x,y,z)
     b => self%data%b(x,y,z,:)
     nstar => self%data%nstar(x,y,z,:)
     rij => self%data%gamma_ij(x,y,z,:)
@@ -705,6 +722,19 @@ MODULE atom_mod
       if (.not. trans%active) cycle
       i = trans%i
       j = trans%j
+      ! A cut transition takes a detailed-balance pair instead of its radiative
+      ! rates, formed in real(8), where n*_j/n*_i ~ exp(-h nu0/kT) is representable.
+      ! The line coefficients carry a factor h/4pi (init_einstein_coefficients).
+      if (radiative_cut(self%ev(j) - self%ev(i), e_kT)) then
+        if (kr <= self%nline) then
+          cut_rate = self%trans%line(kr)%Aji / h_4pi
+        else
+          cut_rate = bf_cut_rate
+        endif
+        self%data%w(i,j) = self%data%w(i,j) + cut_rate
+        self%data%w(j,i) = self%data%w(j,i) + cut_rate * nstar(j) / nstar(i)
+        cycle
+      endif
       self%data%w(j,i) = self%data%w(j,i) + rij(kr)
       self%data%w(i,j) = self%data%w(i,j) + rji(kr)
       ! Detailed balance check: deep down the radiation field is Planckian, so the
@@ -784,8 +814,10 @@ MODULE atom_mod
   !   real64 nstar(nx,ny,nz,nlevel)           LTE populations [cm^-3]
   !   real32 rij(nx,ny,nz,nrad), rji(...)     radiative rate coefficients [1/s]
   ! so that n_i*rij - n_j*rji is the net radiative rate of each transition.  Inactive
-  ! transitions have zero coefficients.  col_file, written once, holds the collision
-  ! coefficients, which do not depend on the populations:
+  ! transitions have zero coefficients.  Where radiative_cut replaces a transition
+  ! by a detailed-balance pair, the file holds the radiative coefficients the matrix
+  ! does not use: zero for a continuum, the computed ones for a line.  col_file, written once,
+  ! holds the collision coefficients, which do not depend on the populations:
   !   int32  nlevel, nx, ny, nz
   !   real32 cup(nx,ny,nz,npair)              upward coefficient i->j [1/s] for every
   !                                           pair i<j, ordered j-major (j=2..nk, i<j)
@@ -972,6 +1004,19 @@ MODULE atom_mod
 
     nstar = exp(tns)
   end function lte_pop
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  ! Whether the radiative rates of a transition with threshold energy dev [eV] are cut
+  ! at e_kT = e/kT [1/eV] (see cut_x).  The rate and opacity routines must agree cell
+  ! by cell, so all call this with the level energy difference and the composition's
+  ! e_kT; the continuum lowering dxi is left out for that reason.
+  !====================================================================================
+  elemental logical function radiative_cut(dev, e_kT)
+    real(8), intent(in) :: dev, e_kT
+    !---------------------------------------------------------------------------------
+    radiative_cut = dev*e_kT > cut_x
+  end function radiative_cut
   !------------------------------------------------------------------------------------
 
   !====================================================================================
