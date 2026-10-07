@@ -59,6 +59,157 @@ def resample_for_hermite(lam, sigma, rtol=0.03, floor=1e-3, max_points=200):
     return lam[idx], sigma[idx]
 
 
+def bf_rate_weights(lam, temp, occupation=None):
+    """Photon-number weights of the bound-free rate integrals on the wavelengths ``lam``
+    [AA], up to a common constant: nu^2 n for photoionisation and
+    nu^2 (1 + n) exp(-h nu / k T) for radiative recombination, where n is the photon
+    occupation number of the mean intensity (J_nu / (h nu) = 2 nu^2 n / c^2).
+
+    ``temp`` gives one temperature per field; ``occupation`` is (fields, len(lam)), or
+    None for Planck fields at ``temp``, where both weights are the same and one row per
+    temperature is returned. Otherwise the result stacks the photoionisation rows above
+    the recombination rows."""
+    from .const import BK, HH
+    nu = CC * 1e8 / np.asarray(lam, float)
+    temp = np.atleast_1d(np.asarray(temp, float))[:, None]
+    xx = HH * nu[None, :] / (BK * temp)
+    if occupation is None:
+        with np.errstate(over='ignore'):
+            return nu**2 / np.expm1(xx)
+    occ = np.atleast_2d(np.asarray(occupation, float))
+    return np.vstack([nu**2 * occ, nu**2 * (1 + occ) * np.exp(-xx)])
+
+
+def _trapezoid_nu(lam, integrand):
+    """Trapezoidal rule in frequency over the last axis; ``lam`` [AA] increasing."""
+    dnu = np.abs(np.diff(CC * 1e8 / lam))
+    return 0.5 * ((integrand[..., 1:] + integrand[..., :-1]) * dnu).sum(axis=-1)
+
+
+def compress_continua(tables, weight_lam, weights, rtol=0.01, per_interval=20, max_candidates=100):
+    """Bound-free tables thinned to the fewest nodes that keep their rate integrals.
+
+    ``tables`` is {level: (lam [AA], alpha [cm^2])} (:func:`tumult.atom_audit.bf_tables`).
+    The rate integrals are the integrals over frequency of each cross section times the
+    photon-number weights ``weights``, rows tabulated on ``weight_lam`` (e.g.
+    :func:`bf_rate_weights` for the mean intensities of NLTE runs and for Planck fields).
+
+    Two conditions are kept for every continuum and weight, each within ``rtol``:
+
+    - the integral of the interpolant (:func:`tumult.atom_audit.bf_interpolate`) on a
+      grid that subdivides every interval of the full table ``per_interval`` times, with
+      the weights interpolated linearly, so that the table represents the cross section
+      on any frequency grid;
+    - the integral as dispatch computes it: the frequency grid is the union of all
+      tables' nodes (``overlapping_bf``), each cross section is interpolated onto the grid
+      points inside its own range and integrated with the trapezoidal rule there
+      (``spectrum_mod%set_weights``). The reference is the same computation with the full
+      tables. Fewer nodes sample the weights, and with them the structure of J, more
+      coarsely; this condition bounds that.
+
+    The ends of every table are kept, so edges and blue cut-offs stay in place. Each table
+    is first reduced on its own for the first condition by greedy insertion of the node
+    that reduces the largest error most. Then, while a continuum misses the second
+    condition, the continuum with the largest error gains the node that reduces its error
+    most: one of its own nodes, or, once those are used up, one of up to
+    ``max_candidates`` grid points of the full union inside its range, with the value of
+    its full interpolant there. Finally nodes no condition needs are removed.
+
+    Returns the new tables and a table per continuum with the node counts and the largest
+    relative error of either condition.
+    """
+    from .atom_audit import dense_grid
+    order = np.argsort(np.asarray(weight_lam, float))
+    weight_lam = np.asarray(weight_lam, float)[order]
+    weights = np.atleast_2d(np.asarray(weights, float))[:, order]
+    # dispatch merges nodes that coincide (bf_tables separates them by 1e-6 AA)
+    grid = np.unique(np.round(np.concatenate([t[0] for t in tables.values()]), 4))
+    w_grid = np.array([np.interp(grid, weight_lam, w) for w in weights])
+
+    conts = {}
+    for i, (lam, alpha) in tables.items():
+        lam, alpha = np.asarray(lam, float), np.asarray(alpha, float)
+        nodes = np.searchsorted(grid, np.round(lam, 4))
+        lo, hi = nodes.min(), nodes.max()
+        alpha_grid = bf_interpolate(lam, alpha, grid[lo:hi + 1])
+        alpha_grid[nodes - lo] = alpha
+        fine = dense_grid(lam, per_interval)
+        w_fine = np.array([np.interp(fine, weight_lam, w) for w in weights])
+        conts[i] = dict(lo=lo, hi=hi, own=np.unique(nodes), alpha=alpha_grid, fine=fine, w_fine=w_fine,
+                        ref=_trapezoid_nu(grid[lo:hi + 1], w_grid[:, lo:hi + 1] * alpha_grid),
+                        ref_fine=_trapezoid_nu(fine, w_fine * bf_interpolate(lam, alpha, fine)),
+                        keep={lo, hi})
+
+    def relative(value, ref):
+        use = ref > 0
+        return np.abs(value[use] / ref[use] - 1).max() if use.any() else 0.0
+
+    def fine_error(c, keep):
+        idx = np.array(sorted(keep))
+        alpha = bf_interpolate(grid[idx], c['alpha'][idx - c['lo']], c['fine'])
+        return relative(_trapezoid_nu(c['fine'], c['w_fine'] * alpha), c['ref_fine'])
+
+    def grid_error(c, keep, on_grid):
+        idx = np.array(sorted(keep))
+        pts = c['lo'] + np.flatnonzero(on_grid[c['lo']:c['hi'] + 1])
+        alpha = bf_interpolate(grid[idx], c['alpha'][idx - c['lo']], grid[pts])
+        return relative(_trapezoid_nu(grid[pts], w_grid[:, pts] * alpha), c['ref'])
+
+    def error(c, keep, on_grid):
+        return max(fine_error(c, keep), grid_error(c, keep, on_grid))
+
+    for c in conts.values():
+        err = fine_error(c, c['keep'])
+        while err > rtol and len(c['keep']) < len(c['own']):
+            err, best = min((fine_error(c, c['keep'] | {k}), k) for k in c['own'] if k not in c['keep'])
+            c['keep'].add(best)
+
+    count = np.zeros(len(grid), int)
+    for c in conts.values():
+        count[list(c['keep'])] += 1
+    errs = {i: error(c, c['keep'], count > 0) for i, c in conts.items()}
+
+    def covering(point):
+        return [j for j, c in conts.items() if c['lo'] <= point <= c['hi']]
+
+    while max(errs.values()) > rtol:
+        i = max(errs, key=errs.get)
+        c = conts[i]
+        cands = [k for k in c['own'] if k not in c['keep']]
+        if not cands:
+            cands = [k for k in range(c['lo'], c['hi'] + 1) if k not in c['keep']]
+            cands = [cands[k] for k in np.unique(np.linspace(0, len(cands) - 1, max_candidates).astype(int))]
+        trials = []
+        for k in cands:
+            on_grid = count > 0
+            on_grid[k] = True
+            trials.append((error(c, c['keep'] | {k}, on_grid), k))
+        _, best = min(trials)
+        c['keep'].add(best)
+        count[best] += 1
+        for j in (covering(best) if count[best] == 1 else [i]):
+            errs[j] = error(conts[j], conts[j]['keep'], count > 0)
+
+    for i, c in conts.items():
+        for k in sorted(c['keep'] - {c['lo'], c['hi']}):
+            on_grid = count > 0
+            on_grid[k] = count[k] > 1
+            trial = c['keep'] - {k}
+            affected = covering(k) if count[k] == 1 else [i]
+            new = {j: error(conts[j], trial if j == i else conts[j]['keep'], on_grid) for j in affected}
+            if max(new.values()) <= rtol:
+                c['keep'] = trial
+                count[k] -= 1
+                errs.update(new)
+
+    out, rows = {}, []
+    for i, c in conts.items():
+        idx = np.array(sorted(c['keep']))
+        out[i] = (grid[idx], c['alpha'][idx - c['lo']])
+        rows.append(dict(level=i, n_full=len(tables[i][0]), n_new=len(idx), max_error=errs[i]))
+    return out, pd.DataFrame(rows)
+
+
 def topbase_continua(atom, topbase, stage, width=0.03, rtol=0.03, threshold_tolerance=0.25):
     """Bound-free tables for the levels of one ion stage from TOPbase cross sections.
 
