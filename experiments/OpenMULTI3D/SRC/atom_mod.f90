@@ -1140,9 +1140,11 @@ MODULE atom_mod
 
       call set_line_nnu(self, lin, loggf)
 
+      ! fine-structure components between the same levels add their f, as isotope
+      ! components do below
       if (lin%iso == 0) then
         tri = (lin%j-1)*(lin%j-2)/2 + lin%i
-        self%cdata(tri) = lin%f
+        self%cdata(tri) = self%cdata(tri) + lin%f
       endif
 
       if (.not. line_frequency_grid(self, lin, i, qnorm, legacy_freql)) cycle
@@ -1459,7 +1461,7 @@ MODULE atom_mod
       call set_line_nnu(self, lin)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
-      self%cdata(tri) = lin%f
+      self%cdata(tri) = self%cdata(tri) + lin%f
 
       lin%upper_g  = self%g(lin%j)
       lin%lower_ev = self%ev(lin%i)
