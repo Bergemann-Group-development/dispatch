@@ -190,6 +190,11 @@ MODULE atom_mod
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: use_classic_col = .False., legacy_freql=.False.
+    ! the recipes of use_classic_col, named by the atom-file key of the process they
+    ! replace: CE van Regemorter, CI Seaton, CH and CHI Drawin
+    logical, public :: classic_ce=.True., classic_ci=.True., classic_ch=.True., classic_chi=.True.
+    ! lower bound on the effective collision strength of the CE recipe (Allen's form)
+    real(8), public :: upsilon_floor=0.
     logical, public :: kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.false.
@@ -2163,8 +2168,9 @@ MODULE atom_mod
           ex = exp(-u0)
 
           ! collisions with electrons
+          cup = 0
           if (.not. self%ecol(tri)) then
-            if (cont) then
+            if (cont .and. classic_ci) then
               ! ionization by electron collisions
               if (fac == 0) then
                 lam0 = HZ_TO_AA*h_e / dev
@@ -2173,17 +2179,15 @@ MODULE atom_mod
               tmp = min(0.1*self%ion(i), 0.3)
               cup = seaton * fac * tmp / u0 * ex
               cup = cup * cbfesc
-            else
-              ! excitation of neutrals by electron collisions 
-              !if (fac > 0) then
-                ! Van Regemorter
-                tmp = max(0.2*ex, sqr3_2pi*expin(u0))
-                cup = regemorter * f * tmp / dev
-              !else
-                ! Allen
-                ! This recipe is flawed as it does not work with superlevels
-                !cup = allen * ex / self%g(i)
-              !endif
+            else if (.not. cont .and. classic_ce) then
+              ! excitation of neutrals by electron collisions: van Regemorter, at least
+              ! Allen's form with the effective collision strength upsilon_floor.  The
+              ! floor is a collision strength of the pair of atom levels, so its rate per
+              ! atom in level i carries 1/g(i): a merged level of weight g(i) receives
+              ! the floor once, not once per component, unlike the f-scaled recipe.
+              tmp = max(0.2*ex, sqr3_2pi*expin(u0))
+              cup = regemorter * f * tmp / dev
+              cup = max(cup, allen * upsilon_floor * ex / self%g(i))
               cup = cup * cbbesc
             endif
             if (cup /= 0) then
@@ -2196,7 +2200,7 @@ MODULE atom_mod
           endif
 
           ! collisions with hydrogen (Drawin)
-          if (.not. self%hcol(tri)) then
+          if (.not. self%hcol(tri) .and. merge(classic_chi, classic_ch, cont)) then
             divu = (RydV/dev)**2
             tmp = 2.0/u0
             tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)

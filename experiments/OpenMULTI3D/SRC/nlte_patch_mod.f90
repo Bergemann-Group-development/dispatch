@@ -12,6 +12,7 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
+    classic_ce, classic_ci, classic_ch, classic_chi, upsilon_floor, &
     ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w, line_grid_file
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
@@ -146,6 +147,7 @@ contains
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, output_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
+      classic_ce, classic_ci, classic_ch, classic_chi, upsilon_floor, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
       disable_bf, disable_bb, fmin, &
