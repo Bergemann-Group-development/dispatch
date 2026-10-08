@@ -943,7 +943,7 @@ Microturbulence & from the model (1D); none in 3D & \fort{vmic} & \ref{sec:atmos
 Composition & \File{abund\_magg22} scaled to the model's [Fe/H]; partition functions, molecules and isotopes from the files of \fort{&composition_params} & \fort{abund_file} & \ref{sec:abundances}\\
 NLTE$^\dagger$ & off (\fort{convlim=0}); preconditioned ALI with automatic Ng acceleration when on & \fort{convlim} & \ref{sec:numerics}\\
 Iteration-pass background$^\dagger$ & continuum only; name a table matched to the model's [Fe/H] & \fort{absmet_file} & \ref{sec:absmet}\\
-Collision rates & those of the atom file only & \fort{classic_ce}, \fort{classic_ch} & \ref{sec:atoms}\\
+Collision rates & those of the atom file only & \fort{classic_ce}, \fort{classic_ci}, \fort{classic_ch}, \fort{classic_chi} & \ref{sec:atoms}\\
 Iteration-pass rays & \fort{radau}, \fort{ntheta=2}, \fort{nphi=4}; \fort{linear} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass rays & \fort{lobatto}, \fort{ntheta=4}, \fort{nphi=4}; \fort{quadratic} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass scattering & none (\fort{maxiter=0}) & \fort{maxiter} & \ref{sec:passes}\\
