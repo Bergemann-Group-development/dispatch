@@ -2010,7 +2010,7 @@ MODULE atom_mod
         ic = findloc(self%ion, j+1, 1)
         cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         !endif
-        call line%prepare_Stark(line%gstk_in, self%ion(line%i), cnt_ev)
+        call line%prepare_Stark(line%gstk_in, self%ion(line%i), cnt_ev, is_mol=is_molecule)
         call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4, is_mol=is_molecule)
       endif
     end do

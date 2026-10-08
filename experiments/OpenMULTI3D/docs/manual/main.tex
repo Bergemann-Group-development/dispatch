@@ -1234,7 +1234,7 @@ An NLTE run iterates until the largest relative population change falls below \f
 \begin{description}
     \item[Default.] Each line's broadening recipe follows from the values of its line-list parameters; hydrogen lines use tabulated Stark profiles and self-broadening.
     \item[Change when] the sensitivity to one broadening mechanism is to be tested.
-    \item[Keys.] the broadening columns of the line list; \fort{disable_rad}, \fort{disable_stk}, \fort{disable_vdw}, \fort{hydrogen_vcs_table} and \fort{hydrogen_BPO} in \fort{&composition_params} (Sec.~\ref{nl:comp}).
+    \item[Keys.] the broadening columns of the line list; \fort{disable_rad}, \fort{disable_stk}, \fort{disable_vdw}, \fort{molecule_damping_estimates}, \fort{hydrogen_vcs_table} and \fort{hydrogen_BPO} in \fort{&composition_params} (Sec.~\ref{nl:comp}).
 \end{description}
 
 The three broadening parameters of a line list, \fort{grad}, \fort{gvdw} and \fort{gstk}, written $\gamma_\mathrm{rad}$, $\gamma_\mathrm{vdw}$ and $\gamma_\mathrm{stk}$ below, select a recipe by their value (table below), so line lists from different sources can be combined without conversion. The widths $\Gamma$ are full widths at half maximum in angular frequency (\si{\radian\per\s}), evaluated in every cell from the local temperature $T$, electron density $N_e$ and neutral hydrogen density $N_\mathrm{H\,I}$. Units are cgs and energies in eV.
@@ -1250,7 +1250,7 @@ The three broadening parameters of a line list, \fort{grad}, \fort{gvdw} and \fo
     \item[f] \citet{Cowley1971}. $n^*=Z[E_\mathrm{H}/(E_\mathrm{ion}-E_j)]^{1/2}$ with $E_\mathrm{H}=\SI{13.6}{eV}$. $c_Z=\SI{2.26e-7}{\radian\centi\metre\cubed\per\s}$ for $Z=1$ and $\SI{5.42e-7}{\radian\centi\metre\cubed\per\s}\,(Z+1)^{-2}$ for $Z>1$ (his value at \SI{e4}{K}, which he recommends at all temperatures). $\Gamma=0$ for $E_j\ge E_\mathrm{ion}$.
 \end{description}
 
-Molecules receive van der Waals broadening only from the cross-section form ($\gamma_\mathrm{vdw}\ge 20$).
+For molecular lines, $E_\mathrm{ion}$ is the molecule's ionisation energy, the sixth header field of \fort{molec_file}, and $Z$ is 1 (2 for a molecular ion). A molecular line gets every van der Waals form of an atomic line, including the Uns\"old estimate of note c for $0<\gamma_\mathrm{vdw}<20$, and the Stark estimate of note f for $\gamma_\mathrm{stk}=0$. A molecule without an ionisation energy gets neither estimate. \fort{molecule_damping_estimates=F} withholds both estimates and the negative $\gamma_\mathrm{vdw}$ forms from all molecular lines, leaving only the cross-section form ($\gamma_\mathrm{vdw}\ge 20$), as the MULTI and Turbospectrum presets do.
 
 \fort{disable_rad}, \fort{disable_stk} and \fort{disable_vdw} switch these contributions off.
 

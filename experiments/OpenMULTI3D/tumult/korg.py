@@ -83,7 +83,7 @@ def convert_broadening(ion, gvdw, grad, gstk):
 
     if gvdw >= 20.0:                       # ABO, packed identically in both codes
         vdw = gvdw
-    elif is_mol:                         # HOP applies no Unsold to molecules
+    elif is_mol and gvdw > 0.0:          # HOP's molecular Unsold has no Korg form
         vdw = 0.0
     elif gvdw < -20.0:                     # recipe c6 SIU: gvdw is log10(C6)
         vdw = math.log10(17.0) + 0.4 * gvdw + 0.3 * math.log10(vbar2(1e4, awgt))
