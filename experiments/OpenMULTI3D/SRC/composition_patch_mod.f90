@@ -407,7 +407,6 @@ SUBROUTINE create_rt_slabs (self)
     end do
   endif
 
-  ! explicit allocation: the optimized builds use -assume norealloc_lhs
   allocate(groups, source=self%slab_groups())
   do i=1, size(groups)
     call self%create_sub_patches(groups(i)%nu, groups(i)%mu, groups(i)%sp, groups(i)%atoms)
@@ -563,7 +562,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
     do n=nu(1), nu(2)
       allocate(rt_patch)
       call rt_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atoms=atoms)
-      ! explicit reallocation: the optimized builds use -assume norealloc_lhs
       allocate(grown, source=[self%rt_slabs, rt_patch_ptr_t(rt_patch)])
       call move_alloc(grown, self%rt_slabs)
     end do

@@ -846,6 +846,9 @@ FUNCTION average (self, idx, time)
       l = task%li
       u = l + m - 1
       call task%time_interval (task, time, jt, pt)
+      if (allocated(buffer)) then
+        if (any(shape(buffer) /= m)) deallocate (buffer)
+      end if
       if (.not.allocated(buffer)) &
         allocate (buffer(m(1),m(2),m(3)))
       buffer = task%mem(l(1):u(1),l(2):u(2),l(3):u(3),idx,jt(1),1)*pt(1) &

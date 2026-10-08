@@ -109,6 +109,14 @@ build, `python -m pytest tests/<relevant_test>.py` for selected tests and
 `python -m TumultStudio` for the GUI (`bokeh serve --show TumultStudio` without its landing page). Numerical tests may require
 input data and compiled libraries.
 
+All builds disable reallocation on assignment: `-assume norealloc_lhs` for
+`ifort` and `ifx`, `-fno-realloc-lhs` for gfortran. The setting stays. An
+assignment to an allocatable array then neither allocates nor resizes it.
+Allocate before assigning (`allocate(a, source=...)`, or `move_alloc` to
+resize). Code written this way needs no comment saying why. gfortran gives
+`allocate(a, source=b(idx))` with a vector subscript `idx` a lower bound of 0;
+allocate with explicit bounds and assign instead.
+
 Use relative paths or user configuration for machine-dependent locations.
 Keep local settings and large datasets out of version control. Check ignore
 rules when adding source files: the parent repository ignores many new files

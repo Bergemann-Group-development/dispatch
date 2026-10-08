@@ -89,8 +89,6 @@ SUBROUTINE init_rt_columns (task_list)
   integer :: i, j, k, tmp
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_column_mod%init_rt_columns')
-  ! comps, slabs and member are reallocated explicitly: the optimized builds use
-  ! -assume norealloc_lhs
   allocate(comps(0))
   link => task_list%head
   do while (associated(link))

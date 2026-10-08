@@ -947,7 +947,7 @@ contains
       if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
         open(newunit=lunit, file=trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt', form='formatted')
         write(lunit, '(A)') '# Level Energies (eV) + 100*Ionization Stage'
-        allocate(ev_key, source=atom%ev_keys())   ! explicit: the build assumes norealloc_lhs
+        allocate(ev_key, source=atom%ev_keys())
         do l=1, atom%nlevel
           write(lunit, '(F16.6)') ev_key(l)
         end do

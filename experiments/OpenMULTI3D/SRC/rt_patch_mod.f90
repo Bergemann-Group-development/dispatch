@@ -1213,6 +1213,7 @@ contains
     ! many patches that window is split into; unallocated, window_lam is absent.
     if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
       i_seg = output_patch_window(self%sp, self%i_nu, n_windows_out)
+      allocate(window_lam(2))
       window_lam = self%sp%lam([self%sp%segment_first(i_seg), self%sp%segment_last(i_seg)])
     endif
     use_linelist = comp%ll_initialised .and. rtp%include_linelist .and. .not. rtp%sample_linelist

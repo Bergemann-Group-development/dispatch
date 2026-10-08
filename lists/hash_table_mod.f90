@@ -298,7 +298,7 @@ SUBROUTINE set_ptr (htable, key, val)
      ! Bucket is empty, simply insert value       
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value => val
-     htable%data(ibucket)%key = key
+     htable%data(ibucket)%key = key(1:htable%ndim)
      htable%nfree = htable%nfree - 1
   !-----------------------------------------------------------------------------
   ! Bucket is not empty, walk through linked list
@@ -326,7 +326,7 @@ SUBROUTINE set_ptr (htable, key, val)
      ibucket = htable%head_free
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value => val
-     htable%data(ibucket)%key = key
+     htable%data(ibucket)%key = key(1:htable%ndim)
      !--------------------------------------------------------------------------
      ! remove bucket from head of free linked list
      !--------------------------------------------------------------------------
