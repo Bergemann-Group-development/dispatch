@@ -235,12 +235,14 @@ To \dots & read\\
 learn the terms of stellar spectroscopy and of the code & Sec.~\ref{sec:concepts}\\
 install the code and compute a first NLTE line & Sec.~\ref{sec:start}, \ref{sec:quick}\\
 compute a spectrum or departure coefficients from a namelist & Sec.~\ref{sec:recipes}\\
-do the same from Python & Sec.~\ref{sec:primer}, then the recipes that follow it\\
-NLTE corrections or abundances for a star & Sec.~\ref{sec:concepts}, \ref{sec:primer}, \ref{sec:abundrecipe}, \ref{sec:checking}\\
+read and plot the results of a run & Sec.~\ref{sec:python}\\
+NLTE corrections or abundances for a star & Sec.~\ref{sec:concepts}, \ref{sec:abundrecipe}, \ref{sec:checking}\\
 size a run, or run it on a cluster & Sec.~\ref{sec:resources}\\
 work interactively & Sec.~\ref{sec:studio}\\
 judge whether a run can be trusted & Sec.~\ref{sec:checking}\\
-follow an NLTE analysis from atom to abundance, or find where a line forms & Sec.~\ref{sec:example}\\
+follow an NLTE analysis from atom to abundance & Sec.~\ref{sec:example}\\
+find where a line forms & Sec.~\ref{sec:cntrbf}\\
+script grids of syntheses, fits and corrections in Python & Sec.~\ref{sec:pyworkflows}\\
 see every default, or change the physics or numerics & Part~III, from Sec.~\ref{sec:defaults}\\
 look up a key, file format or console message & Part~IV\\
 \bottomrule
@@ -250,12 +252,12 @@ look up a key, file format or console message & Part~IV\\
 \subsection*{Three ways to run}
 
 \begin{itemize}
-    \item \textbf{TumultStudio} starts syntheses, abundance fits and NLTE corrections from a graphical interface and shows their progress (Sec.~\ref{sec:studio}).
-    \item \textbf{Python workflows} in \Code{tumult.synthesis} describe a calculation as a \Code{SynthRequest} (atmosphere, stellar parameters, windows, model atoms) and write the namelists, prune the line list and cache the runs (Sec.~\ref{sec:primer}). TumultStudio uses the same layer.
     \item \textbf{\File{dispatch.x} with a namelist} gives full control over every setting. The other two ways produce such namelists, built from the presets of Sec.~\ref{sec:presets}, so the namelist keys explain the options of all three.
+    \item \textbf{TumultStudio} starts syntheses, abundance fits and NLTE corrections from a graphical interface and shows their progress (Sec.~\ref{sec:studio}).
+    \item \textbf{Python workflows} in \Code{tumult} script the same calculations as TumultStudio: they describe a calculation as a \Code{SynthRequest} (atmosphere, stellar parameters, windows, model atoms), write the namelists, prune the line list and cache the runs (Sec.~\ref{sec:pyworkflows}).
 \end{itemize}
 
-To learn the code, start with the namelist of Sec.~\ref{sec:quick} and read its result in Python. Move to the Python workflows or TumultStudio for grids of syntheses, abundance fits and NLTE corrections, which manage the namelists and runs for you.
+To learn the code, start with the namelist of Sec.~\ref{sec:quick} and read its result in Python (Sec.~\ref{sec:python}). Move to TumultStudio, or to the Python workflows for scripted analyses, for grids of syntheses, abundance fits and NLTE corrections, which manage the namelists and runs for you.
 
 \subsection*{Conventions in this manual}
 
@@ -356,19 +358,19 @@ python -m ipykernel install --user --name openmulti3d
 
 \subsection{Input data}\label{sec:inputdata}
 
-The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data, line masks and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:python}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
+The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data and a master line list. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:studio}) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \input{tabs/input_data}
 
-The first three datasets are fetched with
+The datasets the examples of this manual use are fetched with
 \begin{minted}{bash}
-python -m tumult.synthesis.input_data fetch linelists atoms absmet
+python -m tumult.synthesis.input_data fetch linelists atoms absmet linemasks kpno
 \end{minted}
 and the grids with
 \begin{minted}{bash}
 python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
 \end{minted}
-(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The first three datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code reads it from (\File{input/linelists/master\_linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}). \Code{list} shows the files, \Code{--file NAME} selects single files and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
+(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The \Code{input\_data} datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder the code and the examples of this manual read it from (\File{input/linelists/master\_linelists/}, \File{input/linelists/}, \File{input/atoms/public/}, \File{input/absmet\_files/}, \File{input/linemasks/}, \File{input/windows/}, \File{input/spectra/}, \File{input/spectra/IAG/}, \File{input/spectra/GBSv3/}). \Code{list} shows the files, \Code{--file NAME} selects single files (\Code{Mg/mg-lmask.txt} for a line mask) and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
 
 
 \subsection{Updating}
@@ -385,7 +387,7 @@ If local changes conflict, commit them or use \Code{git stash} before pulling.
 \section{A First Run}\label{sec:quick}
 %%%%%%%%%%%%%%%%%%%%%%
 
-\File{demo.nml}, in the experiment directory, computes the solar Ba\,\textsc{ii} 4554\,{\AA} line with a six-level Ba atom on a 1D MARCS model, in LTE and NLTE. Everything it reads is part of the repository, so it needs no download. The atmosphere file name is shortened here:
+\File{demo.nml}, in the experiment directory, computes the solar Ba\,\textsc{ii} 4554.0\,{\AA} line with a six-level Ba atom on a 1D MARCS model, in LTE and NLTE. Everything it reads is part of the repository, so it needs no download. The atmosphere file name is shortened here:
 
 \begin{minted}{Fortran}
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
@@ -466,52 +468,31 @@ Unset keys take their defaults, which suit a first look; Sec.~\ref{sec:defaults}
     \item \File{demo.nml} converges only to $10^{-2}$; Sec.~\ref{sec:checking} shows how to test convergence.
 \end{itemize}
 
-\manualpart{Calculations}{Recipes for the common calculations, the checks every run needs, the Python interface and the resources a run takes.}
+\manualpart{Calculations}{Recipes for the common calculations, the checks every run needs, reading and plotting the results, a worked example, the resources a run takes and the Python workflows.}
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Common Calculations}\label{sec:recipes}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Each recipe states when to use it, the namelist, the matching preset or Python call, and what to watch out for. A \emph{preset} is a namelist file holding the settings of one kind of calculation; presets combine, and the Python workflows build their namelists from them (Sec.~\ref{sec:presets}).
+Each recipe states when to use it, the namelist, the matching preset and what to watch out for. A \emph{preset} is a namelist file holding the settings of one kind of calculation; presets combine, and the Python workflows build their namelists from them (Sec.~\ref{sec:presets}).
 
 \begin{center}
-\begin{tblr}{colspec={X[l]Q[r]Q[l]Q[l]}, width=\linewidth, row{even}={bg=rowshade}}
+\begin{tblr}{colspec={X[l]Q[r]Q[l]}, width=\linewidth, row{even}={bg=rowshade}}
 \toprule
-Goal & Recipe & Preset & Python\\
+Goal & Recipe & Preset\\
 \midrule
-LTE spectrum & \ref{sec:recLTE} & \File{1d} or \File{3d} & \py{synthesis.synthesize}\\
-Line list from another code & \ref{sec:prepll} & -- & {\py{LineList.from_file},\\\py{tumult.prune}}\\
-NLTE spectrum in one run & \ref{sec:recNLTE} & \File{nlte} & --\\
-Departures for many spectra & \ref{sec:twostage} & {\File{departures},\\\File{read\_departures}} & \py{departures.solve}\\
-Abundances, NLTE corrections & \ref{sec:abundrecipe} & set by the workflow & {\py{abundance.fit},\\\py{abundance.nlte_corrections}}\\
-3D snapshot & \ref{sec:rec3d} & \File{3d} & \py{Snapshot}\\
+LTE spectrum & \ref{sec:recLTE} & \File{1d} or \File{3d}\\
+Line list from another code & \ref{sec:prepll} & --\\
+NLTE spectrum in one run & \ref{sec:recNLTE} & \File{nlte}\\
+Departures for many spectra & \ref{sec:twostage} & {\File{departures},\\\File{read\_departures}}\\
+Abundances, NLTE corrections & \ref{sec:abundrecipe} & set by the workflow\\
+3D snapshot & \ref{sec:rec3d} & \File{3d}\\
 \bottomrule
 \end{tblr}
 \end{center}
 
-\subsection{Requests in Python}\label{sec:primer}
+TumultStudio and the Python workflows (Sec.~\ref{sec:pyworkflows}) run the same recipes and build their namelists from these presets.
 
-The Python workflows describe a calculation as a \Code{SynthRequest}: a configuration (line list, abundance table, resolving power, cache directory), an atmosphere, stellar parameters and wavelength windows. A workflow takes the request, writes the namelists from the presets, prunes the line list to the windows, runs \File{dispatch.x} and returns spectra. This example synthesises the Ba\,\textsc{ii} 4554\,{\AA} region in LTE and NLTE:
-
-\begin{minted}{Python}
-from tumult import departures, synthesis
-from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
-
-config = SynthConfig(root=".", cache="synth",
-                     linelist="input/linelists/master_line.txt",
-                     abundances="input/abund/abund_magg22",
-                     absmet="input/absmet_files",
-                     R_sampling=200_000)
-request = SynthRequest(config=config, atmosphere=Atmosphere("input/atmos/p5777_....mod"),
-                       star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
-                       windows=(4550, 4558))
-lte = synthesis.synthesize(request)
-nlte = synthesis.synthesize(request.update(
-    departures=departures.request(request, atom="input/atoms/atom.ba06")))
-nlte.spectrum.plot()
-\end{minted}
-
-\py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}). The recipes below give the Python call next to each namelist.
 \subsection{Compute an LTE spectrum}\label{sec:recLTE}
 
 \paragraph{Use when} no model atom is needed, for example for blends, molecular bands or a reference LTE spectrum.
@@ -524,8 +505,6 @@ nlte.spectrum.plot()
 &linelist_params     linelist_file='./input/linelists/master_line.txt' /
 &spectrum_params     R_sampling=5e5 aa_blue=4840 aa_red=4880 /
 \end{minted}
-
-\paragraph{Python.} \py{synthesis.synthesize(request)} on a request without departures (Sec.~\ref{sec:primer}).
 
 \paragraph{Watch out.} A grid is given by \fort{daa}, \fort{nnu} or a constant sampling resolving power \fort{R_sampling} (step $\lambda/R_\mathrm{sampling}$); several windows go in a \fort{window_file} (Sec.~\ref{sec:windowfiles}). Wavelengths are air wavelengths.
 
@@ -576,40 +555,21 @@ nlte.spectrum.plot()
 &spectrum_params     window_file='...' R_sampling=2e5 /
 \end{minted}
 
-\paragraph{Python.} \py{departures.solve(request, atom=...)} runs stage 1 and returns the solved departures; \py{request.update(departures=solved, windows=...)} attaches them to later syntheses, which then run only the output pass.
-
 \paragraph{Watch out.} The saved atmosphere is frozen: temperature, electron density, density and microturbulence come from the folder, and \fort{vmic} in the namelist is not applied. Give both stages the same composition, since stage 2 takes the abundances from its own namelist. \fort{absmet_file} matters only in stage 1: stage 2 skips the iteration pass and takes its metal lines from the line list. A stage-1 job that ran out of time during the iterations has saved no departures for the patches still iterating; it is usable when \File{save/pop\_<atom>\_meta.txt} has as many rows as \File{save/atmos\_meta.txt}. Departures of several atoms from separate runs can be combined in one folder (Sec.~\ref{sec:output}).
 
 \subsection{Fit abundances and NLTE corrections}\label{sec:abundrecipe}
 
 \paragraph{Use when} abundances are to be fitted to an observed spectrum, or NLTE abundance corrections computed for the lines of a model atom.
 
-\paragraph{Python.} These are workflows; each takes a \Code{SynthRequest} and returns a result with one row per line.
+\paragraph{How.} These calculations are workflows, which manage the abundance ladders, the line masks and the runs. Start them from TumultStudio (Sec.~\ref{sec:studio}) or from Python (Sec.~\ref{sec:pyabund}). Sec.~\ref{sec:example} computes the curves of growth of two lines and their NLTE corrections by hand, which shows what the workflows do.
 
-\begin{minted}{Python}
-from tumult import abundance, departures
-from tumult.synthesis import AtmosphereGrid, Star
-request = request.update(atmosphere=AtmosphereGrid("input/atmos/MARCS"),
-                         star=Star(teff=4900, logg=2.7, feh=-1.0, vmic=1.5))
-nlte = request.update(departures=departures.request(request, atom="input/atoms/atom.mg86g"))
-abnd = abundance.fit(nlte, target="observed.txt", line_mask="input/linemasks/Mg/mg-lmask.txt",
-                     method="cog")
-corr = abundance.nlte_corrections(nlte, method="cog")
-\end{minted}
-
-\Code{AtmosphereGrid} interpolates the MARCS grid (Sec.~\ref{sec:inputdata}) at the request's \Code{Star}. \py{abundance.fit} measures the observed spectrum (\py{target}, a file or a \Code{Spectrum}) in the windows of the line mask, a file naming its element (\File{input/linemasks/}), and inverts the equivalent widths on curves of growth (\py{method="cog"}) or fits the profiles (\py{method="profile"}). \py{abundance.nlte_corrections} gives $A(\mathrm{NLTE})-A(\mathrm{LTE})$ for every line of the atom stronger than \py{ew_min} (5\,m\AA) in an LTE reference synthesis, bracketing each line's NLTE curve of growth until it reproduces the reference equivalent width. \py{sparams.ionbalance} finds stellar parameters by ionisation balance.
-
-\paragraph{Namelist.} A ladder of abundances in one process is set with \Code{\&output\_params\%set\_file}, which lists the abundance offsets of each output set (Sec.~\ref{sec:windowfiles}).
-
-\paragraph{Watch out.} \py{departures.request} defers the solution: every abundance step of a curve of growth is an equilibrium solution of its own, which sets the cost of NLTE fits and corrections. The checks of Sec.~\ref{sec:checking} apply to every rung. \File{docs/FAQ.md} has worked examples.
+\paragraph{Watch out.} Every abundance step of an NLTE curve of growth solves its own statistical equilibrium, which sets the cost of NLTE fits and corrections. The checks of Sec.~\ref{sec:checking} apply to every rung. \File{docs/FAQ.md} has worked examples.
 
 \subsection{Synthesise a 3D snapshot}\label{sec:rec3d}
 
 \paragraph{Use when} the atmosphere is a hydrodynamical snapshot.
 
 \paragraph{Preset.} \File{3d}: a $30\times30\times96$ mesh, tabulated background and line opacities in both passes, an atmosphere rotated for each ray and exit planes on disk. Sec.~\ref{sec:3d} explains these choices.
-
-\paragraph{Python.} A \Code{Snapshot} atmosphere names the file, its reader and the mesh, for example \py{Snapshot(path, "M3DIS", (30, 30, 96), preparation=AtmosphereGrid("input/atmos/MARCS"))}. In NLTE the departures are solved once for the cube and each window is then a formal solution on them.
 
 \paragraph{Watch out.} A 3D run needs far more memory than a 1D run (Sec.~\ref{sec:resources}) and usually a cluster node. The 3D readers supply no microturbulence, so \fort{vmic} has no effect. Spectra of several snapshots are averaged with \Code{tm.combine} (Sec.~\ref{sec:python}).
 
@@ -688,10 +648,10 @@ Convergence alone does not make an NLTE spectrum trustworthy. Check also:
 \end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%
-\section{Python and TumultStudio} \label{sec:python}
+\section{Reading and Plotting Results} \label{sec:python}
 %%%%%%%%%%%%%%%%%%%%%%
 
-All Python entry points live in the package \Code{tumult}. The examples import it as \py{tm}. Activate the virtual environment first; scripts and notebooks may live anywhere. There are two levels: \Code{tm.read} and \Code{tm.launch} work on single runs of \File{dispatch.x}, and the workflow modules (\Code{tumult.synthesis}, \Code{tumult.departures}, \Code{tumult.abundance}, \Code{tumult.sparams}) describe a calculation as a \Code{SynthRequest} and run the native runs it needs.
+The results of a run are read and plotted with the Python package \Code{tumult}, imported as \py{tm} in the examples. Activate the virtual environment first; scripts and notebooks may live anywhere. The workflow modules of the same package, which run whole calculations, are described in Sec.~\ref{sec:pyworkflows}.
 
 \subsection{Reading a run}
 
@@ -728,24 +688,31 @@ weq = line.crop().get_weq(target_unit=u.mAA)
 
 The options of \Code{crop} are listed in Sec.~\ref{sec:pyref}.
 
-Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE populations), \py{run.get_depart(level, atom)} (departure coefficient against $\log\tau_{500}$) and \py{run.plot_depart(...)}, the Grotrian diagram \py{run.atoms[0].plot_grotrian()} and the atmosphere structure through \py{run.atmos} (slices, horizontal means, histograms; \File{tumult/atmos.py}). Contribution functions (\py{run.plot_cntrbf}, Sec.~\ref{sec:cntrbf}), per-ray profiles (\py{run.plot_resolved}) and centre-to-limb plots need the corresponding \fort{save_*} output. Sec.~\ref{sec:example} uses these methods in a complete analysis.
-
+Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE populations), \py{run.get_depart(level, atom)} (departure coefficient against $\log\tau_{500}$), \py{run.get_cntrbf(...)} (contribution functions, Sec.~\ref{sec:cntrbf}) and the atmosphere on the mesh of the run, \py{run.atmos}. \py{tm.read_atom(path)} reads a model atom without a run.
 
 In runs with several atoms, pass the atom's id to \py{run.get_depart} (for example \py{'O'}). Sec.~\ref{sec:pyref} describes the spectrum sets of a run.
 
-\subsection{Launching runs}
+\subsection{Plotting}\label{sec:plotting}
 
-\py{tm.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
+The plotting methods below draw into the current matplotlib axes and pass further keywords (\py{color}, \py{label}, \dots) to matplotlib, so a figure combines them with plain matplotlib calls. \File{docs/manual/figs/science\_case.py} draws all figures of the manual this way.
 
-\begin{minted}{Python}
-folder, ran = tm.launch(
-    "ba_test",
-    default=[tm.preset("1d"), tm.preset("nlte")],
-    nml_settings={"atom_params": {"abundance": 2.41}},
-)
-\end{minted}
-
-It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tm.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tm.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
+\begin{center}
+\begin{tblr}{colspec={Q[l]X[l]Q[l]Q[r]}, width=\linewidth, row{even}={bg=rowshade}}
+\toprule
+Method & Draws & Needs & Example\\
+\midrule
+\py{Spectrum.plot} & a spectrum from \py{crop} or an observation & -- & Fig.~\ref{fig:mg_spectra}\\
+\py{run.plot_line_labels} & the species of the strongest lines above the spectrum & line list & Fig.~\ref{fig:mg_lines}\\
+\py{run.plot_depart} & a departure coefficient against $\log\tau_{500}$ & NLTE run & Fig.~\ref{fig:mg_depart}\\
+\py{run.plot_cog_corr} & the NLTE correction of a line on the LTE curve of growth & abundance ladder & Fig.~\ref{fig:mg_cog_corr}\\
+\py{atom.plot_grotrian} & the levels and radiative transitions of an atom & atom & Fig.~\ref{fig:mg_grotrian}\\
+{\py{run.plot_cntrbf},\\\py{run.plot_cntrbf_map}} & contribution functions & \fort{save_cntrbf} & Fig.~\ref{fig:mg_cntrbf}\\
+\py{line.plot_clv} & the equivalent width against $\mu$ & -- & Fig.~\ref{fig:mg_clv}\\
+\py{run.atmos.plot_*} & slices, means and histograms of the atmosphere & -- & Fig.~\ref{fig:sun3d}\\
+\py{run.plot_resolved} & the intensity of each column at one wavelength & \fort{save_resolved} & --\\
+\bottomrule
+\end{tblr}
+\end{center}
 
 \subsection{TumultStudio}\label{sec:studio}
 
@@ -756,127 +723,147 @@ python -m TumultStudio --port 5010 --no-show
 
 TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences download and configure grids, line lists, model atoms and opacity tables, and manage reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}. \File{docs/GUIWorkflow.md} describes the intended workflow.
 
-The workflows of TumultStudio and of the Python API run in a per-user daemon. Restart it after editing operation code; its log is \File{/tmp/tumult-<uid>/daemon.log}.
+Its syntheses, fits and corrections are the workflows of Sec.~\ref{sec:pyworkflows}.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{A Worked Example: Magnesium in the Sun}\label{sec:example}
 %%%%%%%%%%%%%%%%%%%%%%
 
-This section follows a typical NLTE analysis from the model atom to an abundance: the Mg\,\textsc{i} lines at 5172, 5528 and 5711\,{\AA} in the solar flux spectrum, computed with the 86-level atom \File{atom.mg86g} on the solar MARCS model. \File{docs/manual/figs/science\_case.py} runs every step and draws the figures of this section with the plotting methods of \Code{tumult}; the code below is taken from it. The eight 1D runs take about 15\,s on a laptop. The observed spectrum is the KPNO solar flux atlas \citep{Kurucz2005}, which is not part of the repository; the script takes its path as \Code{--atlas} and omits the observation without it.
+This section follows a typical NLTE analysis from the model atom to an abundance: the Mg\,\textsc{i} lines at 5172.7, 5528.4 and 5711.1\,{\AA} in the solar flux spectrum, computed with the 86-level atom \File{atom.mg86g} on the solar MARCS model. \File{docs/manual/figs/science\_case.py} runs every step and draws the figures of this section with the plotting methods of \Code{tumult} (Sec.~\ref{sec:plotting}); the code below is taken from it. The eight 1D runs take about 15\,s on a laptop. The observed spectrum is the KPNO solar flux atlas \citep{Kurucz2005} from 4000 to 9000\,{\AA}, in air wavelengths and normalised to the continuum, in \File{input/spectra/KPNO\_4000\_9000.txt} (dataset \Code{kpno}, Sec.~\ref{sec:inputdata}).
 
 \subsection{The runs}
 
-All runs share one set of namelist settings: the \File{1d} and \File{nlte} presets, the solar metal-opacity table for the line-blanketed background, the master line list for the blends, and a \fort{window_file} with three windows around the lines. The reference run also saves the contribution functions (Sec.~\ref{sec:cntrbf}).
+All runs share one set of namelist settings: the \File{1d} and \File{nlte} presets, the solar metal-opacity table for the line-blanketed background, the master line list for the blends, and a \fort{window_file} with three windows around the lines, 5170.2--5175.2, 5527.4--5529.4 and 5710.1--5712.1\,{\AA}. \py{launch} passes them to \py{tm.launch} (Sec.~\ref{sec:launching}) with the two settings that vary between the runs, the Mg abundance and whether the contribution functions are saved (Sec.~\ref{sec:cntrbf}).
 
 \begin{minted}{Python}
-settings = {
-    "io_params": {"datadir": "."},
-    "atmos_params": {"atmos_file": "./input/atmos/p5777_g+4.4_m0.0_t01_st_....mod"},
-    "atom_params": {"atom_file": "./input/atoms/atom.mg86g", "abundance": 7.58},
-    "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
-    "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
-    "spectrum_params": {"window_file": "./data/manual/mg_windows.txt", "R_sampling": 5e5},
-    "output_params": {"save_cntrbf": True},
-}
-folder, _ = tm.launch("data/manual/mg_sun", nml_settings=settings,
-                      default=[tm.preset("1d"), tm.preset("nlte")])
-run = tm.read(folder)
+import numpy as np
+import tumult as tm
+
+def launch(name, abundance, cntrbf=False):
+    cfg = {
+        "io_params": {"datadir": "."},
+        "atmos_params": {"atmos_file": "./input/atmos/p5777_g+4.4_m0.0_t01_st_....mod"},
+        "atom_params": {"atom_file": "./input/atoms/atom.mg86g", "abundance": abundance},
+        "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
+        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
+        "spectrum_params": {"window_file": "./data/manual/mg_windows.txt",
+                            "R_sampling": 5e5},
+        "output_params": {"save_cntrbf": cntrbf},
+    }
+    folder, _ = tm.launch(f"data/manual/{name}", nml_settings=cfg,
+                          default=[tm.preset("1d"), tm.preset("nlte")])
+    return tm.read(folder)
+
+run = launch("mg_sun", 7.58, cntrbf=True)
+abnds = np.round(np.arange(7.28, 7.89, 0.1), 2)
+ladder = [launch(f"mg_sun_A{round(a*100)}", a) for a in abnds]
+obs = tm.load_spectrum("input/spectra/KPNO_4000_9000.txt")
 \end{minted}
 
-For the curves of growth the script repeats the run for $A(\mathrm{Mg})=7.28$ to $7.88$ in steps of 0.1\,dex, without \fort{save_cntrbf}. Each abundance is a run of its own, so each solves its own statistical equilibrium; a \fort{set_file} ladder (Sec.~\ref{sec:windowfiles}) would apply the departures of the reference abundance to all rungs.
+\py{run} is the reference run at the solar abundance $A(\mathrm{Mg})=7.58$. \py{ladder} holds the runs for the curves of growth, from 7.28 to 7.88 in steps of 0.1\,dex. Each abundance is a run of its own, so each solves its own statistical equilibrium. \py{obs} is the observed spectrum as a \Code{Spectrum}, with the same cropping and measuring methods as a run's spectrum.
 
 \subsection{Departure coefficients}
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_atom.pdf}
-    \caption{Top: the Mg\,\textsc{i} levels of \texttt{atom.mg86g} by term, with their radiative transitions; the dashed line is the ionisation limit. Bottom: departure coefficients of the levels of the three lines, the Mg\,\textsc{i} ground state and the Mg\,\textsc{ii} ground state.}\label{fig:mg_atom}
+    \includegraphics[width=\linewidth]{figs/mg_depart.pdf}
+    \caption{Departure coefficients of the levels of the three lines, the Mg\,\textsc{i} ground state and the Mg\,\textsc{ii} ground state.}\label{fig:mg_depart}
 \end{figure}
 
 \begin{minted}{Python}
-run.atoms[0].plot_grotrian(ion=1)
-for level in (0, 2, 4, 5, 12, 13, 85):
-    run.plot_depart(level)
+for lvl in (0, 2, 4, 5, 12, 13, 85):
+    run.plot_depart(lvl)
 \end{minted}
 
-\py{plot_grotrian(ion=1)} draws the levels of the first ion and its continuum, \py{plot_depart(i)} the departure coefficient of level $i$ (counted from zero, in the order of the atom file) against $\log\tau_{500}$. Fig.~\ref{fig:mg_atom} shows the pattern of Mg\,\textsc{i} in the Sun. Mg\,\textsc{ii}, the majority species, stays in LTE. Below $\log\tau_{500}\approx-2$ the excited levels fall below LTE, and the upper levels of the lines fall faster than the lower ones: at $\log\tau_{500}=-4$, $b=0.86$ for 3p\,$^1$P$^\circ$, the lower level of 5528 and 5711\,{\AA}, but $0.34$ and $0.41$ for their upper levels 4d\,$^1$D and 5s\,$^1$S. The line source function $S_\ell/B_\nu\approx b_\mathrm{u}/b_\mathrm{l}$ (Wien limit) is then below the Planck function where the cores form, and NLTE deepens the cores.
+\py{plot_depart(i)} draws the departure coefficient of level $i$ (counted from zero, in the order of the atom file) against $\log\tau_{500}$; the Grotrian diagram of Fig.~\ref{fig:mg_grotrian} shows these levels in the atom. Fig.~\ref{fig:mg_depart} shows the pattern of Mg\,\textsc{i} in the Sun. Mg\,\textsc{ii}, the majority species, stays in LTE. Below $\log\tau_{500}\approx-2$ the excited levels fall below LTE, and the upper levels of the lines fall faster than the lower ones: at $\log\tau_{500}=-4$, $b=0.86$ for 3p\,$^1$P$^\circ$, the lower level of 5528.4 and 5711.1\,{\AA}, but $0.34$ and $0.41$ for their upper levels 4d\,$^1$D and 5s\,$^1$S. The line source function $S_\ell/B_\nu\approx b_\mathrm{u}/b_\mathrm{l}$ (Wien limit) is then below the Planck function where the cores form, and NLTE deepens the cores.
 
 \subsection{Spectra}
+
+A synthesis is compared with the atlas after broadening by the rotation and the macroturbulence of the Sun. The two broadenings have similar profiles and cannot be separated on one line, so the rotation is fixed at $v\sin i=1.8$\,\si{\km\per\s} and the radial-tangential macroturbulence $\zeta_\mathrm{RT}$ and a wavelength shift are fitted to 5711.1\,{\AA}, a line that forms in the layers the model describes (Sec.~\ref{sec:cntrbf}).
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\linewidth]{figs/mg_lines.pdf}
+    \caption{Left: the NLTE profile of 5711.1\,{\AA} fitted to the KPNO atlas ($\zeta_\mathrm{RT}=2.9$\,\si{\km\per\s}, shift 0.2\,\si{\km\per\s}). Right: the window of Mg\,b$_2$ with the species of the strongest lines of the line list.}\label{fig:mg_lines}
+\end{figure}
+
+\begin{minted}{Python}
+win = (5710.6, 5711.6)
+best, fitted = run.fit(obs.crop(window=win), fit=["zeta_rt", "vshift"], vrot=1.8)
+fitted.plot(label="NLTE fit")
+broadening = dict(vrot=1.8, **best)
+
+win = (5171.2, 5174.2)
+obs.crop(window=win).plot(color="lightgrey", marker=".", ls="none", label="KPNO atlas")
+run.crop(window=win, **broadening).plot(label="NLTE")
+run.plot_line_labels(show_atom=False, ntop=10)
+\end{minted}
+
+\py{run.fit} varies the parameters named in \py{fit}, passes the others to \py{crop}, and returns the best-fit parameters and the fitted spectrum on the wavelengths of the observation. The fit gives $\zeta_\mathrm{RT}=2.9$\,\si{\km\per\s} and a shift of 0.2\,\si{\km\per\s} (Fig.~\ref{fig:mg_lines}). \py{plot_line_labels} names the \py{ntop} strongest lines of the run's line list inside the current axes, ranked by the line strength of HOP (as many as fit without \py{ntop}); \py{show_atom=False} leaves out the transitions of the model atom, which the line list already contains. The labels identify the blends in the wings of Mg\,b$_2$: Fe\,\textsc{i} at 5171.6\,{\AA} and Ti\,\textsc{i} at 5173.7\,{\AA}.
 
 \begin{figure}[!ht]
     \centering
     \includegraphics[width=\linewidth]{figs/mg_spectra.pdf}
-    \caption{Normalised flux in the three windows: NLTE and LTE syntheses, broadened by $v\sin i=1.8$\,\si{\km\per\s} and $\zeta_\mathrm{RT}=3.5$\,\si{\km\per\s}, and the KPNO atlas.}\label{fig:mg_spectra}
+    \caption{Normalised flux in the three windows: NLTE and LTE syntheses, broadened by $v\sin i=1.8$\,\si{\km\per\s} and the $\zeta_\mathrm{RT}$ and shift fitted in Fig.~\ref{fig:mg_lines}, and the KPNO atlas.}\label{fig:mg_spectra}
 \end{figure}
 
 \begin{minted}{Python}
-atlas = tm.load_spectrum("KPNO_4000_9000.txt")
-window = (5170.2, 5175.2)
-atlas.crop(window=window).plot(label="KPNO atlas")
-run.crop(window=window, LTE=True, vrot=1.8, zeta_rt=3.5).plot(label="LTE")
-run.crop(window=window, vrot=1.8, zeta_rt=3.5).plot(label="NLTE")
+win = (5170.2, 5175.2)
+obs.crop(window=win).plot(color="lightgrey", marker=".", ls="none", label="KPNO atlas")
+run.crop(window=win, LTE=True, **broadening).plot(label="LTE")
+run.crop(window=win, **broadening).plot(label="NLTE")
 \end{minted}
 
-\py{run.crop} normalises by the continuum of the run and convolves with the broadening kernels (Sec.~\ref{sec:pyref}). The broadening values are typical for the solar flux and are not fitted here. In Fig.~\ref{fig:mg_spectra} the 5711\,{\AA} line matches the atlas at the reference abundance; 5528\,{\AA} is too strong, and the core of Mg\,b$_2$ at 5172\,{\AA} is too deep in NLTE (0.05 of the continuum, observed 0.07) and too shallow in LTE (0.12). The contribution functions show why this core cannot be trusted.
-
-\subsection{Contribution functions}\label{sec:cntrbf}
-
-A contribution function tells where in the atmosphere a feature of the spectrum is formed. The code computes the \emph{depression} contribution function. Along a ray with path length $s$ (increasing inwards from the top of the model), the transfer equations of the full spectrum and of the continuum are $\mathrm{d}I/\mathrm{d}s=\chi I-\eta$ and $\mathrm{d}I_\mathrm{c}/\mathrm{d}s=\chi_\mathrm{c}I_\mathrm{c}-\eta_\mathrm{c}$, with total opacity $\chi=\chi_\mathrm{c}+\chi_\ell$ and emissivity $\eta=\eta_\mathrm{c}+\eta_\ell$. Their difference, the depression $D=I_\mathrm{c}-I$, obeys $\mathrm{d}D/\mathrm{d}s=\chi D-(\chi_\ell I_\mathrm{c}-\eta_\ell)$, so that the emergent depression is exactly
-\begin{equation}
-    D(0)=\int_0^\infty \left(\chi_\ell I_\mathrm{c}-\eta_\ell\right) e^{-\tau_\nu}\,\mathrm{d}s
-        =\int C_D\,\mathrm{d}\log\tau_{500},\qquad
-    C_D=\frac{\ln 10\,\tau_{500}}{\mu\,\chi_{500}}\,\chi_\ell\left(I_\mathrm{c}-S_\ell\right)e^{-\tau_\nu},
-\end{equation}
-where $\tau_\nu$ is the optical depth along the ray, $I_\mathrm{c}$ the local continuum intensity in the direction of the ray, $S_\ell=\eta_\ell/\chi_\ell$ the line source function and $\mu$ the cosine of the ray's angle \citep{Magain1986}. $C_D$ is positive where the lines absorb photons of the continuum beam and negative where they emit more than they absorb. Its integral over all depths reproduces the computed depression, which makes it a budget of the line rather than an approximate weighting function. With \fort{depression_cntrbf=F} the code instead saves the intensity contribution function $\eta\,e^{-\tau_\nu}$, whose integral is the emergent intensity.
-
-\paragraph{Computing them.} \Code{\&output\_params\%save\_cntrbf=T} saves, in the output pass, $\chi_\ell I_\mathrm{c}-\eta_\ell$ and the total opacity at every point, wavelength and output ray of the main spectrum set (the NLTE spectrum of an NLTE run). It costs memory of the order of the spectrum times the mesh times the number of rays, so restrict it to the windows of interest. \py{run.get_cntrbf(...)} integrates $\tau_\nu$ along each ray and returns $(\log\tau_{500}, C)$ with $C$ in the units of \py{run.flux} per unit $\log\tau_{500}$, or of \py{run.ie} for a selected \py{imu} or \py{ang}; \py{lam0=} selects the nearest wavelength, \py{xmin}/\py{xmax} or \py{lam0} and \py{dlam} a range, \py{fmean=True} integrates over that range (the contribution function of the equivalent width) and \py{norm=True} scales it to unit area. In a 3D run, \py{gmean=True} averages over surfaces of constant $\tau_{500}$. On the 64-point mesh of the \File{1d} preset the integral of the flux contribution function reproduces $F_\mathrm{c}-F$ to about 1\,\%.
-
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\linewidth]{figs/mg_cntrbf.pdf}
-    \caption{Left: depression contribution function of the flux around Mg\,b$_2$, divided by the continuum flux, so that each column integrates to $1-F/F_\mathrm{c}$. The lines at 5171.6 and 5173.7\,{\AA} are Fe\,\textsc{i} and Ti\,\textsc{i} blends. Right: contribution functions normalised to unit area at the line centre, at three points in the red wing of Mg\,b$_2$ and at the centre of 5711\,{\AA}. The axes end at the top of the model, $\log\tau_{500}=-5.6$.}\label{fig:mg_cntrbf}
-\end{figure}
-
-\begin{minted}{Python}
-run.plot_cntrbf_map(xmin=5171.2, xmax=5174.2)
-for lam0 in (5172.68, 5172.78, 5172.98, 5173.28, 5711.09):
-    run.plot_cntrbf(lam0=lam0, norm=True)
-\end{minted}
-
-\py{plot_cntrbf_map} draws $C_D/F_\mathrm{c}$ over wavelength and depth, \py{plot_cntrbf} the contribution function at one wavelength or integrated over a range. In Fig.~\ref{fig:mg_cntrbf} the formation height of Mg\,b$_2$ climbs steeply towards the core: 0.6\,{\AA} from the centre the depression forms around $\log\tau_{500}=-0.8$, at 0.3\,{\AA} around $-1.2$ and at 0.1\,{\AA} around $-3.2$. The centre forms at the outermost point of the model. A 1D model ends there, and the Sun has a chromosphere above it, so the core of this line constrains neither the abundance nor the NLTE model, and a fit has to exclude it. The weaker 5711\,{\AA} line forms over $\log\tau_{500}\approx-3$ to $-1$, in the layers the model describes and where the departures of Fig.~\ref{fig:mg_atom} are still small.
+\py{run.crop} normalises by the continuum of the run and convolves with the broadening kernels (Sec.~\ref{sec:pyref}). In Fig.~\ref{fig:mg_spectra} the 5711.1\,{\AA} line matches the atlas at the reference abundance; 5528.4\,{\AA} is too strong, and the core of Mg\,b$_2$ at 5172.7\,{\AA} is too deep in NLTE (0.04 of the continuum, observed 0.07) and too shallow in LTE (0.12). The contribution functions of this run (Fig.~\ref{fig:mg_cntrbf}) show that the core forms at the outermost point of the model. A 1D model ends there, and the Sun has a chromosphere above it, so the core of this line constrains neither the abundance nor the NLTE model, and a fit has to exclude it. 5711.1\,{\AA} forms over $\log\tau_{500}\approx-3$ to $-1$, where the departures of Fig.~\ref{fig:mg_depart} are still small.
 
 \subsection{Abundance and NLTE correction}
 
 \begin{figure}[!ht]
     \centering
     \includegraphics[width=\linewidth]{figs/mg_cog.pdf}
-    \caption{Curves of growth in NLTE and LTE, integrated over the windows of the Mg line mask, and the equivalent widths of the KPNO atlas over the same windows. The vertical lines mark the abundances that reproduce them.}\label{fig:mg_cog}
+    \caption{Curves of growth in NLTE and LTE, integrated over the windows of the Mg line mask, and the equivalent widths of the KPNO atlas over the same windows. The dashed lines mark the observed widths and the abundances that reproduce them.}\label{fig:mg_cog}
 \end{figure}
 
 \begin{minted}{Python}
-def ew(spectrum, window):
-    return spectrum.crop(window=window).get_weq(target_unit=u.mAA).value
+from tumult.linemask import parse_linemask_file
 
-window = (5710.8, 5711.4)            # from input/linemasks/Mg/mg-lmask.txt
-nlte = [ew(r.crop(window=window), window) for r in ladder]
-lte = [ew(r.crop(window=window, LTE=True), window) for r in ladder]
-a_nlte = np.interp(ew(atlas, window), nlte, abundances)
+for line in parse_linemask_file("input/linemasks/Mg/mg-lmask.txt"):
+    win = line.fit_window
+    nlte = [r.crop(window=win).measure(profile="trapz").maa for r in ladder]
+    lte = [r.crop(window=win, LTE=True).measure(profile="trapz").maa for r in ladder]
+    ew_obs = obs.measure(win, profile="trapz").maa
+    abnd_nlte = tm.cog_invert(abnds, nlte, ew_obs)["a"]
+    abnd_lte = tm.cog_invert(abnds, lte, ew_obs)["a"]
 \end{minted}
 
-The equivalent width is integrated over the window of the line mask, in the syntheses and in the atlas alike, so blends inside the window enter both. Interpolating the curves of growth at the observed widths (Fig.~\ref{fig:mg_cog}) gives:
+The line mask \File{input/linemasks/Mg/mg-lmask.txt} gives each line a fit window. \py{measure(profile="trapz")} integrates the depression over that window, in the syntheses and in the atlas alike, so blends inside the window enter both. \py{tm.cog_invert} interpolates the curve of growth at the observed width, in reduced equivalent width with a shape-preserving spline, as the abundance workflows do (Fig.~\ref{fig:mg_cog}):
 
 \begin{center}
 \begin{tblr}{colspec={Q[l]Q[r]Q[r]Q[r]Q[r]}, row{even}={bg=rowshade}}
 \toprule
 Line & $W_\mathrm{obs}$ [m\AA] & $A_\mathrm{LTE}$ & $A_\mathrm{NLTE}$ & $\Delta_\mathrm{NLTE}$\\
 \midrule
-5528\,{\AA} & 244.5 & 7.50 & 7.47 & $-0.04$\\
-5711\,{\AA} & 119.6 & 7.59 & 7.58 & $-0.00$\\
+5528.4\,{\AA} & 244.5 & 7.50 & 7.47 & $-0.04$\\
+5711.1\,{\AA} & 119.6 & 7.59 & 7.58 & $-0.00$\\
 \bottomrule
 \end{tblr}
 \end{center}
 
-The NLTE corrections of these lines are small in the Sun, because both form below the layers where the departure coefficients diverge, and the two lines differ by more than their corrections. The difference has other causes. 5528\,{\AA} is a strong line, whose equivalent width also depends on its $\log gf$, on the van der Waals damping and on how much of the wings the window includes; these have to be examined before the line is used. A complete analysis repeats the checks of Sec.~\ref{sec:checking}, fits the profiles rather than the integrated widths, and uses the workflows of Sec.~\ref{sec:abundrecipe}, which manage the runs, the line mask and the abundance ladders.
+The NLTE corrections of these lines are small in the Sun, because both form below the layers where the departure coefficients diverge, and the two lines differ by more than their corrections. The difference has other causes. 5528.4\,{\AA} is a strong line, whose equivalent width also depends on its $\log gf$, on the van der Waals damping and on how much of the wings the window includes; these have to be examined before the line is used. A complete analysis repeats the checks of Sec.~\ref{sec:checking}, fits the profiles rather than the integrated widths, and uses the workflows of Sec.~\ref{sec:abundrecipe}, which manage the runs, the line mask and the abundance ladders.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.5\linewidth]{figs/mg_cog_corr.pdf}
+    \caption{The LTE curve of growth of 5528.4\,{\AA} from the ladder (blue), the NLTE equivalent width of the reference run (filled) and the LTE abundance that reproduces it (open). The arrow is the NLTE correction.}\label{fig:mg_cog_corr}
+\end{figure}
+
+\py{run.plot_cog_corr} draws the correction of one line at the abundance of a run: it places the run's NLTE equivalent width on the LTE curve of growth of the runs in \py{LTE_runs}, whose LTE sets it measures over the same window:
+
+\begin{minted}{Python}
+run.plot_cog_corr("Mg", LTE_runs=ladder, window=(5528.1, 5528.7))
+\end{minted}
+
+For 5528.4\,{\AA} at the solar abundance the correction is $-0.03$\,dex (Fig.~\ref{fig:mg_cog_corr}); the $-0.04$\,dex of the table is taken at the observed width, 0.1\,dex lower on the curve of growth. \py{run.get_cog_corr} returns the correction and the points of the figure.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Memory, Threads and Clusters}\label{sec:resources}
@@ -917,6 +904,94 @@ sbatch dispatch.slurm a.nml b.nml
 A run occupies one node; choose the node by the pre-run memory estimate.
 
 From Python, \Code{tm.launch(..., slurm\_script=...)} submits a namelist; see \File{docs/FAQ.md} for submitting workflows.
+
+%%%%%%%%%%%%%%%%%%%%%%
+\section{Python Workflows}\label{sec:pyworkflows}
+%%%%%%%%%%%%%%%%%%%%%%
+
+The workflow modules of \Code{tumult} (\Code{tumult.synthesis}, \Code{tumult.departures}, \Code{tumult.abundance}, \Code{tumult.sparams}) run whole calculations: they write the namelists of the recipes of Sec.~\ref{sec:recipes} from the presets, prune the line list, run \File{dispatch.x}, cache the runs and return spectra or abundances. They suit grids of syntheses, abundance fits and NLTE corrections, which need many runs. TumultStudio uses the same layer. The namelists of Sec.~\ref{sec:recipes} remain the reference for what each run does.
+
+\subsection{Requests}\label{sec:primer}
+
+The Python workflows describe a calculation as a \Code{SynthRequest}: a configuration (line list, abundance table, resolving power, cache directory), an atmosphere, stellar parameters and wavelength windows. A workflow takes the request, writes the namelists from the presets, prunes the line list to the windows, runs \File{dispatch.x} and returns spectra. This example synthesises the Ba\,\textsc{ii} 4554.0\,{\AA} region in LTE and NLTE:
+
+\begin{minted}{Python}
+from tumult import departures, synthesis
+from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
+
+config = SynthConfig(root=".", cache="synth",
+                     linelist="input/linelists/master_line.txt",
+                     abundances="input/abund/abund_magg22",
+                     absmet="input/absmet_files",
+                     R_sampling=200_000)
+request = SynthRequest(config=config, atmosphere=Atmosphere("input/atmos/p5777_....mod"),
+                       star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
+                       windows=(4550, 4558))
+lte = synthesis.synthesize(request)
+nlte = synthesis.synthesize(request.update(
+    departures=departures.request(request, atom="input/atoms/atom.ba06")))
+nlte.spectrum.plot()
+\end{minted}
+
+\py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}).
+
+\subsection{The recipes in Python}
+
+\paragraph{LTE spectrum} (Sec.~\ref{sec:recLTE}): \py{synthesis.synthesize(request)} on a request without departures.
+
+\paragraph{Departures for many spectra} (Sec.~\ref{sec:twostage}): \py{departures.solve} runs stage 1 and returns the solved departures. Later syntheses take them with \py{request.update} and run only the output pass:
+
+\begin{minted}{Python}
+solved = departures.solve(request, atom="input/atoms/atom.ba06")
+nlte = synthesis.synthesize(request.update(departures=solved, windows=(4550, 4558)))
+\end{minted}
+
+\py{departures.request(request, atom=...)}, as in the example above, defers the solution to the synthesis that needs it.
+
+\paragraph{3D snapshot} (Sec.~\ref{sec:rec3d}): a \Code{Snapshot} atmosphere names the file, its reader and the mesh. In NLTE the departures are solved once for the cube and each window is then a formal solution on them.
+
+\begin{minted}{Python}
+from tumult.synthesis import AtmosphereGrid, Snapshot
+atmosphere = Snapshot(path, "M3DIS", (30, 30, 96),
+                      preparation=AtmosphereGrid("input/atmos/MARCS"))
+\end{minted}
+
+\subsection{Abundances and NLTE corrections}\label{sec:pyabund}
+
+These workflows (Sec.~\ref{sec:abundrecipe}) take a \Code{SynthRequest} and return a result with one row per line.
+
+\begin{minted}{Python}
+from tumult import abundance, departures
+from tumult.synthesis import AtmosphereGrid, Star
+request = request.update(atmosphere=AtmosphereGrid("input/atmos/MARCS"),
+                         star=Star(teff=4900, logg=2.7, feh=-1.0, vmic=1.5))
+nlte = request.update(departures=departures.request(request, atom="input/atoms/atom.mg86g"))
+abnd = abundance.fit(nlte, target="observed.txt", line_mask="input/linemasks/Mg/mg-lmask.txt",
+                     method="cog")
+corr = abundance.nlte_corrections(nlte, method="cog")
+\end{minted}
+
+\Code{AtmosphereGrid} interpolates the MARCS grid (Sec.~\ref{sec:inputdata}) at the request's \Code{Star}. \py{abundance.fit} measures the observed spectrum (\py{target}, a file or a \Code{Spectrum}) in the windows of the line mask, a file naming its element (\File{input/linemasks/}), and inverts the equivalent widths on curves of growth (\py{method="cog"}) or fits the profiles (\py{method="profile"}). \py{abundance.nlte_corrections} gives $A(\mathrm{NLTE})-A(\mathrm{LTE})$ for every line of the atom stronger than \py{ew_min} (5\,m\AA) in an LTE reference synthesis, bracketing each line's NLTE curve of growth until it reproduces the reference equivalent width. \py{sparams.ionbalance} finds stellar parameters by ionisation balance.
+
+\py{departures.request} defers the solution: every abundance step of a curve of growth is an equilibrium solution of its own. \File{docs/FAQ.md} has worked examples.
+
+\subsection{Launching single runs}\label{sec:launching}
+
+\py{tm.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
+
+\begin{minted}{Python}
+folder, ran = tm.launch(
+    "ba_test",
+    default=[tm.preset("1d"), tm.preset("nlte")],
+    nml_settings={"atom_params": {"abundance": 2.41}},
+)
+\end{minted}
+
+It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). \py{tm.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tm.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
+
+\subsection{The workflow daemon}
+
+The workflows of TumultStudio and of the Python API run in a per-user daemon. Restart it after editing operation code; its log is \File{/tmp/tumult-<uid>/daemon.log}.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Trouble Shooting}\label{sec:trouble}
@@ -985,6 +1060,23 @@ Atom & Levels & Bound-bound & Bound-free & Note\\
 \end{center}
 
 Transitions without electron or hydrogen collision data can be given approximate rates by classical recipes, each switched on by the atom-file key of the process it stands in for: \fort{classic_ce} (van Regemorter), \fort{classic_ci} (Seaton), \fort{classic_ch} (Drawin excitation) and \fort{classic_chi} (Drawin ionisation), all \fort{F} by default. \fort{upsilon_floor} sets a lower bound on the van Regemorter rate in Allen's form, $C_{ij} = 8.63\times10^{-6}\,\Upsilon\,n_\mathrm{e}\,\mathrm{e}^{-\Delta E/kT}/(g_i\sqrt{T})$, so that transitions with a weak or no $f$-value keep an effective collision strength of at least $\Upsilon$. $\Upsilon$ belongs to the pair of atom levels and $g_i$ is the weight of the lower level, so a merged level receives the floor once rather than once per component. \fort{colscale} scales all collision rates, and \fort{cbbesc}, \fort{cbfesc}, \fort{cbbhsc} and \fort{cbfhsc} scale them by kind, to test the sensitivity of a result to the collision data.
+
+\subsection{Inspecting an atom}
+
+\py{tm.read_atom(path)} reads a model atom without a run, and \py{run.atoms} gives those of a run. \py{plot_grotrian} draws the levels by term with the radiative transitions between them; \py{ion=1} restricts it to the levels of the neutral stage and its continuum.
+
+\begin{minted}{Python}
+atom = tm.read_atom("input/atoms/atom.mg86g")
+atom.plot_grotrian(ion=1)
+\end{minted}
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\linewidth]{figs/mg_grotrian.pdf}
+    \caption{The Mg\,\textsc{i} levels of \texttt{atom.mg86g} by term, with their radiative transitions; the dashed line is the ionisation limit.}\label{fig:mg_grotrian}
+\end{figure}
+
+Fig.~\ref{fig:mg_grotrian} shows the atom of the worked example (Sec.~\ref{sec:example}). Its lines start from the 3p levels near 2.7 and 4.3\,eV: Mg\,b$_2$ (5172.7\,{\AA}) connects 3p\,$^3$P$^\circ$ with 4s\,$^3$S, 5528.4 and 5711.1\,{\AA} connect 3p\,$^1$P$^\circ$ with 4d\,$^1$D and 5s\,$^1$S.
 
 \subsection{NLTE lines in the output spectrum}\label{sec:nlteoutput}
 
@@ -1102,6 +1194,20 @@ The NLTE iterations need the mean intensity at every point, the output pass the 
 
 Rays that include $\mu=1$ are counted once: an output pass with \fort{ntheta=4} and \fort{nphi=4} has $(4-1)\times 4+1=13$ rays in 3D. The iteration pass uses rays in both directions, the output pass only the upward ones. Without any rays other than the vertical one no flux can be formed, and the disk-centre intensity is the result.
 
+\paragraph{Centre-to-limb variation.} The intensities of the output rays give the centre-to-limb variation of a line. \py{line.plot_clv} draws the equivalent width of a model-atom transition at each $\mu$ of the run, measured over $\lambda_0\pm$\py{dlam}, and \py{line.get_clv} returns it. The default quadrature has four values of $\mu$ in 1D (1, 0.87, 0.59 and 0.21); \fort{'custom'} samples the disk more finely. For 5711.1\,{\AA} in the reference run of Sec.~\ref{sec:example}, the width falls from 127\,m\AA{} at disk centre to 92\,m\AA{} at $\mu=0.21$, and NLTE and LTE differ only towards the limb (Fig.~\ref{fig:mg_clv}).
+
+\begin{minted}{Python}
+line = run.get_line(5711.09)
+line.plot_clv(dlam=0.3, label="NLTE")
+line.plot_clv(dlam=0.3, LTE=True, label="LTE")
+\end{minted}
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.5\linewidth]{figs/mg_clv.pdf}
+    \caption{Equivalent width of Mg\,\textsc{i} 5711.1\,{\AA} against $\mu$ in the reference run of Sec.~\ref{sec:example}, over $\pm0.3$\,{\AA} around the line.}\label{fig:mg_clv}
+\end{figure}
+
 \subsection{Iterations}\label{sec:numerics}
 
 An NLTE run iterates until the largest relative population change falls below \fort{convlim}; Sec.~\ref{sec:convergence} describes how to read its progress.
@@ -1169,6 +1275,72 @@ Hydrogen lines need a block \fort{'H I'} in the line list (Sec.~\ref{sec:linelis
     \item \textbf{Snapshots.} Each snapshot is a run of its own; \py{tm.combine(runs, weights)} forms the weighted mean of their spectra.
     \item \textbf{Cost.} Memory and run time are dominated by the mesh, the rays and the model atom (Sec.~\ref{sec:resources}); a 3D NLTE run usually needs a cluster node (Sec.~\ref{sec:cluster}).
 \end{itemize}
+
+\subsection{Inspecting a snapshot}
+
+A run saves its atmosphere on its own mesh, and \py{run.atmos} reads it: temperature \py{temp}, density \py{rho}, electron density \py{ne}, the velocities \py{vx}, \py{vy}, \py{vz} and $\log\tau_{500}$ \py{ltau}, as arrays of shape $(n_x, n_y, n_z)$, and the height \py{height} above the mean depth of $\tau_{500}=1$. An LTE run without atom and line list on a few continuum wavelengths gives the atmosphere of a snapshot in seconds; Fig.~\ref{fig:sun3d} shows the solar snapshot of \File{demo3d.nml} on the mesh of the \File{3d} preset (\fort{aa_blue=5000 aa_red=5001 nnu=2}, about 10\,s on eight threads).
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\linewidth]{figs/sun3d_atmos.pdf}
+    \caption{Temperature of the solar 3D snapshot on the $30\times30\times96$ mesh of the \texttt{3d} preset. Top: horizontal cut at the mean height of $\tau_{500}=1$ and vertical cut. Bottom left: every point against $\log\tau_{500}$, with the mean on surfaces of constant $\tau_{500}$. Bottom right: distribution over the columns at $\log\tau_{500}=0$, with its mean (dashed).}\label{fig:sun3d}
+\end{figure}
+
+\begin{minted}{Python}
+atmos = run.atmos
+atmos.plot_slice("temp", iz=np.argmin(np.abs(atmos.height)))
+atmos.plot_slice("temp", iy=0)
+atmos.plot_ltau_cube("temp")
+atmos.plot_ltau_mean("temp")
+atmos.plot_ltau_hist(0, "temp", show_mean=True)
+\end{minted}
+
+\py{plot_slice} draws a horizontal (\py{iz}) or vertical (\py{ix}, \py{iy}) cut, \py{plot_ltau_cube} every point against $\log\tau_{500}$, \py{plot_ltau_mean} the mean on surfaces of constant $\tau_{500}$, and \py{plot_ltau_hist} the distribution on one such surface; \py{plot_geo_mean} and \py{plot_geo_cube} use the height instead of $\log\tau_{500}$. At $\log\tau_{500}=0$ the hot granules and the cooler intergranular lanes make the temperature distribution bimodal, between about 5900 and 7300\,K, and the spread around the mean stratification is largest just below the surface.
+
+
+%%%%%%%%%%%%%%%%%%%%%%
+\section{Contribution Functions}\label{sec:cntrbf}
+%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{description}
+    \item[Default.] Not saved. With \fort{save_cntrbf=T}, the depression contribution function of the main spectrum set (\fort{depression_cntrbf=T}).
+    \item[Change when] the formation depth of a line or of a part of its profile is needed, for instance to decide which parts of a profile a 1D model can describe.
+    \item[Keys.] \fort{save_cntrbf} and \fort{depression_cntrbf} (Sec.~\ref{nl:output}).
+\end{description}
+
+\subsection{Depression contribution function}
+
+A contribution function tells where in the atmosphere a feature of the spectrum is formed. The code computes the \emph{depression} contribution function. Along a ray with path length $s$ (increasing inwards from the top of the model), the transfer equations of the full spectrum and of the continuum are $\mathrm{d}I/\mathrm{d}s=\chi I-\eta$ and $\mathrm{d}I_\mathrm{c}/\mathrm{d}s=\chi_\mathrm{c}I_\mathrm{c}-\eta_\mathrm{c}$, with total opacity $\chi=\chi_\mathrm{c}+\chi_\ell$ and emissivity $\eta=\eta_\mathrm{c}+\eta_\ell$. Their difference, the depression $D=I_\mathrm{c}-I$, obeys $\mathrm{d}D/\mathrm{d}s=\chi D-(\chi_\ell I_\mathrm{c}-\eta_\ell)$, so that the emergent depression is exactly
+\begin{equation}
+    D(0)=\int_0^\infty \left(\chi_\ell I_\mathrm{c}-\eta_\ell\right) e^{-\tau_\nu}\,\mathrm{d}s
+        =\int C_D\,\mathrm{d}\log\tau_{500},\qquad
+    C_D=\frac{\ln 10\,\tau_{500}}{\mu\,\chi_{500}}\,\chi_\ell\left(I_\mathrm{c}-S_\ell\right)e^{-\tau_\nu},
+\end{equation}
+where $\tau_\nu$ is the optical depth along the ray, $I_\mathrm{c}$ the local continuum intensity in the direction of the ray, $S_\ell=\eta_\ell/\chi_\ell$ the line source function and $\mu$ the cosine of the ray's angle \citep{Magain1986}. $C_D$ is positive where the lines absorb photons of the continuum beam and negative where they emit more than they absorb. Its integral over all depths reproduces the computed depression, which makes it a budget of the line rather than an approximate weighting function. With \fort{depression_cntrbf=F} the code instead saves the intensity contribution function $\eta\,e^{-\tau_\nu}$, whose integral is the emergent intensity.
+
+\subsection{Saving and reading them}
+
+\Code{\&output\_params\%save\_cntrbf=T} saves, in the output pass, $\chi_\ell I_\mathrm{c}-\eta_\ell$ and the total opacity at every point, wavelength and output ray of the main spectrum set (the NLTE spectrum of an NLTE run). It costs memory of the order of the spectrum times the mesh times the number of rays, so restrict it to the windows of interest. \py{run.get_cntrbf(...)} integrates $\tau_\nu$ along each ray and returns $(\log\tau_{500}, C)$ with $C$ in the units of \py{run.flux} per unit $\log\tau_{500}$, or of \py{run.ie} for a selected \py{imu} or \py{ang}; \py{lam0=} selects the nearest wavelength, \py{xmin}/\py{xmax} or \py{lam0} and \py{dlam} a range, \py{fmean=True} integrates over that range (the contribution function of the equivalent width) and \py{norm=True} scales it to unit area. In a 3D run, \py{gmean=True} averages over surfaces of constant $\tau_{500}$. On the 64-point mesh of the \File{1d} preset the integral of the flux contribution function reproduces $F_\mathrm{c}-F$ to about 1\,\%.
+
+\py{run.plot_cntrbf(...)} draws the contribution function at one wavelength or integrated over a range, \py{run.plot_cntrbf_map(...)} draws $C_D/F_\mathrm{c}$ over wavelength and $\log\tau_{500}$, so that each column integrates to $1-F/F_\mathrm{c}$.
+
+\subsection{Example: Mg\,b$_2$}
+
+The reference run of the worked example (Sec.~\ref{sec:example}) saves the contribution functions of its three windows.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\linewidth]{figs/mg_cntrbf.pdf}
+    \caption{Left: depression contribution function of the flux around Mg\,b$_2$, divided by the continuum flux, so that each column integrates to $1-F/F_\mathrm{c}$. The lines at 5171.6 and 5173.7\,{\AA} are Fe\,\textsc{i} and Ti\,\textsc{i} blends. Right: contribution functions normalised to unit area at the line centre, at three points in the red wing of Mg\,b$_2$ and at the centre of 5711.1\,{\AA}. The axes end at the top of the model, $\log\tau_{500}=-5.6$.}\label{fig:mg_cntrbf}
+\end{figure}
+
+\begin{minted}{Python}
+run.plot_cntrbf_map(xmin=5171.2, xmax=5174.2)
+for lam0 in (5172.68, 5172.78, 5172.98, 5173.28, 5711.09):
+    run.plot_cntrbf(lam0=lam0, norm=True)
+\end{minted}
+
+In Fig.~\ref{fig:mg_cntrbf} the formation height of Mg\,b$_2$ climbs steeply towards the core: 0.6\,{\AA} from the centre the depression forms around $\log\tau_{500}=-0.8$, at 0.3\,{\AA} around $-1.2$ and at 0.1\,{\AA} around $-3.2$. The centre forms at the outermost point of the model, which a 1D model cannot describe (Sec.~\ref{sec:example}). The weaker 5711.1\,{\AA} line forms over $\log\tau_{500}\approx-3$ to $-1$.
 
 \manualpart{Reference}{File formats, presets, every namelist key, the Python interface and the console output.}
 
@@ -1271,9 +1443,9 @@ Li    2
 
 The reader tries the native order and, if any of the four header records fails, reopens the file big-endian. The solar table \File{absmet} is little-endian; the metal-poor \File{m-1.00a+0.40\dots}, \File{m-2.00\dots} and \File{m-3.00\dots} tables are big-endian.
 
-\subsection{Window and set files}\label{sec:windowfiles}
+\subsection{Window files}\label{sec:windowfiles}
 
-\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches. \Code{\&output\_params\%set\_file} lists the output sets, one row per set and element, as ``\texttt{set kind element da}'': \texttt{kind} is \texttt{continuum}, \texttt{lte} or \texttt{nlte}, \texttt{element} and \texttt{da} (the abundance offset in dex) are \texttt{-} for the unperturbed set. A set that perturbs several elements has one row per element with the same set number. Set numbers start at 1 and have to be contiguous, and a file with an abundance ladder needs exactly one unperturbed main set. The file has to be outside the run directory. The run writes the resulting layout to \File{sets.txt} in the same format, which \Code{tm.read} uses to find the components (Sec.~\ref{sec:python}).
+\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches.
 
 \subsection{Output files}\label{sec:output}
 
@@ -1293,7 +1465,7 @@ All files of a run are in \File{<datadir>/<name>/}. Use \Code{tm.read} to access
 
 \paragraph{Layout of the saved files.} Every array is written per patch as raw single-precision Fortran-order stream data in \File{<label>\_ZZZWWW.bin}, where \texttt{ZZZ} is the three-digit index of the depth slab and \texttt{WWW} that of the frequency window (\texttt{000} for arrays without a frequency axis, such as \File{atmos\_001000.bin}). The first row of the matching \File{<label>\_meta.txt} starts with an asterisk; each further row gives the file name, the bits per element and the array shape, and rows are appended as patches finish. The atmosphere (\File{atmos}) and the populations are split in $z$ into slabs, so a 3D run has one file per slab; \py{run.atmos.atmos_cuts} holds the cumulative number of depth points at the end of each slab. With \fort{rt_to_file}, the radiation field and the exit planes that frozen columns hand on are also written there (\File{Jnu}, \File{Jnu\_out} and \File{exit\_plane}, without meta rows unless \fort{save_Jnu=T}). Use \py{run.read_patch_save(label, zdim=...)} to assemble such arrays rather than reading the files directly.
 
-The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (two for an LTE run), or the abundance sets of a \fort{set_file}. Optional fields (\fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu}, \fort{save_rates}, \fort{save_cntrbf}) are large; enable them only when needed. Sec.~\ref{sec:pyref} describes how \Code{tm.read} exposes the sets.
+The output is arranged in \emph{sets}: continuum, NLTE and LTE for an NLTE run (two for an LTE run). Optional fields (\fort{save_resolved}, \fort{save_Inu}, \fort{save_chi}, \fort{save_Snu}, \fort{save_Jnu}, \fort{save_rates}, \fort{save_cntrbf}) are large; enable them only when needed. Sec.~\ref{sec:pyref} describes how \Code{tm.read} exposes the sets.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Presets}\label{sec:presets}
@@ -1342,7 +1514,7 @@ Sec.~\ref{sec:abundances} gives the order in which the abundance keys are applie
 
 Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes (Sec.~\ref{sec:passes}). \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
 
-\subsection{\&output\_params}
+\subsection{\&output\_params}\label{nl:output}
 \input{tabs/output_params}
 
 \subsection{\&run\_params}\label{nl:run}
@@ -1381,7 +1553,7 @@ The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and 
 
 \subsection{Workflow modules}\label{sec:workflows}
 
-The workflows of Sec.~\ref{sec:primer} live in these modules. They choose the geometry preset from the atmosphere and, for NLTE, solve the departures once and synthesise each window on them (Sec.~\ref{sec:twostage}).
+The workflows of Sec.~\ref{sec:pyworkflows} live in these modules. They choose the geometry preset from the atmosphere and, for NLTE, solve the departures once and synthesise each window on them (Sec.~\ref{sec:twostage}).
 
 \input{tabs/python_modules}
 

@@ -52,6 +52,38 @@ Recurring local names, kept stable so a reader recognises them:
 - Arrays should typically have multi-character names, not single letters, i.e. `xx`, `yy`,
   rather than `x`, `y`. A single letter is acceptable for a loop index, e.g. `for i in range(n)`.
 
+### Abbreviated local names
+
+Local and temporary variables that recur take a three- to four-letter abbreviation. A
+collection appends `s`:
+
+| Quantity | Item | Collection |
+|---|---|---|
+| window | `win` | `wins` |
+| level | `lvl` | `lvls` |
+| abundance | `abnd` | `abnds` |
+| observed spectrum | `obs` | |
+| synthetic spectrum | `syn` | `syns` |
+| continuum | `cnt` | |
+| departure coefficient | `dep` | `deps` |
+| error, uncertainty | `err` | `errs` |
+| configuration | `cfg` | `cfgs` |
+| temporary value | `tmp` | |
+| transition | `tran` | `trans` |
+| bound-bound, bound-free transition | `bb`, `bf` | `bbs`, `bfs` |
+| line list | `llist` | `llists` |
+
+`atom` and `atmos` stay spelled out, because an abbreviation of either is easily read as
+the other. `star` names a set of stellar parameters.
+
+The abbreviations are for locals only. Function and method signatures, keyword arguments,
+attributes and other public names are spelled out (`abundance=`, `window=`), so a user
+calling the API never needs the table. Apply the table to new code, to example code in the
+documentation, and to existing functions when they are edited for another reason.
+
+A list comprehension or generator uses a single letter, the initial of the item:
+`[r.crop(window=win) for r in runs]`, `[a + 0.1 for a in abnds]`, `[w[0] for w in wins]`.
+
 ## Units in names
 
 A name carries its unit when the quantity has more than one plausible one. The suffix

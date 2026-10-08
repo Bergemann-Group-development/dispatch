@@ -2,10 +2,13 @@
 
 Besides the atmosphere grids (:mod:`.grid_catalog`), OpenMULTI3D's larger inputs are
 folders of plain files on one public Seafile share (MPCDF Keeper): the master line lists,
-the public model atoms and the metal-opacity (absmet) tables. Each :class:`Dataset` names
-a share folder and where its files belong under the checkout's ``input/`` directory. The
-listing, planning and resumable transfer are those of :mod:`.linelist_catalog`, which also
-serve the TumultStudio Preferences pages.
+the Gaia-ESO NLTE line list, the public model atoms, the metal-opacity (absmet) tables,
+the line masks and observed spectra (the KPNO solar flux atlas, the IAG disc-resolved solar
+spectra and the Gaia FGK benchmark stars v3 library) and window files with the wavelength
+coverage of spectroscopic surveys. Each :class:`Dataset` names a share folder and where its files belong
+under the checkout's ``input/`` directory; the line masks keep their per-element
+sub-folders. The listing, planning and resumable transfer are those of
+:mod:`.linelist_catalog`, which also serve the TumultStudio Preferences pages.
 
 Command line::
 
@@ -13,7 +16,8 @@ Command line::
     python -m tumult.synthesis.input_data fetch KIND [KIND ...] [--file NAME ...] [--dry-run]
     python -m tumult.synthesis.input_data fetch atoms --dest DIR
 
-``KIND`` is ``linelists``, ``atoms`` or ``absmet``. Without ``--dest`` the files go to the
+``KIND`` is ``linelists``, ``ges``, ``atoms``, ``absmet``, ``linemasks``, ``windows``,
+``kpno``, ``iag`` or ``gbs``. A ``--file`` in ``linemasks`` names its sub-folder, as in ``Mg/mg-lmask.txt``. Without ``--dest`` the files go to the
 dataset's folder under ``input/``; a file already complete there is not fetched again.
 """
 from __future__ import annotations
@@ -46,10 +50,23 @@ class Dataset:
 
 DATASETS = {d.id: d for d in (
     Dataset("linelists", linelist_catalog.SOURCE, "linelists/master_linelists"),
+    Dataset("ges", ShareFolder(id="keeper-ges", name="Gaia-ESO NLTE line list",
+                               path="/linelists/GES/", **_KEEPER), "linelists"),
     Dataset("atoms", ShareFolder(id="keeper-atoms", name="Model atoms",
                                  path="/atoms/public/", **_KEEPER), "atoms/public"),
     Dataset("absmet", ShareFolder(id="keeper-absmet", name="Metal opacity tables",
                                   path="/absmet_files/", **_KEEPER), "absmet_files"),
+    Dataset("linemasks", ShareFolder(id="keeper-linemasks", name="Line masks",
+                                     path="/linemasks/", nested=True, **_KEEPER),
+            "linemasks"),
+    Dataset("windows", ShareFolder(id="keeper-windows", name="Survey window files",
+                                   path="/windows/", **_KEEPER), "windows"),
+    Dataset("kpno", ShareFolder(id="keeper-kpno", name="KPNO solar flux atlas",
+                                path="/spectra/KPNO/", **_KEEPER), "spectra"),
+    Dataset("iag", ShareFolder(id="keeper-iag", name="IAG disc-resolved solar spectra",
+                               path="/spectra/IAG/", **_KEEPER), "spectra/IAG"),
+    Dataset("gbs", ShareFolder(id="keeper-gbs", name="Gaia FGK benchmark stars v3",
+                               path="/spectra/GBSv3/", **_KEEPER), "spectra/GBSv3"),
 )}
 
 

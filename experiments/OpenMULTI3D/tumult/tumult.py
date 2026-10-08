@@ -6,8 +6,7 @@ Import from ``tumult`` (the package) or ``tumult.run`` in new code. ``tumult`` a
 ``grid`` are the pre-rename names of :class:`~tumult.run.Run` and
 :class:`~tumult.run.RunGrid`.
 """
-from .run import (RunGrid, Run, option, read_list, read_run,  # noqa: F401
-                  weq_diff)
+from .run import RunGrid, Run, option, read_list, read_run  # noqa: F401
 
 tumult = Run
 grid = RunGrid

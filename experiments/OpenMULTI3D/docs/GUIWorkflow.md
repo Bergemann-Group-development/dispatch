@@ -508,7 +508,8 @@ files of that kind (`tumult.synthesis.input_data`, hosted on the Keeper share) o
 all at once, and delete them again. Line lists and opacity tables go into the folder the
 Synthesis *Line list* and *Absmet* preferences name, and atoms into `input/atoms/public`.
 The same downloads are available without the GUI as
-`python -m tumult.synthesis.input_data fetch linelists|atoms|absmet`.
+`python -m tumult.synthesis.input_data fetch linelists|atoms|absmet`; the line masks and
+observed spectra (`linemasks`, `windows`, `kpno`, `iag`, `gbs`) are fetched only there.
 Preferences → Reference stars edits the one catalogue of named stellar parameters
 (`tumult.refstars`): every setup's Reference star dropdown, the ionisation balance's entry
 point and the line-strength ranking read it, and the line strengths take the atmosphere

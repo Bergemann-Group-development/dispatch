@@ -291,7 +291,7 @@ def run(args):
 def parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--target-spectrum", default="input/spectra/KPNO_4000_9000.txt",
-                   help="the continuum-normalised KPNO atlas (not in this repository)")
+                   help="the continuum-normalised KPNO atlas")
     p.add_argument("--output", type=Path, default=ROOT / "data/api_benchmarks")
     p.add_argument("--cache", default="synth/api_benchmarks",
                    help="cache name: runs under data/<cache>/<benchmark>[/<star>], "

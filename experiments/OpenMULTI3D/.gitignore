@@ -83,10 +83,12 @@ benchmarks/*
 !benchmarks/paper/*.nml
 !benchmarks/paper/benchmarks.tex
 
-# Project skills; local Claude settings and worktrees stay ignored.
+# Project skills and agents; local Claude settings and worktrees stay ignored.
 !.claude/
 .claude/*
 !.claude/skills/
+!.claude/agents/
+.claude/**/__pycache__/
 
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml

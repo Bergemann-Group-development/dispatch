@@ -20,15 +20,15 @@ result = single_lte(config, AtmosphereGrid("input/atmos/MARCS"),
 atmospheres, `atom.mg86g`, the solar line list, the Fe masks and a default 4000–9000 Å
 range. It preflights what the selected workflows need, times each calculation and writes a
 `benchmark.json` beside its saved result, reporting computational completion separately
-from the scientific outcome (termination, convergence, exclusions by flag). The KPNO atlas
-is not in this repository, so provide its path:
+from the scientific outcome (termination, convergence, exclusions by flag). The target is
+the KPNO atlas in `input/spectra/` (`python -m tumult.synthesis.input_data fetch kpno`):
 
 ```sh
 python -m benchmarks.api.run_reference_benchmarks \
-  --target-spectrum /path/to/KPNO_4000_9000.txt --preflight
+  --target-spectrum input/spectra/KPNO_4000_9000.txt --preflight
 
 python -m benchmarks.api.run_reference_benchmarks \
-  --target-spectrum /path/to/KPNO_4000_9000.txt --only single_lte --wavelength 5160 5190
+  --target-spectrum input/spectra/KPNO_4000_9000.txt --only single_lte --wavelength 5160 5190
 ```
 
 Repeat `--only` to select workflows. `single_precomputed_nlte` reads the departures saved by

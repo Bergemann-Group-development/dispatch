@@ -59,6 +59,20 @@ def test_listing_plan_fetch_and_delete_follow_the_chosen_files(tmp_path):
         assert [p.name for p in dest.iterdir()] == ["mine.txt"]
 
 
+def test_nested_source_fetches_subfolders_into_the_same_layout(tmp_path):
+    # line masks live in per-element sub-folders that the documented paths name
+    files = write_lists(tmp_path / "www", folder="linemasks")
+    dest = tmp_path / "dest"
+    with serve_share(tmp_path / "www") as (server, token):
+        source = linelist_catalog.ShareFolder(
+            id="test", name="Test masks", server=server, token=token, path="/linemasks/",
+            citation="test", nested=True)
+        listing = linelist_catalog.list_files(source)
+        assert [f.name for f in listing.files] == sorted([*files, "extra/README"])
+        linelist_catalog.fetch(linelist_catalog.plan(listing, dest, ["extra/README"]))
+        assert (dest / "extra" / "README").read_bytes() == b"not a line list"
+        assert linelist_catalog.plan(listing, dest, ["extra/README"]).pending == []
+
 def test_share_urls_address_the_folder_and_its_files():
     source = linelist_catalog.SOURCE
     assert source.listing_url() == ("https://keeper.mpdl.mpg.de/api/v2.1/share-links/"
