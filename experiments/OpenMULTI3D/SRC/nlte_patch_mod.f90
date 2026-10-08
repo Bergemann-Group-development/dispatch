@@ -8,7 +8,7 @@ MODULE nlte_patch_mod
   USE task_mod, only: task_t
   USE link_mod, only: nbor_t
   USE handyfuncs_mod
-  USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
+  USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, &
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
@@ -146,7 +146,7 @@ contains
     integer :: i, j, iostat, nlvl
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-      exclude_from_line_list, output_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
+      exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
       classic_ce, classic_ci, classic_ch, classic_chi, upsilon_floor, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &

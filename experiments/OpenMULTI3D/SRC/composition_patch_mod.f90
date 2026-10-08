@@ -25,7 +25,7 @@ MODULE composition_patch_mod
   departure_pointer_t, read_departures, departure_indices, &
   sample_linelist, opac_table_vmic, &
   line_scattering
-  USE atom_mod, only: use_classic_col, level_partf
+  USE atom_mod, only: level_partf
   USE nlte_patch_mod,  only: nlte_patch_t, output_grid_and_list
   USE rt_patch_mod, only: rt_patch_t, rt_patch_ptr_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability

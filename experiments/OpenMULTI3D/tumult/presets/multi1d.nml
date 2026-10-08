@@ -27,7 +27,6 @@
   overlapping_bb = .false.
   overlapping_bf = .false.
   legacy_freql = .true.
-  use_classic_col = .false.
   level_partf = .true.
   use_atom_abnd = .true.
 /

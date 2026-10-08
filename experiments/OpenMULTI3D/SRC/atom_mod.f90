@@ -189,10 +189,11 @@ MODULE atom_mod
       'OHM     ','CH0     ','CHI     '/)
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
-    logical, public :: use_classic_col = .False., legacy_freql=.False.
-    ! the recipes of use_classic_col, named by the atom-file key of the process they
-    ! replace: CE van Regemorter, CI Seaton, CH and CHI Drawin
-    logical, public :: classic_ce=.True., classic_ci=.True., classic_ch=.True., classic_chi=.True.
+    logical, public :: legacy_freql=.False.
+    ! classical recipes for transitions without collision data in the atom file, named by
+    ! the atom-file key of the process they stand in for: CE van Regemorter, CI Seaton,
+    ! CH and CHI Drawin
+    logical, public :: classic_ce=.False., classic_ci=.False., classic_ch=.False., classic_chi=.False.
     ! lower bound on the effective collision strength of the CE recipe (Allen's form)
     real(8), public :: upsilon_floor=0.
     logical, public :: kramer_bf=.False.
@@ -806,7 +807,8 @@ MODULE atom_mod
     integer, intent(in) :: x, y, z
     !----------------------------------------------------------------------------------
     self%data%c = 0.d0
-    if (use_classic_col) call self%classic_col(comp,x,y,z)
+    if (classic_ce .or. classic_ci .or. classic_ch .or. classic_chi) &
+      call self%classic_col(comp,x,y,z)
     if (associated(self%coll)) call self%gencol(comp,x,y,z)
   END SUBROUTINE collision_rates
 

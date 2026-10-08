@@ -943,7 +943,7 @@ Microturbulence & from the model (1D); none in 3D & \fort{vmic} & \ref{sec:atmos
 Composition & \File{abund\_magg22} scaled to the model's [Fe/H]; partition functions, molecules and isotopes from the files of \fort{&composition_params} & \fort{abund_file} & \ref{sec:abundances}\\
 NLTE$^\dagger$ & off (\fort{convlim=0}); preconditioned ALI with automatic Ng acceleration when on & \fort{convlim} & \ref{sec:numerics}\\
 Iteration-pass background$^\dagger$ & continuum only; name a table matched to the model's [Fe/H] & \fort{absmet_file} & \ref{sec:absmet}\\
-Collision rates & those of the atom file only & \fort{use_classic_col} & \ref{sec:atoms}\\
+Collision rates & those of the atom file only & \fort{classic_ce}, \fort{classic_ch} & \ref{sec:atoms}\\
 Iteration-pass rays & \fort{radau}, \fort{ntheta=2}, \fort{nphi=4}; \fort{linear} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass rays & \fort{lobatto}, \fort{ntheta=4}, \fort{nphi=4}; \fort{quadratic} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass scattering & none (\fort{maxiter=0}) & \fort{maxiter} & \ref{sec:passes}\\
@@ -984,7 +984,7 @@ Atom & Levels & Bound-bound & Bound-free & Note\\
 \end{tblr}
 \end{center}
 
-Transitions without electron or hydrogen collision data can be given approximate rates with \fort{use_classic_col} (Seaton, van Regemorter and Drawin). Each recipe can be switched off on its own, by the atom-file key of the process it stands in for: \fort{classic_ce} (van Regemorter), \fort{classic_ci} (Seaton), \fort{classic_ch} (Drawin excitation) and \fort{classic_chi} (Drawin ionisation), all \fort{T} by default. \fort{upsilon_floor} sets a lower bound on the van Regemorter rate in Allen's form, $C_{ij} = 8.63\times10^{-6}\,\Upsilon\,n_\mathrm{e}\,\mathrm{e}^{-\Delta E/kT}/(g_i\sqrt{T})$, so that transitions with a weak or no $f$-value keep an effective collision strength of at least $\Upsilon$. $\Upsilon$ belongs to the pair of atom levels and $g_i$ is the weight of the lower level, so a merged level receives the floor once rather than once per component. \fort{colscale} scales all collision rates, and \fort{cbbesc}, \fort{cbfesc}, \fort{cbbhsc} and \fort{cbfhsc} scale them by kind, to test the sensitivity of a result to the collision data.
+Transitions without electron or hydrogen collision data can be given approximate rates by classical recipes, each switched on by the atom-file key of the process it stands in for: \fort{classic_ce} (van Regemorter), \fort{classic_ci} (Seaton), \fort{classic_ch} (Drawin excitation) and \fort{classic_chi} (Drawin ionisation), all \fort{F} by default. \fort{upsilon_floor} sets a lower bound on the van Regemorter rate in Allen's form, $C_{ij} = 8.63\times10^{-6}\,\Upsilon\,n_\mathrm{e}\,\mathrm{e}^{-\Delta E/kT}/(g_i\sqrt{T})$, so that transitions with a weak or no $f$-value keep an effective collision strength of at least $\Upsilon$. $\Upsilon$ belongs to the pair of atom levels and $g_i$ is the weight of the lower level, so a merged level receives the floor once rather than once per component. \fort{colscale} scales all collision rates, and \fort{cbbesc}, \fort{cbfesc}, \fort{cbbhsc} and \fort{cbfhsc} scale them by kind, to test the sensitivity of a result to the collision data.
 
 \subsection{NLTE lines in the output spectrum}\label{sec:nlteoutput}
 

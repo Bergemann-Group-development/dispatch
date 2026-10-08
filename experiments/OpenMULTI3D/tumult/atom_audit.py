@@ -1234,7 +1234,7 @@ def check_collisions(atom, slope_limit=2.5):
                 sev = 'serious'
             findings.append(Finding(f'{name} excitation coverage', sev,
                                     f'{len(pairs) - len(miss)} of {len(pairs)} radiative pairs have {"/".join(keys)} '
-                                    'data (the rest get none unless use_classic_col)', len(miss)))
+                                    'data (the rest get none unless a classic_* recipe is on)', len(miss)))
     cont = continuum_level(atom)
     ionisable = [i for i in range(len(lvl)) if cont[i] >= 0]
     for keys, name in ((('CI',), 'electron ionisation'), (('CH0', 'CHI'), 'hydrogen ionisation/charge transfer')):
