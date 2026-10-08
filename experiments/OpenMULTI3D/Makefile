@@ -97,3 +97,8 @@ clean:: clean_standalone
 clean_standalone:
 	@$(MAKE) --no-print-directory -C HOP/standalone clean
 .PHONY: hop_standalone clean_standalone
+
+# Input data that is tracked compressed, unpacked on first build to the path HOP reads
+default: input/Anstee-1802-2014.dat
+input/%.dat: input/%.dat.gz
+	gunzip -c $< > $@

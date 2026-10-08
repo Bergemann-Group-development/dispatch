@@ -1,35 +1,21 @@
-"""Convert isotope/species labels between Turbospectrum and molecule_mod format.
+"""Species and isotope labels of line lists, in Turbospectrum's convention.
 
-Two conventions for tagging (isotopically resolved) molecular species meet in
-this code base:
+Turbospectrum encodes a species in one token ``'CCDD.aaabbb'``. The part before the
+dot concatenates the constituent atomic numbers, two digits each, in ascending order;
+the part after it concatenates their mass numbers, three digits each, in the same
+order, with 000 for the natural mixture: CO(12,16) is ``'0608.012016'``, H2O is
+``'010108.001001016'`` and atomic Fe-56 is ``'26.056'``.
 
-* **Turbospectrum** encodes the whole species in one token ``'CCDD.aaabbb'``.
-  The part before the dot is the concatenation of the constituent atomic
-  numbers, two digits each, in ascending-Z order; the part after the dot is the
-  concatenation of the constituent mass numbers, three zero-padded digits each,
-  in that same order.  CO(12,16) -> ``'0608.012016'``, H2O -> ``'010108.001001016'``,
-  atomic Fe-56 -> ``'26.056'``.
+The isotope label of a line-list block is that mass part, in both line-list formats.
+A tumult-format header names the species and writes the label on its own (``'CN'``,
+``'012014'``); HOP stores it as an integer and the number of constituents restores the
+leading zeros. Hydrogen has no isotope table in HOP, so its mass reads as natural
+(``001`` and ``000`` are the same label), and the masses of equal atoms sort ascending
+(``012013`` for 12C13C). :func:`mass_label` gives that canonical form.
 
-* **molecule_mod.f90** (see ``generate_isotopic_combinations`` and the ``iso``
-  index used throughout ``linelist.py``) tags a molecule only by its mass
-  numbers: the constituent nuclei's integer masses, **sorted ascending**,
-  written back to back with no separator and no leading zeros (Fortran ``I0``).
-  CO(12,16) -> ``'1216'``, H2O -> ``'1116'``, C-13/O-16 CO -> ``'1316'``.
-
-The molecule_mod label carries no element identity and no separators, so the
-molecule -> Turbospectrum direction needs to be told which molecule it is (its
-constituent elements).  ``species_elements`` derives those by parsing the species
-name as a chemical formula against the element table (``_parse_formula``), so no
-hardcoded molecule list is required; ``molecule_dict`` is now only a convenience
-for recovering a canonical *name* on the reverse direction, which the Turbospectrum
-token alone otherwise determines.
-
-The canonical intermediate here is a list of ``(Z, A)`` pairs, one per
-constituent nucleus (atomic number, mass number).  Everything else is a
-parse/format around that.
+The canonical intermediate here is a list of ``(Z, A)`` pairs, one per constituent
+nucleus (atomic number, mass number).
 """
-
-from itertools import permutations
 
 from .auxfuncs import atomic_weights, molecule_dict
 
@@ -43,6 +29,7 @@ _MOL_BY_ZS = {
         tuple(sorted(_Z[e] for e in elems)): name
         for name, elems in molecule_dict.items()
 }
+_ROMAN = {1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII', 8: 'VIII'}
 
 
 def _symbol(z):
@@ -123,146 +110,51 @@ def parse_ts(code):
     return list(zip(zs, masses))
 
 
-def format_ts(constituents):
-    """Format (Z, A) constituents as a Turbospectrum token (ascending Z)."""
-    cons = sorted(constituents, key=lambda za: za[0])
-    n = len(cons)
-    if n == 1:
-        z, a = cons[0]
-        return f"{z}.{a:03d}" if a else str(z)
-    head = ''.join(f"{z:02d}" for z, _ in cons)
-    tail = ''.join(f"{a:03d}" for _, a in cons)
-    return f"{head}.{tail}"
-
-
 #=============================================================================
-# molecule_mod label <-> (Z, A) constituents
+# isotope labels of line-list headers
 #=============================================================================
-def format_molec(constituents):
-    """Format (Z, A) constituents as a molecule_mod label: masses ascending, I0."""
-    return ''.join(str(a) for a in sorted(a for _, a in constituents))
+def mass_label(constituents):
+    """The isotope label of (Z, A) constituents, as an integer.
 
-
-def _partitions(digits, k):
-    """Yield every split of ``digits`` into exactly ``k`` contiguous pieces, each
-  1..3 digits with value >= 1 (i.e. each a plausible mass number)."""
-    n = len(digits)
-
-    def rec(pos, parts):
-        if len(parts) == k:
-            if pos == n:
-                yield list(parts)
-            return
-        left = k - len(parts) - 1
-        for L in (1, 2, 3):
-            if pos + L > n:
-                break
-            rem = n - (pos + L)
-            if rem < left or rem > 3 * left:  # remaining pieces must still fit
-                continue
-            val = int(digits[pos:pos + L])
-            if val >= 1:
-                parts.append(val)
-                yield from rec(pos + L, parts)
-                parts.pop()
-
-    yield from rec(0, [])
-
-
-def _assign_masses(digits, main):
-    """Resolve an unpunctuated mass-number label against constituents ``main``.
-
-  The molecule_mod label glues mass numbers together with no separators, and --
-  as the master line lists show -- may list *fewer* masses than there are
-  constituents: '50TiO' tags the isotopologue by the metal alone ('50'), the
-  oxygen left unspecified.  So we consider every split into 1..n pieces, assign
-  each piece to a distinct constituent, and keep the combination closest (in
-  summed |mass - main|) to the main isotopes.  Constituents no piece is assigned
-  to come back as 0 -- the Turbospectrum "natural / unspecified" mass, which it
-  fills from the main isotope itself ('50TiO' -> O = 000, Ti = 050).  A full
-  label ('1216') recovers the exact split at zero cost.
+  Masses in ascending Z, ascending among equal Z, three digits each; hydrogen is
+  always natural (0). ``[(6, 12), (1, 1)]`` -> 12 (written ``000012``).
   """
-    n = len(main)
-    best = None  # (cost, -k, masses)
-
-    for k in range(1, n + 1):
-        for pieces in _partitions(digits, k):
-            for combo in permutations(range(n), k):
-                cost = sum(abs(pieces[t] - main[combo[t]]) for t in range(k))
-                # tie-break toward the more explicit reading (more masses listed)
-                key = (cost, -k)
-                if best is None or key < best[:2]:
-                    masses = [0] * n  # unlisted constituents -> natural (0)
-                    for t in range(k):
-                        masses[combo[t]] = pieces[t]
-                    best = (cost, -k, masses)
-
-    if best is None:
-        raise ValueError(f"cannot parse isotope label {digits!r} for {n} constituents")
-    return best[2]
+    cons = sorted((z, 0 if z == 1 else a) for z, a in constituents)
+    return int(''.join(f"{a:03d}" for _, a in cons) or '0')
 
 
-def parse_molec(label, elements):
-    """Turn a molecule_mod label + its elements into (Z, A) constituents.
+def iso_token(species, iso):
+    """The isotope field of a tumult-format header: ``'000012'`` for CH, ``'56'`` for Fe."""
+    n = len(species_elements(species))
+    return f"{int(iso):0{3 * n}d}" if n > 1 else str(int(iso))
 
-  ``elements`` is a list of element symbols (or atomic numbers), e.g. from
-  ``species_elements``.  A label of ``'0'`` (or empty) means natural
-  composition: every constituent left unspecified (mass 0), which Turbospectrum
-  fills from the main isotope.
+
+def ts_token(species, iso):
+    """Species name and isotope label -> Turbospectrum token.
+
+  >>> ts_token('CO', 12016)
+  '0608.012016'
+  >>> ts_token('Fe I', 56)
+  '26.056'
   """
-    syms = [_symbol(e) if isinstance(e, int) else e for e in elements]
-    # the label lists masses ascending, so pair them with the atoms ordered the
-    # same way (ascending weight) before splitting
-    atoms = sorted(syms, key=lambda s: atomic_weights[s])
-    main = [_MAIN_MASS[s] for s in atoms]
-
-    label = str(label).strip().strip("'")
-    if label.strip('0') == '':  # '', '0', '000', ... -> all natural (mass 0)
-        masses = [0] * len(atoms)
-    else:
-        masses = _assign_masses(label, main)
-
-    return [(_Z[s], m) for s, m in zip(atoms, masses)]
+    zs = sorted(element_z(e) for e in species_elements(species))
+    if len(zs) == 1:
+        return f"{zs[0]}.{int(iso):03d}"
+    return ''.join(f"{z:02d}" for z in zs) + '.' + f"{int(iso):0{3 * len(zs)}d}"
 
 
-#=============================================================================
-# High-level, name-aware conversions
-#=============================================================================
-def ts_to_molec(code):
-    """Turbospectrum token -> (species_name_or_None, molecule_mod_label).
+def ts_species(code, ion):
+    """Turbospectrum token and ionisation stage -> (species name, isotope label).
 
-  >>> ts_to_molec('0608.012016')
-  ('CO', '1216')
-  >>> ts_to_molec('010108.001001016')
-  ('H2O', '1116')
+  >>> ts_species('26.056', 1)
+  ('Fe I', 56)
+  >>> ts_species('0607.012014', 1)
+  ('CN', 12014)
   """
     cons = parse_ts(code)
-    return species_name(cons), format_molec(cons)
-
-
-def molec_to_ts(species, label):
-    """Species name + molecule_mod label -> Turbospectrum token.
-
-  >>> molec_to_ts('CO', '1216')
-  '0608.012016'
-  >>> molec_to_ts('H2O', '1116')
-  '010108.001001016'
-  """
-    cons = parse_molec(label, species_elements(species))
-    return format_ts(cons)
-
-
-if __name__ == '__main__':
-  # round-trip check over the molecules we know, main + a swapped-isotope case
-    cases = [
-            ('CO', '1216'), ('CO', '1316'), ('CO', '1218'),
-            ('H2O', '1116'), ('OH', '116'), ('CH', '112'),
-            ('C2', '1212'), ('TiO', '1648'), ('SiO', '1628'),
-            ('FeH', '156'), ('MgH', '124'), ('CN', '1214'),
-    ]
-    for name, label in cases:
-        ts = molec_to_ts(name, label)
-        back_name, back_label = ts_to_molec(ts)
-        ok = (back_label == label) and (back_name == name)
-        print(f"{name:4s} {label:6s} <-> {ts:20s} -> ({back_name}, {back_label})"
-                    f"  {'ok' if ok else 'MISMATCH'}")
+    name = species_name(cons)
+    if name is None:
+        raise ValueError(f"unknown molecule in Turbospectrum species {code!r}")
+    if len(cons) == 1:
+        return f"{name} {_ROMAN[int(ion)]}", cons[0][1]
+    return name, mass_label(cons)

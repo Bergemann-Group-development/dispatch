@@ -46,6 +46,12 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   or a folder of per-species files). Synthesis, navigation, annotation and blend screening
   all resolve it; there is no separate "master" or "navigator" list. A run's own
   `linelist_out.txt` is a derived result, labelled by its provenance when browsed.
+- *isotope label*: the second token of a line-list block, read as an integer. For an
+  atom it is the mass number, 0 for the natural mixture. For a molecule it is
+  Turbospectrum's mass part: three digits per constituent in ascending atomic number,
+  `000` for the natural mixture, so `012014` is 12C14N. HOP's `canonical_iso` and
+  `tumult.isotopes` share this convention, and Turbospectrum's species code
+  (`0607.012014`) carries the same digits after the point.
 - *pruned line list*: the subset of the configured line list that a synthesis on one
   atmosphere node keeps, written in the input format by `hop_prune.x`
   (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node

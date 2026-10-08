@@ -5,7 +5,7 @@ from .auxfuncs import split_words
 from tumult.const import EK
 import os
 import re
-from tumult.isotopes import parse_ts, format_molec, molec_to_ts, species_elements, element_z
+from tumult.isotopes import iso_token, species_elements, ts_species, ts_token
 import numpy as np
 import pandas as pd
 from astropy import units as u
@@ -78,126 +78,26 @@ class LineList(pd.DataFrame):
 
   @classmethod
   def from_ts_format(cls, filename):
-    llist = pd.DataFrame()
-    with open(filename) as f:
-      lines = f.readlines()
-      names = ['lam0', 'evi', 'loggf', 'gvdw', 'upper_g', 'grad', 'gstk']
-      levels = ['levlo', 'levup']
-      df_dict = {}
+    """A line list in Turbospectrum's layout; the layout is told per block, so a file
+    may mix it with the tumult layout (see :func:`_blocks`)."""
+    return cls._from_blocks(filename)
 
-      while len(lines) > 0:
-        try:
-          line = lines.pop(0).strip()
-          mass_id, ion, nlines = split_words(line)
-        except Exception as e:
-          print(f"Error parsing line list header in {filename}: {line}")
-          raise e
-        
-        line = lines.pop(0).strip()
-        label = line.strip("'").strip()
-        label = ' '.join(label.split())
-        nlines = int(nlines)
-        table = ''.join(lines[:nlines])
-
-        try:
-          # Tokenise directly rather than going through the CSV reader: trailing
-          # labels may carry an unbalanced apostrophe from term notation such as
-          # "p4f'[5]", which breaks quotechar parsing and silently drops blocks.
-          rows = [r.split() for r in lines[:nlines] if r.strip()]
-
-          def isnum(tok):
-            try:
-              float(tok)
-              return True
-            except ValueError:
-              return False
-
-          # gstk (gamst) is optional, so the designations sit in column 6 or 7
-          ncore = 0
-          for tok in rows[0][:len(names)]:
-            if not isnum(tok):
-              break
-            ncore += 1
-
-          cols = names[:ncore]
-          has_lev = len(rows[0]) >= ncore + 2 and all(
-              len(rows[0][ncore + k].strip("'")) == 1 for k in (0, 1))
-          if has_lev:
-            cols = cols + levels
-
-          data = [r[:len(cols)] for r in rows]
-          df = pd.DataFrame(data, columns=cols)
-          df[cols[:ncore]] = df[cols[:ncore]].astype(float)
-          for lev in levels:
-            if lev in df.columns:
-              df[lev] = df[lev].str.strip("'").str.strip()
-
-          # decode the Turbospectrum species token into a molecule_mod label:
-          # a molecule keeps the sorted, glued mass numbers (each floored to 1
-          # so a natural '000' constituent stays present); an atom keeps its
-          # bare mass number as an int, as the rest of the code expects
-          cons = parse_ts(mass_id)
-          if len(cons) > 1:
-            iso = format_molec([(z, max(1, a)) for z, a in cons])
-          else:
-            iso = cons[0][1]
-
-          df_dict[(label, iso)] = df
-        except Exception as e:
-          print(f"Error reading line list {filename} for {label}: {e}")
-
-        del lines[:nlines]
-      
-      llist = pd.concat(df_dict, names=['ion', 'iso', None])
-      llist = llist.sort_index()
-
-    return cls(llist)
-  
   @classmethod
   def from_tumult_format(cls, filename):
-    llist = pd.DataFrame()
-    with open(filename) as f:
-        lines = f.readlines()
-        # strength and reach [Angstrom] are the trailing columns linelist_out.txt and
-        # hop_prune.x write: the line's peak over continuum extinction, and the half-width
-        # out to which its extinction exceeds HOP's tolerance times the continuum
-        names = ['lam0', 'evi', 'loggf', 'gvdw', 'grad', 'gstk', 'i', 'j', 'strength', 'reach']
-        df_dict = {}
-        usecols = lambda col: col is None or col < len(names)
+    """A line list in the tumult layout; the layout is told per block, so a file may
+    mix it with Turbospectrum's (see :func:`_blocks`)."""
+    return cls._from_blocks(filename)
 
-        while len(lines) > 0:
-            header = lines.pop(0).strip()
-            
-            try:
-              # species is the first single-quoted field ("'Fe I'"), optionally followed by
-              # a label; split on the quote so the ion stage that .split()[0] dropped is kept
-              species = header.split("'")[1].strip() if "'" in header else header.split()[0].strip()
-              line = lines.pop(0).strip()
-              iso_id, nlines = split_words(line)
-              iso = int(iso_id.strip("'").split('.')[-1])
-              nlines = int(nlines)
-              table = ''.join(lines[:nlines])
-            except Exception as e:
-              print(f"Error parsing line list header in {filename}: {header}")
-              raise e
-
-            try:
-              df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
-            except Exception as e:
-              print(f"Retrying with fixed-width format for {species} due to error: {e}")
-              df = pd.read_fwf(StringIO(table), header=None, infer_nrows=nlines).iloc[:, :len(names)]
-              
-            df.columns = names[:df.shape[1]]
-            del lines[:nlines]
-
-            ion = species.strip()
-            df_dict[(ion, iso)] = df
-        
-        llist = pd.concat(df_dict, names=['ion', 'iso', None])
-        llist = llist.sort_index()
-
+  @classmethod
+  def _from_blocks(cls, filename):
+    frames = {}
+    for species, iso, ts, rows in _blocks(Path(filename).read_text().splitlines()):
+      df = _ts_records(rows) if ts else _tumult_records(rows, species)
+      key = (species, iso)
+      frames[key] = pd.concat([frames[key], df], ignore_index=True) if key in frames else df
+    llist = pd.concat(frames, names=['ion', 'iso', None]).sort_index()
     return cls(llist)
-  
+
   @classmethod
   def from_linemake_format(cls, filename):
     llist = pd.read_fwf(filename, widths=[10,10,10,10,20,20], sep=r'\s+', header=None, dtype={1:str})
@@ -295,7 +195,7 @@ class LineList(pd.DataFrame):
         f.write(f"'{s}'")
         if label: f.write(f" '{label}'")
         f.write("\n")
-        f.write(f"'{iso}' {nlines}\n")
+        f.write(f"'{iso_token(s, iso)}' {nlines}\n")
         f.write(sub.to_string(index=False, header=False, na_rep='', formatters=formatters))
   
   def write_to_ts_format(self, filename):
@@ -321,21 +221,90 @@ class LineList(pd.DataFrame):
         else:
           el_id, ion = s, 1
 
-        # build the Turbospectrum species token. Atom vs molecule is decided by
-        # parsing the species formula against the element table (species_elements
-        # falls back to a general chemical-formula parser), so no hardcoded list
-        # of molecules is needed -- CaH, SiS, VO, ZrO, ... all resolve on their
-        # own. Atoms keep the bare '<Z>.<iso>' form; molecules get the full
-        # atomic-number/mass-number encoding.
-        elements = species_elements(el_id)
-        if len(elements) == 1:
-          token = f"{element_z(elements[0])}.{iso}"
-        else:
-          token = molec_to_ts(el_id, iso)
-
+        token = ts_token(el_id, iso)
         f.write(f"'{token}' {ion} {nlines}\n")
         f.write(f"'{s}'\n")
         f.write(sub[head].to_string(index=False, header=False, na_rep='', formatters=formatters) + '\n')
+
+
+# --- line-list blocks ------------------------------------------------------------
+# a quoted field (with '' for an apostrophe inside it) or a bare word
+_TOKEN = re.compile(r"'((?:[^']|'')*)'|(\S+)")
+_TS_CODE = re.compile(r"\d+(\.\d*)?")
+_TS_NUMBERS = ['lam0', 'evi', 'loggf', 'gvdw', 'upper_g', 'grad', 'gstk']
+# strength and reach [Angstrom] are the trailing columns linelist_out.txt and
+# hop_prune.x write: the line's peak over continuum extinction, and the half-width
+# out to which its extinction exceeds HOP's tolerance times the continuum
+_TUMULT_COLUMNS = ['lam0', 'evi', 'loggf', 'gvdw', 'grad', 'gstk', 'i', 'j', 'strength', 'reach']
+
+
+def _tokens(text):
+    """The list-directed fields of a line, quoted fields unquoted."""
+    return [q.replace("''", "'") if b == '' else b for q, b in _TOKEN.findall(text)]
+
+
+def _blocks(lines):
+    """``(species, iso, ts, records)`` for every block of a line list.
+
+    A tumult block opens with the species (``'Fe I'``, optionally followed by a label)
+    and then its isotope label and record count (``'56' 120``). A Turbospectrum block
+    opens with its species code, ionisation stage and record count (``'26.056' 1 120``)
+    and then a free label. The layout is told per block from the first of these lines,
+    as HOP's reader does (linelist_reader_mod). ``iso`` is the isotope label of
+    :mod:`tumult.isotopes` in both layouts.
+    """
+    k = 0
+    while k < len(lines):
+        head = _tokens(lines[k])
+        if not head:
+            k += 1
+            continue
+        ts = (len(head) >= 3 and _TS_CODE.fullmatch(head[0].strip()) is not None
+              and head[1].isdigit() and head[2].isdigit())
+        if ts:
+            species, iso = ts_species(head[0].strip(), int(head[1]))
+            nrec = int(head[2])
+        else:
+            species = ' '.join(head[0].split())
+            iso_id, nrec = _tokens(lines[k + 1])[:2]
+            iso, nrec = int(iso_id.split('.')[-1]), int(nrec)
+        yield species, iso, ts, lines[k + 2:k + 2 + nrec]
+        k += 2 + nrec
+
+
+def _tumult_records(rows, species):
+    table = '\n'.join(rows)
+    usecols = lambda col: col is None or col < len(_TUMULT_COLUMNS)
+    try:
+        df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
+    except Exception as e:
+        print(f"Retrying with fixed-width format for {species} due to error: {e}")
+        df = pd.read_fwf(StringIO(table), header=None, infer_nrows=len(rows)).iloc[:, :len(_TUMULT_COLUMNS)]
+    df.columns = _TUMULT_COLUMNS[:df.shape[1]]
+    return df
+
+
+def _ts_records(rows):
+    """Turbospectrum records ``lam Elow loggf fdamp gu raddmp [gamst] 'lo' 'up' eqw eqwerr
+    'comment' [ilo iup ...]`` as columns; a record may end after any group of fields.
+    fdamp, raddmp and gamst are the tumult gvdw, grad and gstk, and ilo/iup its level
+    indices i, j (0 where absent). Indices without the comment before them are not
+    read, as Turbospectrum reads such a block without them."""
+    num, lev, idx = [], [], []
+    for row in rows:
+        head, quote, tail = row.partition("'")
+        v = head.split()
+        if len(v) not in (6, 7):
+            raise ValueError(f"Turbospectrum record needs 6 or 7 numbers: {row!r}")
+        num.append(v + ['0'] * (7 - len(v)))
+        t = _TOKEN.findall(quote + tail)
+        lev.append([q for q, _ in t[:2]] if len(t) >= 2 else ['x', 'x'])
+        commented = len(t) >= 7 and t[4][1] == ''
+        idx.append([b for _, b in t[5:7]] if commented else ['0', '0'])
+    df = pd.DataFrame(np.array(num, dtype=float).reshape(-1, 7), columns=_TS_NUMBERS)
+    df[['levlo', 'levup']] = pd.DataFrame(lev, columns=['levlo', 'levup'])
+    df[['i', 'j']] = np.array(idx, dtype=int).reshape(-1, 2)
+    return df
 
 
 # --- the master line list -------------------------------------------------------
@@ -369,12 +338,12 @@ _cache = {}  # path -> parsed DataFrame (process-wide, read-only, shared across 
 
 
 def species_header(path):
-    """The first quoted species label in a Tumult line-list file."""
+    """The species of the first block of a line-list file, in either layout."""
     with Path(path).open(errors="ignore") as stream:
-        header = stream.readline().strip()
-    if "'" in header:
-        return header.split("'", 2)[1].strip()
-    return header.split()[0] if header.split() else ""
+        lines = [stream.readline(), stream.readline()]
+    for species, _, _, _ in _blocks(lines):
+        return species
+    return ""
 
 
 def is_molecule(species):
@@ -419,7 +388,7 @@ def atomic_files(folder):
                        if item.is_file() and not item.name.startswith(".")):
         try:
             molecular = is_molecule(species_header(path))
-        except OSError:
+        except (OSError, ValueError, IndexError):
             logging.warning("Could not classify line-list file %s; keeping it", path)
             molecular = False
         if not molecular:

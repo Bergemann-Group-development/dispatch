@@ -35,6 +35,7 @@ MODULE composition_patch_mod
   USE qlg, only: qlg_init
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
+  USE anstee_mod, only: anstee_file
   USE trace_mod
   USE console_mod
   USE scaling_mod
@@ -112,7 +113,7 @@ SUBROUTINE read_composition_params ()
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
-  tolerance, only_elements, line_scattering, ll_profile, voigt_kernel
+  tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 

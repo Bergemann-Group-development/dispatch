@@ -7,6 +7,7 @@
 \fort{dlam} & Distance from a window up to which line wings are followed (default \SI{100}{\angstrom}). Windows closer than $2\,\fort{dlam}$ share one line-list interval. If a list has records in the requested windows but none is selected, the run stops with an error; if the list has no record there, it prints a warning.\\
 \fort{tolerance} & Keep a transition as long as its opacity exceeds this fraction of the continuum (default $10^{-4}$).\\
 {\fort{only_elements},\\\fort{exclude_elements}} & Space-separated element or molecule identifiers. Do not exclude an NLTE element: with \fort{output_from_line_list} its lines in the output come from the line list (Sec.~\ref{sec:nlteoutput}).\\
+\fort{anstee_file} & Anstee--Barklem--O'Mara cross-section tables for line lists in Turbospectrum's format (default \File{./input/Anstee-1802-2014.dat}, Sec.~\ref{sec:linelist}).\\
 \fort{line_scattering} & Treat part of the line opacity as scattering (default \fort{F}). This partitions the line extinction rather than adding to it.\\
 \bottomrule
 \end{longtblr}

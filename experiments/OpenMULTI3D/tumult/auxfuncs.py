@@ -55,7 +55,11 @@ atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.8
 molecule_dict = {'H2':['H', 'H'], 'C2':['C', 'C'], 'N2':['N', 'N'], 'O2':['O', 'O'],
                  'CH':['C', 'H'], 'NH':['N', 'H'], 'OH':['O', 'H'], 'CO':['C', 'O'],
                  'CN':['C', 'N'], 'NO':['N', 'O'], 'H2O':['H', 'H', 'O'], 'MgH':['Mg', 'H'],
-                 'SiH':['Si', 'H'], 'SiO':['Si', 'O'], 'FeH':['Fe', 'H'], 'TiO':['Ti', 'O'],}
+                 'SiH':['Si', 'H'], 'SiO':['Si', 'O'], 'FeH':['Fe', 'H'], 'TiO':['Ti', 'O'],
+                 'CaH':['Ca', 'H'], 'CrH':['Cr', 'H'], 'AlH':['Al', 'H'], 'VO':['V', 'O'],
+                 'ZrO':['Zr', 'O'], 'MgO':['Mg', 'O'], 'AlO':['Al', 'O'], 'CaO':['Ca', 'O'],
+                 'SiS':['Si', 'S'], 'CO2':['C', 'O', 'O'], 'CH4':['C', 'H', 'H', 'H', 'H'],
+                 'NH3':['N', 'H', 'H', 'H'],}
 
 ion_dict = {1:'I', 2:'II', 3:'III', 4:'IV', 5:'V', 6:'VI', 7:'VII', 8:'VIII',}
 

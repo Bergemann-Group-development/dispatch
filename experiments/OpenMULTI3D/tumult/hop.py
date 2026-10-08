@@ -197,9 +197,11 @@ class HopEOS:
                 raise HopError(f'data file not found: {p}')
 
         options = dict(options or {})
-        # the VCS hydrogen-profile tables sit next to the other input data, but
-        # HOP's default path is cwd-relative -- make it absolute unless overridden
+        # the VCS hydrogen-profile tables and the ABO cross-section tables of
+        # Turbospectrum lists sit next to the other input data, but HOP's default
+        # paths are cwd-relative -- make them absolute unless overridden
         options.setdefault('vcs_data_dir', str(_EXP_DIR / 'input' / 'vcs'))
+        options.setdefault('anstee_file', str(_EXP_DIR / 'input' / 'Anstee-1802-2014.dat'))
 
         # everything needed to build an identical instance elsewhere: opacity()
         # hands this to its spawned workers, and uses it to rebuild this instance

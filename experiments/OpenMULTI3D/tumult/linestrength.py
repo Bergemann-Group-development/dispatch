@@ -123,8 +123,9 @@ def _linelist_key(linelist):
 
 
 def usable_linelist(path):
-    """Whether ``path`` is something HOP can be handed: a Tumult line-list file (its first
-    line a quoted species label) or a folder holding at least one. HOP aborts the process
+    """Whether ``path`` is something HOP can be handed: a line-list file in the tumult or
+    Turbospectrum layout (its first line opens with a quoted species label or code) or a
+    folder holding at least one. HOP aborts the process
     on unreadable input, so a preference that is empty, missing or pointing elsewhere must
     be caught here rather than there.
     """
