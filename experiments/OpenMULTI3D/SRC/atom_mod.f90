@@ -298,9 +298,8 @@ MODULE atom_mod
     class(molec_type), pointer :: molec
     logical, intent(in) :: iterate
     logical, intent(out), optional :: found
-    real(4) :: nmax, nlim
     integer, save:: itimer=0
-    integer :: i, j, m(4), nl
+    integer :: i, m(4), nl
     !-----------------------------------------------------------------------------
     call trace%begin('atom_type%init_atom_data', itimer=itimer)
     nl = self%nlevel
@@ -408,7 +407,7 @@ MODULE atom_mod
     real(8) :: norm, elo, eup
     real(8), dimension(:), allocatable :: bold, ework
     integer(8) :: ng_nclamp, ng_ntot
-    logical :: relax, ok
+    logical :: ok
     integer, save :: itimer=0, itimer2=0
     ! -- diag_pops bookkeeping ---------------------------------------------------
     real(8), dimension(:,:), allocatable :: w_save
@@ -694,8 +693,7 @@ MODULE atom_mod
     real(4), dimension(:), pointer :: rij, rji
     real(8) :: totn, e_kT, cut_rate
     integer :: kr, pos, i, j, x,y,z
-    integer, save :: itimer=0, itimer2=0
-    logical :: abort, ok, db_here
+    logical :: ok, db_here
     logical, save :: first_time=.true.
     character(len=256) :: msg
     !------------------------------------------------------------------------------------
@@ -872,9 +870,8 @@ MODULE atom_mod
   SUBROUTINE check_ionisation_thresholds(self, element)
     class(atom_type), intent(inout) :: self
     class(element_type), pointer :: element
-    integer :: nions, j1, j2, i, j
+    integer :: j1, j2, i, j
     real(4), dimension(:), allocatable :: xion
-    real(4) :: prev
     logical :: first_time=.true.
     character(len=256) :: msg
     !---------------------------------------------------------------------------------
@@ -908,14 +905,13 @@ MODULE atom_mod
     class(element_type), pointer :: element
     class(ion_type), pointer :: ion
     class(molec_type), pointer :: mol
-    integer :: i, j, x,y,z
+    integer :: i, j
     real(8), intent(inout), dimension(:,:,:,:) :: nstar
     real(8), intent(inout), dimension(:,:,:) :: totn
     real(4), intent(in), dimension(:,:,:) :: temp, lsaha, dxi
     real(4), dimension(:,:,:), allocatable :: partition, lvl_part, e_kT
     real(4), dimension(:,:,:), allocatable :: ev_off, ex, norm
-    real(4) :: xion
-    integer :: ijk(3), idis
+    integer :: idis
     logical :: molec
     integer, save :: itimer=0
     !---------------------------------------------------------------------------------
@@ -1034,8 +1030,8 @@ MODULE atom_mod
     integer, pointer, contiguous, dimension(:) :: icont, jcont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
-    real(8) :: gvdw, cnt_ev, nu_max, alpha0, thresh_aa, dlam
-    real(8) :: gij, vbar2e4, loggf
+    real(8) :: thresh_aa
+    real(8) :: gij, loggf
     character(4096) :: dummy_string
     character(512) :: text
     integer :: nbf_col
@@ -1564,7 +1560,6 @@ MODULE atom_mod
     real(8), parameter :: sqr3_2pi = sq32 / PI
     real(8), parameter :: sq8bmp = sqrt(8*BK/EM/PI)
     real(8), parameter :: c0 = PI*Rbohr**2 * sq8bmp
-    real(8), parameter :: cseaton = sq8bmp/sq32/(1.d0/137.d0)*Rydk !1.55e13
     integer, save :: itimer=0
     !---------------------------------------------------------------------
     call trace%begin('classic_col', itimer=itimer)
@@ -1783,7 +1778,7 @@ MODULE atom_mod
     logical, intent(in), optional :: bb, bf, set_active
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
-    integer :: i, j, nnu, ired, iblue
+    integer :: i, nnu, ired, iblue
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_trans_t%set_ired_iblue', itimer=itimer)
@@ -1882,7 +1877,7 @@ MODULE atom_mod
     logical, intent(in), optional :: bb, bf
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
-    integer :: i, j, nnu, ired, iblue
+    integer :: i
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_trans_t%set_active_transitions', itimer=itimer)
@@ -1997,10 +1992,10 @@ MODULE atom_mod
     class(composition_type) :: comp
     character(8) :: key
     real(8) :: temp, ne
-    real(8) :: ct, cup, cdn, dekt, de_k, de
-    real(8) :: stg, nji, fac, nh1, n_collider
+    real(8) :: ct, cup, cdn
+    real(8) :: stg, nji, nh1, n_collider
     real(8) :: lsaha, dxi, dev, tns, e_kT
-    integer :: x,y,z,ul,ll,i,j,k,iz, nhlevels, ii, jj, nc, itemp
+    integer :: x,y,z,ul,ll,i, ii, jj, nc, itemp
     real(8), parameter :: c0=((Eryd/sqrt(em)) * pi*Rbohr**2) * sqrt(8.0/(pi*bk))
     integer, save :: itimer=0
     !---------------------------------------------------------------------

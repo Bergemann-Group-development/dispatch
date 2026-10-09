@@ -184,7 +184,7 @@ SUBROUTINE composition_pre_init (self)
   class(nlte_patch_t), pointer :: nlte_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
   real(8) :: ll_lam(2)
-  integer :: i, mu, nw
+  integer :: i, nw
   integer, save:: itimer=0
   logical, save :: first_time=.true., external_sp
   ! ----------------------------------------------------------------------------
@@ -439,9 +439,8 @@ SUBROUTINE build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, 
   type(interval_t), intent(out), allocatable :: intervals_out(:)
   integer, intent(out) :: n_intervals_out
   real(dp), allocatable :: windows(:,:)
-  type(interval_t), allocatable :: temp_intervals(:)
   real(dp) :: sp_min, sp_max
-  integer :: i, n_windows, nout
+  integer :: i, n_windows
   logical :: output_uses_ll, internal_uses_ll
   !-----------------------------------------------------------------------------
 
@@ -554,7 +553,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   class(rt_patch_t), pointer :: rt_patch
   type(rt_patch_ptr_t), allocatable :: grown(:)
   integer :: n, m
-  logical :: new_nlte
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
@@ -872,7 +870,7 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   real(8), dimension(:,:,:), intent(in) :: temp, rho
   real(8), intent(in) :: ldtemp, ldrho
   real(8) :: minTemp, maxTemp, minRho, maxRho
-  integer :: i, j, ntemp, nrho, nnu
+  integer :: i, j, ntemp, nrho
   real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
   real(4), dimension(:,:,:), allocatable :: eos, tab_vmic
   real(8) :: minLnRho, maxLnRho, minLnT, maxLnT

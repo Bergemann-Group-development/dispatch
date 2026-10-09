@@ -99,7 +99,6 @@ CONTAINS
     class(boundaries_t) :: self
     !.............................................................................
     class(patch_t), pointer      :: patch
-    integer                      :: id
     real(8)                      :: position(3)
     real(8)                      :: size(3), p(3)
     integer                      :: i, j, k

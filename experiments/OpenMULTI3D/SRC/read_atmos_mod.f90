@@ -310,7 +310,6 @@ contains
     class(input_atmos_t), intent(inout) :: self
     real(8), intent(out) :: box(3)
     real(8), intent(in) :: scale
-    real(8) :: ds(3)
     integer :: n(3)
     !-----------------------------------------------------------------------------
     n = [self%nx, self%ny, self%nz-2*self%gz]
@@ -560,8 +559,8 @@ contains
     real(8), intent(in), optional :: vec(3), bot2pivot
     real(4), dimension(:), allocatable :: newz
     real(8) :: lower(3), ds(3)
-    real(8) :: dx, dy, dz
-    integer :: i, ijk(3), nx, ny, nz, itimer=0
+    real(8) :: dx, dy
+    integer :: i, nx, ny, nz, itimer=0
     logical :: do_pchip, get_grad_t, get_grad_pe
     !-----------------------------------------------------------------------------
     call trace%begin('interpolate_atmos', itimer=itimer)

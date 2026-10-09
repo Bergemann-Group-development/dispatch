@@ -55,7 +55,6 @@ CONTAINS
     class(experiment_t), target :: self
     integer, save:: itimer=0
     real(8), save:: timestep=1.d0
-    integer :: md(3), thread
     !-----------------------------------------------------------------------------
     call trace%begin('experiment_t%pre_init', itimer=itimer)
 
@@ -154,8 +153,6 @@ CONTAINS
   !===============================================================================
   SUBROUTINE pre_update (self)
     class(experiment_t), target:: self
-    integer, save:: itimer=0
-    logical :: ready, busy
     !----------------------------------------------------------------------------
     call self%task_t%pre_update()
     call self%set(bits%no_download)
@@ -177,7 +174,6 @@ CONTAINS
   !===============================================================================
   SUBROUTINE rotate (self)
     class(experiment_t):: self
-    integer, save:: itimer=0
     !----------------------------------------------------------------------------
     call self%task_t%rotate
     if (self%iter == 0) then
@@ -310,7 +306,7 @@ CONTAINS
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
     integer, save:: itimer=0
-    integer :: i, key(4)
+    integer :: key(4)
     !-----------------------------------------------------------------------------
     call trace%begin('experiment_t%init_nbors_hash', itimer=itimer)
     nullify (nbors)

@@ -29,7 +29,7 @@ contains
     !  schemes
     !---------------------------------------------------------------------
     character(len=*), intent(in) :: quad_scheme
-    integer :: m, i, nro, nmu
+    integer :: nro, nmu
     real(8), dimension(:), allocatable :: mux,  muy,  wmu
     real(8), dimension(:), allocatable, intent(out) :: wts
     real(8), dimension(:,:), allocatable, intent(out) :: vec
@@ -370,7 +370,7 @@ contains
     real(8), intent(out), dimension(:,:), allocatable :: vec
     real(8), intent(in), optional, dimension(:) :: zrot
     real(8) :: xphi, theta, xoff
-    integer :: nrays, ntheta, i, nt, np, nmuphi, n1, nphi
+    integer :: nrays, i, nt, np, nmuphi, n1, nphi
     logical :: includes_mu1, mirror=.false.
     logical, optional :: Jnu_weights
     ! -------------------------------------------------------------------

@@ -823,8 +823,8 @@ contains
     real(4), dimension(:,:,:), allocatable :: vproj
     real(4) :: wmu
     real(8) :: vec(3)
-    logical :: skip, get_cntrbf, do_rotate_atmos, top_of_domain
-    integer :: i, j, i_mu, zs, ze, fs, fe, ng, i_set, nrad
+    logical :: get_cntrbf, do_rotate_atmos, top_of_domain
+    integer :: i, i_mu, zs, ze, fs, fe, ng, i_set, nrad
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%execute', itimer=itimer)
@@ -1159,7 +1159,7 @@ contains
     if (i_set==1) then
       call self%lte_background_opacities(comp, include_absmet, do_sample_opac, do_make_eos)
     endif
-    call self%lte_background_emission(comp, i_set, vec, include_absmet, do_rotate_atmos)
+    call self%lte_background_emission(comp, i_set, vec, do_rotate_atmos)
     call self%convert_to_work_units()
     call self%reset_array(self%Jnu(:,:,:,:,i_set:i_set))
     ! PsiJ now persists across iterations for the scattering ALI, so zero it for a
@@ -1788,7 +1788,7 @@ contains
   SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac, do_make_eos)
     class(rt_patch_t) :: self
     class(composition_type) :: comp
-    real(4) :: h_kT, hv_kT, bnu
+    real(4) :: h_kT, hv_kT
     type(spectrum_type) :: tab_sp
     type(rt_params_t), pointer :: rtp
     logical :: include_absmet, do_sample_opac, do_make_eos
@@ -1918,19 +1918,19 @@ contains
   END SUBROUTINE lte_background_opacities
 
   !===============================================================================
-  SUBROUTINE lte_background_emission (self, comp, i_set, vec, include_absmet, do_rotate_atmos)
+  SUBROUTINE lte_background_emission (self, comp, i_set, vec, do_rotate_atmos)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     integer, intent(in) :: i_set
     real(8), intent(in) :: vec(3)
-    logical, intent(in) :: include_absmet, do_rotate_atmos
+    logical, intent(in) :: do_rotate_atmos
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
     real(4) :: Bnu, wscat
     character(8) :: Jnu_label
     logical :: Jnu_to_Bnu, do_scat_now
-    integer :: s, fs, fe
+    integer :: fs, fe
     integer, save :: itimer
     integer :: x, y, z, f
     character(len=256) :: msg
@@ -2138,7 +2138,7 @@ contains
     logical, intent(in), optional :: disjoint
     logical :: do_disjoint
     real(4) :: over_chi500
-    integer :: i,j,k, ntemp, nne, nnu
+    integer :: j,k, ntemp, nne, nnu
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%generate_opacity_table', itimer=itimer)
@@ -2312,9 +2312,8 @@ contains
   SUBROUTINE save_opac_table (self)
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
-    real(4), dimension(:,:,:), allocatable :: eos
     real(4) :: over_rho
-    integer :: i,j,k, ntemp, nrho
+    integer :: j,k, ntemp, nrho
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%save_opac_table', itimer=itimer)
@@ -2369,7 +2368,7 @@ contains
     class(atom_data_t), target :: adata
     integer, intent(in) :: i_set
     class(cont_type), pointer :: cont
-    real(4) :: ni, nj, tmp, alpha
+    real(4) :: ni, tmp, alpha
     real(8) :: dev
     integer :: i, fs, fe
     integer, save :: itimer=0
@@ -2474,14 +2473,14 @@ contains
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: vphi
-    real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
+    real(4) :: wmu, idf, vpr, a, ni, nj
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, fs, fe
     logical :: LTE, do_LTE, get_wphi, sum_wphi
     integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
-    integer, save :: itimer=0, itimer1=0
+    integer, save :: itimer=0
     integer :: x, y, z, f, index
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
@@ -2621,7 +2620,7 @@ contains
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: wmunu, vph
-    real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel
+    real(4) :: wmu, idf, vpr, a, ni, nj, phi
     real(4) :: vvv, sum_I, sum_P, sum_A
     real(4) :: g_ij, g_ji
     real(8) :: q
@@ -2630,8 +2629,8 @@ contains
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
-    integer :: i, l, fs, fe, index
-    logical :: get_wphi, split_rates, per_direction, own_norm, do_scat
+    integer :: i, fs, fe, index
+    logical :: split_rates, per_direction, own_norm, do_scat
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
     integer, save :: itimer=0
@@ -2865,7 +2864,7 @@ contains
     class(atom_data_t), target :: adata
     class(cont_type), pointer :: cont
     real(4), dimension(:), allocatable :: w_alpha, wmunu
-    real(4) :: ni, nj, tmp, eta_fac, q, phi
+    real(4) :: phi
     real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
     real(8) :: dev
     integer :: i, j, fs, fe
@@ -3364,7 +3363,7 @@ contains
   !===============================================================================
   SUBROUTINE save_contribution_function (self, i_set, i_mu)
     class(rt_patch_t) :: self
-    integer :: i, j, i_set, i_mu, ff, im
+    integer :: i_set, i_mu
     real(4) :: net_chi, net_src, net_eta, lin_chi, lin_eta
     integer, save :: itimer=0
     integer :: x, y, z, f

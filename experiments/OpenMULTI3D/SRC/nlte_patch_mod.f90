@@ -754,7 +754,6 @@ contains
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
-    real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
     integer :: i, j, l, n
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
@@ -947,7 +946,7 @@ contains
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    integer :: x, y, z, l, m, n(4), i, j, k, nmu
+    integer :: x, y, z, l, m, n(4), i, nmu
     !---------------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%write_populations')
     do i=1, self%natom
@@ -1030,8 +1029,8 @@ contains
     class(departure_pointer_t), pointer :: dep
     real(8), dimension(:,:,:), allocatable :: norm, totn
     real(8) :: vec(3), tmp
-    integer :: i,j,k,l, n(3), imu, nmu, x, y, z
-    logical :: iterated, has_departures
+    integer :: i,l, n(3), imu, nmu, x, y, z
+    logical :: iterated
     !---------------------------------------------------------------------------------
     nmu = size(rt_out%vec, 2)
     n = self%n
@@ -1133,7 +1132,6 @@ contains
     character(len=64) :: text
     character(len=1) :: ng_mark
     integer :: i, flux_pos
-    real(8) :: global
     logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------
     if (console_on(ch_m3d, 2, all_ranks=.true.)) then
@@ -1365,7 +1363,6 @@ contains
   SUBROUTINE init_nbors_hash (self, nbors)
     class(nlte_patch_t):: self
     class(nbor_t), pointer:: nbors
-    integer, save:: itimer=0
     integer :: key(4), i_nu, i_mu
     !-----------------------------------------------------------------------------
     call self%m3d_patch_t%init_nbors_hash(nbors)
@@ -1384,7 +1381,7 @@ contains
   SUBROUTINE save_abundance_to_file (self, atom)
     class(nlte_patch_t), target :: self
     class(atom_type) :: atom
-    integer :: lunit, i
+    integer :: lunit
     !-----------------------------------------------------------------------------
     if (self%ipos(3)==0) then
       open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED', access='append')
@@ -1396,7 +1393,7 @@ contains
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
     class(nlte_patch_t):: self
-    integer :: i,j,k,v,t,w
+    integer :: w
     integer, save :: itimer
     !-----------------------------------------------------------------------------
     if (.not. check_NaN) return
