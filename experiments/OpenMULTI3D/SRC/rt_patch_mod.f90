@@ -2473,7 +2473,7 @@ contains
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
-    integer :: i, ih, fs, fe
+    integer :: i, fs, fe
     logical :: LTE, do_LTE, get_wphi, sum_wphi
     integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
@@ -2543,13 +2543,6 @@ contains
                   bi = bi * wj
                   bj = bj * wj
                 endif
-              elseif (line%io > 1) then
-                phi = 0
-                do ih=1, line%io
-                  a = trans%adamp(x,y,z,i) + idf*line%da(ih)
-                  vpr = vproj(x,y,z) + line%dq(ih)
-                  phi = phi + qlg_bot_profile(a, line%q(fs:fe), vpr, idf) * line%wt(ih)
-                end do
               else
                 vpr = vproj(x,y,z)
                 a = trans%adamp(x,y,z,i)
@@ -2600,15 +2593,15 @@ contains
   !===============================================================================
   !> Does the profile integral of this line have to be summed over wavelength
   !> windows?  It does when a window edge cuts the line (it then reaches the edge
-  !> of this window).  Hydrogen lines and lines with several components keep the
-  !> summed integral as well, since their rates are not normalised per direction.
+  !> of this window).  Hydrogen lines keep the summed integral as well, since
+  !> their rates are not normalised per direction.
   !===============================================================================
   LOGICAL FUNCTION sums_over_windows (self, line)
     class(rt_patch_t), intent(in) :: self
     class(line_type), intent(in) :: line
     !-----------------------------------------------------------------------------
     sums_over_windows = line%iblue <= self%fs .or. line%ired >= self%fe &
-                        .or. line%hydrogen .or. line%io > 1
+                        .or. line%hydrogen
   END FUNCTION sums_over_windows
 
   !===============================================================================
@@ -2624,16 +2617,16 @@ contains
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: wmunu, vph
-    real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
-    real(4) :: vvv, a2, sum_I, sum_P, sum_A
+    real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel
+    real(4) :: vvv, sum_I, sum_P, sum_A
     real(4) :: g_ij, g_ji
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
-    real(4) :: split_bi, split_bj, split_Rij, abs_coef, vpr2
+    real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_t, chi_t, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
-    integer :: i, l, ih, fs, fe, index
+    integer :: i, l, fs, fe, index
     logical :: get_wphi, split_rates, per_direction, own_norm
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
@@ -2729,39 +2722,6 @@ contains
                   associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                     q = line%q(f) - vpr
                     phi = hprofile(hline, hcell, q)
-                    vvv = phi * wmunu(f)
-                    sum_A = sum_A + vvv
-                    sum_I = sum_I + vvv * Inu
-                    sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
-                  end associate
-                end do
-              endif
-            elseif (line%io > 1) then
-              ! As in add_bound_bound_opacities, the sublevel offset shifts the
-              ! velocity.  Subtracting it from q instead would also shift the
-              ! nu/nu0 Jacobian qlg_bot_profile applies, giving a profile that
-              ! differs from the one the opacity used.
-              if (split_rates) then
-                do f=fs, fe
-                  phi = 0
-                  do ih=1, line%io
-                    a2 = a + idf*line%da(ih)
-                    vpr2 = vpr + line%dq(ih)
-                    vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
-                    phi = phi + vgt*line%wt(ih)
-                  end do
-                  vph(f) = phi
-                end do
-              else
-                do f=fs, fe
-                  associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
-                    phi = 0
-                    do ih=1, line%io
-                      a2 = a + idf*line%da(ih)
-                      vpr2 = vpr + line%dq(ih)
-                      vgt = qlg_bot_profile(a2, line%q(f), vpr2, idf)
-                      phi = phi + vgt*line%wt(ih)
-                    end do
                     vvv = phi * wmunu(f)
                     sum_A = sum_A + vvv
                     sum_I = sum_I + vvv * Inu

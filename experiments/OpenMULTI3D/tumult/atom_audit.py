@@ -1,13 +1,13 @@
 """Sanity checks for model atoms.
 
 The checks work on a :class:`tumult.fast_atom.PandasAtom` (``load_atom`` converts the
-classic MULTI format on the fly) and reproduce what dispatch.x does with the data:
-level energies define line and edge frequencies only through ``atom_mod%read_classic``,
-while ``read_pandas`` takes each line's frequency from its tabulated air wavelength; bound-
-free cross sections are interpolated with the monotone cubic Hermite scheme of
-``trans_mod%hermite_interp`` and set to zero outside the tabulated range; collision
-coefficients are interpolated in temperature with the same scheme (on the logarithm for
-the keys listed in ``LOG_KEYS``) and held constant outside the tabulated range.
+classic MULTI format on the fly, as dispatch.x does) and reproduce what dispatch.x does
+with the data: the conversion of a classic atom derives line and edge frequencies from
+the level energies, while ``read_pandas`` takes each line's frequency from its tabulated
+air wavelength; bound-free cross sections are interpolated with the monotone cubic Hermite
+scheme of ``trans_mod%hermite_interp`` and set to zero outside the tabulated range;
+collision coefficients are interpolated in temperature with the same scheme on their
+logarithm and held constant outside the tabulated range.
 
 Each ``check_*`` function returns a table with one row per level, transition or
 continuum, and a list of :class:`Finding`. ``audit`` runs all of them; the command line
@@ -33,9 +33,6 @@ H_MINUS_EV = 0.754               # electron affinity of hydrogen [eV]
 A0 = 0.529177e-8                 # Bohr radius [cm]
 KRAMERS = 2.815e29               # hydrogenic photoionisation constant [cm^2 Hz^3]
 
-# Keys whose tabulated values dispatch interpolates in log (read_classic); read_pandas
-# takes the log of every key.
-LOG_KEYS = ('OHM', 'OHMEGA', 'CE', 'CI', 'CH0')
 SEVERITIES = ('serious', 'moderate', 'minor', 'info')
 
 
@@ -115,15 +112,12 @@ def bf_interpolate(lam_table, alpha_table, lam):
     return np.where((nu < nu_tab[0]) | (nu > nu_tab[-1]), 0.0, alpha)
 
 
-def collision_interpolate(temps, values, temp, key):
-    """Tabulated collision value at ``temp`` as gencol forms it (log interpolation for
-    LOG_KEYS, constant outside the table)."""
+def collision_interpolate(temps, values, temp):
+    """Tabulated collision value at ``temp`` as gencol forms it from read_pandas's table
+    (interpolation of the logarithm, constant outside the table)."""
     temps = np.asarray(temps, float)
-    values = np.asarray(values, float)
-    if key in LOG_KEYS:
-        yy = np.log(values)
-        return np.exp(hermite_eval(temps, yy, hermite_slopes(temps, yy), temp))
-    return hermite_eval(temps, values, hermite_slopes(temps, values), temp)
+    yy = np.log(np.asarray(values, float))
+    return np.exp(hermite_eval(temps, yy, hermite_slopes(temps, yy), temp))
 
 
 def planck_photon_weight(nu, temp):
@@ -445,9 +439,9 @@ def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3, classic=False):
     """Bound-bound transitions: level indices, frequency consistency, f-values,
     duplicates.
 
-    For a ``classic`` atom read_classic derives line frequencies from the level energies,
-    so the wavelength checks only matter once the atom is converted to the pandas format
-    (whose read_pandas converts tabulated air wavelengths); they are then minor."""
+    For a ``classic`` atom the conversion derives line frequencies from the level
+    energies, so the wavelength checks only matter for an atom edited after conversion
+    (read_pandas converts tabulated air wavelengths); they are then minor."""
     pandas_only = ' (classic format: dispatch uses the level energies; this applies after conversion to pandas)'
     pandas_only = pandas_only if classic else ''
     bbt = line_table(atom)
@@ -766,7 +760,7 @@ def bf_tables(atom):
         alpha = grp.alpha.to_numpy(float)
         order = np.argsort(lam, kind='stable')
         lam = lam[order]
-        # read_pandas and read_classic separate repeated wavelengths by 1e-6 AA
+        # read_pandas separates repeated wavelengths by 1e-6 AA
         for k in range(1, len(lam)):
             if lam[k] <= lam[k - 1]:
                 lam[k:] += lam[k - 1] - lam[k] + 1e-6
@@ -1134,7 +1128,7 @@ def check_collisions(atom, slope_limit=2.5):
     if len(nonpos):
         findings.append(Finding('collision values', 'serious',
                                 f'{len(nonpos)} records with zero, negative or non-finite values; read_pandas takes '
-                                'their log (-inf), read_classic aborts', len(nonpos),
+                                'their log (-inf), the conversion of a classic atom aborts', len(nonpos),
                                 [f"{col.key[k]} {col.i[k]}-{col.j[k]}" for k in nonpos]))
     dup = col[col.duplicated(['key', 'lo', 'hi'], keep=False)]
     if len(dup):
@@ -1257,7 +1251,7 @@ def check_collisions(atom, slope_limit=2.5):
             f = fval.get((r.lo, r.hi))
             if f is None or r.dev <= 0:
                 continue
-            ct = collision_interpolate(temps, vals[k], tmid, 'CE')
+            ct = collision_interpolate(temps, vals[k], tmid)
             cdn = gg[r.lo] / gg[r.hi] * ct * np.sqrt(tmid)
             cup = cdn * gg[r.hi] / gg[r.lo] * np.exp(-r.dev * EE / (BK * tmid))
             ratios.append((r.lo, r.hi, float(np.log10(cup / van_regemorter(f, r.dev, tmid))[0])))

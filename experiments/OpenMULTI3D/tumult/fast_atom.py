@@ -1,4 +1,5 @@
-import io, types
+import io, subprocess, tempfile, types
+from pathlib import Path
 import pandas as pd
 from .fast_trans import TransFactory
 import numpy as np
@@ -6,6 +7,8 @@ from .const import CC, EE, HH, UU
 from .physics import vac2air
 from .auxfuncs import get_qmax
 from .atom import AtomClass
+
+CONVERTER = Path(__file__).resolve().parents[1] / 'HOP' / 'standalone' / 'build' / 'atom_convert.x'
 
 formatters = {'grad':'{:.3e}'.format,
                             'gvdw':'{:.8g}'.format,
@@ -46,7 +49,7 @@ class FastAtom(object):
         bb = pd.DataFrame(self._line_records(atom_file), columns=names)
         bb = bb.astype({k: v for k, v in zip(names, dtype)})
         levels['ev'] = levels.ecm * CC*HH/EE
-        # read_classic orders each pair itself, whichever level a record names first
+        # dispatch orders each pair itself, whichever level a record names first
         lo = np.minimum(bb.i, bb.j)
         bb['j'] = np.maximum(bb.i, bb.j) - 1
         bb['i'] = lo - 1
@@ -63,9 +66,10 @@ class FastAtom(object):
         self.trans = TransFactory(self)
 
     def _line_records(self, atom_file):
-        """The first eleven fields of each bound-bound record, as read_classic reads
-        them: comment and blank lines are skipped, and a record with iw >= 2 is followed
-        by iw component rows (read without skipping comments), which are passed over."""
+        """The first eleven fields of each bound-bound record, as dispatch's MULTI parser
+        (HOP/atom_convert_mod.f90) reads them: comment and blank lines are skipped, and a
+        record with iw >= 2 is followed by iw component rows (read without skipping
+        comments), which are passed over."""
         with open(atom_file) as f:
             rows = iter(f.readlines())
         def entry():
@@ -151,69 +155,20 @@ class PandasAtom(object):
         return self
   
     @classmethod
-    def from_old(cls, atom_file, use_comment_lam0=False):
-        """Convert a classic MULTI atom.
-
-        dispatch.x takes the frequencies of a classic atom's lines from the level
-        energies, so ``lam0`` is the Ritz wavelength in air by default;
-        ``use_comment_lam0`` takes the wavelength from each line's comment instead (some
-        atoms give vacuum wavelengths there below 2000 AA). Hydrogenic continua become
-        tables on the nodes read_classic builds for them. Collision records on several
-        TEMP grids are interpolated onto the union of the grids with dispatch's scheme,
-        which is exact on each record's own nodes.
-        """
-        from .atom_audit import collision_interpolate
-        self = cls()
-        atom = AtomClass(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
-        fast = FastAtom(atom_file)
-        self.id = atom.id
-        self.abnd = atom.abnd
-        self.ai = atom.ai
-        self.nk = atom.nk
-        self.nline = atom.nline
-        self.lvl = fast.lvl[['ev', 'g', 'ion', 'label']]
-
-        bb = fast.bbt.copy()
-        if use_comment_lam0:
-            bb['lam0'] = [line.c_lam0 for line in atom.trans[:atom.nline]]
-
-        bb['evi'] = self.lvl.ev[bb.i].values
-        bb = bb[['i', 'j', 'lam0', 'evi', 'loggf', 'grad', 'gvdw', 'gstk', 'nq', 'qmax', 'q0', 'profile']]
-        self.bbt = bb
-
-        # read_pandas reads the bf wavelengths as given (vacuum), like read_classic
-        lams, alphas, lows = [], [], []
-        for c in atom.trans[atom.nline:]:
-            if c.qmax < 0:
-                lam, alpha = c.lam, c.alfac
-            else:
-                # read_classic: nq points linear in wavelength from qmax to the edge,
-                # alpha0 (lam/lam0)^3
-                lam = np.linspace(c.qmax, c.alamb, c.nq)
-                alpha = c.fosc * (lam / c.alamb)**3
-            lams.append(lam)
-            alphas.append(alpha)
-            lows.append(np.full(len(lam), c.i))
-        if lams:
-            self.bft = pd.DataFrame(dict(i=np.concatenate(lows), lam_air=np.concatenate(lams),
-                                         alpha=np.concatenate(alphas)))
-
-        if len(atom.colls) > 0:
-            temps = np.unique(np.concatenate([c.coltemp for c in atom.colls]))
-            rates = []
-            for c in atom.colls:
-                if np.array_equal(c.coltemp, temps):
-                    rates.append(np.asarray(c.colrate, float))
-                else:
-                    rates.append(collision_interpolate(c.coltemp, c.colrate, temps, c.key))
-            cl = pd.DataFrame(data=np.array(rates), columns=temps)
-            cl.insert(0, 'j', [c.upper.i for c in atom.colls])
-            cl.insert(0, 'i', [c.lower.i for c in atom.colls])
-            cl.insert(0, 'key', [c.key for c in atom.colls])
-            self.col = cl
-
-        self.post_init()
-        return self
+    def from_old(cls, atom_file):
+        """Convert a classic MULTI atom with ``atom_convert.x``, the conversion dispatch.x
+        applies to the MULTI atoms of a run (``HOP/atom_convert_mod.f90``)."""
+        if not CONVERTER.is_file():
+            raise FileNotFoundError(f'atom_convert.x not found at {CONVERTER}; build it with '
+                                    f'"make -C {CONVERTER.parents[1]}"')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'atom.txt'
+            proc = subprocess.run([str(CONVERTER), str(atom_file), str(out)],
+                                  capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise RuntimeError(f'atom_convert.x failed on {atom_file}: '
+                                   f'{(proc.stderr or proc.stdout).strip()}')
+            return cls.read(out)
 
     @classmethod
     def from_pandas(cls, id, abnd, ai, lvl, bbt=None, bft=None, col=None):
