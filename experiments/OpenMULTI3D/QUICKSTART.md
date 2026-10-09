@@ -110,9 +110,8 @@ NLTE 804 4552.817856352975 6497.548103144807
 the wavelength grid (`run.lam`), the emergent intensities and fluxes and the model atom
 (`run.atoms[0]`). `run.mode` says whether the run solved NLTE or was an LTE run, which
 carries no separate LTE spectrum. The abundance is on the
-astronomical scale, A(Ba) = log10(N_Ba/N_H) + 12 = 2.11, taken from the atom file because
-`demo.nml` sets `use_atom_abnd=T`; the standard composition
-`input/abund/abund_magg22` has 2.17.
+astronomical scale, A(Ba) = log10(N_Ba/N_H) + 12 = 2.11, set by `abundance=2.11` in
+`demo.nml`; the standard composition `input/abund/abund_magg22` has 2.17.
 
 The 804 points are the four line windows, so the grid has gaps between them. Never read
 the binary files under `data/demo/save/` yourself: `run` decodes their layout and unit

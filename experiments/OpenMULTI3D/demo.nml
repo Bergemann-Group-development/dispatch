@@ -2,7 +2,7 @@
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
 !&timer_params        sec_per_report=1e8 verbose=2 /
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
-&atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
+&atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1d-2 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    R_sampling=5e5 aa_blue=4550 aa_red=4558 /
