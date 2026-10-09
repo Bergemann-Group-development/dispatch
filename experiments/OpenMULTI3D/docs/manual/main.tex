@@ -1105,6 +1105,17 @@ atmosphere = Snapshot(path, "M3DIS", (30, 30, 96),
                       preparation=AtmosphereGrid("input/atmos/MARCS"))
 \end{minted}
 
+\py{synthesis.synthesize_lines} synthesises a request with a few lines changed or added. Each line is a dictionary of the record columns of Sec.~\ref{sec:linelist}. It replaces the record of its species nearest to \py{lam0} within \py{lam_tol} (0.02\,{\AA}) in the request's line list. The record keeps its wavelength and every column the line leaves out. A line without such a record is added and needs \py{evi} and \py{loggf}. Without windows in the request, each line gets the window $\lambda_0\pm$\py{pad} (2\,{\AA}). The level indices \py{i}, \py{j} put a line in NLTE when level matching misses it (Sec.~\ref{sec:levelmatch}):
+
+\begin{minted}{Python}
+mg = departures.request(request, atom="input/atoms/atom.mg86g")
+for loggf in (-0.450, -0.399, -0.363):
+    res = synthesis.synthesize_lines(request.update(departures=mg),
+        [dict(ion="Mg I", lam0=5172.7, loggf=loggf, i=3, j=6)])
+\end{minted}
+
+The edited list is written under the cache directory and named by its content. \py{tumult.linelist.override_lines} writes such a list for a run of its own.
+
 \subsection{Abundances and NLTE corrections}\label{sec:pyabund}
 
 These workflows (Sec.~\ref{sec:abundrecipe}) take a \Code{SynthRequest} and return a result with one row per line.

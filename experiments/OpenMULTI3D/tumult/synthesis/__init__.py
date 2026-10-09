@@ -31,7 +31,7 @@ from .request import ResolvedSynthRequest, SpectrumFit, SynthesisResult, SynthRe
 from ..departures import DepartureGrid, DepartureRequest, Departures
 from .snapshot import (solve_departures, synthesise_snapshot,
                        synthesise as synthesise_from_departures)
-from .operations import check_fit, fit, run_values, synthesize
+from .operations import check_fit, fit, run_values, synthesize, synthesize_lines
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .submission import WorkflowHandle, discover_workflows, open_workflow, submit_operation
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
@@ -44,7 +44,7 @@ from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default
 __all__ = [
     "SynthRequest", "SynthConfig", "Star", "Abundances", "Atmosphere", "AtmosphereGrid",
     "ATMOS_FORMATS",
-    "Snapshot", "synthesize", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
+    "Snapshot", "synthesize", "synthesize_lines", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
     "DepartureGrid", "DepartureRequest",
     "PRESETS_DIR", "preset",
     "build_stellar_grid", "compute_spectrum", "compute_spectra", "compute_windows",
