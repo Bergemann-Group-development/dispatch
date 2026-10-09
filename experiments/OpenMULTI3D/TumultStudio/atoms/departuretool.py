@@ -622,7 +622,7 @@ class DepartureTool(Tool):
             return ""
         if tab == "levels":
             return atom.levels[index].label if 0 <= index < int(atom.nk) else ""
-        transitions = atom.transitions
+        transitions = atom.bbtrans
         return f"{transitions[index].lam0:.1f} Å" if 0 <= index < len(transitions) else ""
 
     def tag(self, obj):
@@ -686,7 +686,7 @@ class DepartureTool(Tool):
                 rows.append(row(relative, f"{key} / {b_of(ground)}",
                                 f"b / b(ground {stage})", dashed))
             return rows
-        transitions = atom.transitions
+        transitions = atom.bbtrans
         if not 0 <= index < len(transitions):
             return []
         tr = transitions[index]
@@ -934,4 +934,4 @@ class _AtomView:
 
     @property
     def lines(self):
-        return self.atom.transitions
+        return self.atom.bbtrans

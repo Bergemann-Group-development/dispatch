@@ -1,42 +1,19 @@
 """Bound-bound transitions of a model atom, and their spectra in a run."""
 import numpy as np
+from .atom_rows import LevelPair
 from .const import CC
 from .plotting_scripts import set_legend, set_title
 from scipy.signal import argrelextrema
 
 
-class Transition(object):
+class Transition(LevelPair):
     """Bound-bound transition ``kr`` (from 0) of an atom, row ``kr`` of its ``bbt``
-    table, read through ``rows`` (``atom.transitions``): the table's columns
-    (``lam0``, ``loggf``, ``i``, ``j``, ``nq``, ...) read as attributes. In a run,
-    ``ib``/``ir`` index its wavelength range on the run's grid
-    (:meth:`tumult.atom.Atom.load_sp`)."""
-    def __init__(self, rows, kr):
-        self.rows = rows
-        self.kr = kr
-
-    def __getattr__(self, attr):
-        rows = self.__dict__.get('rows')       # absent while a copy is being built
-        if rows is not None and attr in rows.columns:
-            return rows.columns[attr][self.kr]
-        raise AttributeError(f'Transition has no attribute {attr!r}')
-
-    def __repr__(self):
-        return self.atom.bbt.iloc[self.kr].__repr__()
-
+    table (``atom.bbtrans``): the table's columns (``lam0``, ``loggf``, ``i``, ``j``,
+    ``nq``, ...) read as attributes. In a run, ``ib``/``ir`` index its wavelength range
+    on the run's grid (:meth:`tumult.atom.Atom.load_sp`)."""
     @property
-    def atom(self):
-        return self.rows.atom
-
-    @property
-    def lower(self):
-        """The lower level, a :class:`tumult.atom.Level`."""
-        return self.rows.levels[int(self.i)]
-
-    @property
-    def upper(self):
-        """The upper level, a :class:`tumult.atom.Level`."""
-        return self.rows.levels[int(self.j)]
+    def kr(self):
+        return self.k
 
     @property
     def run(self):
