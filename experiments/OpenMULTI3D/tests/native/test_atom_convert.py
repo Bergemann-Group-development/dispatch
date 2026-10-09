@@ -71,13 +71,14 @@ def converted(tmp_path_factory):
     return Atom.from_old(path)
 
 
-def test_header_comments_are_kept(tmp_path):
-    """The provenance notes ahead of the levels reach the converted file."""
+def test_multi_comments_are_not_copied(tmp_path):
+    """The MULTI comments describe MULTI's layout and units, so the converted file
+    carries only its own provenance line."""
     src, out = tmp_path / 'atom.na4', tmp_path / 'na4.txt'
     src.write_text(ATOM)
     subprocess.run([str(CONVERTER), str(src), str(out)], check=True)
-    head = out.read_text().splitlines()[:4]
-    assert head[0].startswith('* converted from') and head[1:3] == ['* provenance note', '* second note']
+    comments = [t for t in out.read_text().splitlines() if t.lstrip().startswith('*')]
+    assert len(comments) == 1 and comments[0].startswith('* converted from')
 
 
 def test_line_wavelength_follows_the_level_energies(converted):

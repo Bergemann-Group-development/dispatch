@@ -31,7 +31,9 @@ formatters = {'grad':'{:.3e}'.format,
                             'lam_air':'{:.3f}'.format,
                             'alpha':'{:.3e}'.format,
                             'label':"'{:}'".format,
-                            'loggf':'{:.3f}'.format}
+                            'loggf':'{:.3f}'.format,
+                            'qmax':'{:.1f}'.format,
+                            'q0':'{:.1f}'.format}
 
 def read(text, dtype):
     return np.array(next(text).strip().split()).astype(dtype)
@@ -106,20 +108,24 @@ class Atom(object):
             condition = lambda x: not x.strip().startswith('*')
             text = filter(condition, f)
             self.id = next(text).strip()
+            next(text)
             self.abnd, self.ai = read(text, float)
+            next(text)
             self.nk, self.nline, nnu_bf, self.ncol = read(text, int)
 
+        # pandas counts header rows without the comment lines: the identifier, the
+        # abundance and count lines with their titles come first
         pdkwargs = {'filepath_or_buffer':atom_file, 'sep':r'\s+', 'quotechar':"'", 'comment':'*'}
-        pdkwargs['header'] = 3
+        pdkwargs['header'] = 5
         self.lvl = pd.read_csv(nrows=self.nk, **pdkwargs)
-        pdkwargs['header'] = 3+self.nk+1
+        pdkwargs['header'] = 5+self.nk+1
         if self.nline > 0:
             self.bbt = pd.read_csv(nrows=self.nline, **pdkwargs)
             self.bbt = self.bbt.rename(columns={'lam_air':'lam0'})
-            pdkwargs['header'] = 3+self.nk+1+self.nline+1
+            pdkwargs['header'] = 5+self.nk+1+self.nline+1
         if nnu_bf > 0:
             self.bft = pd.read_csv(nrows=nnu_bf, **pdkwargs)
-            pdkwargs['header'] = 3+self.nk+1+self.nline+1+nnu_bf+1
+            pdkwargs['header'] = 5+self.nk+1+self.nline+1+nnu_bf+1
         if self.ncol > 0:
             self.col = pd.read_csv(nrows=self.ncol, **pdkwargs)
         self.post_init()
@@ -197,8 +203,9 @@ class Atom(object):
 
         f = open(out_file, 'w+')
         f.write(f'{self.id:}\n')
-        f.write(f'{self.abnd:} {self.ai:}\n')
-        f.write(f'{len(lvl):} {len(bbt):} {len(bft):} {len(col):}\n')
+        f.write(f'{"abnd":>6} {"awgt":>8}\n{self.abnd:6.2f} {self.ai:8.3f}\n')
+        f.write(f'{"nlevel":>6} {"nline":>6} {"nbf":>6} {"ncol":>6}\n')
+        f.write(f'{len(lvl):6d} {len(bbt):6d} {len(bft):6d} {len(col):6d}\n')
         f.write(lvl.to_string(formatters=formatters) + '\n')
         if len(bbt)>0: f.write(bbt.to_string(formatters=formatters) + '\n')
         if len(bft)>0: f.write(bft.to_string(formatters=formatters, index=False) + '\n')

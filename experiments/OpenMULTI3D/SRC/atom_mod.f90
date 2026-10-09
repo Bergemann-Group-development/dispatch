@@ -1052,10 +1052,15 @@ MODULE atom_mod
     read(latom,fmt='(a)') self%id
     self%id=uppercase(adjustl(self%id))
 
+    ! the abundance and count lines each follow a row of column titles
+    call nextentry(latom)
+    read(latom,*)
     call nextentry(latom)
     read(latom,*) self%abnd, self%awgt
     call self%prepare_Drawin()
 
+    call nextentry(latom)
+    read(latom,*)
     call nextentry(latom)
     read(latom,*) self%nlevel, self%nline, nnu_bf, ncol
 
@@ -1099,7 +1104,7 @@ MODULE atom_mod
 
       read(latom, '(A)') text
       read(text, *, iostat=iostat) idx, lin%i, lin%j, lin%lam_air, lin%lower_ev, loggf, &
-            lin%grad_in, lin%gv_in, lin%gstk_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
+            lin%grad_in, lin%gv_in, lin%gstk_in, lin%nnu, lin%qmax, lin%q0, lin%iso
 
       if (iostat > 0) then
         write(msg,'(a,i0,a)') 'read_atom: cannot parse line (iostat=', iostat, '):'
@@ -1360,7 +1365,7 @@ MODULE atom_mod
 
   !====================================================================================
   ! Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
-  ! red/blue cuts remove it.  An unrecognised profile_type falls back to 'voigt'.
+  ! red/blue cuts remove it.
   !------------------------------------------------------------------------------------
   LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
     class(atom_type), intent(in) :: self
@@ -1390,17 +1395,6 @@ MODULE atom_mod
     endif
 
     lin%ntrans = i
-    lin%profile_type = trim(lowercase(lin%profile_type))
-    select case (lin%profile_type)
-    case ('voigt', 'hlinop')
-      continue
-    case default
-      if (index(lin%profile_type, '.') == 0) then
-        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                lin%profile_type, ' Setting it to VOIGT'
-      endif
-      lin%profile_type = 'voigt'
-    end select
     keep = .true.
   END FUNCTION line_frequency_grid
 

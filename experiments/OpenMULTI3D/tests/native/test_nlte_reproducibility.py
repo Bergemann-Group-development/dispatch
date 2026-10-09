@@ -26,14 +26,14 @@ ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
-ATOM = Path('input/atoms/mg86g.txt')
+ATOM = Path('input/atoms/atom.mg86g')
 LINELIST = Path('input/linelists/master_line.txt')
 
 pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, ATOM, LINELIST))),
-        reason='needs dispatch.x, the solar MARCS model, mg86g.txt and master_line.txt'),
+        reason='needs dispatch.x, the solar MARCS model, atom.mg86g and master_line.txt'),
 ]
 
 
