@@ -13,10 +13,11 @@ opacity on a 4 x 6 (T, rho) grid (3500-12000 K, 1e-10 to 1e-7 g/cm^3) over 5160-
 no analytic answer for these states, so the reference records agreement with a reviewed
 result, not correctness.
 
-Generated at df4c20bf with gfortran 15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from
-(md5 prefix): input/TS_absdat.dat 5b921bc86ca0, input/abund/abund_magg22 abcd0926adda,
-input/isotopes_blp d63a83de4230, input/molec_data_BC.txt a4e2d3274cda,
-input/linelists/master_line.txt 2821ea404b92.
+``hop_eos`` was generated at df4c20bf, ``hop_opacity`` at 6a71ff283, both with gfortran
+15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from (md5 prefix): input/TS_absdat.dat
+5b921bc86ca0, input/abund/abund_magg22 abcd0926adda, input/isotopes_blp d63a83de4230,
+input/linelists/master_line.txt 2821ea404b92, and input/molec_data_BC.txt a4e2d3274cda
+(``hop_eos``) or cfb2d3e18c35 (``hop_opacity``).
 
 Tolerance rtol = 1e-5. The references are exact on the generating build. A change of the
 optimisation flags alone (-O1 to -O3) moved line-opacity cells by float32 roundoff of at
