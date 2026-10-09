@@ -1,5 +1,5 @@
 %%% Preamble
-\documentclass[paper=a4, fontsize=11pt]{scrartcl}
+\documentclass[paper=a4, fontsize=10pt]{scrartcl}
 \usepackage[T1]{fontenc}
 \usepackage{fourier}
 % Monospaced text in Source Code Pro, scaled to the x-height of the Latin Modern Sans
@@ -18,6 +18,9 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,calc,fit}
 \usepackage{adjustbox}
+% Scale of every matplotlib figure (figs/science_case.py). The figures are drawn at their
+% printed size, so their 8 pt text prints at 8 pt.
+\newcommand{\pltscale}{1}
 % Diagram palette (figs/*.tex): pastel fill with a darker border of the same hue.
 % grey: processing steps, blue: wavelength grids, orange: input data and composition,
 % green: NLTE populations, red: radiative transfer and its results, purple: the
@@ -126,10 +129,7 @@
 %%% FORMATTING PARAMETERS %%%
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{6pt}
-\setlength{\voffset}{-0.5cm}
-\setlength{\hoffset}{-0.5cm}
-\setlength{\textheight}{24.5cm}
-\setlength{\textwidth}{16cm}
+\areaset{16cm}{24.5cm}
 \emergencystretch=4em   % lets the break points inside \File, \Code, \Text actually be used
 %\usepackage{lmodern}    % Latin modern fontfamily
 
@@ -221,8 +221,8 @@ OpenMULTI3D computes the spectrum a star emits from a model of its atmosphere, a
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_spectra.pdf}
-    \caption{Three Mg\,\textsc{i} lines in the solar flux spectrum: NLTE (solid) and LTE (dashed) syntheses on a 1D MARCS model, and the KPNO atlas (grey points). The lower row shows the difference NLTE$-$LTE: NLTE deepens the cores of Mg\,b$_2$ (left) and 5528.4\,{\AA}, and hardly changes 5711.1\,{\AA}. Neither matches the observed core, which forms above the top of the model (Sec.~\ref{sec:example}).}\label{fig:mg_spectra}
+    \includegraphics[scale=\pltscale]{figs/mg_spectra.pdf}
+    \caption{Three Mg\,\textsc{i} lines in the solar flux spectrum: NLTE (solid) and LTE (dashed) syntheses on a 1D MARCS model, and the KPNO atlas (grey points). NLTE deepens the cores of Mg\,b$_2$ (left) and 5528.4\,{\AA}, and hardly changes 5711.1\,{\AA}. Neither matches the observed core, which forms above the top of the model (Sec.~\ref{sec:example}).}\label{fig:mg_spectra}
 \end{figure}
 
 The code is an \emph{experiment} inside the DISPATCH repository: it reuses DISPATCH's build system and task-based parallelisation, and adds the radiative transfer and atomic physics needed for spectrum synthesis. It has three parts.
@@ -459,7 +459,7 @@ import matplotlib.pyplot as plt
 plt.legend(); plt.show()
 \end{minted}
 
-A notebook shows the plot without \py{plt.show()}. \py{run.get_line} picks the transition of the model atom nearest to the given wavelength, \py{crop} cuts out its spectrum normalised to the continuum, and \py{measure(profile="trapz").maa} integrates its depression to the equivalent width in m\AA{} (Sec.~\ref{sec:measure}). The middle panel of Fig.~\ref{fig:demo} shows what you should see: the NLTE line (143\,m\AA) is slightly stronger than the LTE line (139\,m\AA), and its core is deeper, because the upper level of the line is depleted relative to the lower one in the layers where the core forms (Sec.~\ref{sec:concepts}). The departure coefficients show it (left panel):
+A notebook shows the plot without \py{plt.show()}. \py{run.get_line} picks the transition of the model atom nearest to the given wavelength, \py{crop} cuts out its spectrum normalised to the continuum, and \py{measure(profile="trapz").maa} integrates its depression to the equivalent width in m\AA{} (Sec.~\ref{sec:measure}). The upper right panel of Fig.~\ref{fig:demo} shows what you should see: the NLTE line (143\,m\AA) is slightly stronger than the LTE line (139\,m\AA), and its core is deeper, because the upper level of the line is depleted relative to the lower one in the layers where the core forms (Sec.~\ref{sec:concepts}). The departure coefficients show it (upper left panel):
 
 \begin{minted}{Python}
 plt.figure()
@@ -472,8 +472,8 @@ plt.legend()
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/demo_ba.pdf}
-    \caption{The first run. Left: departure coefficients of the lower and upper level of Ba\,\textsc{ii} 4554\,{\AA}, by level index. Middle: the line from \texttt{demo.nml} in NLTE and LTE, on the wavelength grid of the model atom. Right: the same line in the 4550--4558\,{\AA} window with the line list switched on (Sec.~\ref{sec:nextstep}); the labels name the strongest lines in the window. The line list splits Ba\,\textsc{ii} 4554 into 15 hyperfine and isotopic components, all with the departure coefficients of the atom, so several labels fall on it.}\label{fig:demo}
+    \includegraphics[scale=\pltscale]{figs/demo_ba.pdf}
+    \caption{The first run. Upper left: departure coefficients of the lower and upper level of Ba\,\textsc{ii} 4554\,{\AA}, by level index. Upper right: the line from \texttt{demo.nml} in NLTE and LTE, on the wavelength grid of the model atom. Lower panel: the same line in the 4550--4558\,{\AA} window with the line list switched on (Sec.~\ref{sec:nextstep}); the labels name the strongest lines in the window. The line list splits Ba\,\textsc{ii} 4554 into 15 hyperfine and isotopic components, all with the departure coefficients of the atom, so several labels fall on it.}\label{fig:demo}
 \end{figure}
 
 \subsection{What the namelist says}
@@ -485,7 +485,7 @@ A namelist group starts with \texttt{\&} and ends with \texttt{/}; keys left out
     \item \fort{&atmos_params} names the model atmosphere; its format follows from the file name.
     \item \fort{&atom_params} names the model atom. \fort{abundance=2.11} sets the Ba abundance on the astronomical scale, $\log_{10}(N_\mathrm{Ba}/N_\mathrm{H})+12$; without it the abundance comes from the abundance table and [Fe/H] of the run (Sec.~\ref{sec:abundances}).
     \item \fort{&nlte_params}: a positive \fort{convlim} turns on the NLTE iterations, which stop once the largest relative population change falls below it. For diagnostic lines of a single element, \fort{convlim=1e-2} is a reasonable start; the presets use \fort{1e-3}, and Sec.~\ref{sec:convergence} shows how to test whether a value is small enough.
-    \item The two commented groups add a line list and a wavelength window. Without them the spectrum is computed only on the wavelength points of the model atom's own transitions, as in the left panel of Fig.~\ref{fig:demo}.
+    \item The two commented groups add a line list and a wavelength window. Without them the spectrum is computed only on the wavelength points of the model atom's own transitions, as in the upper right panel of Fig.~\ref{fig:demo}.
 \end{itemize}
 
 Two rules apply to every invocation of \File{dispatch.x}. Pass the namelist as a short relative path, such as \File{demo.nml}: a long absolute path aborts the run at start-up (\fort{datadir} inside the namelist may be absolute). Without an argument, \File{input.nml} is read and the output goes directly into \fort{datadir}.
@@ -531,7 +531,7 @@ run.crop(window=(4550, 4558)).plot()
 run.plot_line_labels(ntop=8)
 \end{minted}
 
-The result is the right panel of Fig.~\ref{fig:demo}. \fort{R_sampling=5e5} samples the window with steps of $\lambda/500\,000$. Every dip besides Ba\,\textsc{ii} is a line of another species from the line list, computed in LTE. The Ba\,\textsc{ii} line now comes from the line list too, as its hyperfine components, each with the departure coefficients of the atom's levels. Over 4553.5--4554.6\,{\AA}, which includes a weak Ti\,\textsc{i} blend, \py{run.crop(window=(4553.5, 4554.6)).measure(profile="trapz").maa} gives 193\,m\AA{} in NLTE and 188\,m\AA{} in LTE: the hyperfine structure spreads the line and strengthens it, and the NLTE difference is the same 5\,m\AA.
+The result is the lower panel of Fig.~\ref{fig:demo}. \fort{R_sampling=5e5} samples the window with steps of $\lambda/500\,000$. Every dip besides Ba\,\textsc{ii} is a line of another species from the line list, computed in LTE. The Ba\,\textsc{ii} line now comes from the line list too, as its hyperfine components, each with the departure coefficients of the atom's levels. Over 4553.5--4554.6\,{\AA}, which includes a weak Ti\,\textsc{i} blend, \py{run.crop(window=(4553.5, 4554.6)).measure(profile="trapz").maa} gives 193\,m\AA{} in NLTE and 188\,m\AA{} in LTE: the hyperfine structure spreads the line and strengthens it, and the NLTE difference is the same 5\,m\AA.
 
 \subsection{Before using a result}\label{sec:beforeuse}
 
@@ -888,7 +888,7 @@ atom.plot_grotrian(ion=1)
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_grotrian.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_grotrian.pdf}
     \caption{The Mg\,\textsc{i} levels of \texttt{atom.mg86g} by term, with their radiative transitions; the dashed line is the ionisation limit. The three lines of the example start from the 3p levels near 2.7 and 4.3\,eV.}\label{fig:mg_grotrian}
 \end{figure}
 
@@ -905,7 +905,7 @@ plt.legend()
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_depart.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_depart.pdf}
     \caption{Departure coefficients of the levels of the three lines, the Mg\,\textsc{i} ground state and the Mg\,\textsc{ii} ground state, labelled by level index and term. Deeper than $\log\tau_{500}\approx-1.5$ all are close to 1; above, the upper levels of the lines fall below their lower levels.}\label{fig:mg_depart}
 \end{figure}
 
@@ -917,7 +917,7 @@ A synthesis is compared with the atlas after broadening by the rotation and the 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_lines.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_lines.pdf}
     \caption{Left: the NLTE profile of 5711.1\,{\AA} fitted to the KPNO atlas ($\zeta_\mathrm{RT}=2.9$\,\si{\km\per\s}, shift 0.2\,\si{\km\per\s}). Right: the window of Mg\,b$_2$ with the species of the strongest lines of the line list.}\label{fig:mg_lines}
 \end{figure}
 
@@ -955,7 +955,7 @@ fig.legend(*axes[0].get_legend_handles_labels(), loc="outside lower center",
            ncol=3)
 \end{minted}
 
-\py{run.crop} normalises by the continuum of the run and convolves with the broadening kernels (Sec.~\ref{sec:pyref}). The figure script adds a row with the difference NLTE$-$LTE of the two \py{crop} results. The 5711.1\,{\AA} line matches the atlas at the reference abundance; 5528.4\,{\AA} is too strong, and the core of Mg\,b$_2$ is too deep in NLTE (0.04 of the continuum, observed 0.07) and too shallow in LTE (0.12).
+\py{run.crop} normalises by the continuum of the run and convolves with the broadening kernels (Sec.~\ref{sec:pyref}). The 5711.1\,{\AA} line matches the atlas at the reference abundance; 5528.4\,{\AA} is too strong, and the core of Mg\,b$_2$ is too deep in NLTE (0.04 of the continuum, observed 0.07) and too shallow in LTE (0.12).
 
 \subsection{Where the lines form}\label{sec:mgformation}
 
@@ -973,7 +973,7 @@ plt.legend()
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_cntrbf.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_cntrbf.pdf}
     \caption{Left: depression contribution function of the flux around Mg\,b$_2$, divided by the continuum flux, so that each column integrates to $1-F/F_\mathrm{c}$. The lines at 5171.6 and 5173.7\,{\AA} are Fe\,\textsc{i} and Ti\,\textsc{i} blends. Right: contribution functions normalised to unit area at the centre of Mg\,b$_2$, at three points in its red wing and at the centre of 5711.1\,{\AA}. The axes end at the top of the model, $\log\tau_{500}=-5.6$.}\label{fig:mg_cntrbf}
 \end{figure}
 
@@ -1003,7 +1003,7 @@ The line list gives the lower energy of Mg\,b$_2$ as 2.700\,eV, 0.012\,eV below 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/mg_cog.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_cog.pdf}
     \caption{Curves of growth in NLTE and LTE, integrated over the windows of the Mg line mask, and the equivalent widths of the KPNO atlas over the same windows. The dashed lines mark the observed widths and the abundances that reproduce them.}\label{fig:mg_cog}
 \end{figure}
 
@@ -1038,7 +1038,7 @@ The NLTE corrections of these lines are small in the Sun, because their equivale
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.5\linewidth]{figs/mg_cog_corr.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_cog_corr.pdf}
     \caption{The LTE curve of growth of 5528.4\,{\AA} from the ladder (orange), the NLTE equivalent width of the reference run at its abundance (blue) and the LTE abundance that gives the same width (open). The arrow between them is the NLTE correction.}\label{fig:mg_cog_corr}
 \end{figure}
 
@@ -1481,7 +1481,7 @@ line.plot_clv(dlam=0.3, LTE=True, label="LTE")
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.5\linewidth]{figs/mg_clv.pdf}
+    \includegraphics[scale=\pltscale]{figs/mg_clv.pdf}
     \caption{Equivalent width of Mg\,\textsc{i} 5711.1\,{\AA} against $\mu$ in the reference run of Sec.~\ref{sec:example}, over $\pm0.3$\,{\AA} around the line.}\label{fig:mg_clv}
 \end{figure}
 
@@ -1561,7 +1561,7 @@ A run saves its atmosphere on its own mesh, and \py{run.atmos} reads it: tempera
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figs/sun3d_atmos.pdf}
+    \includegraphics[scale=\pltscale]{figs/sun3d_atmos.pdf}
     \caption{Temperature of the solar 3D snapshot on the $30\times30\times96$ mesh of the \texttt{3d} preset. Top: horizontal cut at the mean height of $\tau_{500}=1$ and vertical cut. Bottom left: every point against $\log\tau_{500}$, with the mean on surfaces of constant $\tau_{500}$. Bottom right: distribution over the columns at $\log\tau_{500}=0$, with its mean (dashed).}\label{fig:sun3d}
 \end{figure}
 

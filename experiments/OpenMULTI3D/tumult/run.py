@@ -468,7 +468,7 @@ class Run(object):
         xx, yy = self.get_depart(ilvl, atomid, mean=mean)
         plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
-        plt.xlabel(r'log$\tau_{500}$')
+        plt.xlabel(r'$\log_{10}\tau_{500}$')
         return plt.plot(xx.ravel(), yy.ravel(), **kwargs)
 
 
@@ -793,7 +793,7 @@ class Run(object):
 
             angle = r'μ={:.2f}'.format(self.mus[imu])
 
-        plt.xlabel(r'log$\tau_{500}$')
+        plt.xlabel(r'$\log_{10}\tau_{500}$')
         plt.ylabel(self._cntrbf_label())
         set_title(title, default=wave + ', ' + angle)
         return plt.plot(ltau, cf, **kwargs)
@@ -814,7 +814,7 @@ class Run(object):
         cnt = np.asarray(self._component(ang, imu, False, True, None)[0])[slc]
 
         plt.xlabel(r'$\lambda$ [Å]')
-        plt.ylabel(r'log$\tau_{500}$')
+        plt.ylabel(r'$\log_{10}\tau_{500}$')
         set_title(title, default=self._cntrbf_label())
         return plt.pcolormesh(lam, ltau, (cf / cnt[:, None]).T, cmap=cmap,
                               shading='nearest', **kwargs)
