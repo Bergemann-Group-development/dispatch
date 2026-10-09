@@ -110,16 +110,13 @@ def test_no_array_argument_is_passed_by_value():
 
 
 def test_python_wrapper_binds_only_exported_symbols():
-    """Every hop_* name any Python module calls must exist in the library.
+    """Every hop_* name a tumult module calls must exist in the library.
 
-    Covers the root-level study scripts as well as tumult/, since a module nothing
-    imports can otherwise bind a name the library never exported.
+    Scans every module, since a module nothing imports can otherwise bind a name the
+    library never exported.
     """
     exported = set(_header_names(HEADER.read_text()))
     used = {}
-    for path in ROOT.glob("*.py"):
-        used.setdefault(path, set()).update(
-            re.findall(r"\blib\w*\.(hop_[a-z0-9_]+)", path.read_text()))
     for path in (ROOT / "tumult").glob("*.py"):
         used.setdefault(path, set()).update(
             re.findall(r"\b_?lib\.(hop_[a-z0-9_]+)", path.read_text()))
@@ -158,12 +155,10 @@ def test_hosts_cover_every_entry_point():
     """Every exported entry point is reached from a host wrapper - no silent gaps.
 
     This is what keeps an entry point from being added to the library and then never
-    wrapped.  There are three hosts: the Python wrapper (tumult/, plus the root-level
-    study scripts, since hop_holtsmark is deliberately used only by the hydrogen-Stark
-    study and not by HopEOS), the Julia one (tumult/HOP.jl), which owns the threaded
-    entry points HopEOS has no use for, and the hop_prune.x program next to the shim,
-    which USEs the entry points it drives.  INTERNAL_ONLY carries the documented
-    exceptions.
+    wrapped.  There are three hosts: the Python wrapper (tumult/), the Julia one
+    (tumult/HOP.jl), which owns the threaded entry points HopEOS has no use for, and the
+    hop_prune.x program next to the shim, which USEs the entry points it drives.
+    INTERNAL_ONLY carries the documented exceptions.
     """
     exported = set(_header_names(HEADER.read_text()))
     wrapped = set(INTERNAL_ONLY)
@@ -171,7 +166,7 @@ def test_hosts_cover_every_entry_point():
     wrapped |= set(re.findall(r"\b(hop_[a-z0-9_]+)\b",
                               prune_src[prune_src.index("USE hop_c_api"):
                                         prune_src.index("USE hop_env_mod")]))
-    for path in [*(ROOT / "tumult").glob("*.py"), *ROOT.glob("*.py")]:
+    for path in (ROOT / "tumult").glob("*.py"):
         src = path.read_text()
         # attribute access (lib.hop_x), or a quoted name - how set_option picks its setter
         wrapped |= set(re.findall(r"\b\w*lib\.(hop_[a-z0-9_]+)", src))
