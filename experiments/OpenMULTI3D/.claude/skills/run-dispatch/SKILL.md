@@ -124,7 +124,7 @@ Each check below is a cheap rerun:
 
 1. **Iteration count.** A floor shows up as `global %` levelling off and wandering, with
    no steady decline. Find the level and depths, and look up the level in the copied atom
-   `<run>/atoms/atom.<X>`.
+   `<run>/atoms/` (`atom.mg86g` is copied as `mg86g.txt`; level indices there count from 0).
 2. **Sensitivity to rounding.** Compare two builds that differ only in rounding, or the
    same build at several iteration counts. If differences of 1e-7 grow to the size of
    the floor within a few iterations, rounding is being injected every iteration.

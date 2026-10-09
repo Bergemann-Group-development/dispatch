@@ -159,7 +159,6 @@ MODULE atom_mod
       procedure :: setup_transition_matrix
       procedure :: collision_rates
       procedure :: write_rates
-      procedure :: read_classic
       procedure :: read_pandas
       procedure :: prepare_damping
       procedure :: build_ll
@@ -183,10 +182,6 @@ MODULE atom_mod
       integer :: np=0, ion=0, mol=0 ! collider identification
     end type coll_type
     !---------------------------------------------------------------------
-
-    character(len=8), dimension(7), parameter :: theprocesses = &
-    (/'OHMEGA  ','CI      ','CH      ','CE      ', &
-      'OHM     ','CH0     ','CHI     '/)
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: legacy_freql=.False.
@@ -1057,12 +1052,14 @@ MODULE atom_mod
     real(8), intent(in) :: qnorm
     integer, intent(in), optional, allocatable :: in_lines(:)
     real(8), pointer, contiguous, dimension(:) :: bf_lam, bf_alpha
-    integer, pointer, contiguous, dimension(:) :: icont
+    integer, pointer, contiguous, dimension(:) :: icont, jcont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
     real(8) :: gvdw, cnt_ev, nu_max, alpha0, thresh_aa, dlam
     real(8) :: gij, vbar2e4, loggf
-    character(512) :: dummy_string, text
+    character(4096) :: dummy_string
+    character(512) :: text
+    integer :: nbf_col
     character(8) :: key, str1, str2, str3
     logical :: abort
     integer, save :: itimer=0
@@ -1145,7 +1142,7 @@ MODULE atom_mod
       gij = self%g(lin%i) / self%g(lin%j)
       call lin%init_einstein_coefficients(lin%f, gij)
 
-      call set_line_nnu(self, lin, loggf)
+      call set_line_nnu(lin, loggf)
 
       ! fine-structure components between the same levels add their f, as isotope
       ! components do below
@@ -1169,17 +1166,27 @@ MODULE atom_mod
     end do
 
     call os%allocate(icont, nnu_bf)
+    call os%allocate(jcont, nnu_bf)
     call os%allocate(bf_lam, nnu_bf)
     call os%allocate(bf_alpha, nnu_bf)
 
     if (nnu_bf > 0) then
+      ! an optional fourth column j names the upper level of a continuum that does
+      ! not end in the ground level of the next ion
       call nextentry(latom)
-      read(latom,*) ! skip bftrans header
+      read(latom,'(a)') text
+      call count_words(text, nbf_col)
 
       do i=1, nnu_bf
-        call nextentry(latom) 
-        read(latom,*) icont(i), bf_lam(i), bf_alpha(i)
+        call nextentry(latom)
+        if (nbf_col > 3) then
+          read(latom,*) icont(i), bf_lam(i), bf_alpha(i), jcont(i)
+        else
+          read(latom,*) icont(i), bf_lam(i), bf_alpha(i)
+          jcont(i) = -1
+        endif
         icont(i) = icont(i)+1
+        jcont(i) = jcont(i)+1
       end do
 
       !  bound-free transitions in detail
@@ -1189,6 +1196,7 @@ MODULE atom_mod
         jj = findloc(icont, i, 1, back=.true.)
 
         if (jj-ii > 0) then
+          if (jcont(ii) > 0) cnt%j = jcont(ii)
           cnt%nnu = jj-ii+1
           call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
           call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
@@ -1348,550 +1356,22 @@ MODULE atom_mod
   END SUBROUTINE read_pandas
 
   !====================================================================================
-  SUBROUTINE read_classic (self, atom_file, qnorm, in_lines, read_coll)
-    !---------------------------------------------------------------------
-    !
-    !  reads an atomic model.
-    !
-    !---------------------------------------------------------------------
-    class(atom_type), target :: self
-    character(len=*), intent(in) :: atom_file
-    real(8), intent(in) :: qnorm
-    integer, intent(in), optional, allocatable :: in_lines(:)
-    logical, intent(in) :: read_coll
-
-    ! Declaration of the local variables
-    integer :: i, j, ios, latom, strl, kr, itemp, iterm, nterm, ic, nc, pos
-    integer :: ncoll, max_n_temp, doubles, ngrids, ii, jj, tri, ntemp, l, u
-    character(len = 16) :: key
-    character(len = 9), parameter :: rname='read_atom'
-    character(len = :), allocatable :: myfmt ! temporary format string
-    type(line_type), pointer :: lin => null()
-    type(cont_type), pointer :: cnt => null()
-    type(coll_type), pointer :: col => null()
-    logical, dimension(:,:), allocatable :: ij_check
-    real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-    real(8) :: gvdw, cnt_ev, lam_min, alpha0, thresh_aa, dlam
-    real(8) :: gij, red_fcut, blu_fcut, vbar2e4
-    integer :: ncont, nnu
-    character(len=20) :: txt
-    character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    character(512) :: text
-    character(len=256) :: msg
-    logical :: abort
-    integer, save :: itimer=0
-    !---------------------------------------------------------------------
-    call trace%begin('atom_mod%read_classic', itimer=itimer)
-    call os%check_file(atom_file)
-    open(newunit=latom, file=atom_file, form='formatted')
-    abort = .false.
-
-    call nextentry(latom)
-    read(latom,fmt='(a)') self%id
-    self%id=uppercase(adjustl(self%id))
-
-    call nextentry(latom)
-    read(latom,*,iostat=ios) self%abnd, self%awgt
-    call print_failed_line(latom, ios)
-    call self%prepare_Drawin()
-
-    call nextentry(latom)
-    read(latom,*,iostat=ios) self%nlevel, self%nline, self%ncont, self%nrfix
-    call print_failed_line(latom, ios)
-
-    allocate(  self%ev    ( self%nlevel) ) ; self%ev = 0.0d0
-    allocate(  self%g     ( self%nlevel) ) ; self%g = 0
-    allocate(  self%label ( self%nlevel) ) ; self%label = ' '
-    allocate(  self%ion   ( self%nlevel) ) ; self%ion = 0
-
-    call os%allocate(self%cdata, self%nlevel*(self%nlevel-1)/2, zero=.true.)
-    call os%allocate(self%ecol , self%nlevel*(self%nlevel-1)/2, zero=.true.)
-    call os%allocate(self%hcol , self%nlevel*(self%nlevel-1)/2, zero=.true.)
-
-    do i=1, self%nlevel
-      call nextentry(latom)
-      read(latom,*,iostat=ios) self%ev(i),self%g(i), self%label(i), self%ion(i)
-      self%ev(i)=self%ev(i)*hc_e  ! [eV]  
-      call print_failed_line(latom, ios)
-    end do
-
-    ! sanity check on level energies
-    do i = 2, self%nlevel
-      if(self%ev(i) < self%ev(i - 1)) then
-      myfmt = "('self: levels are: ', a, 2x, a, ' energy not monotonically &
-            &increasing.')"
-      write(*, myfmt) self%label(i), self%label(i - 1)
-      abort = .true.
-      !stop
-      endif
-    end do
-
-    ncont = count(self%ion < maxval(self%ion))
-    if (ncont < self%ncont) then
-        call console_warn (ch_m3d, 'more bound-free transitions than ionisable levels in '//trim(self%id))
-    endif
-
-    allocate(ij_check(self%nlevel, self%nlevel), source=.false.)
-
-    allocate(self%trans)
-    call self%trans%allocate(self%nline, ncont)
-
-    do i=1,self%nline
-      lin => self%trans%line(i)
-      call nextentry(latom) 
-
-      ! io WAS present for historical reasons, in MULTI io determines
-      ! whether a line is wide or not. In the RH formulation all lines are wide
-
-      read(latom,*,iostat=ios) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
-            lin%grad_in, lin%gv_in, lin%gstk_in, lin%profile_type
-      call print_failed_line(latom, ios)
-
-      lin%i = min(ii, jj)
-      lin%j = max(ii, jj)
-      lin%q0   = lin%q0  
-      lin%qmax = lin%qmax
-
-      if (ij_check(lin%i, lin%j)) then
-        write(msg,'(a,2(1x,i0))') 'bound-bound transition assigned twice:', lin%i, lin%j
-        call console_warn (ch_m3d, msg)
-      else
-        ij_check(lin%i, lin%j) = .true.
-      endif
-
-      if (lin%j > self%nlevel) then
-        write(msg,'(a,3(1x,i0))') 'transition to a non-existing level:', i, lin%i, lin%j
-        call console_error (msg)
-        abort = .true.
-      endif
-
-      call set_line_nnu(self, lin)
-
-      tri = (lin%j-1)*(lin%j-2)/2 + lin%i
-      self%cdata(tri) = self%cdata(tri) + lin%f
-
-      lin%upper_g  = self%g(lin%j)
-      lin%lower_ev = self%ev(lin%i)
-      lin%upper_ev = self%ev(lin%j)
-      lin%hydrogen = uppercase(trim(self%id)) == 'H'
-
-      lin%nu0 = ( lin%upper_ev - lin%lower_ev ) / h_e ! [Hz]
-      lin%lam0 = HZ_TO_AA / lin%nu0 ! [AA]
-
-      ! io is now modified so that multicomponent lines can be read
-      ! io = 0: Normal line
-      ! io = 1: For now is the same as io = 0
-      ! io > 1: Number of components in term
-      ! Like in Multi, thereafter follows one extra input line per component:
-
-      !   dq  wt  fterm  da  gwterm  gqterm
-      ! dq    energy difference for component i of transition kr. unit cm-1.
-      ! wt     weight of component kterm in weighted average
-      ! fterm     oscillator strength
-      ! da    damping constants
-      ! gwterm
-      ! gqterm
-      ! adterm    adamp for component, calculated in damp
-
-      nterm = lin%io
-      if (nterm .ge. 2) then
-        if (console_on(ch_m3d, 2)) write(console_unit,'(2a,i0,a,i0)') uppercase(rname), &
-          ': found ', nterm, ' components in transition KR = ', i
-
-        allocate(lin%dq (nterm) )
-        allocate(lin%wt  (nterm) )
-        allocate(lin%fterm  (nterm) )
-        allocate(lin%da (nterm) )
-        allocate(lin%gwterm (nterm) )
-        allocate(lin%gqterm (nterm) )
-        !allocate(lin%adterm, xs, xe, ys, ye, zs1, ze1, 1, nterm, rname)
-
-        do iterm = 1, nterm
-          read(latom, '(A)') text
-          read(text, *, iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
-                        lin%da(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
-          call print_failed_line(latom, ios)
-        end do
-
-        lin%dq = lin%lam0 * AA_TO_CM * lin%dq
-        lin%da = (lin%da - lin%grad_in) * over_4pi / lin%nu0
-      end if
-
-      ! in gfortran the size of an unallocated allocatable array can be larger than 0
-      if (allocated(in_lines) .and. size(in_lines) > 0) then
-        if (findloc(in_lines, i, 1) <= 0) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-      ! as in read_pandas: the atom keeps its levels and continua, and its lines leave
-      ! the opacity to the line list (a spectrum on precomputed departures)
-      if (disable_bb) then
-        call lin%deactivate()
-        cycle
-      endif
-
-      if (.not. line_frequency_grid(self, lin, i, qnorm, nterm<=1 .and. legacy_freql)) cycle
-      gij = self%g(lin%i) / self%g(lin%j)
-      call lin%init_einstein_coefficients(lin%f, gij)
-    end do
-
-    do i=1, ncont
-      cnt => self%trans%cont(i)
-      cnt%bf_type='Kramer'
-      ! find continuum level
-      do ic=i, self%nlevel
-        if (self%ion(ic) .eq. self%ion(i)+1) exit
-      end do
-      cnt%i = i
-      cnt%j = ic
-      cnt%ntrans = self%nline + i ! transition identifier for continua
-    end do
-
-    !  bound-free transitions in detail
-    !  if lam_min .lt.0.0 frequency points in angstrom (starting with
-    !  threshold and decreasing) and crossections in cm2 are read.
-    do i=1,self%ncont
-      call nextentry(latom) 
-      read(latom,*,iostat=ios) jj, ii, alpha0, nnu, lam_min
-      call print_failed_line(latom, ios)
-
-      if (self%ion(ii) == self%ion(jj)) then
-        write(msg,'(a,i0,a,2(1x,i0))') 'bound-free transition ', i, ' connects two levels of the same ion:', ii, jj
-        call console_error (msg)
-        abort = .true.
-      endif
-
-      j  = max(ii,jj)
-      ii = min(ii,jj)
-
-      cnt => self%trans%cont(ii)
-
-      if (cnt%bf_type /= 'Kramer') then
-        write(msg,'(a,i0,a)') 'multiple bound-free transitions from lower state ', ii, '; ignoring the later one'
-        call console_warn (ch_m3d, msg)
-        do j=1, nnu
-          call nextentry(latom) 
-          read(latom, '(A)') ! skipping
-        end do
-        cycle
-      endif
-      if (j /= cnt%j) then
-        write(msg,'(a,i0,a)') 'bound-free transition ', i, ' has an excited state as upper level'
-        call console_warn (ch_m3d, msg)
-        cnt%j = j
-      endif
-
-      cnt%alpha0 = alpha0
-      cnt%nnu    = nnu
-
-      if ( lam_min .lt. 0.0 ) then
-        ! cross sections given in detail
-        cnt%bf_type='detail'
-
-        call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
-        call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-
-        do j=cnt%nnu,1,-1
-          call nextentry(latom) 
-          read(latom,*,iostat=ios)  cnt%lam_input(j), cnt%alpha_input(j)
-          call print_failed_line(latom, ios)
-        end do
-        
-        do j=2,cnt%nnu
-          if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
-            write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
-                          ' wavelengths not decreasing'
-            call console_error (msg)
-            abort = .true.
-          elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
-            write(msg,'(a,i0,a)') 'read_atom: continuum transition ', i, &
-                          ' wavelengths are not unique; shifted by 1e-6'
-            call console_warn (ch_m3d, msg)
-            cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
-          endif
-        end do
-      else
-        ! hydrogenic transitions
-        cnt%bf_type='hydrogenic'
-        cnt%lam_min = lam_min
-      endif
-    end do
-
-    self%ncont = ncont
-    self%nrad = self%nline + self%ncont
-
-    j = 0
-    do i=1, self%ncont
-      cnt => self%trans%cont(i)
-      if (disable_bf) then
-        call cnt%deactivate()
-        cycle
-      endif
-      cnt%lower_ev = self%ev(cnt%i)
-      cnt%upper_ev = self%ev(cnt%j)
-      cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
-      cnt%lam0 = HZ_TO_AA / cnt%nu0 ! [AA]
-
-      if (cnt%bf_type == 'hydrogenic') then
-        call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
-        call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-        dlam = (cnt%lam0 - cnt%lam_min) / (cnt%nnu-1)
-        cnt%lam_input = [(cnt%lam0 - i*dlam, i=cnt%nnu-1, 0, -1)]
-        cnt%alpha_input = (cnt%lam_input / cnt%lam0)**3.d0 * cnt%alpha0
-
-      elseif (cnt%bf_type == 'Kramer') then
-        if (kramer_bf) then
-          thresh_aa = min(cnt%lam0, red_thresh_aa)
-          nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
-          cnt%nnu = nnu
-          call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
-          call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-          cnt%lam_input(1:nnu-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
-          cnt%lam_input(nnu) = thresh_aa
-          cnt%alpha_input = Kramer(cnt%lam_input, self%ev(cnt%j) - self%ev(cnt%i))
-          cnt%alpha0 = cnt%alpha_input(nnu)
-          j = j+1
-        else
-          call cnt%deactivate()
-          cycle
-        endif
-      endif
-
-      tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
-      self%cdata(tri) = cnt%alpha0
-
-      cnt%lam_min = cnt%lam_input(1)
-      cnt%lam_max = cnt%lam_input(cnt%nnu)
-    end do
-
-    if (j>0) then
-      if (console_on(ch_m3d, 1)) write(console_unit,'(i0,a)') j, " bound-free transitions auto-completed using Kramers' formula"
-    endif
-
-    allocate(self%irad(self%nrad), self%jrad(self%nrad))
-    self%irad(1:self%nline) = self%trans%line%i
-    self%jrad(1:self%nline) = self%trans%line%j
-    self%irad(self%nline+1:self%nrad) = self%trans%cont%i
-    self%jrad(self%nline+1:self%nrad) = self%trans%cont%j
-
-    ! read collisional data
-    if (.not. read_coll) then
-      close(latom)
-      return
-    endif
-
-    ! read choice of collisional SUBROUTINE
-    ! GENCOL is currently the only collision subroutine.
-    call nextentry(latom)
-    read(latom,fmt='(a)') self%crout
-
-    self%crout = lowercase(adjustl(self%crout))
-
-    select case (self%crout)
-    case ('end')
-      close(latom)
-      return
-    case ('gencol')
-      ! continue
-    case default
-      call console_error ('collision routine '//trim(self%crout)//' not supported')
-      error stop
-    end select
-
-    if (console_on(ch_m3d, 1)) write(console_unit,'(a)') 'Reading collision data'
-    ncoll = 0
-    max_n_temp = 8
-    ngrids = 0
-  
-    ! first run through to determine
-    ! ncoll = number of keywords
-    ! mtgrd = size of the largest temperature grid
-  
-    do while (.true.)
-      call nextentry(latom)
-      read(latom, '(a)', iostat=ios) key
-      if (ios<0) then
-        error stop 'read_collisions: keyword "END" not found in collision file'
-      endif
-      key = trim(uppercase(adjustl(key)))
-
-      ! read next non-comment line if key doesnt start with a letter
-      if (scan(key(1:1),upcase_alphabet)==0) cycle 
-      
-
-      ! we found a keyword, so interpret it
-      select case(key)
-      case('END')
-        exit
-
-      case('TEMP')
-        ! keep track of max size of temperature grid
-        call nextentry(latom)
-        read(latom,*) ntemp
-        if (ntemp > max_n_temp) max_n_temp = ntemp
-        ngrids = ngrids + 1
-      case default
-        if (.not.is_valid_process(key)) then
-          call console_error ('read_collisions: unrecognized keyword '//trim(key))
-          abort = .true.
-        end if
-        ncoll = ncoll + 1
-      end select
-    end do
-
-    allocate( self%coll(ncoll) )
-    call os%mem_register(storage_size(self%coll), ncoll, label='atom%coll')
-    call os%allocate(self%tgrid, [max_n_temp, ngrids],   label='atom%tgrid')
-    call os%allocate(self%cgrid, [max_n_temp, ncoll],    label='atom%cgrid')
-    call os%allocate(self%dcdt,  [max_n_temp, ncoll],    label='atom%dcdt')
-    allocate(tgrid(max_n_temp))
-  
-    rewind(latom)
-    
-    do while (.true.)
-      call nextentry(latom)
-      read(latom,*) txt
-      if (lowercase(adjustl(txt)) == self%crout) exit
-    enddo
-
-
-    itemp = 0
-    i=0
-    do while (i<=ncoll) !le to catch the end keyword
-      !  read the keyword 
-      call nextentry(latom)
-      read(latom,fmt='(a8)',iostat=ios) key
-      if (ios<0) then
-        call console_error ('read_collisions: keyword "END" not found in collision file')
-        error stop
-      endif
-
-      key = trim(uppercase(adjustl(key)))
-
-      if (key == 'END') then
-        !write(*,*) "read_collisions: read all collisions."
-        exit
-      else
-        call nextentry(latom)
-      endif
-      
-      select case(key)
-      case('TEMP')
-        itemp = itemp + 1
-        read(latom,*,iostat=ios) ntemp, tgrid(1:ntemp)
-        call print_failed_line(latom, ios)
-        self%tgrid(1:ntemp, itemp) = tgrid(1:ntemp)
-        if (ntemp < 2) then
-            error stop "read_collisions: ntemp < 2"
-        endif
-
-      ! MB  5.04.2018 - added CH0 keyword
-      ! RH 25.03.2022 - added CHI keyword
-      case('OHM','OHMEGA','CE','CH','CI','CH0','CHI')
-        nc = ntemp
-
-      case default
-        if (.not.is_valid_process(key)) then
-          call console_error ('read_collisions: unrecognized keyword '//trim(key))
-          error stop
-        endif
-      end select
-
-      ! sanity check on levels
-      if (is_valid_process(key)) then
-        i=i+1
-        col => self%coll(i)
-        col%key = key
-        col%nc = nc
-        read(latom,*,iostat=ios) l, u, self%cgrid(1:nc,i)
-        call print_failed_line(latom, ios)
-        
-        if (l==u) then
-          write(msg,'(a,a,2(1x,i0),a)') "ll==ul for collision process ", trim(key), l, u, "; ignored"
-          call console_warn (ch_m3d, msg)
-          cycle
-        endif
-
-        if (any(self%cgrid(1:nc,i) <= 0)) then
-          write(msg,'(2a,2(1x,i0))') 'non-positive cross sections for collision process ', trim(key), l, u
-          call console_error (msg)
-          abort = .true.
-        else
-          select case(trim(key))
-          case('OHM','OHMEGA','CE','CI','CH0')
-            self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
-            col%log = .true.
-          end select
-        endif
-
-        select case(trim(key))
-        case('OHM','OHMEGA','CE','CH','CI','CH0','CHI')
-          ! set derivatives for 3rd order hermite interpolation
-          call hermite_derivative(self%dcdt(1:ntemp,i), tgrid(1:ntemp), self%cgrid(1:ntemp,i))
-          col%itemp = itemp
-        end select
-
-        col%ll = min(l, u)
-        col%ul = max(l, u)
-
-        tri = (col%ul-1)*(col%ul-2)/2 + col%ll
-        !self%cdata(tri) = -1.0 ! flag non-classical recipe
-
-        select case(trim(key))
-        case ('CE', 'CI', 'OHM', 'OHMEGA')
-          if (self%ecol(tri) .and. console_on(ch_m3d, 2)) then
-            write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
-              call console_warn (ch_m3d, msg)
-          endif
-          self%ecol(tri) = .true.
-        case ('CH', 'CHI', 'CH0')
-          if (self%hcol(tri) .and. console_on(ch_m3d, 2)) then
-            write(msg,'(a,2(1x,i0),1x,a)') 'collisional rate already set for transition', col%ll, col%ul, trim(key)
-              call console_warn (ch_m3d, msg)
-          endif
-          self%hcol(tri) = .true.
-        end select
-
-        ! within level range
-        if(col%ll < 0 .or. col%ul > self%nlevel) then
-          write(msg,'(3a,3(a,i0))') 'read_collisions: level index outside range (1,nk) for ', &
-            trim(col%key), ':', ' ll=', col%ll, ' ul=', col%ul, ' nk=', self%nlevel
-          call console_error (msg)
-          abort = .true.
-        endif
-      end if
-    end do
-    close(latom)
-    if (abort) error stop 'abort in atom_mod%read'
-    call trace%end(itimer)
-  END SUBROUTINE read_classic
-
-  !====================================================================================
-  ! Number of frequency points of a bound-bound line, shared by both atom readers:
-  ! odd, scaled by nq_fac (and doubled for single-component lines with legacy_freql),
-  ! then clamped to nq_min/nq_max.  A negative nq_min grows the count with log(gf);
-  ! loggf is computed from f and g when the reader has not already parsed it.
+  ! Number of frequency points of a bound-bound line: odd, scaled by nq_fac (and
+  ! doubled with legacy_freql), then clamped to nq_min/nq_max.  A negative nq_min
+  ! grows the count with log(gf).
   !------------------------------------------------------------------------------------
-  SUBROUTINE set_line_nnu (self, lin, loggf)
-    class(atom_type), intent(in) :: self
+  SUBROUTINE set_line_nnu (lin, loggf)
     class(line_type), intent(inout) :: lin
-    real(8), intent(in), optional :: loggf
-    real(8) :: lgf
+    real(8), intent(in) :: loggf
     !----------------------------------------------------------------------------------
     if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
     lin%nnu = nq_fac * (lin%nnu-1) + 1
-    if (lin%io <= 1 .and. legacy_freql) then
+    if (legacy_freql) then
       lin%nnu = 2 * (lin%nnu-1) + 1
     endif
 
     if (nq_min < 0) then
-      if (present(loggf)) then
-        lgf = loggf
-      else
-        lgf = log10(lin%f*self%g(lin%i))
-      endif
-      lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(lgf+5)))
+      lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
     elseif (lin%nnu > 0) then
       lin%nnu = max(lin%nnu, nq_min)
@@ -1900,8 +1380,7 @@ MODULE atom_mod
   END SUBROUTINE set_line_nnu
 
   !====================================================================================
-  ! Post-parse selection and wavelength grid of bound-bound line i, shared by both
-  ! atom readers.  Returns .false. (and deactivates the line) when logf_cut or the
+  ! Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
   ! red/blue cuts remove it.  An unrecognised profile_type falls back to 'voigt'.
   !------------------------------------------------------------------------------------
   LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
@@ -2020,17 +1499,15 @@ MODULE atom_mod
   ! Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
   ! linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
   ! prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
-  ! (lower_ev re-referenced to the stage ground level), and multi-component lines
-  ! (io>1) are expanded into one entry per component sharing the same lower/upper
-  ! levels and transition column.
+  ! (lower_ev re-referenced to the stage ground level).
   !------------------------------------------------------------------------------------
   SUBROUTINE build_ll (self, trans)
     class(atom_type), intent(in) :: self
     class(atom_trans_t), target :: trans
     class(line_type), pointer :: line
     class(isotope_type), pointer :: isotopes(:)
-    real(8) :: gf, gpref0, llam0, lower_ev, dej, frac, loggf, wt
-    integer :: i, ih, s, ig, iso, n
+    real(8) :: gf, gpref0, llam0, lower_ev, dej, frac, loggf
+    integer :: i, s, ig, iso, n
     !----------------------------------------------------------------------------------
     nullify(isotopes)
     if (associated(self%species)) then
@@ -2047,7 +1524,7 @@ MODULE atom_mod
     do i=1, size(trans%line)
       line => trans%line(i)
       if (.not. line%active .or. line%hydrogen) cycle
-      n = n + max(1, line%io)
+      n = n + 1
     end do
     if (n == 0) return
     call reserve_linelist(trans%ll, n)
@@ -2075,21 +1552,10 @@ MODULE atom_mod
       llam0  = log(line%lam0)
       dej    = H_E * line%nu0
 
-      if (line%io > 1) then
-        do ih=1, line%io
-          wt = line%wt(ih)
-          if (wt <= 0) cycle
-          call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
-            gpref0 + log(wt), line%grad + line%da(ih), line%gw1, line%gw2, line%gstk, &
-            line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
-            line%iso, loggf + log10(wt), line%gv_in, line%grad_in, line%gstk_in)
-        end do
-      else
-        call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
-          dble(line%grad), dble(line%gw1), dble(line%gw2), dble(line%gstk), line%unsold, &
-          line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
-          loggf, line%gv_in, line%grad_in, line%gstk_in)
-      endif
+      call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
+        dble(line%grad), dble(line%gw1), dble(line%gw2), dble(line%gstk), line%unsold, &
+        line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+        loggf, line%gv_in, line%grad_in, line%gstk_in)
     end do
 
     call finalize_linelist(trans%ll)
@@ -2688,19 +2154,6 @@ MODULE atom_mod
   END SUBROUTINE gencol
 
   !====================================================================================
-  logical function is_valid_process(key)
-    character(len=8),intent(in) :: key
-    integer :: i
-    !---------------------------------------------------------------------
-    is_valid_process=.false.
-    do i=1,size(theprocesses)
-        if ( key(1:len_trim(key)) == trim(theprocesses(i)))  then
-          is_valid_process=.true.
-          exit
-        end if
-    end do
-  end function is_valid_process
-
   !====================================================================================
   ELEMENTAL FUNCTION expin (x) result(ex1)
     real(8), intent(in) :: x

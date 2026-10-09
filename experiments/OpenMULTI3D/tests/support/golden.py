@@ -25,7 +25,6 @@ GOLDEN = Path(__file__).resolve().parent.parent / "golden"
 
 # name -> "module:function" computing the reference dict from the current code
 REFERENCES = {
-    "atom": "tests.io.atom_reference:atom_reference",
     "hop_eos": "tests.native.hop_reference:hop_eos_reference",
     "hop_opacity": "tests.native.hop_reference:hop_opacity_reference",
 }

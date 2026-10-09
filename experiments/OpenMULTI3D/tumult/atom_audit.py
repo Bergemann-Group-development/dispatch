@@ -1,13 +1,13 @@
 """Sanity checks for model atoms.
 
-The checks work on a :class:`tumult.fast_atom.PandasAtom` (``load_atom`` converts the
-classic MULTI format on the fly) and reproduce what dispatch.x does with the data:
-level energies define line and edge frequencies only through ``atom_mod%read_classic``,
-while ``read_pandas`` takes each line's frequency from its tabulated air wavelength; bound-
-free cross sections are interpolated with the monotone cubic Hermite scheme of
-``trans_mod%hermite_interp`` and set to zero outside the tabulated range; collision
-coefficients are interpolated in temperature with the same scheme (on the logarithm for
-the keys listed in ``LOG_KEYS``) and held constant outside the tabulated range.
+The checks work on a :class:`tumult.atom.Atom` (``load_atom`` converts the
+classic MULTI format on the fly, as dispatch.x does) and reproduce what dispatch.x does
+with the data: the conversion of a classic atom derives line and edge frequencies from
+the level energies, while ``read_pandas`` takes each line's frequency from its tabulated
+air wavelength; bound-free cross sections are interpolated with the monotone cubic Hermite
+scheme of ``trans_mod%hermite_interp`` and set to zero outside the tabulated range;
+collision coefficients are interpolated in temperature with the same scheme on their
+logarithm and held constant outside the tabulated range.
 
 Each ``check_*`` function returns a table with one row per level, transition or
 continuum, and a list of :class:`Finding`. ``audit`` runs all of them; the command line
@@ -33,9 +33,6 @@ H_MINUS_EV = 0.754               # electron affinity of hydrogen [eV]
 A0 = 0.529177e-8                 # Bohr radius [cm]
 KRAMERS = 2.815e29               # hydrogenic photoionisation constant [cm^2 Hz^3]
 
-# Keys whose tabulated values dispatch interpolates in log (read_classic); read_pandas
-# takes the log of every key.
-LOG_KEYS = ('OHM', 'OHMEGA', 'CE', 'CI', 'CH0')
 SEVERITIES = ('serious', 'moderate', 'minor', 'info')
 
 
@@ -115,15 +112,12 @@ def bf_interpolate(lam_table, alpha_table, lam):
     return np.where((nu < nu_tab[0]) | (nu > nu_tab[-1]), 0.0, alpha)
 
 
-def collision_interpolate(temps, values, temp, key):
-    """Tabulated collision value at ``temp`` as gencol forms it (log interpolation for
-    LOG_KEYS, constant outside the table)."""
+def collision_interpolate(temps, values, temp):
+    """Tabulated collision value at ``temp`` as gencol forms it from read_pandas's table
+    (interpolation of the logarithm, constant outside the table)."""
     temps = np.asarray(temps, float)
-    values = np.asarray(values, float)
-    if key in LOG_KEYS:
-        yy = np.log(values)
-        return np.exp(hermite_eval(temps, yy, hermite_slopes(temps, yy), temp))
-    return hermite_eval(temps, values, hermite_slopes(temps, values), temp)
+    yy = np.log(np.asarray(values, float))
+    return np.exp(hermite_eval(temps, yy, hermite_slopes(temps, yy), temp))
 
 
 def planck_photon_weight(nu, temp):
@@ -146,19 +140,19 @@ def kramers(lam, binding_ev, charge):
 # loading
 # ---------------------------------------------------------------------------------------
 def is_pandas_format(path):
-    """True for an atom written by PandasAtom.write (a header row naming 'ev')."""
+    """True for an atom written by Atom.write (a header row naming 'ev')."""
     with open(path) as f:
         rows = [r for r in f if r.strip() and not r.lstrip().startswith('*')][:4]
     return len(rows) == 4 and 'ev' in rows[3].split()
 
 
 def load_atom(path):
-    """A PandasAtom from either atom format."""
-    from .fast_atom import PandasAtom
+    """An Atom from either atom format, told apart by content rather than by name."""
+    from .atom import Atom
     path = Path(path)
     if is_pandas_format(path):
-        return PandasAtom.read(path)
-    return PandasAtom.from_old(path)
+        return Atom.read_table(path)
+    return Atom.from_old(path)
 
 
 def ion_ground(atom):
@@ -445,9 +439,9 @@ def check_lines(atom, lam_tolerance=1e-4, evi_tolerance=1e-3, classic=False):
     """Bound-bound transitions: level indices, frequency consistency, f-values,
     duplicates.
 
-    For a ``classic`` atom read_classic derives line frequencies from the level energies,
-    so the wavelength checks only matter once the atom is converted to the pandas format
-    (whose read_pandas converts tabulated air wavelengths); they are then minor."""
+    For a ``classic`` atom the conversion derives line frequencies from the level
+    energies, so the wavelength checks only matter for an atom edited after conversion
+    (read_pandas converts tabulated air wavelengths); they are then minor."""
     pandas_only = ' (classic format: dispatch uses the level energies; this applies after conversion to pandas)'
     pandas_only = pandas_only if classic else ''
     bbt = line_table(atom)
@@ -715,22 +709,57 @@ def check_level_matching(atom, nist_levels, llist, stage, strong_loggf=-1.0, tol
     return tab, findings
 
 
+def multi_line_comments(atom_file):
+    """The bound-bound records of a classic MULTI atom with the comment ahead of each,
+    which the conversion to the table format drops: one dict per record with its
+    levels ``i`` < ``j`` (from 0), the Ritz air wavelength ``lam_ritz`` and the ``loggf``
+    of its f-value, and the first two numbers of the last ``* i`` comment line before it
+    (``lam_comment``, ``loggf_comment``; the record's own values without one)."""
+    from .auxfuncs import is_number
+    from .physics import vac2air
+    with open(atom_file) as f:
+        rows = iter(f.readlines())
+    comment = None
+
+    def entry():
+        nonlocal comment
+        for row in rows:
+            if row.startswith('* i'):
+                words = row.replace('=', ' ').split()[1:]
+                comment = [float(w) for w in words if is_number(w)][:3]
+            elif row.strip() and not row.lstrip().startswith('*'):
+                return row
+        raise ValueError(f'{atom_file}: the file ends before its last bound-bound record')
+
+    entry()
+    entry()
+    nk, nline = (int(w) for w in entry().split()[:2])
+    levels = [entry().split("'") for _ in range(nk)]
+    ecm = np.array([float(lvl[0].split()[0]) for lvl in levels])
+    g = np.array([float(lvl[0].split()[1]) for lvl in levels])
+    out = []
+    for kr in range(nline):
+        comment = None
+        words = entry().split()
+        i, j = sorted(int(w) - 1 for w in words[:2])
+        fosc, iw = float(words[2]), int(float(words[6]))
+        lam_ritz = float(vac2air(1e8 / (ecm[j] - ecm[i])))
+        loggf = float(np.log10(fosc * g[i]))
+        lam_comment, loggf_comment = comment[1:3] if comment else (lam_ritz, loggf)
+        out.append(dict(kr=kr, i=i, j=j, lam_ritz=lam_ritz, lam_comment=lam_comment,
+                        loggf=loggf, loggf_comment=loggf_comment))
+        for _ in range(iw if iw >= 2 else 0):      # component rows, read verbatim
+            next(rows)
+    return out
+
+
 def check_comments(atom_file, lam_tolerance=1e-3, loggf_tolerance=0.05):
     """Lines of a classic MULTI atom whose comment (the source line list, as most atom
     builders write it) disagrees with the data dispatch.x uses: the Ritz wavelength of
     the level energies and the f-value. A disagreement marks a misassigned level, a
     merged multiplet whose level energies or f-value were not updated, or a vacuum
     wavelength in the comment."""
-    import contextlib
-    import io
-    from .atom import AtomClass
-    with contextlib.redirect_stdout(io.StringIO()):
-        atom = AtomClass(atom_file, qnorm=10., read_bf=False, read_coll=False, sanity_check=True)
-    rows = []
-    for t in atom.trans[:atom.nline]:
-        rows.append(dict(kr=t.kr, i=t.i, j=t.j, lam_ritz=t.lam0, lam_comment=t.c_lam0,
-                         loggf=np.log10(t.fosc * t.lower.g), loggf_comment=t.c_loggf))
-    tab = pd.DataFrame(rows)
+    tab = pd.DataFrame(multi_line_comments(atom_file))
     tab['lam_offset'] = tab.lam_comment / tab.lam_ritz - 1
     tab['dloggf'] = tab.loggf - tab.loggf_comment
     findings = []
@@ -766,7 +795,7 @@ def bf_tables(atom):
         alpha = grp.alpha.to_numpy(float)
         order = np.argsort(lam, kind='stable')
         lam = lam[order]
-        # read_pandas and read_classic separate repeated wavelengths by 1e-6 AA
+        # read_pandas separates repeated wavelengths by 1e-6 AA
         for k in range(1, len(lam)):
             if lam[k] <= lam[k - 1]:
                 lam[k:] += lam[k - 1] - lam[k] + 1e-6
@@ -1134,7 +1163,7 @@ def check_collisions(atom, slope_limit=2.5):
     if len(nonpos):
         findings.append(Finding('collision values', 'serious',
                                 f'{len(nonpos)} records with zero, negative or non-finite values; read_pandas takes '
-                                'their log (-inf), read_classic aborts', len(nonpos),
+                                'their log (-inf), the conversion of a classic atom aborts', len(nonpos),
                                 [f"{col.key[k]} {col.i[k]}-{col.j[k]}" for k in nonpos]))
     dup = col[col.duplicated(['key', 'lo', 'hi'], keep=False)]
     if len(dup):
@@ -1257,7 +1286,7 @@ def check_collisions(atom, slope_limit=2.5):
             f = fval.get((r.lo, r.hi))
             if f is None or r.dev <= 0:
                 continue
-            ct = collision_interpolate(temps, vals[k], tmid, 'CE')
+            ct = collision_interpolate(temps, vals[k], tmid)
             cdn = gg[r.lo] / gg[r.hi] * ct * np.sqrt(tmid)
             cup = cdn * gg[r.hi] / gg[r.lo] * np.exp(-r.dev * EE / (BK * tmid))
             ratios.append((r.lo, r.hi, float(np.log10(cup / van_regemorter(f, r.dev, tmid))[0])))

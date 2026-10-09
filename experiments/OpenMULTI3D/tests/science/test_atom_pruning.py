@@ -7,7 +7,7 @@ import numpy as np
 
 from tumult.atom_build import prune
 from tumult.atom_rates import diagnostic_relevance, removable
-from tumult.fast_atom import PandasAtom
+from tumult.atom import Atom
 
 ATOM_FILE = Path(__file__).resolve().parents[2] / "input" / "atoms" / "atom.o41f"
 
@@ -56,7 +56,7 @@ def test_relevance_ignores_depths_without_diagnostic_levels():
 
 def test_pruned_atom_drops_a_level_with_its_transitions():
     with contextlib.redirect_stdout(io.StringIO()):
-        atom = PandasAtom.from_old(ATOM_FILE)
+        atom = Atom.from_old(ATOM_FILE)
     # the non-ground level with the most lines
     ends = np.concatenate([atom.bbt.i, atom.bbt.j])
     counts = np.bincount(ends, minlength=len(atom.lvl))

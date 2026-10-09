@@ -67,7 +67,7 @@ from ..ui.tableui import SortState
 from ..ui.tool import Tool
 from ..workspace import naming, store
 from .atomtool import (LEVEL_SORT, TRANS_SORT, level_order, levels_table, roman,
-                       term, trans_order, trans_table)
+                       trans_order, trans_table)
 
 log = logging.getLogger("tumultstudio.departures")
 
@@ -149,7 +149,7 @@ class DepartureTool(Tool):
         self._profiles = {}                # uid -> DepartureProfile
         self._loading = set()              # uids whose populations are being read
         self._colors = {}                  # uid or pin -> run colour it is drawn in
-        self._atoms = {}                   # atom path -> AtomClass
+        self._atoms = {}                   # atom path -> tumult.atom.Atom
         self._live = {}                    # uid -> the job solving it
         self._pending_atom = None          # the AtomObject the open modal solves for
 
@@ -594,8 +594,8 @@ class DepartureTool(Tool):
             self._atoms[path] = loaded.atom
             return loaded.atom
         try:
-            from tumult.atom import AtomClass
-            self._atoms[path] = AtomClass(path)
+            from tumult.atom import Atom
+            self._atoms[path] = Atom.read(path)
         except Exception as exc:
             log.warning("Cannot read the model atom %s: %s", path, exc)
             self._atoms[path] = None
@@ -608,9 +608,9 @@ class DepartureTool(Tool):
     # --- the curves -------------------------------------------------------------------------
     def _ground_of(self, atom, level):
         """The index of the ground state of ``level``'s ionisation stage."""
-        stage = int(atom.level[level].ion)
+        stage = atom.levels[level].ion
         for index in atom.ground_states:
-            if int(atom.level[int(index)].ion) == stage:
+            if atom.levels[int(index)].ion == stage:
                 return int(index)
         return 0
 
@@ -621,8 +621,8 @@ class DepartureTool(Tool):
         if atom is None or index is None:
             return ""
         if tab == "levels":
-            return term(atom.level[index]) if 0 <= index < int(atom.nk) else ""
-        transitions = atom.trans[:atom.nline]
+            return atom.levels[index].label if 0 <= index < int(atom.nk) else ""
+        transitions = atom.transitions
         return f"{transitions[index].lam0:.1f} Å" if 0 <= index < len(transitions) else ""
 
     def tag(self, obj):
@@ -675,18 +675,18 @@ class DepartureTool(Tool):
         if tab == "levels":
             if not 0 <= index < nk:
                 return []
-            level = atom.level[index]
+            level = atom.levels[index]
             ground = self._ground_of(atom, index)
             stage = f"{obj.species or atom.id} {roman(level.ion)}"
             key = b_of(index)
-            rows = [row(profile.b[index], key, f"b — {term(level)}", solid)]
+            rows = [row(profile.b[index], key, f"b — {level.label}", solid)]
             if ground != index:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     relative = profile.b[index] / profile.b[ground]
                 rows.append(row(relative, f"{key} / {b_of(ground)}",
                                 f"b / b(ground {stage})", dashed))
             return rows
-        transitions = atom.trans[:atom.nline]
+        transitions = atom.transitions
         if not 0 <= index < len(transitions):
             return []
         tr = transitions[index]
@@ -696,8 +696,8 @@ class DepartureTool(Tool):
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = profile.b[upper] / profile.b[lower]
         b_l, b_u = b_of(lower), b_of(upper)
-        return [row(profile.b[lower], b_l, f"b lower — {term(tr.lower)}", solid),
-                row(profile.b[upper], b_u, f"b upper — {term(tr.upper)}", dashed),
+        return [row(profile.b[lower], b_l, f"b lower — {tr.lower.label}", solid),
+                row(profile.b[upper], b_u, f"b upper — {tr.upper.label}", dashed),
                 row(ratio, f"{b_u} / {b_l}", f"b_u / b_l — {tr.lam0:.3f} Å", dotted)]
 
     def render_curves(self):
@@ -934,4 +934,4 @@ class _AtomView:
 
     @property
     def lines(self):
-        return self.atom.trans[:self.atom.nline]
+        return self.atom.transitions

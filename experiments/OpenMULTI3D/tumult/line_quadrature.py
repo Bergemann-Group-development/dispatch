@@ -69,7 +69,7 @@ def _is_entry(text):
 def read_classic_atom(path):
     """Parse the header, levels and bound-bound records of a classic model atom.
 
-    Follows atom_mod's read_classic: entries are the non-blank lines not starting with
+    Follows dispatch's MULTI parser (HOP/atom_convert_mod.f90): entries are the non-blank lines not starting with
     ``*``; hyperfine components (``iw > 1``) would follow their line record without
     comment skipping and are not supported here.
     """

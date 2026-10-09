@@ -507,7 +507,7 @@ class PreparedSpectrum:
 @dataclass
 class PreparedAtom:
     snap: AtomSnap
-    atom: object                     # tumult.atom.AtomClass
+    atom: object                     # tumult.atom.Atom
 
 
 @dataclass
@@ -549,7 +549,7 @@ class PreparedWorkspace:
 def prepare(ws, *, load_spectrum, load_atom, load_departures, deserialise, relink):
     """Build the live objects of validated ``ws`` without touching the workspace.
 
-    ``load_spectrum(snap) -> Spectrum``, ``load_atom(path) -> AtomClass`` and
+    ``load_spectrum(snap) -> Spectrum``, ``load_atom(path) -> Atom`` and
     ``load_departures(folder) -> Departures`` read the external files; a failure there skips
     that object (the partial-load policy) and is recorded with its reason. ``deserialise(name, records) -> list`` builds one result
     section's objects and ``relink(name, results, spectrum_uids, maskset_uids, atom_paths)

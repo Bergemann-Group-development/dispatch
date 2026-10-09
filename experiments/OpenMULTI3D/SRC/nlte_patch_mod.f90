@@ -8,6 +8,8 @@ MODULE nlte_patch_mod
   USE task_mod, only: task_t
   USE link_mod, only: nbor_t
   USE handyfuncs_mod
+  USE mpi_mod, only: mpi
+  USE atom_convert_mod, only: classic_atom_t, read_classic_atom, write_pandas_atom
   USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, &
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
@@ -143,6 +145,12 @@ contains
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.false.
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
+    type(classic_atom_t) :: classic
+    character(len=512) :: read_file
+    character(len=256) :: atom_name
+    integer, allocatable :: atom_lines(:)
+    logical, allocatable :: selected(:)
+    integer :: il
     integer :: i, j, iostat, nlvl
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
@@ -212,16 +220,35 @@ contains
       do i=1, natom
         associate(atom_file=>atom_file(i), atom=>atoms(i))
           atom%name = 'input'
-          j = rindex(atom_file, '/')+1
-          pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
+          atom_name = atom_file(rindex(atom_file, '/')+1:)
+          pandas_format = .not. startswith(atom_name, 'atom.')
           if (console_on(ch_m3d, 1)) write(console_unit,'(A, A)') 'Reading atom file: ', trim(atom_file)
+          if (allocated(atom_lines)) deallocate(atom_lines)
+          if (allocated(in_lines)) allocate(atom_lines, source=in_lines)
           if (pandas_format) then
             level_partf = .false.
-            call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
-            call atom%set_colliders(composition)
+            read_file = atom_file
           else
-            call atom%read_classic(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+            ! a MULTI atom is read through its conversion, which becomes the run's copy;
+            ! components split off a selected line are selected with it
+            call read_classic_atom(atom_file, classic)
+            ! atom.mg86g becomes mg86g.txt
+            read_file = trim(io%run_dir)//'atoms/'//trim(atom_name(6:))//'.txt'
+            if (mpi%master) call write_pandas_atom(classic, read_file, atom_file)
+            call mpi%barrier('atom conversion')
+            if (allocated(in_lines)) then
+              allocate(selected(classic%nline))
+              do il=1, classic%nline
+                selected(il) = any(in_lines == classic%parent(il))
+              end do
+              deallocate(atom_lines)
+              allocate(atom_lines(count(selected)))
+              atom_lines = pack([(il, il=1, classic%nline)], selected)
+              deallocate(selected)
+            endif
           endif
+          call atom%read_pandas(read_file, qnorm, in_lines=atom_lines)
+          call atom%set_colliders(composition)
 
           call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
           if (associated(element)) then
@@ -277,10 +304,10 @@ contains
           ! output patch's output_atoms point at and what write_linelist_out walks
           call atom%build_ll(out_trans(i))
 
+          ! the run's copy of a table-format atom keeps its name; a MULTI atom's
+          ! conversion was written above
           if (pandas_format) then
-            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom%id)//'.txt')
-          else
-            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//'atom.'//trim(atom%id))
+            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom_name))
           endif
 
           if (ng_global .and. ng_step >= 0) then

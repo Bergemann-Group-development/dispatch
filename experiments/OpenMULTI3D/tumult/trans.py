@@ -1,166 +1,54 @@
+"""Bound-bound transitions of a model atom, and their spectra in a run."""
 import numpy as np
-import pandas as pd
-from .auxfuncs import find_close, get_qmax, is_number
-from .const import CC, HC2, PI
-from .physics import vac2air
+from .const import CC
 from .plotting_scripts import set_legend, set_title
-from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
 
-hfs_names = ['de', 'w', 'f', 'grad', 'gvdw', 'gstk']
-usecols = lambda col: col is None or col < len(hfs_names)
 
 class Transition(object):
-    def __init__(self, atom, kr, read_bf=True):
+    """Bound-bound transition ``kr`` (from 0) of an atom, row ``kr`` of its ``bbt``
+    table, read through ``rows`` (``atom.transitions``): the table's columns
+    (``lam0``, ``loggf``, ``i``, ``j``, ``nq``, ...) read as attributes. In a run,
+    ``ib``/``ir`` index its wavelength range on the run's grid
+    (:meth:`tumult.atom.Atom.load_sp`)."""
+    def __init__(self, rows, kr):
+        self.rows = rows
         self.kr = kr
-        self.atom  = atom
-        self.prepared = False
-        
-        if kr < atom.nline:
-            try:
-                pos = self.atom.f.tell()
-                data = self._read()
-                j, i, fosc, nq, qmax, q0, iw, grad, gvdw, gstk = data[:10]
-                if (len(data) > 10): self.profile = data[10]
-                self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-                self.fosc, self.qmax, self.q0, self.grad, self.gvdw, self.gstk = map(float, [fosc, qmax, q0, grad, gvdw, gstk])
-            except:
-                self.atom.f.seek(pos)
-                data = self._read()
-                print(kr, data)
-                print('Could not read line above!')
-            
-        else:
-            j, i, fosc, nq, qmax = atom._read()[:5]
-            
-            self.j, self.i, self.nq = int(j), int(i), int(nq)
-            self.fosc, self.qmax = map(float, [fosc, qmax])
 
-        self.i = self.i-1
-        self.j = self.j-1
+    def __getattr__(self, attr):
+        rows = self.__dict__.get('rows')       # absent while a copy is being built
+        if rows is not None and attr in rows.columns:
+            return rows.columns[attr][self.kr]
+        raise AttributeError(f'Transition has no attribute {attr!r}')
 
-        if self.i >= atom.nk:
-            print('Lower level {:} of line {:} is beyond level bound of {}!'.format(self.i, kr, atom.nk))
-        if self.j >= atom.nk:
-            print('Upper level {:} of line {:} is beyond level bound of {}!'.format(self.j, kr, atom.nk))
-        
-        self.upper = atom.level[self.j]
-        self.lower = atom.level[self.i]
-        
-        self.upper.trans[self.i] = self
-        self.lower.trans[self.j] = self
-        
-        self.alamb = 1e8 / (self.upper.ecm - self.lower.ecm)
-        self.u = CC / self.alamb * 1e8
-        self.lam0 = vac2air(self.alamb)
-        self.evi = self.lower.ev
+    def __repr__(self):
+        return self.atom.bbt.iloc[self.kr].__repr__()
 
-        if kr < atom.nline:
-            if not hasattr(self, 'c_lam0'):
-                self.c_lam0 = self.lam0
-                self.c_loggf = np.log10(self.fosc * self.lower.g)
+    @property
+    def atom(self):
+        return self.rows.atom
 
-            if atom.sanity_check:
-                if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
-                    print('mismatch in central wavelength of line', kr)
-                    print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
+    @property
+    def lower(self):
+        """The lower level, a :class:`tumult.atom.Level`."""
+        return self.rows.levels[int(self.i)]
 
-                loggf = np.log10(self.fosc * self.lower.g)
-                if abs(round(loggf,3) / self.c_loggf - 1) > 1e-2:
-                    print('mismatch in loggf of line', kr)
-                    print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
+    @property
+    def upper(self):
+        """The upper level, a :class:`tumult.atom.Level`."""
+        return self.rows.levels[int(self.j)]
 
-            self.title = 'Line = {:.2f} [Å]'.format(self.c_lam0)
+    @property
+    def run(self):
+        return self.atom.run
 
-            self.iwide = self.iw > 0
-            
-            self.a   = self.fosc * 6.671e15 * self.lower.g / self.upper.g / self.alamb**2
-            self.bij = self.fosc * 6.671e15 * self.alamb / HC2
-            self.bji = self.bij * self.lower.g / self.upper.g
-            
-            if self.iw > 0:
-                pos = self.atom.f.tell()
-                self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep=r'\s+',
-                                            header=None, usecols=usecols, comment='*')
-                self.hyperfine.columns = hfs_names[:self.hyperfine.shape[1]]
-                self.atom.f.seek(pos)
-                for i in range(self.iw): self.atom.f.readline() # skip lines
-            
-            self.cont = False
-            
-            if self.qmax >= 0 and self.q0 >=0:
-                if self.nq > 0:
-                  qmax = get_qmax(self.qmax, self.q0) * atom.qnorm
-                  self.lam_red  = self.alamb / (1 - qmax)
-                  self.lam_blue = self.alamb / (1 + qmax)
-                else:
-                  self.lam_red  = self.alamb + self.qmax
-                  self.lam_blue = self.alamb - self.qmax
-            
-        elif read_bf:
-            if self.qmax < 0:
-                self.lam, self.alfac = np.loadtxt(atom.f, dtype=float, max_rows=self.nq).T
-                self.lam = np.array([self.lam]).ravel() # in case there is only one frequency
-                self.alfac = np.array([self.alfac]).ravel() # in case there is only one frequency
-                lam = self.lam
-                    
-            else:
-                frq = np.linspace(self.u, CC / self.qmax * 1e8, self.nq)
-                lam = CC / frq * 1e8
-            
-            self.lam_red  = lam[ 0]
-            self.lam_blue = lam[-1]
-        
-            self.iwide = True
-            self.cont = True
-        else:
-            if self.qmax < 0: [atom.f.readline() for i in range(self.nq)] # skipping bf-data
+    @property
+    def title(self):
+        return 'Line = {:.2f} [Å]'.format(self.lam0)
 
-
-    def _read(self):
-        f = self.atom.f
-        line = f.readline()
-        while line.strip()=='' or line.strip().startswith('*'):
-            if line.startswith('* i') and self.atom.sanity_check:
-                line = line.replace('=', ' ')
-                self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
-
-            line = f.readline()
-
-        return line.split()
-            
-            
-    #=====================================================================
-    def prepare(self):
-        #-----------------------------------------------------------------
-        if hasattr(self, 'prepared'):
-            if self.prepared: return
-
-        self.run = self.atom.run
-        self.lb = vac2air(self.lam_blue)
-        self.lr = vac2air(self.lam_red)
-
-        if hasattr(self.atom, 'ib'):
-            self.ib = self.atom.ib[self.kr]
-            self.ir = self.atom.ir[self.kr]
-            self.i0 = (self.ib + self.ir) // 2
-        else:
-            self.i0 = find_close(self.run.lam, self.lam0)
-            self.ib = find_close(self.run.lam, self.lb)
-            self.ir = find_close(self.run.lam, self.lr, side='right')
-
-        if hasattr(self.run, 'lvlerr') and hasattr(self, 'i'):
-            self.ilvlerr = self.run.lvlerr[self.i]
-            self.jlvlerr = self.run.lvlerr[self.j]
-
-        self.prepared = True
-    
     #=====================================================================
     def crop(self, **kwargs):
         #-----------------------------------------------------------------
-        if hasattr(self, 'prepared'):
-            if not self.prepared: self.prepare()
-                
         spec = self.run.crop(line=self, **kwargs)
         return spec
     
@@ -169,7 +57,6 @@ class Transition(object):
         """Equivalent width [mÅ] at each μ of the run (:meth:`Run.get_clv`), over the
         line's own wavelength range or, with ``dlam``, over lam0 ± dlam [Å]."""
         #-----------------------------------------------------------------
-        self.prepare()
         if dlam is None:
             kwargs['line'] = self
         else:
@@ -201,7 +88,6 @@ class Transition(object):
     #=====================================================================
     def get_xx(self, dlam, velocity_units=False, **kwargs):
         #-----------------------------------------------------------------
-        self.prepare()
 
         xx = self.run.lam
         if dlam is not None and dlam is not False:

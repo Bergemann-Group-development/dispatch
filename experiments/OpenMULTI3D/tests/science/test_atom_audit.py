@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from tumult.atom_audit import HC_AA_EV, compare_linelist
-from tumult.fast_atom import PandasAtom
+from tumult.atom import Atom
 from tumult.physics import vac2air
 
 
@@ -21,7 +21,7 @@ def mg_atom_without_3p2():
                             label=['3s1S', '3p3P*', '7s3S', '3s2S']))
     lam = float(vac2air(HC_AA_EV / (lvl.ev[2] - lvl.ev[1])))
     bbt = pd.DataFrame(dict(i=[1], j=[2], lam0=[lam], evi=[lvl.ev[1]], loggf=[-1.6]))
-    return PandasAtom.from_pandas('MG', 7.5, 24.3, lvl, bbt=bbt)
+    return Atom.from_pandas('MG', 7.5, 24.3, lvl, bbt=bbt)
 
 
 def nist_levels():
@@ -51,7 +51,7 @@ def test_line_terms_choose_between_degenerate_singlet_and_triplet():
                             ion=[1, 1, 1, 1, 2], label=['3s1S', '3d3D', '4f1F*', '4f3F*', '3s2S']))
     lam = float(vac2air(HC_AA_EV / (lvl.ev[3] - lvl.ev[1])))
     bbt = pd.DataFrame(dict(i=[1], j=[3], lam0=[lam], evi=[lvl.ev[1]], loggf=[1.07]))
-    atom = PandasAtom.from_pandas('MG', 7.5, 24.3, lvl, bbt=bbt)
+    atom = Atom.from_pandas('MG', 7.5, 24.3, lvl, bbt=bbt)
     nist = pd.DataFrame(dict(config='3s.4f', term=['1F*', '3F*', '3F*', '3F*'], J=[3, 2, 3, 4],
                              ev=[6.779070, 6.779104, 6.779104, 6.779104]))
     nist['g'] = 2 * nist.J + 1

@@ -44,7 +44,7 @@ from .convolutions import (convolve, combined_kernel, rot_kernel, gauss_kernel,
                            macro_kernel, convert_res_to_vdop)
 from .physics import vac2air, air2vac, planck, voigt_function
 from .hop import HopEOS, HopError, logstep, wavelength_grid
-from .fast_atom import read_atom
+from .atom import Atom, read_atom
 from .utils import (get_weq, fit_line_profile, ensure_unit, pchip_mono, lowpass,
                     linear_edge_normalisation, auto_crop_core, get_bisector, calc_teff,
                     apply_brault_filter, kpno_spectral_filter)
@@ -71,7 +71,7 @@ __all__ = [
     "convert_res_to_vdop", "vac2air", "air2vac", "planck", "voigt_function",
     "ensure_unit", "pchip_mono", "lowpass", "linear_edge_normalisation",
     "auto_crop_core", "get_bisector", "calc_teff", "apply_brault_filter",
-    "kpno_spectral_filter", "const", "read_atom",
+    "kpno_spectral_filter", "const", "Atom", "read_atom",
     "HopEOS", "HopError", "logstep", "wavelength_grid",
 ]
 

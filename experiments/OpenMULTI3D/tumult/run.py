@@ -6,14 +6,13 @@ and the intensity-layout / flux physics in :mod:`tumult.flux`; this class is the
 orchestration and analysis facade over them (lazy atmos/linelist/atom properties,
 spectra, departures, contribution functions, plotting).
 """
-from .atom import AtomClass
-from .auxfuncs import (assign_group_indices, empty, interp_tau, optical_depth_from_top,
+from .atom import Atom, Level
+from .auxfuncs import (assign_group_indices, interp_tau, optical_depth_from_top,
                        rotate_array)
 from ._abundance_numerics import cog_invert
 from .const import CC
 from .physics import vac2air
 from .decorators import broadcast_arguments
-from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    read_angle_quadrature, read_segments, read_set_manifest,
                    split_ie)
@@ -90,12 +89,8 @@ class Run(object):
     @property
     def atoms(self):
         if not hasattr(self, '_atoms'):
-            try:
-              run = self.runs[0] if hasattr(self, 'runs') else self
-              self._atoms = run.read_atom(fast_read=True)
-            except Exception as e:
-              print(f'Error reading atoms: {e}\nTrying again with fast_read=False...')
-              self._atoms = self.read_atom(fast_read=False)
+            run = self.runs[0] if hasattr(self, 'runs') else self
+            self._atoms = run.read_atom()
 
         return self._atoms
 
@@ -211,7 +206,10 @@ class Run(object):
         return self
 
     #=====================================================================
-    def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
+    def read_atom(self):
+        """The model atoms in the run's ``atoms/`` folder, sorted by id. A run keeps
+        each atom in the table format; a classic MULTI copy (``atoms/atom.*``, from
+        runs made before dispatch.x converted its atoms) is converted on reading."""
         atoms = []
         atom_files = list(self.folder.glob('atoms/*'))
         atom_files += list(self.folder.glob('atom.txt'))
@@ -225,61 +223,17 @@ class Run(object):
             in_abnd = self.nml['atom_params']['abundance']
             in_abnd = [in_abnd] if not hasattr(in_abnd, '__iter__') else in_abnd
         else:
-            depart = ''
             in_abnd = None
 
         for i, atom_file in enumerate(atom_files):
             if atom_file.is_file():
-                if not read_atom:
-                    with open(atom_file, 'r') as f:
-                        line = f.readline()
-                        while line.startswith('*'):
-                            line = f.readline()
+                atom = Atom.read(atom_file)
+                atom.run = self
 
-                        atom = empty()
-                        atom.id = line.split()[0].capitalize()
-                        atom.molec = atom.id in moldict.keys()
-
-                else:
-                    pf = self.nml['atom_params'].get('pandas_format', None)
-                    pandas_format = not atom_file.name.startswith('atom.') if pf is None else pf
-
-                    if pandas_format or fast_read:
-                        if pandas_format:
-                            atom = PandasAtom.read(atom_file)
-                        else:
-                            atom = FastAtom(atom_file, **kwargs)
-
-                        atom.run = self
-                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, None)
-
-                        if self.has_spectrum:
-                            atom.line = atom.trans.get_lines(atom.in_lines)
-
-                            if option(self.nml['output_params'], 'overlapping_bb_in_output'):
-                                atom.load_sp(self.lam, qnorm=self.qnorm)
-                            else:
-                                nnu = self.lam.size
-                                ib, ir = atom.get_non_overlapping_indices(atom.trans, nnu, nq_fac)
-                                atom.bbt['ir'] = 0
-                                atom.bbt['ib'] = 0
-                                atom.bbt.loc[atom.in_lines, 'ir'] = ir[:atom.nline][atom.in_lines]
-                                atom.bbt.loc[atom.in_lines, 'ib'] = ib[:atom.nline][atom.in_lines]
-
-                    else:
-                        atom = AtomClass(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-                        atom.run = self
-
-                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, atom.nline)
-                        atom.line = np.array(atom.trans)[atom.in_lines]
-                        atom.nline = len(atom.line)
-
-                        if self.has_spectrum:
-                            if not option(self.nml['output_params'], 'overlapping_bb_in_output'):
-                                nnu = self.lam.size
-                                ib, ir = atom.get_non_overlapping_indices(atom.trans, nnu, nq_fac)
-                                atom.ib = ir.astype(int)
-                                atom.ir = ib.astype(int)
+                if self.has_spectrum:
+                    atom.load_sp(self.lam, qnorm=self.qnorm)
+                    if not option(self.nml['output_params'], 'overlapping_bb_in_output'):
+                        atom.load_non_overlapping(self.lam.size, nq_fac)
 
                 if atom.id in self.abundances:
                     atom.abnd = float(self.abundances[atom.id])
@@ -303,11 +257,12 @@ class Run(object):
     @functools.cache
     def get_line(self, lam0, tol=0.05, verbose=True):
         #-----------------------------------------------------------------
-        if not hasattr(self.atoms[0], 'line'): self.read_atom()
-        all_lines = np.concatenate([[line for line in atom.line] for atom in self.atoms])
-        all_lam0 = np.array([line.lam0 for line in all_lines])
-        i = np.argmin(abs(all_lam0-lam0))
-        line = all_lines[i]
+        """The bound-bound transition of the run's model atoms nearest to ``lam0`` [Å,
+        air], a :class:`tumult.trans.Transition`; ``verbose`` warns when it is further
+        than ``tol`` [Å] away."""
+        trans = [t for atom in self.atoms for t in atom.transitions]
+        all_lam0 = np.array([t.lam0 for t in trans])
+        line = trans[np.argmin(abs(all_lam0-lam0))]
         if verbose and abs(line.lam0 - lam0) > tol:
             print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
 
@@ -393,7 +348,6 @@ class Run(object):
         """
         #-----------------------------------------------------------------
         if line is not None:
-            line.prepare()
             slc = slice(line.ib, line.ir)
             x0 = line.lam0
 
@@ -467,7 +421,13 @@ class Run(object):
 
     #=====================================================================
     def get_depart(self, ilvl=None, iatom=0, mean=False):
+        """The departure coefficients of level ``ilvl`` (all levels when None) against
+        log tau_500, as ``(ltau, dep)``. ``ilvl`` is an index from 0 into the levels of
+        atom ``iatom`` (its position in :attr:`atoms` or its id), or a
+        :class:`tumult.atom.Level`, which names its atom itself (``line.lower``)."""
         #-----------------------------------------------------------------
+        if isinstance(ilvl, Level):
+            ilvl, iatom = ilvl.i, ilvl.atom.id
         atomid = self.atoms[iatom].id if type(iatom) is int else iatom
 
         if hasattr(self, 'runs'):
@@ -499,8 +459,11 @@ class Run(object):
 
     #=====================================================================
     def plot_depart(self, ilvl=0, iatom=0, mean=True, **kwargs):
+        """Draw the departure coefficient of one level (see :meth:`get_depart`)."""
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        if isinstance(ilvl, Level):
+            ilvl, iatom = ilvl.i, ilvl.atom.id
         atomid = self.atoms[iatom].id if type(iatom) is int else iatom
         xx, yy = self.get_depart(ilvl, atomid, mean=mean)
         plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
@@ -685,7 +648,6 @@ class Run(object):
         slc = slice(None, None)
 
         if line is not None:
-            line.prepare()
             slc = slice(line.ib, line.ir)
             lam0 = line.lam0
         elif lam0 is not None and dlam is None and xmin is None and xmax is None:

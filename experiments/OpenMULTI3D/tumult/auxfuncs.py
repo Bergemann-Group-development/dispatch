@@ -6,7 +6,6 @@ from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy import integrate, optimize
 from scipy.interpolate import CubicHermiteSpline
 from numba import njit, jit
-import shlex
 import re
 import os
 import errno
@@ -300,47 +299,6 @@ def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
         yy = model_func(obs_xx, *pfit)
     
     return yy
-
-#=====================================================================
-def _read(f, dtype=None, quotes=None):
-    line = f.readline()
-    line = line.replace(',','')
-    while line.startswith('*') or line.strip()=='': 
-        line = f.readline()
-
-    line.strip()
-        
-    if quotes is not None:
-        lex = shlex.shlex(line.strip())
-        lex.commenters='*'
-        lex.quotes = quotes
-        lex.whitespace_split = True
-        out = list(lex)
-    else:
-        out = line.split()
-    
-    if dtype is not None:
-        if isinstance(dtype, list):
-            for i, dt in enumerate(dtype):
-                out[i] = dt(out[i])
-        else:
-            for i in range(len(out)):
-                out[i] = dtype(out[i])
-                
-    return out
-
-#=====================================================================
-def _read_arr(f, n, dtype=None):
-    out = []
-    while len(out) < n:
-        out += _read(f)
-    
-    out = out[:n]
-    
-    if dtype is not None:
-        out = np.array(out).astype(dtype)
-        
-    return out
 
 #=====================================================================
 def _read_fix(f, length, n, dtype=None):
