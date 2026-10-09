@@ -1,11 +1,11 @@
-\begin{longtblr}{colspec={Q[l]X[l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
+\begin{longtblr}{colspec={X[2,l]X[3,l]}, width=\linewidth, row{even}={bg=rowshade}, rowhead=1}
 \toprule
 \textbf{Symptom} & \textbf{Remedy}\\
 \midrule
 \SetCell[c=2]{l}{\textit{Building}} & \\
 \Code{No Fortran compiler found} & Install \Code{gfortran}, or pass \Code{COMPILER=}.\\
 \Code{command not found: make} or \Code{git} (macOS) & Run \Code{xcode-select --install}.\\
-\Code{No rule to make target '/Makefile.dep'} & The parent DISPATCH checkout is missing; clone the whole repository.\\
+{\codecolor\texttt{No rule to make target \textquotesingle/Makefile.dep\textquotesingle}} & The parent DISPATCH checkout is missing; clone the whole repository.\\
 \SetCell[c=2]{l}{\textit{Running dispatch.x}} & \\
 \Code{Fortran runtime error: End of record} at start & The namelist path is too long. Use a short relative path (\fort{datadir} may be absolute).\\
 Run stops before the first iteration with a memory message & The estimate exceeds the machine's memory. Raise \fort{n_windows}, reduce atoms, windows or threads, use a larger node, or set \fort{mem_limit_gb}.\\
@@ -13,9 +13,9 @@ Run aborts while reading the line list & HOP aborts on an unreadable list. The f
 \Code{has records in the requested wavelength windows, but none was selected} & The line-list selection failed for a list that covers the windows; the run stops instead of writing a line-free spectrum. Report it with the namelist and window file. A warning \Code{no line of ... lies in the requested windows} means the list simply has no line there.\\
 NLTE iterations do not converge & Read \File{convergence\_report\_NNN.txt} for the offending level (Sec.~\ref{sec:convergence}); Sec.~\ref{sec:numerics} lists the remedies.\\
 \SetCell[c=2]{l}{\textit{Python and TumultStudio}} & \\
-\Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}. \Code{HopEOS.opacity} with \Code{nprocs}$>1$ starts worker processes and needs an \texttt{if \_\_name\_\_ == '\_\_main\_\_'} guard in the script.\\
-\Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Deactivate conda or call \File{.venv/bin/python}.\\
-\Code{No module named 'tumult'} & Activate the virtual environment where \Code{pip install -e .} was run.\\
+\Code{libhop.so not found} & Run \Code{make -C HOP/standalone}, or set \Code{HOP\_LIB}. \Code{HopEOS.opacity} with \Code{nprocs}$>1$ starts worker processes and needs an \py{if __name__ == "__main__"} guard in the script.\\
+\Code{ModuleNotFoundError: numba} & A conda prefix shadows \File{.venv}. Deactivate conda or call \mbox{\File{.venv/bin/python}}.\\
+{\codecolor\texttt{No module named \textquotesingle tumult\textquotesingle}} & Activate the virtual environment where \mbox{\Code{pip install -e .}} was run.\\
 \Code{CERTIFICATE\_VERIFY\_FAILED} on macOS & Run the installer's certificate script, or use the virtual environment.\\
 Plot does not appear & In a script, call \Code{matplotlib.pyplot.show()}.\\
 Port 5006 in use & Start TumultStudio with \Code{--port}.\\

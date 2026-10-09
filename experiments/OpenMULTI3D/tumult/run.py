@@ -494,19 +494,25 @@ class Run(object):
 
     #=====================================================================
     def plot_cog_corr(self, element, **kwargs):
+        """Draw the NLTE correction of :meth:`get_cog_corr`: the LTE curve of growth,
+        this run's NLTE equivalent width at its abundance, and the LTE abundance that
+        reproduces that width, NLTE in C0 and LTE in C1."""
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
-        corr, lte_weqs, lte_abnd, weq, abnd = self.get_cog_corr(element=element,**kwargs)
-        plt.scatter(lte_weqs, lte_abnd, label='LTE', color='cornflowerblue')
-        label = 'NLTE\n∆A={:.2f}'.format(corr)
-        plt.scatter(weq, abnd, label=label, color='k')
-        plt.xlabel(r'W$_{eq}$ [mÅ]')
-        plt.ylabel('A({})'.format(element))
-
+        corr, lte_weqs, lte_abnd, weq, abnd = self.get_cog_corr(element=element, **kwargs)
+        order = np.argsort(lte_abnd)
+        plt.plot(np.asarray(lte_abnd)[order], np.asarray(lte_weqs)[order], 's--',
+                 color='C1', ms=4, label='LTE curve of growth')
+        plt.plot(abnd, weq, 'o', color='C0', label='NLTE at A({})'.format(element))
         a0 = abnd - corr
-        plt.scatter(weq, a0, facecolor='none', color='k')
-        plt.annotate('', xy=(weq, a0), xytext=(weq, abnd),
-                    arrowprops=dict(arrowstyle='<-', color='k'))
+        plt.plot(a0, weq, 'o', mfc='none', color='C1', label='LTE, same W')
+        plt.annotate('', xy=(abnd, weq), xytext=(a0, weq),
+                     arrowprops=dict(arrowstyle='->', color='k'))
+        plt.annotate('$\\Delta A={:.2f}$'.format(corr).replace('-', '\u2212'),
+                     xy=(0.5*(a0 + abnd), weq), xytext=(0, -14), textcoords='offset points',
+                     ha='center', va='top')
+        plt.xlabel('A({})'.format(element))
+        plt.ylabel(r'$W$ [mÅ]')
         plt.legend(loc='lower right')
 
     #=====================================================================
