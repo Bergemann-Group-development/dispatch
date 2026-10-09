@@ -1,7 +1,8 @@
 """Synthesis operations on a :class:`~tumult.synthesis.SynthRequest`.
 
 :func:`synthesize` produces the spectra a request describes and :func:`fit` fits an
-observation by adaptive synthesis around one. Both choose the calculation from the
+observation by adaptive synthesis around one; :func:`synthesize_lines` synthesizes with a
+few line-list records changed. They choose the calculation from the
 request's departures (none: LTE; solved: NLTE on frozen populations; requested: NLTE with
 departures solved for each synthesis) and run it through the execution layer
 (:func:`tumult.synthesis.workflows.execute_request`).
@@ -204,6 +205,38 @@ def synthesize(request, *, background_lines=True, cancel_token=None):
         raise TypeError("synthesize expects a SynthRequest")
     request.check()
     return _synthesize(request, background_lines, cancel_token)
+
+
+def synthesize_lines(request, lines, *, pad=2.0, lam_tol=0.02, background_lines=True,
+                     cancel_token=None):
+    """Synthesize ``request`` with ``lines`` in place of their line-list records.
+
+    ``lines`` are mappings of record columns (``ion``, ``lam0``, ``loggf``, ...) that
+    :func:`tumult.linelist.override_lines` applies to the request's line list, so a line
+    may give only the columns it changes; with no line list in the request the lines are
+    synthesised alone. The edited list is written under the request's cache, named by its
+    content, so a repeated call reuses its runs. Without windows in the request each line
+    gets the window ``lam0 +- pad`` [Angstrom].
+
+    Returns the :class:`~tumult.synthesis.SynthesisResult` of :func:`synthesize`, one
+    spectrum per window.
+    """
+    import hashlib
+    import pandas as pd
+    from ..linelist import override_lines
+    if isinstance(lines, pd.DataFrame):
+        lines = lines.to_dict("records")
+    config = request.config
+    folder = config.resolve(config.cache) / "linelists"
+    base = config.resolve(config.linelist) if config.linelist is not None else None
+    tmp = override_lines(lines, folder / f".partial-{time.time_ns()}.txt", base=base,
+                         lam_tol=lam_tol)
+    digest = hashlib.sha1(tmp.read_bytes()).hexdigest()[:12]
+    llist = tmp.replace(folder / f"{digest}.txt")
+    wins = request.windows or tuple((float(l["lam0"]) - pad, float(l["lam0"]) + pad)
+                                    for l in lines)
+    request = request.update(config=replace(config, linelist=llist), windows=wins)
+    return synthesize(request, background_lines=background_lines, cancel_token=cancel_token)
 
 
 def _synthesize(request, background_lines, cancel_token):

@@ -1,6 +1,7 @@
 from io import StringIO
 from functools import lru_cache
 import logging
+import math
 from .auxfuncs import split_words
 from tumult.const import EK
 import os
@@ -253,6 +254,13 @@ def _blocks(lines):
     as HOP's reader does (linelist_reader_mod). ``iso`` is the isotope label of
     :mod:`tumult.isotopes` in both layouts.
     """
+    for species, iso, ts, first, nrec in _block_spans(lines):
+        yield species, iso, ts, lines[first:first + nrec]
+
+
+def _block_spans(lines):
+    """``(species, iso, ts, first, nrec)`` for every block of :func:`_blocks`, with the
+    records at ``lines[first:first + nrec]``."""
     k = 0
     while k < len(lines):
         head = _tokens(lines[k])
@@ -268,7 +276,7 @@ def _blocks(lines):
             species = ' '.join(head[0].split())
             iso_id, nrec = _tokens(lines[k + 1])[:2]
             iso, nrec = int(iso_id.split('.')[-1]), int(nrec)
-        yield species, iso, ts, lines[k + 2:k + 2 + nrec]
+        yield species, iso, ts, k + 2, nrec
         k += 2 + nrec
 
 
@@ -458,6 +466,119 @@ def forget(path):
     whose files were added or removed."""
     _cache.pop(str(path), None)
     atomic_files.cache_clear()
+
+
+# --- editing a line list -----------------------------------------------------------
+# the record columns a line may set, by position in each layout; a Turbospectrum record
+# holds the unused upper statistical weight at position 4 and its level indices after
+# the comment
+_TUMULT_FIELDS = {'lam0': 0, 'evi': 1, 'loggf': 2, 'gvdw': 3, 'grad': 4, 'gstk': 5,
+                  'i': 6, 'j': 7}
+_TS_FIELDS = {'lam0': 0, 'evi': 1, 'loggf': 2, 'gvdw': 3, 'grad': 5, 'gstk': 6}
+
+
+def _field_text(key, value):
+    return str(int(value)) if key in ('i', 'j') else f"{float(value):.8g}"
+
+
+def _edited_record(row, ts, line):
+    """The record ``row`` with the columns ``line`` sets replaced. A tumult record keeps
+    its eight input columns; the strength and reach of a pruned list are dropped, since
+    they no longer describe the line."""
+    if ts:
+        if {'i', 'j'} & set(line):
+            raise ValueError("Level indices can be set only in tumult-layout blocks.")
+        head, quote, tail = row.partition("'")
+        vals, fields = head.split(), _TS_FIELDS
+        width = 7 if 'gstk' in line else len(vals)
+    else:
+        vals, fields = row.split()[:8], _TUMULT_FIELDS
+        width = 8 if {'i', 'j'} & set(line) else len(vals)
+    vals += ['0'] * (width - len(vals))
+    for key, value in line.items():
+        vals[fields[key]] = _field_text(key, value)
+    text = ' ' + ' '.join(vals)
+    return f"{text} {quote}{tail}" if ts and quote else text
+
+
+def override_lines(lines, path, base=MASTER_PATH, lam_tol=0.02):
+    """Write the line list ``base`` to ``path`` with ``lines`` in place of their records;
+    returns ``path``.
+
+    ``lines`` holds one mapping per line, or is a DataFrame with these columns: ``ion``
+    (``'Mg I'``) and ``lam0`` [Angstrom, air] identify the line, ``iso`` its isotope block
+    (any block of the species when absent), and ``evi`` [eV], ``loggf``, ``gvdw``,
+    ``grad``, ``gstk`` and the level indices ``i``, ``j`` are the record's columns as the
+    manual's line-list format describes them.
+
+    A line replaces the record of its species nearest to ``lam0`` within ``lam_tol``. The
+    record keeps its wavelength and every column the line leaves out, so
+    ``{'ion': 'Mg I', 'lam0': 5172.7, 'loggf': -0.45}`` changes one log gf. A line with no
+    record within ``lam_tol`` is added in a block of its own at ``lam0``; it needs ``evi``
+    and ``loggf``, and the damping columns it leaves out are 0. ``base=None`` writes the
+    lines alone.
+
+    The other records are copied verbatim. An edited record of a pruned list loses its
+    reach, which makes HOP read the whole list without selecting lines by reach, so pass
+    the unpruned list.
+    """
+    if isinstance(lines, pd.DataFrame):
+        lines = lines.to_dict('records')
+    lines = [dict(l) for l in lines]
+    for line in lines:
+        unknown = set(line) - set(_TUMULT_FIELDS) - {'ion', 'iso'}
+        if unknown or not {'ion', 'lam0'} <= set(line):
+            raise ValueError(f"A line needs 'ion' and 'lam0' and takes only "
+                             f"{sorted(_TUMULT_FIELDS)} and 'iso': {line}")
+        line['ion'] = ' '.join(str(line['ion']).split())
+    if base is not None and Path(base).is_dir():
+        raise ValueError(f"override_lines edits one line-list file; {base} is a folder.")
+    text = [] if base is None else Path(base).read_text().splitlines()
+
+    # the nearest record of each line, over every block of its species
+    nearest = [None] * len(lines)
+    for species, iso, ts, first, nrec in _block_spans(text):
+        for n, line in enumerate(lines):
+            if line['ion'] != species or line.get('iso', iso) != iso:
+                continue
+            for k in range(first, first + nrec):
+                dist = abs(float(text[k].split()[0]) - float(line['lam0']))
+                if dist > lam_tol:
+                    continue
+                if nearest[n] is not None and math.isclose(dist, nearest[n][0], abs_tol=1e-9):
+                    raise ValueError(f"Two records of {species} are equally near {line['lam0']} "
+                                     f"A: {text[nearest[n][1]].strip()!r}, {text[k].strip()!r}")
+                if nearest[n] is None or dist < nearest[n][0]:
+                    nearest[n] = (dist, k, ts)
+    claimed = [m[1] for m in nearest if m is not None]
+    if len(claimed) != len(set(claimed)):
+        raise ValueError("Two lines replace the same record; give them distinct wavelengths.")
+
+    added = {}
+    for line, match in zip(lines, nearest):
+        columns = {k: v for k, v in line.items() if k not in ('ion', 'iso', 'lam0')}
+        if match is not None:
+            text[match[1]] = _edited_record(text[match[1]], match[2], columns)
+            continue
+        if not {'evi', 'loggf'} <= set(line):
+            raise ValueError(f"No record of {line['ion']} within {lam_tol} A of "
+                             f"{line['lam0']}; a new line needs 'evi' and 'loggf'.")
+        added.setdefault((line['ion'], int(line.get('iso', 0))), []).append(line)
+    for (species, iso), group in added.items():
+        group.sort(key=lambda l: float(l['lam0']))
+        text += [f"'{species}'", f"'{iso_token(species, iso)}' {len(group)}"]
+        width = 8 if any({'i', 'j'} & set(l) for l in group) else 6
+        for line in group:
+            vals = ['0'] * width
+            for key, pos in _TUMULT_FIELDS.items():
+                if key in line and pos < width:
+                    vals[pos] = _field_text(key, line[key])
+            text.append(' ' + ' '.join(vals))
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(text) + '\n')
+    return path
 
 
 # --- searching a line list ---------------------------------------------------------

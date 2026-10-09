@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from tumult.isotopes import iso_token, mass_label, ts_species, ts_token
-from tumult.linelist import LineList
+from tumult.linelist import LineList, override_lines
 
 TS = """'  26.056   '    1    2
 'Fe I    NLTE'
@@ -69,3 +69,47 @@ def test_tumult_writer_keeps_the_molecular_label(tmp_path):
     back = LineList.from_tumult_format(tmp_path / 'out')
     np.testing.assert_allclose(back.lam0, ts.lam0)
     assert list(back.index.droplevel(-1).unique()) == [('CN', 13014), ('Fe I', 56)]
+
+
+def test_override_edits_only_the_matched_record(tmp_path):
+    for name, text, line in (('ts', TS, dict(ion='Fe I', lam0=5162.28, loggf=-0.5)),
+                             ('tumult', TUMULT, dict(ion='Fe I', lam0=5162.28, loggf=-0.5))):
+        (tmp_path / name).write_text(text)
+        out = override_lines([line], tmp_path / f'{name}.out', base=tmp_path / name)
+        old, new = text.splitlines(), out.read_text().splitlines()
+        changed = [k for k, (o, n) in enumerate(zip(old, new)) if o != n]
+        assert len(old) == len(new) and len(changed) == 1
+        fe = LineList.from_tumult_format(out).loc[('Fe I', 56)]
+        # the record keeps its wavelength and the columns the line leaves out
+        assert list(fe.loggf.round(3)) == [-5.246, -0.5]
+        assert list(fe.lam0) == [5161.738, 5162.272] and fe.gvdw.iloc[1] == 798.279
+        if name == 'ts':
+            # the Turbospectrum record keeps its level designations and comment
+            k = changed[0]
+            assert new[k].split("'", 1)[1] == old[k].split("'", 1)[1]
+
+
+def test_override_rejects_an_ambiguous_record(tmp_path):
+    (tmp_path / 'base').write_text(TS + TUMULT)
+    try:
+        override_lines([dict(ion='CN', lam0=5163.0, gvdw=250.0)], tmp_path / 'out',
+                       base=tmp_path / 'base')
+    except ValueError as err:
+        assert 'equally near' in str(err)
+    else:
+        raise AssertionError("a line with two equally near records was accepted")
+
+
+def test_override_adds_a_line_without_record(tmp_path):
+    (tmp_path / 'base').write_text(TUMULT)
+    out = override_lines([dict(ion='Fe I', iso=56, lam0=5170.0, evi=1.0, loggf=-2.0)],
+                         tmp_path / 'out', base=tmp_path / 'base')
+    fe = LineList.from_tumult_format(out).loc[('Fe I', 56)]
+    assert list(fe.lam0) == [5161.738, 5162.272, 5170.0]
+    try:
+        override_lines([dict(ion='Fe I', lam0=5170.0, loggf=-2.0)], tmp_path / 'bad',
+                       base=tmp_path / 'base')
+    except ValueError as err:
+        assert "needs 'evi'" in str(err)
+    else:
+        raise AssertionError("a new line without evi was accepted")
