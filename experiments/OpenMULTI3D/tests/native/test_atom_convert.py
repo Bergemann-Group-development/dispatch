@@ -10,10 +10,11 @@ on nodes linear in wavelength, and gencol's interpolation of collision tables (m
 Hermite, constant outside the table). A wrong unit, a dropped or misplaced component, a
 reversed bf table or a union grid that moves a record's own values would each fail one
 test. The atom is a four-level Na-like model written here, so the tests need only the
-standalone build (``make -C HOP/standalone``). Wavelengths go through the converter's
-fixed-point air/vacuum conversion and back through ``tumult.physics.air2vac``, so they
-agree to about 1e-9 relative; the other quantities are copied or computed in double
-precision and agree to rounding.
+standalone build (``make -C HOP/standalone``). The converter writes each column with the
+precision ``tumult.atom.Atom.write`` gives it, so values agree to half a unit in the last
+written digit: wavelengths to 5e-4 AA (through ``tumult.physics.air2vac`` for lines),
+loggf to 5e-4 dex, damping and cross-sections to 5e-4 relative (three decimals in e
+format) and collision data to 5e-5 relative (four decimals).
 """
 import subprocess
 
@@ -59,6 +60,8 @@ CH
 END
 """
 ECM = np.array([0.0, 16967.630, 16973.380, 41449.440])
+# air wavelengths are written to 1e-3 AA; air2vac scales the rounding by n_air
+LAM_TOL = 5e-4 * 1.0003
 
 
 @pytest.fixture(scope='module')
@@ -80,8 +83,8 @@ def test_header_comments_are_kept(tmp_path):
 def test_line_wavelength_follows_the_level_energies(converted):
     """A MULTI line sits at its Ritz wavelength: the table holds the air wavelength
     that read_pandas converts back, so its vacuum value is 1e8/(E_j - E_i)."""
-    assert air2vac(converted.bbt.lam0[0]) == pytest.approx(1e8 / (ECM[1] - ECM[0]), rel=1e-9)
-    assert converted.bbt.loggf[0] == pytest.approx(np.log10(2.0 * 0.32), abs=1e-12)
+    assert air2vac(converted.bbt.lam0[0]) == pytest.approx(1e8 / (ECM[1] - ECM[0]), abs=LAM_TOL)
+    assert converted.bbt.loggf[0] == pytest.approx(np.log10(2.0 * 0.32), abs=5e-4)
 
 
 def test_components_become_lines_behind_the_classic_ones(converted):
@@ -92,9 +95,9 @@ def test_components_become_lines_behind_the_classic_ones(converted):
     lam0 = 1e8 / (ECM[2] - ECM[0])
     for row, dq, wt, grad in ((1, -0.05, 0.4, 6.0e7), (2, 0.03, 0.6, 6.5e7)):
         lam_vac = lam0 * np.exp(-dq * lam0 * 1e-8)
-        assert air2vac(bbt.lam0[row]) == pytest.approx(lam_vac, rel=1e-9)
-        assert bbt.loggf[row] == pytest.approx(np.log10(2.0 * 0.64 * wt), abs=1e-12)
-        assert bbt.grad[row] == pytest.approx(grad, rel=1e-12)
+        assert air2vac(bbt.lam0[row]) == pytest.approx(lam_vac, abs=LAM_TOL)
+        assert bbt.loggf[row] == pytest.approx(np.log10(2.0 * 0.64 * wt), abs=5e-4)
+        assert bbt.grad[row] == pytest.approx(grad, rel=5e-4)
 
 
 def test_hydrogenic_continuum_is_tabulated_on_the_multi_nodes(converted):
@@ -102,10 +105,10 @@ def test_hydrogenic_continuum_is_tabulated_on_the_multi_nodes(converted):
     bft = converted.bft[converted.bft.i == 1]
     edge = 1e8 / (ECM[3] - ECM[1])
     lam = np.linspace(edge, 1000.0, 4)
-    np.testing.assert_allclose(bft.lam_air, lam, rtol=1e-12)
-    np.testing.assert_allclose(bft.alpha, 2.0e-18 * (lam / edge)**3, rtol=1e-12)
+    np.testing.assert_allclose(bft.lam_air, lam, rtol=0, atol=5e-4)
+    np.testing.assert_allclose(bft.alpha, 2.0e-18 * (lam / edge)**3, rtol=5e-4)
     tab = converted.bft[converted.bft.i == 0]
-    np.testing.assert_allclose(tab.lam_air, [2412.0, 2000.0, 1500.0], rtol=1e-15)
+    np.testing.assert_allclose(tab.lam_air, [2412.0, 2000.0, 1500.0], rtol=0, atol=5e-4)
 
 
 def test_collision_grids_merge_exactly_on_each_record_s_nodes(converted):
@@ -117,5 +120,5 @@ def test_collision_grids_merge_exactly_on_each_record_s_nodes(converted):
     np.testing.assert_array_equal(temps, [3000.0, 4000.0, 5000.0, 6000.0, 8000.0])
     ce = col[col.key == 'CE'].iloc[0, 3:].to_numpy(float)
     ch = col[col.key == 'CH'].iloc[0, 3:].to_numpy(float)
-    np.testing.assert_allclose(ce[[0, 2, 4]], [1e-8, 2e-8, 3e-8], rtol=1e-14)
-    np.testing.assert_allclose(ch, [1e-10, 1e-10, 1.5e-10, 2e-10, 2e-10], rtol=1e-14)
+    np.testing.assert_allclose(ce[[0, 2, 4]], [1e-8, 2e-8, 3e-8], rtol=5e-5)
+    np.testing.assert_allclose(ch, [1e-10, 1e-10, 1.5e-10, 2e-10, 2e-10], rtol=5e-5)
