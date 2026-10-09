@@ -26,6 +26,7 @@ def test_atom_copy_changes_only_the_quadrature_columns(tmp_path):
     atom = read_classic_atom(ATOM)
     half = np.full(atom.lines.size, 120.0)
     half[1] = np.nan                                  # an untouched line
+    half[3] = 106.087                                 # qmax 10.6087 rounds up
     copy = write_atom_copy(atom, tmp_path / "atom.ba", half, qnorm=10.0)
     orig = ATOM.read_text().splitlines()
     new = copy.read_text().splitlines()
@@ -35,10 +36,11 @@ def test_atom_copy_changes_only_the_quadrature_columns(tmp_path):
             assert a == b
             continue
         wa, wb = a.split(), b.split()
-        assert wb[3:6] == ["3", "12.0000", "12.0000"]
+        q = "10.7" if k == list(atom.records)[3] else "12.0"
+        assert wb[3:6] == ["3", q, q]
         assert wa[:3] == wb[:3] and wa[6:] == wb[6:]
     again = read_classic_atom(copy)
-    assert np.all(again.lines["qmax"][[0, 2, 3]] == 12.0)
+    assert np.all(again.lines["qmax"][[0, 2]] == 12.0) and again.lines["qmax"][3] == 10.7
     assert again.lines["qmax"][1] == atom.lines["qmax"][1]
 
 

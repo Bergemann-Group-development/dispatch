@@ -141,12 +141,14 @@ def write_atom_copy(atom, path, half_width_kms, qnorm):
     """Copy the atom with each line's ``nq qmax q0`` set to a 3-point linear window.
 
     With ``q0 = qmax`` the Fortran builds a linear grid, so ``qmax`` in units of ``qnorm``
-    [km/s] places ``lam_min``/``lam_max`` exactly ``half_width_kms`` from the line centre;
-    ``nq = 3`` keeps the atom's own grid to the centre and the two edges, which the run
+    [km/s] places ``lam_min``/``lam_max`` ``half_width_kms`` from the line centre. The
+    table format the run converts the copy to keeps one decimal of ``qmax``, so it is
+    rounded up to one here: the window keeps the grid points it was snapped to and may
+    take in one more. ``nq = 3`` keeps the atom's own grid to the centre and the two edges, which the run
     ignores anyway when it takes the grid from a file. Every other line of the file, and
     the records of lines whose half width is NaN, are written unchanged.
     """
-    q = np.asarray(half_width_kms, float) / qnorm
+    q = np.ceil(np.asarray(half_width_kms, float) / qnorm * 10) / 10
     out = []
     for k, t in enumerate(atom.text):
         n = atom.records.get(k)
@@ -154,7 +156,7 @@ def write_atom_copy(atom, path, half_width_kms, qnorm):
             out.append(t)
             continue
         w = t.split()
-        w[3], w[4], w[5] = '3', f'{q[n]:.4f}', f'{q[n]:.4f}'
+        w[3], w[4], w[5] = '3', f'{q[n]:.1f}', f'{q[n]:.1f}'
         out.append('  ' + '  '.join(w))
     Path(path).write_text('\n'.join(out) + '\n')
     return path
