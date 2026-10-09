@@ -11,7 +11,7 @@ from .auxfuncs import (assign_group_indices, empty, interp_tau, optical_depth_fr
                        rotate_array)
 from ._abundance_numerics import cog_invert
 from .const import CC
-from .physics import air2vac, vac2air
+from .physics import vac2air
 from .decorators import broadcast_arguments
 from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
@@ -121,7 +121,11 @@ class Run(object):
             if (self.sfolder / file).exists():
                 return vac2air(np.fromfile(sfolder / file, dtype=np.float64))
 
-        self.lam = read_wavelength_file('out_lam.bin')
+        # out_lam.bin holds the vacuum grid the run computed on; keep it beside the
+        # air grid so vacuum quantities need no air2vac round trip
+        lam_file = sfolder / 'out_lam.bin'
+        self.lam_vac = np.fromfile(lam_file, dtype=np.float64) if lam_file.exists() else None
+        self.lam = vac2air(self.lam_vac) if self.lam_vac is not None else None
         self.bb_lam = read_wavelength_file('bb_lam.bin')
         self.bf_lam = read_wavelength_file('bf_lam.bin')
         self.all_lam = read_wavelength_file('all_lam.bin')
@@ -727,7 +731,7 @@ class Run(object):
         lam = self.lam[slc]
         # an int selects one wavelength; read it as a length-one range
         cntrbf = mem[slice(slc, slc+1) if isinstance(slc, (int, np.integer)) else slc]
-        per_aa = (CC*1e8 / air2vac(np.atleast_1d(lam))**2).reshape(
+        per_aa = (CC*1e8 / np.atleast_1d(self.lam_vac[slc])**2).reshape(
             (-1,) + (1,)*(cntrbf.ndim - 3))
 
         ltau = self.atmos.ltau
@@ -917,5 +921,6 @@ class Run(object):
             weight_runs('flux_lte')
             weight_runs('flux_cnt')
             self.lam = self.run0.lam
+            self.lam_vac = self.run0.lam_vac
 
         return self

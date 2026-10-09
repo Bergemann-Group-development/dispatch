@@ -261,7 +261,7 @@ To learn the code, start with the namelist of Sec.~\ref{sec:quick} and read its 
 
 \subsection*{Conventions in this manual}
 
-Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. Python examples import the package as \py{import tumult as tm}. \Code{tm.read} returns air wavelengths in {\AA}, whatever the vacuum or air convention of the input file (Sec.~\ref{sec:linelist}); the raw file \File{save/out\_lam.bin} holds vacuum wavelengths. \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
+Paths are relative to the experiment directory \File{experiments/OpenMULTI3D}. Python examples import the package as \py{import tumult as tm}. Wavelengths are in {\AA}. The code computes in vacuum wavelengths and writes them to \File{save/out\_lam.bin}; \py{run.lam} gives them in air and \py{run.lam_vac} as written. \File{docs/GLOSSARY.md} defines terms such as \emph{species}, \emph{transition} and \emph{line feature}, which this manual uses in the same sense.
 
 \subsection*{Origins}
 
@@ -663,7 +663,7 @@ run = tm.read("data/demo")
 print(run.mode, run.lam.size, run.mus, run.abundances["Ba"])
 \end{minted}
 
-\Code{tm.read} returns a run object with these main attributes: \py{run.nml} (all namelists with defaults, as a dictionary of dictionaries), \py{run.lam} (air wavelengths in {\AA}), \py{run.mode} (\py{"NLTE"} or \py{"LTE"}), \py{run.mus}, \py{run.abundances}, the arrays \py{run.flux}, \py{run.ie} (intensities, shape wavelength $\times$ ray) and, for NLTE runs, \py{run.flux_lte}, \py{run.ie_lte}, as well as the continuum counterparts \py{run.flux_cnt}, \py{run.ie_cnt}. The properties \py{run.atoms}, \py{run.atmos} and \py{run.llist} give the model atoms, the atmosphere and the line list written by the run. \Code{tm.read\_list} reads several runs, and \Code{tm.combine(runs, weights)} forms a weighted sum, for example to average snapshots.
+\Code{tm.read} returns a run object with these main attributes: \py{run.nml} (all namelists with defaults, as a dictionary of dictionaries), \py{run.lam} and \py{run.lam_vac} (the wavelengths in {\AA}, in air and in vacuum), \py{run.mode} (\py{"NLTE"} or \py{"LTE"}), \py{run.mus}, \py{run.abundances}, the arrays \py{run.flux}, \py{run.ie} (intensities, shape wavelength $\times$ ray) and, for NLTE runs, \py{run.flux_lte}, \py{run.ie_lte}, as well as the continuum counterparts \py{run.flux_cnt}, \py{run.ie_cnt}. The properties \py{run.atoms}, \py{run.atmos} and \py{run.llist} give the model atoms, the atmosphere and the line list written by the run. \Code{tm.read\_list} reads several runs, and \Code{tm.combine(runs, weights)} forms a weighted sum, for example to average snapshots.
 
 \subsection{Spectra and line profiles}
 
