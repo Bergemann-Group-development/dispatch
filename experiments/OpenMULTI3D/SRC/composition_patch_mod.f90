@@ -22,7 +22,7 @@ MODULE composition_patch_mod
   USE interpol_mod, only: pchip_slopes
   USE composition_mod, only: composition_type, exclude_elements, only_elements, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
-  departure_pointer_t, read_departures, departure_indices, &
+  departure_pointer_t, read_departures, match_nlte_levels, &
   sample_linelist, opac_table_vmic, &
   line_scattering
   USE atom_mod, only: level_partf
@@ -114,7 +114,8 @@ SUBROUTINE read_composition_params ()
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
-  tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file
+  tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file, &
+  match_nlte_levels
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 
