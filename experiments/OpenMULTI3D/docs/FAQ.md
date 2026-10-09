@@ -390,7 +390,8 @@ fixed point, so they agree where the old one converges at all.
 The spontaneous factor `1 - Psi*chi_line` of the same scheme cancels in the core of a very
 thick line, where it is about `1/dtau`. It is therefore built from the escape factor
 `1 - Psi*chi` that the formal solver returns and from the extinction of everything except
-the line, which is tracked like the emissivity. The Mg I 2852 A resonance line in the
+the line. Its absorption is tracked like the emissivity, and the stimulated emission is
+the tracked emissivity of the other contributions. The Mg I 2852 A resonance line in the
 outer layers of a MARCS red supergiant is such a case. Formed as a subtraction, the
 factor was rounding noise there, and the departures wandered by 0.2% per iteration
 indefinitely.

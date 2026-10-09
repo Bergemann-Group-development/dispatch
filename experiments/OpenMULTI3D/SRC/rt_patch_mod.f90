@@ -122,10 +122,14 @@ MODULE rt_patch_mod
     ! emissivity and the sum of all the others, with the index of the largest.
     ! Holding the largest apart is what lets a line's own contribution be taken
     ! out of the local source term without a cancelling subtraction.  Index 0 is
-    ! the whole continuum, seeded as one contribution in back_to_work, since the
+    ! the whole continuum, seeded as one contribution in foreground, since the
     ! bound-free rates do not use this path.  split_chi and split_chi_id hold the
-    ! net extinction (absorption less stimulated emission) the same way, with a
-    ! largest of their own, so that chi - chi_t is never formed by subtraction.
+    ! absorption (before stimulated emission) the same way, with a largest of
+    ! their own, so that chi - chi_t is never formed by subtraction.  Both are
+    ! stored without the stimulated-emission factor beta, which is common to all
+    ! contributions at a frequency and cell and is applied where they are read.
+    ! The line-scattering emissivity is not tracked: it is added to eta in
+    ! work_to_transfer_units and to the other contributions in the rates.
     real(4), allocatable :: split_opac(:,:,:,:,:), split_chi(:,:,:,:,:)
     integer, allocatable :: split_id(:,:,:,:), split_chi_id(:,:,:,:)
     integer, allocatable :: split_offset(:)
@@ -1305,11 +1309,10 @@ contains
         do y=1, self%ny
           do x=1, self%nx
             do f=self%fs, self%fe
-              self%split_opac(f,x,y,z,1) = self%work(f,x,y,z,2)*self%beta(f,x,y,z)
+              self%split_opac(f,x,y,z,1) = self%work(f,x,y,z,2)
               self%split_opac(f,x,y,z,2) = 0.
               self%split_id(f,x,y,z) = 0
-              self%split_chi(f,x,y,z,1) = self%work(f,x,y,z,1) &
-                                        - self%work(f,x,y,z,2)*self%beta(f,x,y,z)
+              self%split_chi(f,x,y,z,1) = self%work(f,x,y,z,1)
               self%split_chi(f,x,y,z,2) = 0.
               self%split_chi_id(f,x,y,z) = 0
             end do
@@ -2568,10 +2571,10 @@ contains
               if (self%split_rates) then
                 index = self%split_offset(iatom) + i
                 do f=fs, fe
-                  call add_largest(vphi(f)*eta_fac*self%beta(f,x,y,z), index, &
+                  call add_largest(vphi(f)*eta_fac, index, &
                     self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
                     self%split_id(f,x,y,z))
-                  call add_largest(vphi(f)*(chi_fac - eta_fac*self%beta(f,x,y,z)), index, &
+                  call add_largest(vphi(f)*chi_fac, index, &
                     self%split_chi(f,x,y,z,1), self%split_chi(f,x,y,z,2), &
                     self%split_chi_id(f,x,y,z))
                 end do
@@ -2631,11 +2634,11 @@ contains
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef, vpr2
-    real(4) :: psi, eta_t, chi_t, other, chi_other, up, spont
+    real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, intent(in) :: iatom
     integer :: i, l, ih, fs, fe, index
-    logical :: get_wphi, split_rates, per_direction, own_norm
+    logical :: get_wphi, split_rates, per_direction, own_norm, do_scat
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
     integer, save :: itimer=0
@@ -2643,6 +2646,7 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     split_rates = self%split_rates
+    do_scat = self%do_line_scat
     ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
     per_direction = .not. (self%do_full_sp .and. fixed_Jnu > 0)
     wtot = sum(rt_iter%wmu)
@@ -2797,17 +2801,23 @@ contains
             ! with escape = 1 - Psi*chi from the solver: in the core of a very
             ! thick line both 1 - Psi*chi and 1 - chi_t/chi are near the fp32
             ! rounding of one, and so is their true value, 1/dtau.  Where Psi is
-            ! zero (fixed_Jnu) the unpreconditioned integrands are taken.
+            ! zero (fixed_Jnu) the unpreconditioned integrands are taken.  The
+            ! tracked contributions carry no beta, and the line-scattering
+            ! emissivity is not among them: it emits into the source term but
+            ! adds no extinction of its own.
             if (split_rates .and. preconditioning) then
               index = self%split_offset(iatom) + i
               do f=fs, fe
                 psi = self%Psi(f,x,y,z)
-                eta_t = vph(f)*eta_coef*self%beta(f,x,y,z)
+                eta_u = vph(f)*eta_coef
+                eta_t = eta_u*self%beta(f,x,y,z)
                 chi_t = vph(f)*abs_coef - eta_t
-                other = other_contribution(eta_t, index, self%split_opac(f,x,y,z,1), &
-                  self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
-                chi_other = other_contribution(chi_t, index, self%split_chi(f,x,y,z,1), &
-                  self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z))
+                eta_other = self%beta(f,x,y,z)*other_contribution(eta_u, index, &
+                  self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), self%split_id(f,x,y,z))
+                chi_other = other_contribution(vph(f)*abs_coef, index, self%split_chi(f,x,y,z,1), &
+                  self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z)) - eta_other
+                other = eta_other
+                if (do_scat) other = other + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
                 up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
@@ -3201,7 +3211,7 @@ contains
     logical :: do_scat, split_rates
     integer, save :: itimer=0
     integer :: x, y, z, f, i, n_floored, first(4)
-    real(4) :: xhat, eta, chi, floor, first_val(3)
+    real(4) :: xhat, eta, eta_rest, chi, floor, first_val(3)
     real(4), allocatable :: chiv(:)
     character(len=256) :: msg
     !-----------------------------------------------------------------------------
@@ -3220,19 +3230,13 @@ contains
             do f=self%fs, self%fe
               ! Take exactly the total the split tracking holds, so that removing
               ! one transition's contribution reproduces the solver's local term.
-              eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
+              ! Each part is scaled by beta on its own and the line-scattering
+              ! source joins the rest, in the order the rates add them up.
+              eta_rest = self%beta(f,x,y,z)*self%split_opac(f,x,y,z,2)
+              eta = self%beta(f,x,y,z)*self%split_opac(f,x,y,z,1) + eta_rest
               chiv(f) = self%work(f,x,y,z,1) - eta
-              if (do_scat) then
-                ! The redirected line-scattering source is not a model-atom line
-                ! either, so it joins contribution 0.  Adding it through the same
-                ! tracking keeps eta equal to the tracked total.  Index 0 then
-                ! labels two entries, which is harmless: only line indices are ever
-                ! asked for, and for those the answer is the total less that line.
-                call add_largest(self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z), 0, &
-                  self%split_opac(f,x,y,z,1), self%split_opac(f,x,y,z,2), &
-                  self%split_id(f,x,y,z))
-                eta = self%split_opac(f,x,y,z,1) + self%split_opac(f,x,y,z,2)
-              endif
+              if (do_scat) eta = self%beta(f,x,y,z)*self%split_opac(f,x,y,z,1) &
+                               + (eta_rest + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z))
               self%work(f,x,y,z,2) = eta
             end do
           else
