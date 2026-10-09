@@ -4,20 +4,20 @@ A run converts a classic MULTI atom (a file named ``atom.*``) to the table forma
 ``HOP/atom_convert_mod.f90`` and keeps the conversion in its ``atoms/`` folder;
 :meth:`Atom.from_old` applies the same conversion through ``atom_convert.x``. The tables
 are pandas DataFrames: levels (``lvl``), bound-bound transitions (``bbt``), bound-free
-cross-sections (``bft``) and collision records (``col``). :attr:`Atom.levels` and
-:attr:`Atom.transitions` give one object per row on top of them.
+cross-sections (``bft``) and collision records (``col``). :attr:`Atom.levels`,
+:attr:`Atom.bbtrans`, :attr:`Atom.bftrans` and :attr:`Atom.colls` give objects on top of
+them (:mod:`tumult.atom_rows`).
 """
-import functools
 import subprocess
 import tempfile
-from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from .auxfuncs import get_qmax
-from .const import CC, EE, HH, UU
+from .const import CC, UU
+from .atom_rows import BFTransition, Collision, Level, Rows
 from .trans import Transition
 
 CONVERTER = Path(__file__).resolve().parents[1] / 'HOP' / 'standalone' / 'build' / 'atom_convert.x'
@@ -37,71 +37,6 @@ def read(text, dtype):
     return np.array(next(text).strip().split()).astype(dtype)
 
 
-class Level(object):
-    """Energy level ``i`` (from 0) of an atom, row ``i`` of its ``lvl`` table, read
-    through ``rows`` (``atom.levels``)."""
-    def __init__(self, rows, i):
-        self.rows = rows
-        self.i = i
-
-    @property
-    def atom(self):
-        return self.rows.atom
-
-    @property
-    def ev(self):
-        return float(self.rows.columns['ev'][self.i])
-
-    @property
-    def ecm(self):
-        """The level energy in cm^-1."""
-        return self.ev * EE / (CC * HH)
-
-    @property
-    def g(self):
-        return float(self.rows.columns['g'][self.i])
-
-    @property
-    def ion(self):
-        """The ionisation stage, 1 for neutral."""
-        return int(self.rows.columns['ion'][self.i])
-
-    @property
-    def label(self):
-        """The label the model atom gives the level."""
-        return str(self.rows.columns['label'][self.i])
-
-    def __repr__(self):
-        return f'Level({self.atom.id} {self.i}: {self.label}, {self.ev:.4f} eV)'
-
-
-class Rows(Sequence):
-    """The rows of one of an atom's tables as ``kind(rows, i)`` objects, made when
-    indexed. They read the table's columns as numpy arrays, taken when the sequence is
-    made: a pandas lookup per attribute would make a table of 10^4 transitions slow to
-    sort, and a row reflects the table as it was when ``atom.levels`` or
-    ``atom.transitions`` was read."""
-    def __init__(self, atom, kind, table):
-        df = getattr(atom, table, None)
-        self.atom, self.kind = atom, kind
-        self.columns = {} if df is None else {c: df[c].to_numpy() for c in df.columns}
-        self.nrow = 0 if df is None else len(df)
-
-    @functools.cached_property
-    def levels(self):
-        """The atom's levels, for the ends of its transitions."""
-        return self.atom.levels
-
-    def __len__(self):
-        return self.nrow
-
-    def __getitem__(self, key):
-        if isinstance(key, slice):
-            return [self.kind(self, i) for i in range(self.nrow)[key]]
-        i = range(self.nrow)[key]          # negative indices and IndexError as for a list
-        return self.kind(self, i)
-
-
 class Atom(object):
     """A model atom in the table format; :meth:`read` reads either format from file."""
     def __init__(self):
@@ -113,10 +48,23 @@ class Atom(object):
         return Rows(self, Level, 'lvl')
 
     @property
-    def transitions(self):
+    def bbtrans(self):
         """The bound-bound transitions as :class:`tumult.trans.Transition` objects, in
         table order."""
         return Rows(self, Transition, 'bbt')
+
+    @property
+    def bftrans(self):
+        """The bound-free transitions as :class:`tumult.atom_rows.BFTransition` objects,
+        one per continuum, in table order."""
+        by = ['i', 'j'] if 'j' in getattr(self, 'bft', ()) else ['i']
+        return Rows(self, BFTransition, 'bft', by=by)
+
+    @property
+    def colls(self):
+        """The collision records as :class:`tumult.atom_rows.Collision` objects, in table
+        order."""
+        return Rows(self, Collision, 'col')
 
     @property
     def ground_states(self):
@@ -126,10 +74,7 @@ class Atom(object):
     @property
     def ncont(self):
         """The number of bound-free transitions (continua)."""
-        if not hasattr(self, 'bft'):
-            return 0
-        ends = ['i', 'j'] if 'j' in self.bft else ['i']
-        return len(self.bft.groupby(ends))
+        return len(self.bftrans)
 
     def plot_grotrian(self, **kwargs):
         plot_grotrian(self.lvl, self.bbt, **kwargs)

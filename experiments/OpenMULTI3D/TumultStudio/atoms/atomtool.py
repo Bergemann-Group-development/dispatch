@@ -179,7 +179,7 @@ class AtomObject:
     @property
     def lines(self):
         """The bound-bound transitions."""
-        return self.atom.transitions
+        return self.atom.bbtrans
 
     def counts(self):
         a = self.atom

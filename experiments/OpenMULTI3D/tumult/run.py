@@ -260,7 +260,7 @@ class Run(object):
         """The bound-bound transition of the run's model atoms nearest to ``lam0`` [Å,
         air], a :class:`tumult.trans.Transition`; ``verbose`` warns when it is further
         than ``tol`` [Å] away."""
-        trans = [t for atom in self.atoms for t in atom.transitions]
+        trans = [t for atom in self.atoms for t in atom.bbtrans]
         all_lam0 = np.array([t.lam0 for t in trans])
         line = trans[np.argmin(abs(all_lam0-lam0))]
         if verbose and abs(line.lam0 - lam0) > tol:
