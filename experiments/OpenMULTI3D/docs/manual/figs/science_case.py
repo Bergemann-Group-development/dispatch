@@ -63,7 +63,8 @@ def launch(name, abundance=REFERENCE, cntrbf=False):
         "atmos_params": {"atmos_file": ATMOSPHERE},
         "atom_params": {"atom_file": ATOM, "abundance": abundance},
         "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
-        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
+        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt",
+                            "match_nlte_levels": True},
         "spectrum_params": {"window_file": f"./{WINDOW_FILE}", "R_sampling": 5e5},
         "output_params": {"save_cntrbf": cntrbf},
     }
@@ -85,7 +86,8 @@ def launch_demo(name, blends=False):
     if blends:
         cfg |= {
             "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
-            "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
+            "linelist_params": {"linelist_file": "./input/linelists/master_line.txt",
+                                "match_nlte_levels": True},
             "spectrum_params": {"R_sampling": 5e5, "aa_blue": 4550, "aa_red": 4558},
         }
     folder, _ = tm.launch(f"data/manual/{name}", nml_settings=cfg, threads=8, verbose=0)

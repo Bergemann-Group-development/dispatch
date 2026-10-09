@@ -339,7 +339,9 @@ the namelists, prunes the line list to the windows, caches every native run by i
 and returns `Spectrum` objects.
 
 This example synthesises the same Ba II 4554 Å region on the same MARCS model, now
-with the blends of the tracked line list `input/linelists/master_line.txt`:
+with the blends of the tracked line list `input/linelists/master_line.txt`. The list has no
+level indices, so `match_nlte_levels` matches its Ba II lines to the model atom; without it
+they would stay in LTE:
 
 ```python
 from tumult import departures, synthesis
@@ -348,7 +350,8 @@ from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 config = SynthConfig(root=".", cache="quickstart_synth",
                      linelist="input/linelists/master_line.txt",
                      abundances="input/abund/abund_magg22",
-                     R_sampling=200_000)
+                     R_sampling=200_000,
+                     expert={"linelist_params": {"match_nlte_levels": True}})
 marcs = Atmosphere("input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=marcs,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),

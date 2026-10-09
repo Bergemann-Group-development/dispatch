@@ -412,7 +412,7 @@ This section computes one NLTE line, plots it and then turns it into a spectrum 
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
-!&linelist_params    linelist_file='./input/linelists/master_line.txt' /
+!&linelist_params    linelist_file='./input/linelists/master_line.txt' match_nlte_levels=T /
 !&spectrum_params    R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
@@ -491,7 +491,7 @@ Two rules apply to every invocation of \File{dispatch.x}. Pass the namelist as a
 
 \subsection{What a run does}\label{sec:anatomy}
 
-A run needs an atmosphere, optionally one or more model atoms, optionally a line list and a wavelength grid. It interpolates the atmosphere onto its mesh, solves the ionisation and molecular equilibrium with HOP, and performs two radiative transfer passes (Fig.~\ref{fig:run_overview}). The \emph{iteration pass} solves the statistical equilibrium of the model atoms and runs only for \fort{convlim>0}; the iteration table above is its progress. The \emph{output pass} computes the emergent spectrum at fixed populations. In a window with a line list, the lines of the atom's species come from the line list and take the atom's departure coefficients (Sec.~\ref{sec:nlteoutput}).
+A run needs an atmosphere, optionally one or more model atoms, optionally a line list and a wavelength grid. It interpolates the atmosphere onto its mesh, solves the ionisation and molecular equilibrium with HOP, and performs two radiative transfer passes (Fig.~\ref{fig:run_overview}). The \emph{iteration pass} solves the statistical equilibrium of the model atoms and runs only for \fort{convlim>0}; the iteration table above is its progress. The \emph{output pass} computes the emergent spectrum at fixed populations. In a window with a line list, the lines of the atom's species come from the line list. They take the atom's departure coefficients when their records carry level indices or when \fort{match_nlte_levels=T} matches them to the atom; the others are computed in LTE (Sec.~\ref{sec:nlteoutput}).
 
 \begin{figure}[!ht]
     \centering
@@ -517,7 +517,8 @@ The download holds four tables: \File{absmet} for solar metallicity and \File{m-
 &atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
 &opac_table_params   absmet_file='./input/absmet_files/absmet' /
-&linelist_params     linelist_file='./input/linelists/master_line.txt' /
+&linelist_params     linelist_file='./input/linelists/master_line.txt'
+                     match_nlte_levels=T /
 &spectrum_params     R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
@@ -591,7 +592,7 @@ llist.write_to_tumult_format("input/linelists/my_list.txt")
 
 The broadening columns are interpreted by their value (Sec.~\ref{sec:broadening}), so lists from different sources can be combined without conversion. \File{hop\_prune.x} writes the subset of a list that is not negligible on one atmosphere over given windows, with each transition's strength and reach; a later run reads it as its \fort{linelist_file}. The Python workflows prune automatically, and \Code{tumult.prune} drives the tool directly.
 
-Keep the lines of the NLTE atom's species in the list: in an NLTE run they take the atom's departure coefficients (Sec.~\ref{sec:nlteoutput}). Hydrogen lines need a block \fort{'H I'} in the native format (Sec.~\ref{sec:linelist}).
+Keep the lines of the NLTE atom's species in the list: in an NLTE run they take the atom's departure coefficients, with \fort{match_nlte_levels=T} when the list has no level indices (Sec.~\ref{sec:nlteoutput}). Hydrogen lines need a block \fort{'H I'} in the native format (Sec.~\ref{sec:linelist}).
 
 \subsection{Compute NLTE lines in one run}\label{sec:recNLTE}
 
@@ -604,7 +605,8 @@ When one spectrum is needed for one atmosphere and one or a few model atoms, a s
 &nlte_params         convlim=1e-3 /
 &opac_table_params   absmet_file='./input/absmet_files/absmet' /
 &rt_output_params    maxiter=3 /
-&linelist_params     linelist_file='./input/linelists/master_line.txt' /
+&linelist_params     linelist_file='./input/linelists/master_line.txt'
+                     match_nlte_levels=T /
 &spectrum_params     R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
@@ -622,7 +624,8 @@ Departure coefficients solved once can serve several spectra, for example over d
 &atom_params         atom_file='./input/atoms/atom.ba06' /
 &rt_iteration_params maxiter=0 /
 &rt_output_params    maxiter=3 /
-&linelist_params     linelist_file='./input/linelists/master_line.txt' /
+&linelist_params     linelist_file='./input/linelists/master_line.txt'
+                     match_nlte_levels=T /
 &spectrum_params     window_file='./data/windows.txt' R_sampling=2e5 /
 \end{minted}
 
@@ -790,7 +793,7 @@ Convergence alone does not make an NLTE spectrum trustworthy. Check also the fol
 
 \begin{itemize}
     \item \textbf{Background.} The \fort{absmet_file} of the iteration pass matches the model's [Fe/H] (Sec.~\ref{sec:absmet}).
-    \item \textbf{Level matching.} Each line-list line of the atom's species takes the departure coefficients of two atom levels, given by its level indices or else matched by energy. A line whose level the atom lacks silently takes the nearest one. Sec.~\ref{sec:levelmatch} shows how to check the match.
+    \item \textbf{Level matching.} Each line-list line of the atom's species takes the departure coefficients of two atom levels, given by its level indices or, with \fort{match_nlte_levels=T}, matched to the atom. Any other line is computed in LTE, without a warning. Sec.~\ref{sec:levelmatch} shows how to check the match.
     \item \textbf{LTE partner.} The LTE set of the NLTE run reproduces a plain LTE run on the same line list, apart from the atom's continua (Sec.~\ref{sec:ltepartner}).
     \item \textbf{Collisions.} A result that depends on poorly known collision rates, such as the Drawin recipe for hydrogen, changes little when they are scaled (\fort{cbbhsc}, Sec.~\ref{sec:atoms}); Table~\ref{tab:mg_refine} shows the test for Mg.
     \item \textbf{Two-stage runs.} Stage 1 saved departures for every patch, and both stages used the same composition (Sec.~\ref{sec:twostage}).
@@ -833,7 +836,8 @@ def launch(name, abundance, cntrbf=False):
         "atom_params": {"atom_file": "./input/atoms/atom.mg86g",
                         "abundance": abundance},
         "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
-        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
+        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt",
+                            "match_nlte_levels": True},
         "spectrum_params": {"window_file": f"./{WINDOW_FILE}", "R_sampling": 5e5},
         "output_params": {"save_cntrbf": cntrbf},
     }
@@ -978,21 +982,21 @@ The centre of 5711.1\,{\AA} forms between $\log\tau_{500}\approx-3.1$ and $-1.4$
 
 \subsection{Level matching}\label{sec:mglevelmatch}
 
-In the output spectrum the Mg lines come from the line list and take the departure coefficients of atom levels matched by energy (Sec.~\ref{sec:levelmatch}). For the three lines, \File{linelist\_out.txt} gives the lower-level energy, and \File{save/pop\_mg\_ev.txt} the energies of the atom's levels:
+In the output spectrum the Mg lines come from the line list, which has no level indices, so \fort{match_nlte_levels=T} matches them to the atom (Sec.~\ref{sec:levelmatch}). For the three lines, \File{linelist\_out.txt} gives the wavelength and lower-level energy, and \File{save/pop\_Mg\_atom.txt} the levels and transitions of the atom:
 
 \begin{center}
-\begin{tblr}{colspec={Q[l]Q[r]Q[l]Q[r]Q[l]}, row{even}={bg=rowshade}}
+\begin{tblr}{colspec={Q[l]Q[r]Q[l]Q[l]}, row{even}={bg=rowshade}}
 \toprule
-Line & $E_\mathrm{low}$ [eV] & Matched lower level & $\Delta E$ [eV] & Matched upper level\\
+Line & $E_\mathrm{low}$ [eV] & Matched by & Levels\\
 \midrule
-5172.7\,{\AA} & 2.700 & 3p\,$^3$P$^\circ_0$ (2.709) & 0.009 & 4s\,$^3$S\\
-5528.4\,{\AA} & 4.346 & 3p\,$^1$P$^\circ$ (4.346) & 0.000 & 4d\,$^1$D\\
-5711.1\,{\AA} & 4.346 & 3p\,$^1$P$^\circ$ (4.346) & 0.000 & 5s\,$^1$S\\
+5172.7\,{\AA} & 2.700 & none (LTE) & \\
+5528.4\,{\AA} & 4.346 & transition & 3p\,$^1$P$^\circ$ -- 4d\,$^1$D\\
+5711.1\,{\AA} & 4.346 & level energies & 3p\,$^1$P$^\circ$ -- 5s\,$^1$S\\
 \bottomrule
 \end{tblr}
 \end{center}
 
-The line list gives the lower energy of Mg\,b$_2$ as 2.700\,eV, 0.012\,eV below the true lower level, 3p\,$^3$P$^\circ_1$ at 2.712\,eV, so the match picks the $J=0$ level of the term. The levels of the term have the same departure coefficients to better than 1\,\%, so the NLTE part of the line is not affected; a match to a different term would be. The energy error itself changes the LTE line opacity by about 0.01\,dex. The level indices \fort{i j} in the line list (Sec.~\ref{sec:linelist}) fix the match for such a line, and a corrected lower energy fixes its opacity.
+The line list gives the lower energy of Mg\,b$_2$ as 2.700\,eV, 0.012\,eV below its true lower level, 3p\,$^3$P$^\circ_1$ at 2.712\,eV. That is outside the factor 1.0005 of every level, so the atom's transition at 5172.68\,{\AA} is not taken and the line is computed in LTE. The atom's wavelength of the 5711\,{\AA} line, 5711.06\,{\AA}, lies 0.025\,{\AA} from the list's, so this line is matched by its level energies instead. The level indices \fort{i j} in the line list (Sec.~\ref{sec:linelist}) fix the match for such a line, and a corrected lower energy also fixes its LTE opacity, which the 0.012\,eV error changes by about 0.01\,dex.
 
 \subsection{Abundance and NLTE correction}
 
@@ -1314,7 +1318,7 @@ Wavelength split & chosen from the memory estimate & \fort{n_windows} & \ref{sec
 %%%%%%%%%%%%%%%%%%%%%%
 
 \begin{description}
-    \item[Default.] The atom's own collision data, and in the output spectrum the line list's lines of the atom's species, each with the departure coefficients of its nearest levels.
+    \item[Default.] The atom's own collision data, and in the output spectrum the line list's lines of the atom's species, in NLTE when their records carry level indices and in LTE otherwise.
     \item[Change when] the atom lacks collision data for some transitions, the sensitivity to collisions is to be tested, or the spectrum is to be computed from the atom's own transitions.
     \item[Keys.] \fort{&atom_params} (Sec.~\ref{nl:atom}).
 \end{description}
@@ -1349,7 +1353,7 @@ With a line list and an explicit output grid, \fort{output_from_line_list} (defa
 
 \subsection{Level matching}\label{sec:levelmatch}
 
-A line whose record carries the level indices \fort{i j} (Sec.~\ref{sec:linelist}) takes the departure coefficients of these atom levels, which must belong to the line's ionisation stage; an index 0 leaves that end to the energy match, for example the upper level of a line the atom does not contain. The matching by energy is preliminary and may change. Each line's lower level without an index is the \emph{nearest} atom level to $100\,\mathrm{stage}+E_\mathrm{low}/\si{\electronvolt}$, and the upper level is the nearest to that value plus $h\nu$ (\fort{find_closest} in \File{HOP/linelist\_mod.f90}); the stage is part of the key, so levels of different ions cannot match. The match has no tolerance: a line whose level the atom lacks takes the departure of the nearest level, which may be several tenths of an eV away. Levels grouped into super-levels share one coefficient. Check the match before trusting a spectrum. \File{save/pop\_<atom>\_ev.txt} lists the key of every level of the atom, and \File{linelist\_out.txt} the lower-level energy of every line (second column) and the level indices of the input list (seventh and eighth columns, 0 for the ends matched by energy). A strong line whose lower energy lies more than a few hundredths of an eV from every level key means that the atom lacks the line's level. Sec.~\ref{sec:mglevelmatch} works through the check for three Mg lines. The atoms of the table above show how the content of an atom limits the match.
+A line whose record carries the level indices \fort{i j} (Sec.~\ref{sec:linelist}) takes the departure coefficients of these atom levels, which must belong to the line's ionisation stage. By default only such lines are in NLTE; a line with an index 0 on either end is computed in LTE. With \fort{match_nlte_levels=T} the ends without an index are matched to the atom as Turbospectrum's line-list conversion (\File{convert\_lte\_to\_nlte.py}) assigns level indices (\fort{departure_assign_levels} in \File{HOP/composition\_mod.f90}). A line without indices first takes both levels of the first atom transition of its stage within 0.02\,{\AA} of its wavelength whose lower level agrees with $E_\mathrm{low}$ to a factor 1.0005. An end still without a level takes the nearest level of the stage within that factor, and an end that finds none leaves the line in LTE. Both energies are counted from the ground state of the neutral atom, as in Turbospectrum: the line's $E_\mathrm{low}$, given above the ground state of its own ion, is shifted by the atom's energy of the first level of that ion. The window therefore widens with the ionisation stage, and it relies on the atom's ionisation energies. Levels grouped into super-levels share one coefficient. Check the match before trusting a spectrum. \File{save/pop\_<atom>\_atom.txt}, the atom the departures belong to, lists the energy of every level and the wavelength of every transition, and \File{linelist\_out.txt} the wavelength and lower-level energy of every line (first and second columns) and the level indices of the input list (seventh and eighth columns, 0 for the ends left to the match). A line list whose energies or wavelengths differ from the atom's by more than the tolerances leaves its lines in LTE; level indices in the list fix the match for such a line. Sec.~\ref{sec:mglevelmatch} works through the check for three Mg lines. The atoms of the table above show how the content of an atom limits the match.
 
 \subsection{The LTE partner}\label{sec:ltepartner}
 
@@ -1530,7 +1534,7 @@ For molecular lines, $E_\mathrm{ion}$ is the molecule's ionisation energy, the s
 
 \subsection{Hydrogen lines}\label{sec:hydrogen}
 
-Hydrogen lines need a block \fort{'H I'} in the line list (Sec.~\ref{sec:linelist}). Their physics is set in \fort{&composition_params} (Sec.~\ref{nl:comp}), all switches on by default: \fort{hydrogen_vcs_table} selects the tabulated Stark profiles of \citet{Lemke1997} for the Balmer, Paschen and Brackett lines, read from \fort{vcs_data_dir}; \fort{hydrogen_BPO} adds the self-broadening of \citet{BarklemPiskunov2000b}; \fort{H_occupation_probability} applies the occupation probabilities of \citet{HummerMihalas1988} to the hydrogen levels. A NLTE hydrogen atom (for example \File{input/atoms/public/atom.h20}, which is downloaded) is treated like any other model atom.
+Hydrogen lines need a block \fort{'H I'} in the line list (Sec.~\ref{sec:linelist}). Their physics is set in \fort{&composition_params} (Sec.~\ref{nl:comp}), all switches on by default: \fort{hydrogen_vcs_table} selects the tabulated Stark profiles of \citet{Lemke1997} for the Balmer, Paschen and Brackett lines, read from \fort{vcs_data_dir}; \fort{hydrogen_BPO} adds the self-broadening of \citet{BarklemPiskunov2000b}; \fort{H_occupation_probability} applies the occupation probabilities of \citet{HummerMihalas1988} to the hydrogen levels. A NLTE hydrogen atom (for example \File{input/atoms/public/atom.h20}, which is downloaded) is treated like any other model atom. In the output spectrum the principal quantum numbers of an \fort{'H I'} line are the level indices into the atom, as in Turbospectrum, so the atom must have one level per $n$ in order from $n=1$; \fort{match_nlte_levels} does not apply. A record gives them in its last two columns, or else they follow from its energies. Each index is checked against the line's energy to a relative $10^{-3}$, and a mismatch stops the run. A line whose upper $n$ lies beyond the atom's bound levels is computed in LTE.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{3D Atmospheres}\label{sec:3d}
@@ -1731,7 +1735,7 @@ All files of a run are in \File{<datadir>/<name>/}. Use \Code{tm.read} to access
 
 \subsection{Saved populations}\label{sec:savedpops}
 
-\File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_ev.txt} lists for each level its energy in eV above the ground state of its own ion plus 100 times the ionisation stage, which is the key for matching line-list lines to levels (Sec.~\ref{sec:nlteoutput}). Each depth patch writes its populations when it stops iterating, \emph{before} the output pass. A job whose time limit ends during the output pass has therefore still produced usable departures, but one that ends during the iterations has produced none for the patches still iterating, unless \fort{save_every} is set (Sec.~\ref{sec:stopping}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows. Departures of several atoms from different runs on the same atmosphere are combined by one folder holding \File{params.nml}, \File{atmos\_mesh.txt} and \File{save/} of one run, plus the \File{save/pop\_<atom>\_*} files of the others. A spectrum run with \fort{rotate_atmos=T} on departure coefficients saved without rotation reads the model named in the saved run's \File{params.nml} once more, and interpolates the ray-aligned copies of the atmosphere from it; the model must still be at that path.
+\File{save/pop\_<atom>\_*.bin} holds, per depth patch, two slots for every level: the LTE number density (slot 1) and the departure coefficient $b$ (slot 2), with one copy per output ray when \fort{rotate_atmos=T}. \File{save/pop\_<atom>\_meta.txt} has one row per patch and \File{save/pop\_<atom>\_atom.txt} is the table-format copy of the model atom of the run, against whose levels and transitions a \fort{read_departures} run matches its line-list lines (Sec.~\ref{sec:nlteoutput}). Each depth patch writes its populations when it stops iterating, \emph{before} the output pass. A job whose time limit ends during the output pass has therefore still produced usable departures, but one that ends during the iterations has produced none for the patches still iterating, unless \fort{save_every} is set (Sec.~\ref{sec:stopping}). A run is a valid \fort{read_departures} source when \File{atmos\_meta.txt} and \File{pop\_<atom>\_meta.txt} have the same number of rows. Departures of several atoms from different runs on the same atmosphere are combined by one folder holding \File{params.nml}, \File{atmos\_mesh.txt} and \File{save/} of one run, plus the \File{save/pop\_<atom>\_*} files of the others. A spectrum run with \fort{rotate_atmos=T} on departure coefficients saved without rotation reads the model named in the saved run's \File{params.nml} once more, and interpolates the ray-aligned copies of the atmosphere from it; the model must still be at that path.
 
 \subsection{Layout of the saved files}
 

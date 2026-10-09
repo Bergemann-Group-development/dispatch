@@ -111,6 +111,7 @@ MODULE atom_mod
       logical :: precomputed = .false. ! whether departure coeffs are precomputed
       
       character(len=128) :: name
+      character(len=512) :: file=''  ! the run's table-format copy of the atom
       character(len=3)   :: id    ! atom id string 
       character(len=20)  :: crout ! which collisional SUBROUTINE to use 
   
@@ -151,7 +152,6 @@ MODULE atom_mod
     contains
       procedure :: init_atom_data
       procedure :: check_ionisation_thresholds
-      procedure :: ev_keys
       procedure :: lte_pop
       procedure :: compute_lte_populations
       procedure :: normalize_profiles
@@ -1019,27 +1019,6 @@ MODULE atom_mod
     !---------------------------------------------------------------------------------
     radiative_cut = dev*e_kT > cut_x
   end function radiative_cut
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  ! Level energies in the canonical departure-key convention: excitation energy above the
-  ! ground state of the level's own ionisation stage, tagged with 100*stage so that levels
-  ! of different stages cannot collide in find_closest.  This mirrors the linelist
-  ! lower_ev convention (energy above the ground state of that ion), whereas atom%ev is
-  ! cumulative from the ground state of the neutral.
-  !------------------------------------------------------------------------------------
-  function ev_keys(self) result(keys)
-    class(atom_type), intent(in) :: self
-    real(8), dimension(self%nlevel) :: keys
-    real(8) :: ground_ev
-    integer :: l
-    !---------------------------------------------------------------------------------
-    ground_ev = self%ev(1)
-    do l=1, self%nlevel
-      if (l > 1) ground_ev = merge(self%ev(l), ground_ev, self%ion(l) > self%ion(l-1))
-      keys(l) = 100*self%ion(l) + self%ev(l) - ground_ev
-    end do
-  end function ev_keys
   !------------------------------------------------------------------------------------
 
   !====================================================================================

@@ -5,43 +5,19 @@ Explicit user instructions take precedence.
 
 If in doubt, present a concise multiple-choice question and let the user decide.
 
-## Subagents
+## Branches and subagents
 
-Run each subagent in a clean Git worktree on a dedicated branch. When the current
-uncommitted work is part of the task context, first capture it in a checkpoint commit
-on a temporary integration branch:
+Do each task on a topic branch from `main` and merge it with `git merge --no-ff`
+once the user accepts it.
 
-```sh
-git status --short
-git switch -c integration/<topic>
-git add -A -- .
-git commit -m "WIP: <topic> subagent baseline"
-base=$(git rev-parse HEAD)
-```
+Start subagents with worktree isolation. The worktree starts from the last commit,
+so commit whatever the subagent needs first (a WIP commit on the topic branch is fine).
+The worktree holds the whole Dispatch repository: tell the subagent to work in
+`experiments/OpenMULTI3D/` and to read `SUBAGENTS.md`, and name the files it owns,
+the expected result and how to verify it. Concurrent subagents get disjoint files;
+a task that depends on another starts after that one is merged.
 
-Review the status before staging. The checkpoint is a working baseline and need not be
-kept in the final history. If the required baseline is already committed, use that
-revision directly instead.
-
-Create every independent subagent worktree from the same baseline:
-
-```sh
-repo=$(git rev-parse --show-toplevel)
-project=$(git rev-parse --show-prefix)
-git -C "$repo" worktree add -b agent/<task> <worktree-path> "$base"
-```
-
-Start the subagent in `<worktree-path>/$project`. Its assignment must include the base
-revision, branch, owned files or subsystem, expected result and relevant verification.
-Tell it to read `SUBAGENTS.md` before working.
-
-Give concurrent subagents disjoint ownership. If tasks touch the same files or one
-depends on another, integrate the prerequisite first and create the dependent
-worktree from the resulting commit.
-
-Review the returned commits with `git show` or `git diff <base>..<commit>` before
-cherry-picking them onto the integration branch. Remove the worktree and task branch
-only after the result has been accepted or deliberately rejected.
+Review a subagent's commits with `git diff` before merging or cherry-picking them.
 
 ## Architecture
 

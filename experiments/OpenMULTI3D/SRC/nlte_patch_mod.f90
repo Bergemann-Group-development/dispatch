@@ -22,7 +22,8 @@ MODULE nlte_patch_mod
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
   USE line_types_mod, only: linelist_type
-  USE composition_mod, only: composition_type, departure_pointer_t, read_departures
+  USE composition_mod, only: composition_type, departure_pointer_t, read_departures, &
+                             departure_atom
   USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     convlim, convmax, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
@@ -308,6 +309,9 @@ contains
           ! conversion was written above
           if (pandas_format) then
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom_name))
+            atom%file = trim(io%run_dir)//'atoms/'//trim(atom_name)
+          else
+            atom%file = read_file
           endif
 
           if (ng_global .and. ng_step >= 0) then
@@ -814,7 +818,7 @@ contains
     character(len=256) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit, nzero
+    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, nzero
     character(len=160) :: msg
     integer :: itimer=0
     logical :: found
@@ -869,12 +873,12 @@ contains
       allocate(dep%mem, source=mem(:,:,:,:,2,1))
       deallocate(mem)               ! load6 allocates it afresh for the next atom
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
-      dep%nlevel = size(mem,4)
-      allocate(dep%ev(dep%nlevel))
-      open(newunit=lunit, file=trim(save_folder)//'pop_'//trim(keys(i))//'_ev.txt', form='formatted')
-      read(lunit, '(A)') ! skip header
-      read(lunit, *) dep%ev
-      close(lunit)
+      dep%nlevel = size(dep%mem,4)
+      dep%atom => departure_atom(trim(save_folder)//'pop_'//trim(keys(i))//'_atom.txt')
+      if (size(dep%atom%ev) /= dep%nlevel) then
+        call console_error('the saved atom of '//trim(keys(i))//' does not match its departures')
+        error stop 'init_departures'
+      endif
     end do
 
     do i=1, self%natom
@@ -922,7 +926,7 @@ contains
           call console_warn (ch_m3d, msg)
         endif
       else
-        allocate(dep%ev, source=atom%ev_keys())
+        dep%atom => departure_atom(atom%file)
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       endif
@@ -943,8 +947,7 @@ contains
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    integer :: x, y, z, l, m, n(4), i, j, k, lunit, nmu
-    real(8), allocatable :: ev_key(:)
+    integer :: x, y, z, l, m, n(4), i, j, k, nmu
     !---------------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%write_populations')
     do i=1, self%natom
@@ -970,18 +973,12 @@ contains
       end do
 
       call self%save6(out_mem, label='pop_'//trim(atom%id), add2meta=.not. self%pop_meta_written)
-      !$omp critical (write_atom_ev)
-      if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
-        open(newunit=lunit, file=trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt', form='formatted')
-        write(lunit, '(A)') '# Level Energies (eV) + 100*Ionization Stage'
-        allocate(ev_key, source=atom%ev_keys())
-        do l=1, atom%nlevel
-          write(lunit, '(F16.6)') ev_key(l)
-        end do
-        deallocate(ev_key)
-        close(lunit)
-      endif
-      !$omp end critical (write_atom_ev)
+      ! the atom the departures belong to, which a read_departures run matches its
+      ! line-list lines against
+      !$omp critical (write_atom_copy)
+      if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_atom.txt')) &
+        call os%copy_file(trim(atom%file), trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_atom.txt')
+      !$omp end critical (write_atom_copy)
       deallocate(out_mem)
     end do
     self%pop_meta_written = .true.
@@ -1047,9 +1044,9 @@ contains
         dep => self%departures(i,1+imu)
         allocate(dep%mem, source=self%departures(i,1)%mem)
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
-        ! the level energies too: line-list lines of the species find their levels
-        ! by energy on every ray-aligned copy (linelist_mod, find_closest)
-        if (.not. allocated(dep%ev)) allocate(dep%ev, source=self%departures(i,1)%ev)
+        ! the atom too: line-list lines of the species find their levels on every
+        ! ray-aligned copy (departure_assign_levels)
+        dep%atom => self%departures(i,1)%atom
         dep%nlevel = self%departures(i,1)%nlevel
         do l=1, size(dep%mem, 4)
           call self%rotate_cube4(vec, dep%mem(:,:,:,l), do_log=.true.)
