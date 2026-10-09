@@ -690,7 +690,7 @@ The options of \Code{crop} are listed in Sec.~\ref{sec:pyref}.
 
 Further quantities are available as \py{run.get_pop(atom, level)} (LTE and NLTE populations), \py{run.get_depart(level, atom)} (departure coefficient against $\log\tau_{500}$), \py{run.get_cntrbf(...)} (contribution functions, Sec.~\ref{sec:cntrbf}) and the atmosphere on the mesh of the run, \py{run.atmos}. \py{tm.read_atom(path)} reads a model atom without a run.
 
-In runs with several atoms, pass the atom's id to \py{run.get_depart} (for example \py{'O'}). Sec.~\ref{sec:pyref} describes the spectrum sets of a run.
+The level is an index counted from zero or a level of the atom. \py{line.lower} and \py{line.upper} are the levels of a transition, so \py{run.plot_depart(line.upper)} draws the upper level of the line, and \py{line.upper.label} is the label the model atom gives it. A level belongs to its atom; with an index, runs with several atoms need the atom's id as well (for example \py{run.get_depart(3, 'O')}). Sec.~\ref{sec:pyref} describes the spectrum sets of a run.
 
 \subsection{Plotting}\label{sec:plotting}
 
@@ -1374,7 +1374,7 @@ Lines starting with an asterisk are comments. The columns are height in cm, temp
 
 \subsection{Model atom format}\label{sec:atom}
 
-Two formats exist. A file whose name starts with \File{atom.} is in the classic MULTI format. Any other name is read in the table format that \Code{tumult.fast\_atom} writes. Lines starting with an asterisk are comments.
+Two formats exist. A file whose name starts with \File{atom.} is in the classic MULTI format. Any other name is read in the table format that \Code{tumult.atom} writes. Lines starting with an asterisk are comments.
 
 A run reads every atom in the table format. It converts a classic atom first and writes the conversion to the \File{atoms/} folder of the run, named after the input without its prefix (\File{atom.mg86g} becomes \File{atoms/mg86g.txt}), together with the comment lines ahead of the levels. A table-format atom is copied there under its own name. The copy is therefore the atom the run used. \File{HOP/standalone/build/atom\_convert.x atom.mg86g mg86g.txt} applies the same conversion outside a run.
 
@@ -1553,7 +1553,7 @@ The \fort{verbose} keys of \fort{&atmos_params}, \fort{&composition_params} and 
 
 \subsection{Sets, modes and departures}
 
-\py{run.sets} is a list ordered by set number (so the index is the set number minus one) and includes the continuum; each entry is a dictionary with \py{kind} (\py{'continuum'}, \py{'lte'} or \py{'nlte'}) and \py{offsets} (element $\to$ dex). It is read from \File{sets.txt}; runs without that file fall back to a guess from the number of saved components, and \py{run.mode} is \py{"NLTE"} when the main set is an \texttt{nlte} set. \py{run.flux}, \py{run.flux_lte} and \py{run.flux_cnt} are the main, LTE and continuum components. \py{Spectrum.xdata} and \py{Spectrum.ydata} are the astropy quantities that \py{crop} returns for wavelength and flux, and \py{Spectrum.data} stacks them as a plain array. \py{run.get_depart(ilvl, iatom)} returns $(\log\tau_{500}, b)$; \py{iatom} defaults to 0, the first atom of the run, also when the run has several atoms, so pass the atom's id (for example \py{'O'}) in multi-atom runs.
+\py{run.sets} is a list ordered by set number (so the index is the set number minus one) and includes the continuum; each entry is a dictionary with \py{kind} (\py{'continuum'}, \py{'lte'} or \py{'nlte'}) and \py{offsets} (element $\to$ dex). It is read from \File{sets.txt}; runs without that file fall back to a guess from the number of saved components, and \py{run.mode} is \py{"NLTE"} when the main set is an \texttt{nlte} set. \py{run.flux}, \py{run.flux_lte} and \py{run.flux_cnt} are the main, LTE and continuum components. \py{Spectrum.xdata} and \py{Spectrum.ydata} are the astropy quantities that \py{crop} returns for wavelength and flux, and \py{Spectrum.data} stacks them as a plain array. \py{run.get_depart(ilvl, iatom)} returns $(\log\tau_{500}, b)$. \py{ilvl} is a level index or a level object such as \py{line.lower}, which carries its atom; with an index, \py{iatom} defaults to 0, the first atom of the run, also when the run has several atoms, so pass the atom's id (for example \py{'O'}) in multi-atom runs. \py{atom.levels} and \py{atom.transitions} list the levels and bound-bound transitions of an atom as such objects.
 
 \subsection{Workflow modules}\label{sec:workflows}
 

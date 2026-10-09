@@ -10,7 +10,7 @@ uncertain and a table cannot carry them at an affordable number of frequencies.
 import numpy as np
 import pandas as pd
 
-from .fast_atom import PandasAtom
+from .atom import Atom
 from .atom_audit import (CC, bf_interpolate, bf_tables, compare_bf_reference, continuum_level, ion_ground,
                          term_ranks)
 
@@ -276,7 +276,7 @@ def prune(atom, keep_lines, keep_levels):
     keep_levels = np.asarray(keep_levels, bool).copy()
     keep_levels[list(ion_ground(atom).values())] = True
     gone = np.flatnonzero(~keep_levels)
-    out = PandasAtom.from_pandas(atom.id, atom.abnd, atom.ai, atom.lvl.copy(),
+    out = Atom.from_pandas(atom.id, atom.abnd, atom.ai, atom.lvl.copy(),
                                  bbt=atom.bbt[np.asarray(keep_lines, bool)
                                               & keep_levels[atom.bbt.i] & keep_levels[atom.bbt.j]].copy(),
                                  bft=atom.bft[keep_levels[atom.bft.i]].copy(),
@@ -348,7 +348,7 @@ def _boltzmann(gg, ev, temp):
 
 
 def merge_levels(atom, groups, temp_lines=5500.0, rtol_bf=0.03):
-    """A PandasAtom whose levels are the given groups (lists of level indices covering
+    """An Atom whose levels are the given groups (lists of level indices covering
     every level once).
 
     Following Lind & Amarsi (2024), a superlevel has g = sum g_i. Its energy keeps the
@@ -365,7 +365,6 @@ def merge_levels(atom, groups, temp_lines=5500.0, rtol_bf=0.03):
     CI, CH0 or CHI record (OHM becomes CE), so the merged upward rate is exact when the
     components are in relative LTE.
     """
-    from .fast_atom import PandasAtom
     from .physics import vac2air
     from .atom_audit import HC_AA_EV, bf_interpolate, bf_tables
     lvl = atom.lvl.reset_index(drop=True)
@@ -492,7 +491,7 @@ def merge_levels(atom, groups, temp_lines=5500.0, rtol_bf=0.03):
         rows.append([kind, lo, up] + list(ct))
     new_col = pd.DataFrame(rows, columns=list(col.columns))
     new_col = new_col[(new_col.iloc[:, 3:] > 0).all(axis=1)].reset_index(drop=True)
-    return PandasAtom.from_pandas(atom.id, atom.abnd, atom.ai, new_lvl, new_bbt, new_bft, new_col)
+    return Atom.from_pandas(atom.id, atom.abnd, atom.ai, new_lvl, new_bbt, new_bft, new_col)
 
 
 def ce_from_upsilon(upsilon, g_lower, temps):

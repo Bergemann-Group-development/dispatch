@@ -1,6 +1,6 @@
 """Sanity checks for model atoms.
 
-The checks work on a :class:`tumult.fast_atom.PandasAtom` (``load_atom`` converts the
+The checks work on a :class:`tumult.atom.Atom` (``load_atom`` converts the
 classic MULTI format on the fly, as dispatch.x does) and reproduce what dispatch.x does
 with the data: the conversion of a classic atom derives line and edge frequencies from
 the level energies, while ``read_pandas`` takes each line's frequency from its tabulated
@@ -140,19 +140,19 @@ def kramers(lam, binding_ev, charge):
 # loading
 # ---------------------------------------------------------------------------------------
 def is_pandas_format(path):
-    """True for an atom written by PandasAtom.write (a header row naming 'ev')."""
+    """True for an atom written by Atom.write (a header row naming 'ev')."""
     with open(path) as f:
         rows = [r for r in f if r.strip() and not r.lstrip().startswith('*')][:4]
     return len(rows) == 4 and 'ev' in rows[3].split()
 
 
 def load_atom(path):
-    """A PandasAtom from either atom format."""
-    from .fast_atom import PandasAtom
+    """An Atom from either atom format, told apart by content rather than by name."""
+    from .atom import Atom
     path = Path(path)
     if is_pandas_format(path):
-        return PandasAtom.read(path)
-    return PandasAtom.from_old(path)
+        return Atom.read_table(path)
+    return Atom.from_old(path)
 
 
 def ion_ground(atom):
@@ -709,22 +709,57 @@ def check_level_matching(atom, nist_levels, llist, stage, strong_loggf=-1.0, tol
     return tab, findings
 
 
+def multi_line_comments(atom_file):
+    """The bound-bound records of a classic MULTI atom with the comment ahead of each,
+    which the conversion to the table format drops: one dict per record with its
+    levels ``i`` < ``j`` (from 0), the Ritz air wavelength ``lam_ritz`` and the ``loggf``
+    of its f-value, and the first two numbers of the last ``* i`` comment line before it
+    (``lam_comment``, ``loggf_comment``; the record's own values without one)."""
+    from .auxfuncs import is_number
+    from .physics import vac2air
+    with open(atom_file) as f:
+        rows = iter(f.readlines())
+    comment = None
+
+    def entry():
+        nonlocal comment
+        for row in rows:
+            if row.startswith('* i'):
+                words = row.replace('=', ' ').split()[1:]
+                comment = [float(w) for w in words if is_number(w)][:3]
+            elif row.strip() and not row.lstrip().startswith('*'):
+                return row
+        raise ValueError(f'{atom_file}: the file ends before its last bound-bound record')
+
+    entry()
+    entry()
+    nk, nline = (int(w) for w in entry().split()[:2])
+    levels = [entry().split("'") for _ in range(nk)]
+    ecm = np.array([float(lvl[0].split()[0]) for lvl in levels])
+    g = np.array([float(lvl[0].split()[1]) for lvl in levels])
+    out = []
+    for kr in range(nline):
+        comment = None
+        words = entry().split()
+        i, j = sorted(int(w) - 1 for w in words[:2])
+        fosc, iw = float(words[2]), int(float(words[6]))
+        lam_ritz = float(vac2air(1e8 / (ecm[j] - ecm[i])))
+        loggf = float(np.log10(fosc * g[i]))
+        lam_comment, loggf_comment = comment[1:3] if comment else (lam_ritz, loggf)
+        out.append(dict(kr=kr, i=i, j=j, lam_ritz=lam_ritz, lam_comment=lam_comment,
+                        loggf=loggf, loggf_comment=loggf_comment))
+        for _ in range(iw if iw >= 2 else 0):      # component rows, read verbatim
+            next(rows)
+    return out
+
+
 def check_comments(atom_file, lam_tolerance=1e-3, loggf_tolerance=0.05):
     """Lines of a classic MULTI atom whose comment (the source line list, as most atom
     builders write it) disagrees with the data dispatch.x uses: the Ritz wavelength of
     the level energies and the f-value. A disagreement marks a misassigned level, a
     merged multiplet whose level energies or f-value were not updated, or a vacuum
     wavelength in the comment."""
-    import contextlib
-    import io
-    from .atom import AtomClass
-    with contextlib.redirect_stdout(io.StringIO()):
-        atom = AtomClass(atom_file, qnorm=10., read_bf=False, read_coll=False, sanity_check=True)
-    rows = []
-    for t in atom.trans[:atom.nline]:
-        rows.append(dict(kr=t.kr, i=t.i, j=t.j, lam_ritz=t.lam0, lam_comment=t.c_lam0,
-                         loggf=np.log10(t.fosc * t.lower.g), loggf_comment=t.c_loggf))
-    tab = pd.DataFrame(rows)
+    tab = pd.DataFrame(multi_line_comments(atom_file))
     tab['lam_offset'] = tab.lam_comment / tab.lam_ritz - 1
     tab['dloggf'] = tab.loggf - tab.loggf_comment
     findings = []

@@ -72,8 +72,8 @@ def studio(bokeh_document, studio_config):
 
 @pytest.fixture
 def atom(studio):
-    from tumult.atom import AtomClass
-    return studio.tools.get("atom").add(str(ATOM), AtomClass(str(ATOM)))
+    from tumult.atom import Atom
+    return studio.tools.get("atom").add(str(ATOM), Atom.read(ATOM))
 
 
 @pytest.fixture

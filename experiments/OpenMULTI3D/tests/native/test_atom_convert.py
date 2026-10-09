@@ -1,7 +1,7 @@
 """Conversion of MULTI-format model atoms to the table format: atom_convert.x.
 
 dispatch.x reads every model atom through read_pandas and converts a MULTI atom first
-(HOP/atom_convert_mod.f90); ``PandasAtom.from_old`` runs the same conversion through
+(HOP/atom_convert_mod.f90); ``Atom.from_old`` runs the same conversion through
 ``atom_convert.x``. A wrong conversion changes the atom a run uses without any error, so
 these tests check each MULTI construct that has no one-to-one table column against the
 value the MULTI conventions define for it: Ritz wavelengths from the level energies in
@@ -20,7 +20,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from tumult.fast_atom import CONVERTER, PandasAtom
+from tumult.atom import CONVERTER, Atom
 from tumult.physics import air2vac
 
 pytestmark = pytest.mark.skipif(not CONVERTER.is_file(),
@@ -65,7 +65,7 @@ ECM = np.array([0.0, 16967.630, 16973.380, 41449.440])
 def converted(tmp_path_factory):
     path = tmp_path_factory.mktemp('atom') / 'atom.na4'
     path.write_text(ATOM)
-    return PandasAtom.from_old(path)
+    return Atom.from_old(path)
 
 
 def test_header_comments_are_kept(tmp_path):

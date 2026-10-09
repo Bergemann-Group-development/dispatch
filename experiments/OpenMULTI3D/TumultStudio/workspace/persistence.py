@@ -54,8 +54,8 @@ def load_spectrum(obj):
 def load_atom(path):
     """A saved workspace's model atom (imported on demand: parsing an atom pulls in the
     whole atomic-data stack, which a document that opens none never needs)."""
-    from tumult.atom import AtomClass
-    return AtomClass(str(path))
+    from tumult.atom import Atom
+    return Atom.read(path)
 
 
 def load_departures(folder):

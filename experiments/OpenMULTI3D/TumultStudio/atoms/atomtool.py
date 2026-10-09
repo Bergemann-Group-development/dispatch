@@ -7,15 +7,14 @@ The atom is the entry point for NLTE abundance corrections: its right-sidebar pa
 the atom fixed. The correction results computed from an atom are listed indented under its
 row, and removing the atom removes them.
 
-The atom is read once with :class:`tumult.atom.AtomClass` (levels, bound-bound and
-bound-free records; no collisions, which the tables do not show). Both tables are searched by
+The atom is read once with :meth:`tumult.atom.Atom.read`, which converts a MULTI atom as
+a run does, so the tables show the transitions a run uses. Both tables are searched by
 a substring query over their text columns and sorted by their headers through the shared
 :mod:`tableui` scaffolding.
 """
 from __future__ import annotations
 
 import html
-import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,28 +30,15 @@ from ..workspace import store
 TABS = ("levels", "trans")
 
 _ROMAN = ("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X")
-# the level records read as "'Level 41 =      z7F2*'": the term is what the tables show
-_LEVEL_PREFIX = re.compile(r"^Level\s*\d+\s*=\s*")
 # rows rendered at most per table: an Fe atom has >10⁴ lines, and the whole table travels
 # through one bridge on every sort or search, so the rest is reached by refining the query
 MAX_ROWS = 2000
-
-
-def term(level):
-    """A level's term label without the file's ``Level N =`` prefix and quotes."""
-    return _LEVEL_PREFIX.sub("", str(level.label).strip("'\" ")).strip()
 
 
 def roman(stage):
     """The spectroscopic stage numeral for the atom file's 1-based ion index."""
     stage = int(stage)
     return _ROMAN[stage - 1] if 1 <= stage <= len(_ROMAN) else str(stage)
-
-
-def _loggf(tr):
-    """log gf from the file's oscillator strength and the lower level's weight."""
-    gf = float(tr.fosc) * float(tr.lower.g)
-    return float(np.log10(gf)) if gf > 0 else float("nan")
 
 
 LEVEL_SORT = {"i": True, "label": True, "ion": True, "ecm": True, "g": True, "nbb": False}
@@ -98,14 +84,14 @@ def level_order(obj, state, query, nbb=None):
     is selecting in, which is why this is not folded into :func:`levels_table`.
     """
     nbb = level_counts(obj) if nbb is None else nbb
-    levels = list(obj.atom.level)
-    keys = {"i": lambda lv: lv.i, "label": term, "ion": lambda lv: lv.ion,
+    levels = list(obj.atom.levels)
+    keys = {"i": lambda lv: lv.i, "label": lambda lv: lv.label, "ion": lambda lv: lv.ion,
             "ecm": lambda lv: lv.ecm, "g": lambda lv: lv.g,
             "nbb": lambda lv: int(nbb[lv.i])}
     order = []
     for i in state.order(levels, keys[state.col]):
         lv = levels[i]
-        if query and not matches(query, term(lv), f"{obj.symbol} {roman(lv.ion)}", lv.i + 1):
+        if query and not matches(query, lv.label, f"{obj.symbol} {roman(lv.ion)}", lv.i + 1):
             continue
         order.append(int(lv.i))
     return order
@@ -123,13 +109,13 @@ def levels_table(obj, state, query, *, selected=None, row_attr="level"):
     ground = set(int(i) for i in a.ground_states) | {0}
     rows = []
     for i in level_order(obj, state, query, nbb):
-        lv = a.level[i]
+        lv = a.levels[i]
         cls = " atom-ground" if i in ground else ""
         if selected is not None and int(selected) == i:
             cls += " row-selected"
         rows.append(
             f'<tr class="atom-row{cls}" data-{row_attr}="{i}">'
-            f'<td>{i + 1}</td><td class="atom-label">{html.escape(term(lv))}</td>'
+            f'<td>{i + 1}</td><td class="atom-label">{html.escape(lv.label)}</td>'
             f'<td>{html.escape(f"{obj.symbol} {roman(lv.ion)}")}</td><td>{lv.ecm:.3f}</td>'
             f'<td>{lv.ev:.4f}</td><td>{lv.g:g}</td><td>{int(nbb[i])}</td></tr>')
     head = "<tr>" + sort_headers(state, [
@@ -142,12 +128,12 @@ def trans_order(obj, state, query):
     """The bound-bound transition indices the table shows, in its order."""
     lines = obj.lines
     keys = {"kr": lambda tr: tr.kr, "lam0": lambda tr: tr.lam0,
-            "lower": lambda tr: term(tr.lower), "upper": lambda tr: term(tr.upper),
-            "loggf": _loggf, "evi": lambda tr: tr.evi, "nq": lambda tr: tr.nq}
+            "lower": lambda tr: tr.lower.label, "upper": lambda tr: tr.upper.label,
+            "loggf": lambda tr: tr.loggf, "evi": lambda tr: tr.evi, "nq": lambda tr: tr.nq}
     order = []
     for i in state.order(lines, keys[state.col]):
         tr = lines[i]
-        if query and not matches(query, f"{tr.lam0:.3f}", term(tr.lower), term(tr.upper),
+        if query and not matches(query, f"{tr.lam0:.3f}", tr.lower.label, tr.upper.label,
                                  tr.kr + 1):
             continue
         order.append(int(tr.kr))
@@ -160,20 +146,18 @@ def trans_table(obj, state, query, *, selected=None, row_attr="kr"):
     rows = []
     for i in trans_order(obj, state, query):
         tr = lines[i]
-        wide = "wide" if tr.iw > 0 else ""
         prof = html.escape(str(getattr(tr, "profile", "")))
         cls = " row-selected" if selected is not None and int(selected) == i else ""
         rows.append(
             f'<tr class="atom-row{cls}" data-{row_attr}="{i}">'
             f'<td>{i + 1}</td><td>{tr.lam0:.3f}</td>'
-            f'<td class="atom-label">{html.escape(term(tr.lower))}</td>'
-            f'<td class="atom-label">{html.escape(term(tr.upper))}</td>'
-            f'<td>{_loggf(tr):.3f}</td><td>{tr.evi:.3f}</td><td>{tr.nq}</td>'
-            f'<td>{wide}</td><td>{prof}</td></tr>')
+            f'<td class="atom-label">{html.escape(tr.lower.label)}</td>'
+            f'<td class="atom-label">{html.escape(tr.upper.label)}</td>'
+            f'<td>{tr.loggf:.3f}</td><td>{tr.evi:.3f}</td><td>{tr.nq}</td>'
+            f'<td>{prof}</td></tr>')
     head = "<tr>" + sort_headers(state, [
         ("#", "kr"), ("λ air [Å]", "lam0"), ("Lower", "lower"), ("Upper", "upper"),
-        ("log gf", "loggf"), ("E_low [eV]", "evi"), ("nq", "nq"), ("", None),
-        ("Profile", None)]) + "</tr>"
+        ("log gf", "loggf"), ("E_low [eV]", "evi"), ("nq", "nq"), ("Profile", None)]) + "</tr>"
     return table_html("atom-trans", head, rows, len(lines))
 
 
@@ -181,7 +165,7 @@ def trans_table(obj, state, query, *, selected=None, row_attr="kr"):
 class AtomObject:
     """One loaded model atom: the parsed file and its sidebar identity."""
     path: str
-    atom: object                     # tumult.atom.AtomClass
+    atom: object                     # tumult.atom.Atom
     uid: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
     @property
@@ -194,8 +178,8 @@ class AtomObject:
 
     @property
     def lines(self):
-        """The bound-bound transitions (the first ``nline`` records of the file)."""
-        return self.atom.trans[:self.atom.nline]
+        """The bound-bound transitions."""
+        return self.atom.transitions
 
     def counts(self):
         a = self.atom
@@ -246,9 +230,9 @@ class AtomTool(Tool):
                      / "input" / "atoms")
 
         def on_select(filepath):
-            from tumult.atom import AtomClass
+            from tumult.atom import Atom
             name = Path(filepath).name
-            load_async(name, lambda token=None: AtomClass(str(filepath)),
+            load_async(name, lambda token=None: Atom.read(filepath),
                        lambda atom: self.add(filepath, atom), path=filepath)
 
         self.picker = FilePicker(on_select, container_id="atom-file-results",
