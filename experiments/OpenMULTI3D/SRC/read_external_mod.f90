@@ -473,7 +473,6 @@ contains
   SUBROUTINE setup_patch (self, patch)
     class (read_external_t):: self
     class (experiment_t), intent(inout), target :: patch
-    integer :: md(3)
     !-----------------------------------------------------------------------------
     call trace%begin ('read_external_t%setup_patch')
     patch%task_list => self%task_list
@@ -494,7 +493,6 @@ contains
     class(read_external_t):: self
     type(link_t), pointer:: link
     class(task_t), pointer:: task
-    logical:: periodic(3)
     integer:: id, thread
     !-----------------------------------------------------------------------------
     id = 0
@@ -517,7 +515,7 @@ contains
   SUBROUTINE init_all_nbors (self)
     class(list_t):: self
     class(link_t), pointer:: link
-    integer:: i, i0, i1, i2, m, n=0, nv=0, nb=0
+    integer:: i, i0, i1, i2, m, n=0
     real(8):: time
     integer, save:: itimer=0
     !.............................................................................
@@ -558,7 +556,7 @@ contains
     class(link_t), pointer:: link
     !.............................................................................
     class(nbor_t), pointer:: new_nbors, old_nbors
-    integer, save:: itimer=0, n_max=10000
+    integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('read_external_mod%init_nbors', itimer=itimer)
     call link%task%log ('init_nbors')

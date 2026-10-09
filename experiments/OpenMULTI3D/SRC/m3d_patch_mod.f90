@@ -335,7 +335,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE pre_init (self)
     class(m3d_patch_t), target:: self
-    integer :: iostat, m(6), i
+    integer :: iostat, i
     logical, save :: first_time=.true.
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -558,7 +558,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE init (self)
     class(m3d_patch_t) :: self
-    integer :: li(3), ui(3), status
+    integer :: status
     integer, save:: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%init', itimer=itimer)
@@ -593,8 +593,6 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE set_initial_time (self)
     class(m3d_patch_t) :: self
-    real(8) :: tnu
-    integer :: thread
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_initial_time')
     if (self%do_out_sp) then
@@ -755,7 +753,7 @@ MODULE m3d_patch_mod
 
   !===============================================================================
   SUBROUTINE save_angle_quadrature ()
-    integer :: lunit, iostat, i, nmu
+    integer :: lunit, i, nmu
     character(len=256) :: meta_file
     integer, save :: itimer=0
     logical, save :: first_time = .true.
@@ -969,7 +967,7 @@ MODULE m3d_patch_mod
     class (task_t), pointer :: target
     !.............................................................................
     real:: grace
-    real(8):: nbtime, nbdtime, tgtime
+    real(8):: nbtime, tgtime
     logical:: needed, needs_me, download
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%is_ahead_of')
@@ -1327,8 +1325,7 @@ MODULE m3d_patch_mod
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
     class(key_link_t), pointer :: klink
-    integer, save:: itimer=0
-    integer :: i, i_nu, key(4)
+    integer :: key(4)
     !-----------------------------------------------------------------------------
     key(1) = self%key(1)
     key(2:3) = 0
@@ -1365,7 +1362,7 @@ MODULE m3d_patch_mod
     real(4), dimension(:,:), allocatable :: shifted
     real(4), dimension(2) :: delta, deltak
     real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
-    integer :: x, y, z, up1, up2, x1, x2, y1, y2, i, nx, ny, nz
+    integer :: x, y, z, up1, up2, x1, x2, y1, y2, nx, ny, nz
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('m3d_patch_t%rotate_cube4', itimer=itimer)
@@ -1461,7 +1458,6 @@ MODULE m3d_patch_mod
     class(m3d_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    integer:: n_nbors
     !-----------------------------------------------------------------------------
     nbor => self%link%nbor
     do while(associated(nbor))

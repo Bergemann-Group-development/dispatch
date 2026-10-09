@@ -56,10 +56,9 @@ contains
   !===============================================================================
   SUBROUTINE set_freq_indices (self)
     class(ray_patch_t) :: self
-    integer :: fs, fe, i, nv
+    integer :: fs, fe
     integer, pointer :: counter
     character(len=16) :: label
-    integer, dimension(:), allocatable :: order
     integer, save, target :: counter1=-999, counter2=-999
     !-----------------------------------------------------------------------------
     call window_range(self%sp, self%i_nu, fs, fe)
@@ -159,8 +158,7 @@ contains
     !.............................................................................
     class(mesg_t), pointer:: mesg
     type(header_t):: header
-    integer:: n_buf, ibuf, iv, it, iw, iz
-    real:: pt
+    integer:: n_buf, ibuf, iv, iw, iz
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('ray_patch_t%ray_pack', itimer=itimer)
@@ -223,7 +221,7 @@ contains
     type(header_t):: header
     type(lock_t), pointer:: lock
     real(8), dimension(3) :: size, position
-    integer:: n_buf, ibuf, iv, it, i, iw, iz
+    integer:: n_buf, ibuf, iv, i, iw, iz
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     ! Compute size of buffer
@@ -347,7 +345,7 @@ contains
   !===============================================================================
   SUBROUTINE bndries (self)
     class(ray_patch_t) :: self
-    integer :: i, j, k, iv, iw, b, it, ng
+    integer :: i, j, iv, iw, b, it, ng
     real(4) :: xxold(3), xxnew(self%ng(3))
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
     ! ----------------------------------------------------------------------------

@@ -12,7 +12,7 @@ contains
     class(rt_patch_t) :: self
     type(ray_type) :: ray, amr_ray
     real(8), intent(in) :: vec(3)
-    real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin
+    real(4) :: Inuup, xxup, ssup
     real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, Psi, kx, ky, Irem, dt, E, W, Esc
     real(8) :: ds(3)
     real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
@@ -20,8 +20,8 @@ contains
     real(4), dimension(:,:), allocatable :: work_up, work_min
     real(4), dimension(:,:,:,:), allocatable :: row_red
     integer :: xup_t(4,self%nx), yup_t(4,self%ny)
-    integer :: zs, ze, xup, yup, zup, x1, y1, i, ii, jj, upo1, upo2
-    logical :: inner, amr_boundary, rebuild_tables, get_rates, split_rates, off
+    integer :: zs, ze, xup, yup, zup, i, ii, jj, upo1, upo2
+    logical :: amr_boundary, rebuild_tables, get_rates, split_rates, off
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -186,7 +186,7 @@ contains
     real(8) :: vec(3)
     real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, Psi, Irem, Esc
     real(4) :: dt, E, W
-    integer :: dx, dy, zs, ze, zup
+    integer :: zs, ze, zup
     logical :: amr_boundary, get_rates, split_rates, off
     integer, save :: itimer=0
     integer :: x, y, z, f

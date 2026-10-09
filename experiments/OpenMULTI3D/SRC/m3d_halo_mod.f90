@@ -151,8 +151,8 @@ END SUBROUTINE add_nbor_by_key
     logical,      optional :: all_tgt, all_src
     !.............................................................................
     class(nbor_t), pointer :: tnbors
-    integer                :: unit, n_same, tid, i
-    logical                :: use_coarse, all_tgt_L, all_src_L
+    integer                :: unit, tid
+    logical                :: all_tgt_L, all_src_L
     class(nbor_t), pointer :: nbor
     class(task_t), pointer :: target, source, patch
     integer, save          :: itimer=0
@@ -247,7 +247,6 @@ END SUBROUTINE add_nbor_by_key
     character(*):: label
     !.............................................................................
     class(task_t), pointer:: task
-    type(task_t):: previous
     !-----------------------------------------------------------------------------
     call self%halo_t%check_status(label)
     if (print_finished .and. self%task%finished) then
@@ -273,7 +272,6 @@ END SUBROUTINE add_nbor_by_key
     class(nbor_t), pointer:: nb
     class(task_t), pointer:: task
     type(task_t):: new
-    logical:: flags(3,2)
     !-----------------------------------------------------------------------------
     call trace%begin ('link_t%reset_status')
     !-----------------------------------------------------------------------------
