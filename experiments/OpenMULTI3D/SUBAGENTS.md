@@ -1,7 +1,7 @@
 # Working in this repository as a subagent
 
-Read `AGENTS.md` before starting. Your checkout is already a clean worktree on a
-task-specific branch based on the shared checkpoint named in your assignment.
+Read `AGENTS.md` before starting. Your checkout is already a clean worktree of the
+whole Dispatch repository on a task-specific branch; work in `experiments/OpenMULTI3D/`.
 
 Commit the completed task to your branch in one focused commit. Report the commit hash, the purpose of the changed files, verification commands with
 their actual results, and any remaining limitation. Do not integrate or remove the
