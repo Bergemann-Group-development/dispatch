@@ -52,6 +52,17 @@ from .utils import (get_weq, fit_line_profile, ensure_unit, pchip_mono, lowpass,
 read = Run.read
 combine = Run.combine
 
+
+# `%load_ext tumult` in IPython or Jupyter. The settings are global to the session,
+# so they live here rather than in the import, which GUI and daemon processes share.
+def load_ipython_extension(ipython):
+    """Apply the Bergemann2020 matplotlib style and render inline figures as SVG."""
+    import matplotlib.pyplot as plt
+    from matplotlib_inline.backend_inline import set_matplotlib_formats
+
+    plt.style.use("tumult.Bergemann2020")
+    set_matplotlib_formats("svg")
+
 __all__ = [
     "read", "read_list", "combine", "Run", "RunGrid", "grid", "tumult",
     "launch", "monitor",
