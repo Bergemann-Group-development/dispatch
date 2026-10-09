@@ -15,6 +15,7 @@ wavelengths, normalised flux; input_data dataset kpno).
 """
 from pathlib import Path
 
+import astropy.units as u
 import matplotlib
 
 matplotlib.use("Agg")
@@ -26,8 +27,7 @@ from tumult.linemask import parse_linemask_file
 
 FIGS = Path(__file__).resolve().parent
 ATLAS = Path("input/spectra/KPNO_4000_9000.txt")
-ATMOSPHERE = ("./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00"
-              "_o+0.00_r+0.00_s+0.00.mod")
+ATMOSPHERE = "./input/atmos/sun.mod"
 SNAPSHOT = "input/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis"
 ATOM = "./input/atoms/atom.mg86g"
 WINDOW_FILE = Path("data/manual/mg_windows.txt")
@@ -73,6 +73,62 @@ def launch(name, abundance=REFERENCE, cntrbf=False):
     return tm.read(folder)
 
 
+def launch_demo(name, blends=False):
+    """The Ba II 4554 run of demo.nml; with blends, the version of Sec. 4 that adds a
+    line list, a 4550-4558 A window and the solar metal-opacity table."""
+    cfg = {
+        "io_params": {"datadir": "."},
+        "atmos_params": {"atmos_file": ATMOSPHERE},
+        "atom_params": {"atom_file": "./input/atoms/atom.ba06", "use_atom_abnd": True},
+        "nlte_params": {"convlim": 1e-2},
+    }
+    if blends:
+        cfg |= {
+            "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
+            "linelist_params": {"linelist_file": "./input/linelists/master_line.txt"},
+            "spectrum_params": {"R_sampling": 5e5, "aa_blue": 4550, "aa_red": 4558},
+        }
+    folder, _ = tm.launch(f"data/manual/{name}", nml_settings=cfg, threads=8, verbose=0)
+    return tm.read(folder)
+
+
+def fig_demo(run, blended):
+    """The first run: Ba II 4554 in NLTE and LTE on the atom's grid, and the same line
+    in a window with the blends of the line list."""
+    fig, (ax0, ax1, ax2) = plt.subplots(1, 3, figsize=(6.6, 2.5),
+                                        width_ratios=(1, 1, 1.6), layout="constrained")
+    plt.sca(ax0)
+    for lvl, label, ls in ((1, r"1: 6s $^2$S", "-"), (4, r"4: 6p $^2$P$^\circ_{3/2}$", "--")):
+        run.plot_depart(lvl, label=label, ls=ls)
+    ax0.axhline(1, **GUIDE)
+    ax0.set_xlim(-5, 1)
+    ax0.set_ylabel(r"$b$")
+    ax0.legend(loc="lower right", fontsize=7)
+    ax0.set_title("departures")
+
+    plt.sca(ax1)
+    line = run.get_line(4554.033)
+    for lte, colour, ls, label in ((False, NLTE, "-", "NLTE"), (True, LTE, "--", "LTE")):
+        line.crop(LTE=lte).plot(color=colour, ls=ls, label=label, set_labels=False)
+    ax1.set_xlabel(r"$\lambda$ [$\AA$]")
+    ax1.set_ylabel(r"$F/F_\mathrm{c}$")
+    ax1.set_xlim(4553.5, 4554.6)
+    ax1.set_xticks([4553.7, 4554.3])
+    ax1.ticklabel_format(axis="x", useOffset=False)
+    ax1.legend(loc="center right", handlelength=1.5, fontsize=7)
+    ax1.set_title(r"Ba II 4554 $\AA$")
+
+    plt.sca(ax2)
+    blended.crop(window=(4550, 4558)).plot(color=NLTE, set_labels=False)
+    blended.plot_line_labels(ntop=6)
+    ax2.set_xlabel(r"$\lambda$ [$\AA$]")
+    ax2.set_xlim(4550, 4558)
+    ax2.ticklabel_format(axis="x", useOffset=False)
+    ax2.set_title("with line list and window")
+    fig.savefig(FIGS / "demo_ba.pdf")
+    return {lte: line.crop(LTE=lte).measure(profile="trapz").maa for lte in (False, True)}
+
+
 def launch_snapshot():
     """A 3D LTE run of the solar snapshot on two continuum wavelengths, for its atmosphere."""
     cfg = {
@@ -97,14 +153,17 @@ def fig_grotrian():
 def fig_depart(run):
     """Departure coefficients of the lines' levels."""
     fig = plt.figure(figsize=(6.6, 2.8), layout="constrained")
-    for lvl, name in LEVELS.items():
-        run.plot_depart(lvl, label=name)
+    # colours of the style cycle repeat, so each level also gets its own dash pattern
+    styles = ("-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1, 1, 1)), (0, (1, 3)))
+    colours = (CYCLE[0], CYCLE[1], CYCLE[2], CYCLE[3], CYCLE[4], CYCLE[5], "k")
+    for (lvl, name), ls, colour in zip(LEVELS.items(), styles, colours):
+        run.plot_depart(lvl, label=f"{lvl}: {name}", ls=ls, color=colour)
     ax = plt.gca()
     ax.axhline(1, **GUIDE)
     ax.set_title("")
     ax.set_ylabel(r"$b = n_\mathrm{NLTE}/n_\mathrm{LTE}$")
     ax.set_xlim(-5.5, 1.5)
-    ax.legend(loc="lower right", ncol=3)
+    ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
     fig.savefig(FIGS / "mg_depart.pdf")
 
 
@@ -122,7 +181,7 @@ def fig_lines(run, atlas):
     ax1.set_ylim(0.1, 1.08)
     ax1.set_xlabel(r"$\lambda$ [$\AA$]")
     ax1.set_ylabel(r"$F/F_\mathrm{c}$")
-    ax1.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(3))
+    ax1.set_xticks([5710.8, 5711.1, 5711.4])
     ax1.ticklabel_format(axis="x", useOffset=False)
     ax1.legend(loc="lower left")
     ax1.set_title("Mg I 5711.1 $\\AA$, fit", pad=4)
@@ -132,6 +191,7 @@ def fig_lines(run, atlas):
     run.crop(window=BLEND_WINDOW, vrot=VROT, **best).plot(color=NLTE, label="NLTE",
                                                           set_labels=False)
     ax2.set_xlim(*BLEND_WINDOW)
+    ax2.set_xticks([5172, 5173, 5174])
     ax2.set_xlabel(r"$\lambda$ [$\AA$]")
     ax2.ticklabel_format(axis="x", useOffset=False)
     run.plot_line_labels(show_atom=False, ntop=10)
@@ -141,20 +201,27 @@ def fig_lines(run, atlas):
 
 def fig_spectra(run, atlas, broadening):
     """NLTE and LTE profiles of the three windows with the observed atlas."""
-    fig, axes = plt.subplots(1, 3, figsize=(6.6, 2.6), sharey=True, layout="constrained")
-    for ax, (line, win) in zip(axes, WINDOWS.items()):
+    fig, (axes, diffs) = plt.subplots(2, 3, figsize=(6.6, 3.4), sharex="col",
+                                      sharey="row", height_ratios=(3, 1),
+                                      layout="constrained")
+    for ax, diff, (line, win) in zip(axes, diffs, WINDOWS.items()):
         atlas.crop(window=win).plot(ax=ax, label="KPNO atlas", set_labels=False,
                                     **OBSERVED)
         run.crop(window=win, LTE=True, **broadening).plot(
             ax=ax, color=LTE, ls="--", label="LTE", set_labels=False)
         run.crop(window=win, **broadening).plot(
             ax=ax, color=NLTE, label="NLTE", set_labels=False)
+        nlte = run.crop(window=win, **broadening)
+        lte = run.crop(window=win, LTE=True, **broadening)
+        diff.plot(nlte.xdata.value, nlte.ydata.value - lte.ydata.value, color=NLTE)
+        diff.axhline(0, **GUIDE)
         ax.set_title(rf"Mg I {line} $\AA$")
-        ax.set_xlabel(r"$\lambda$ [$\AA$]")
+        diff.set_xlabel(r"$\lambda$ [$\AA$]")
         ax.set_xlim(*win)
-        ax.ticklabel_format(axis="x", useOffset=False)
-        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(3))
+        diff.ticklabel_format(axis="x", useOffset=False)
+        diff.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(3))
     axes[0].set_ylabel(r"$F/F_\mathrm{c}$")
+    diffs[0].set_ylabel("NLTE$-$LTE")
     fig.legend(*axes[0].get_legend_handles_labels(), loc="outside lower center", ncol=3)
     fig.savefig(FIGS / "mg_spectra.pdf")
 
@@ -164,6 +231,7 @@ def fig_cntrbf(run):
     wavelengths, compared with a weak line."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.9), width_ratios=(1.2, 1),
                                    layout="constrained")
+    fig.get_layout_engine().set(w_pad=0.15)
     top = run.atmos.ltau.min()
     plt.sca(ax1)
     mesh = run.plot_cntrbf_map(xmin=5171.2, xmax=5174.2, cmap="Blues", title="",
@@ -260,7 +328,7 @@ def fig_snapshot(run):
     axes[1, 0].set_ylim(3000, 14000)
     axes[1, 0].set_xlabel(r"$\log\tau_{500}$")
     axes[1, 0].set_ylabel(r"$T$ [K]")
-    axes[1, 0].legend(loc="upper left")
+    axes[1, 0].legend(loc="lower right")
 
     plt.sca(axes[1, 1])
     atmos.plot_ltau_hist(0, "temp", show_mean=True, color=NLTE, bins=30)
@@ -270,6 +338,9 @@ def fig_snapshot(run):
 
 
 def main():
+    demo = launch_demo("demo")
+    print("demo W [mA]:", fig_demo(demo, launch_demo("demo_blends", blends=True)))
+
     obs = tm.load_spectrum(ATLAS)
     reference = launch("mg_sun", cntrbf=True)
     ladder = [launch(f"mg_sun_A{round(a*100)}", abundance=a) for a in ABUNDANCES]

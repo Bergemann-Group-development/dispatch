@@ -19,9 +19,9 @@ Shell commands are shown with a `$` prompt; everything else is Python.
 
 `demo.nml` is the namelist the installation check runs. It names two inputs:
 
-- **The atmosphere** `input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_..._s+0.00.mod`, the
-  MARCS model of the Sun: a plane-parallel, hydrostatic 1D structure with
-  Teff = 5777 K, log g = 4.4, [Fe/H] = 0 and a microturbulence of 1 km/s (`t01`), which
+- **The atmosphere** `input/atmos/sun.mod`, a link to the MARCS model of the Sun,
+  `p5777_g+4.4_m0.0_t01_st_z+0.00_..._s+0.00.mod`: a plane-parallel, hydrostatic 1D
+  structure with Teff = 5777 K, log g = 4.4, [Fe/H] = 0 and a microturbulence of 1 km/s (`t01`), which
   the run reads from the file.
 - **The model atom** `input/atoms/atom.ba06`, a six-level barium atom in MULTI format:
   the Ba I ground state, four Ba II levels (6s, 5d 2D3/2, 6p 2P1/2, 6p 2P3/2) and the
@@ -350,8 +350,7 @@ config = SynthConfig(root=".", cache="quickstart_synth",
                      linelist="input/linelists/master_line.txt",
                      abundances="input/abund/abund_magg22",
                      R_sampling=200_000)
-marcs = Atmosphere("input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_"
-                   "n+0.00_o+0.00_r+0.00_s+0.00.mod")
+marcs = Atmosphere("input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=marcs,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
                        windows=(4550, 4558))
