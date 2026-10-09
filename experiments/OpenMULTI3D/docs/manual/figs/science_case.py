@@ -24,6 +24,7 @@ import numpy as np
 
 import tumult as tm
 from tumult.linemask import parse_linemask_file
+from tumult.plotting_scripts import get_plt
 
 FIGS = Path(__file__).resolve().parent
 ATLAS = Path("input/spectra/KPNO_4000_9000.txt")
@@ -45,8 +46,28 @@ BLEND_WINDOW = (5171.2, 5174.2)
 LEVELS = {0: r"3s$^2$ $^1$S", 2: r"3p $^3$P$^\circ_1$", 5: r"4s $^3$S",
           4: r"3p $^1$P$^\circ$", 12: r"5s $^1$S", 13: r"4d $^1$D", 85: r"Mg II 3s"}
 
-# the manual's figures use the house style and its colour cycle
-plt.style.use(Path(tm.__file__).parent / "Bergemann2020.mplstyle")
+# the manual's figures use the house style and its colour cycle, drawn at their printed
+# size: main.tex includes them at \pltscale=1 on its 16 cm text width. Text, lines and
+# ticks are set for that size, and the saved page is exactly the figure size. get_plt
+# applies the style on first use, so it runs before these settings and does not reset them.
+get_plt()
+plt.rcParams.update({
+    "font.size": 8, "lines.linewidth": 1.0, "axes.linewidth": 0.6,
+    "xtick.major.size": 3.5, "xtick.minor.size": 2, "ytick.major.size": 3.5,
+    "ytick.minor.size": 2, "xtick.major.width": 0.6, "xtick.minor.width": 0.5,
+    "ytick.major.width": 0.6, "ytick.minor.width": 0.5, "legend.borderaxespad": 0.5,
+    "savefig.bbox": "standard",
+})
+TEXT_WIDTH = 16 / 2.54          # [in]
+ROW = 0.375 * TEXT_WIDTH        # height of a row of panels: 4:3 at half the text width
+SINGLE = (TEXT_WIDTH / 2, ROW)  # one panel, half the text width
+
+
+def wide(nrows=1):
+    """Size of a figure across the text width, with nrows rows of panels."""
+    return (TEXT_WIDTH, ROW * nrows)
+
+
 CYCLE = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 NLTE, LTE = CYCLE[0], CYCLE[1]
 OBSERVED = dict(color="lightgrey", marker=".", ls="none", ms=3)
@@ -97,15 +118,16 @@ def launch_demo(name, blends=False):
 def fig_demo(run, blended):
     """The first run: Ba II 4554 in NLTE and LTE on the atom's grid, and the same line
     in a window with the blends of the line list."""
-    fig, (ax0, ax1, ax2) = plt.subplots(1, 3, figsize=(6.6, 2.5),
-                                        width_ratios=(1, 1, 1.6), layout="constrained")
+    fig, axd = plt.subplot_mosaic([["depart", "line"], ["window", "window"]],
+                                  figsize=wide(2), layout="constrained")
+    ax0, ax1, ax2 = axd["depart"], axd["line"], axd["window"]
     plt.sca(ax0)
     for lvl, label, ls in ((1, r"1: 6s $^2$S", "-"), (4, r"4: 6p $^2$P$^\circ_{3/2}$", "--")):
         run.plot_depart(lvl, label=label, ls=ls)
     ax0.axhline(1, **GUIDE)
     ax0.set_xlim(-5, 1)
     ax0.set_ylabel(r"$b$")
-    ax0.legend(loc="lower right", fontsize=7)
+    ax0.legend(loc="lower right")
     ax0.set_title("departures")
 
     plt.sca(ax1)
@@ -113,17 +135,18 @@ def fig_demo(run, blended):
     for lte, colour, ls, label in ((False, NLTE, "-", "NLTE"), (True, LTE, "--", "LTE")):
         line.crop(LTE=lte).plot(color=colour, ls=ls, label=label, set_labels=False)
     ax1.set_xlabel(r"$\lambda$ [$\AA$]")
-    ax1.set_ylabel(r"$F/F_\mathrm{c}$")
+    ax1.set_ylabel("Normalized Flux")
     ax1.set_xlim(4553.5, 4554.6)
     ax1.set_xticks([4553.7, 4554.3])
     ax1.ticklabel_format(axis="x", useOffset=False)
-    ax1.legend(loc="center right", handlelength=1.5, fontsize=7)
+    ax1.legend(loc="center right", handlelength=1.5)
     ax1.set_title(r"Ba II 4554 $\AA$")
 
     plt.sca(ax2)
     blended.crop(window=(4550, 4558)).plot(color=NLTE, set_labels=False)
-    blended.plot_line_labels(ntop=6)
+    blended.plot_line_labels(ntop=6, fontfamily="sans-serif")
     ax2.set_xlabel(r"$\lambda$ [$\AA$]")
+    ax2.set_ylabel("Normalized Flux")
     ax2.set_xlim(4550, 4558)
     ax2.ticklabel_format(axis="x", useOffset=False)
     ax2.set_title("with line list and window")
@@ -146,15 +169,14 @@ def launch_snapshot():
 def fig_grotrian():
     """Grotrian diagram of Mg I, read from the atom file."""
     atom = tm.read_atom(ATOM)
-    fig = plt.figure(figsize=(6.6, 2.9), layout="constrained")
+    fig = plt.figure(figsize=wide(), layout="constrained")
     atom.plot_grotrian(ion=1, color="#c9c8c2", lw=0.4)
-    plt.gca().tick_params(axis="x", labelsize=7)
     fig.savefig(FIGS / "mg_grotrian.pdf")
 
 
 def fig_depart(run):
     """Departure coefficients of the lines' levels."""
-    fig = plt.figure(figsize=(6.6, 2.8), layout="constrained")
+    fig = plt.figure(figsize=wide(), layout="constrained")
     # colours of the style cycle repeat, so each level also gets its own dash pattern
     styles = ("-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1, 1, 1)), (0, (1, 3)))
     colours = (CYCLE[0], CYCLE[1], CYCLE[2], CYCLE[3], CYCLE[4], CYCLE[5], "k")
@@ -172,7 +194,7 @@ def fig_depart(run):
 def fig_lines(run, atlas):
     """Broadening fitted to 5711.1, and the blends of Mg b2 labelled. Returns the
     fitted broadening."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.9), width_ratios=(1, 1.4),
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=wide(), width_ratios=(1, 1.4),
                                    layout="constrained")
     plt.sca(ax1)
     obs = atlas.crop(window=FIT_WINDOW)
@@ -182,7 +204,7 @@ def fig_lines(run, atlas):
     ax1.set_xlim(*FIT_WINDOW)
     ax1.set_ylim(0.1, 1.08)
     ax1.set_xlabel(r"$\lambda$ [$\AA$]")
-    ax1.set_ylabel(r"$F/F_\mathrm{c}$")
+    ax1.set_ylabel("Normalized Flux")
     ax1.set_xticks([5710.8, 5711.1, 5711.4])
     ax1.ticklabel_format(axis="x", useOffset=False)
     ax1.legend(loc="lower left")
@@ -196,34 +218,27 @@ def fig_lines(run, atlas):
     ax2.set_xticks([5172, 5173, 5174])
     ax2.set_xlabel(r"$\lambda$ [$\AA$]")
     ax2.ticklabel_format(axis="x", useOffset=False)
-    run.plot_line_labels(show_atom=False, ntop=10)
+    run.plot_line_labels(show_atom=False, ntop=10, fontfamily="sans-serif")
     fig.savefig(FIGS / "mg_lines.pdf")
     return dict(vrot=VROT, **best)
 
 
 def fig_spectra(run, atlas, broadening):
     """NLTE and LTE profiles of the three windows with the observed atlas."""
-    fig, (axes, diffs) = plt.subplots(2, 3, figsize=(6.6, 3.4), sharex="col",
-                                      sharey="row", height_ratios=(3, 1),
-                                      layout="constrained")
-    for ax, diff, (line, win) in zip(axes, diffs, WINDOWS.items()):
+    fig, axes = plt.subplots(1, 3, figsize=wide(), sharey=True, layout="constrained")
+    for ax, (line, win) in zip(axes, WINDOWS.items()):
         atlas.crop(window=win).plot(ax=ax, label="KPNO atlas", set_labels=False,
                                     **OBSERVED)
         run.crop(window=win, LTE=True, **broadening).plot(
             ax=ax, color=LTE, ls="--", label="LTE", set_labels=False)
         run.crop(window=win, **broadening).plot(
             ax=ax, color=NLTE, label="NLTE", set_labels=False)
-        nlte = run.crop(window=win, **broadening)
-        lte = run.crop(window=win, LTE=True, **broadening)
-        diff.plot(nlte.xdata.value, nlte.ydata.value - lte.ydata.value, color=NLTE)
-        diff.axhline(0, **GUIDE)
         ax.set_title(rf"Mg I {line} $\AA$")
-        diff.set_xlabel(r"$\lambda$ [$\AA$]")
+        ax.set_xlabel(r"$\lambda$ [$\AA$]")
         ax.set_xlim(*win)
-        diff.ticklabel_format(axis="x", useOffset=False)
-        diff.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(3))
-    axes[0].set_ylabel(r"$F/F_\mathrm{c}$")
-    diffs[0].set_ylabel("NLTE$-$LTE")
+        ax.ticklabel_format(axis="x", useOffset=False)
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(3))
+    axes[0].set_ylabel("Normalized Flux")
     fig.legend(*axes[0].get_legend_handles_labels(), loc="outside lower center", ncol=3)
     fig.savefig(FIGS / "mg_spectra.pdf")
 
@@ -231,7 +246,7 @@ def fig_spectra(run, atlas, broadening):
 def fig_cntrbf(run):
     """Contribution function of Mg b2 over wavelength and depth, and at selected
     wavelengths, compared with a weak line."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.9), width_ratios=(1.2, 1),
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=wide(), width_ratios=(1.2, 1),
                                    layout="constrained")
     fig.get_layout_engine().set(w_pad=0.15)
     top = run.atmos.ltau.min()
@@ -239,7 +254,7 @@ def fig_cntrbf(run):
     mesh = run.plot_cntrbf_map(xmin=5171.2, xmax=5174.2, cmap="Blues", title="",
                                norm=matplotlib.colors.PowerNorm(0.5))
     fig.colorbar(mesh, ax=ax1,
-                 label=r"$\mathrm{d}(1-F/F_\mathrm{c})\,/\,\mathrm{d}\log\tau_{500}$")
+                 label=r"$\mathrm{d}(1-F/F_\mathrm{c})\,/\,\mathrm{d}\log_{10}\tau_{500}$")
     ax1.set_ylim(1, top)
     ax1.set_title(r"Mg I 5172.7 $\AA$, depression")
 
@@ -259,7 +274,7 @@ def fig_cntrbf(run):
 
 def fig_cog(runs, atlas):
     """NLTE and LTE curves of growth with the observed equivalent widths."""
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.6), layout="constrained")
+    fig, axes = plt.subplots(1, 2, figsize=wide(), layout="constrained")
     results = {}
     for ax, line in zip(axes, MASK):
         win = line.fit_window
@@ -287,7 +302,7 @@ def fig_cog_corr(run, runs):
     """NLTE correction of 5528.4 on the LTE curve of growth of the abundance ladder.
     Returns the correction."""
     line = next(iter(MASK))
-    fig = plt.figure(figsize=(3.3, 2.6), layout="constrained")
+    fig = plt.figure(figsize=SINGLE, layout="constrained")
     run.plot_cog_corr("Mg", LTE_runs=runs, window=line.fit_window)
     corr = run.get_cog_corr("Mg", runs, window=line.fit_window)[0]
     plt.title(rf"Mg I {line.lam0:.1f} $\AA$")
@@ -298,7 +313,7 @@ def fig_cog_corr(run, runs):
 
 def fig_clv(run):
     """Centre-to-limb variation of the equivalent width of 5711.1."""
-    fig = plt.figure(figsize=(3.3, 2.6), layout="constrained")
+    fig = plt.figure(figsize=SINGLE, layout="constrained")
     line = run.get_line(5711.09)
     line.plot_clv(dlam=0.3, LTE=True, title="", color=LTE, marker="s", mfc="none", ms=7,
                   label="LTE")
@@ -312,7 +327,7 @@ def fig_snapshot(run):
     """Temperature of the solar 3D snapshot: horizontal and vertical slices, against
     log tau_500, and its distribution at log tau_500 = 0."""
     atmos = run.atmos
-    fig, axes = plt.subplots(2, 2, figsize=(6.6, 5.0), layout="constrained")
+    fig, axes = plt.subplots(2, 2, figsize=wide(2), layout="constrained")
     plt.sca(axes[0, 0])
     mesh = atmos.plot_slice("temp", iz=int(np.argmin(np.abs(atmos.height))),
                             cmap="inferno", title=r"$z=0$")
@@ -328,13 +343,13 @@ def fig_snapshot(run):
     atmos.plot_ltau_mean("temp", color=NLTE, label=r"mean on $\tau_{500}$ surfaces")
     axes[1, 0].set_xlim(-5, 3)
     axes[1, 0].set_ylim(3000, 14000)
-    axes[1, 0].set_xlabel(r"$\log\tau_{500}$")
+    axes[1, 0].set_xlabel(r"$\log_{10}\tau_{500}$")
     axes[1, 0].set_ylabel(r"$T$ [K]")
-    axes[1, 0].legend(loc="lower right")
+    axes[1, 0].legend(loc="upper left")
 
     plt.sca(axes[1, 1])
     atmos.plot_ltau_hist(0, "temp", show_mean=True, color=NLTE, bins=30)
-    axes[1, 1].set_xlabel(r"$T$ at $\log\tau_{500}=0$ [K]")
+    axes[1, 1].set_xlabel(r"$T$ at $\log_{10}\tau_{500}=0$ [K]")
     axes[1, 1].set_ylabel("Columns")
     fig.savefig(FIGS / "sun3d_atmos.pdf")
 

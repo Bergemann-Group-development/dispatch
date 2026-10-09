@@ -167,7 +167,7 @@ class AtmosClass(object):
                         cm = plt.cm.__dict__[cmap]
                         cmap2 = ['binary', 'binary_r'][cm(1) < cm(0)]
                         ax2.contour(X, Y, Z.T, levels=levels, cmap=cmap2, linewidths=1, linestyles=':')
-                        ax2.set_ylabel(r'$\log \tau_{500}$')
+                        ax2.set_ylabel(r'$\log_{10}\tau_{500}$')
                         zlevels = np.interp(levels, Z[-1,:][::step], zz[::step])
                         ax2.set_yticks(zlevels)
                         ax2.set_yticklabels(levels)
