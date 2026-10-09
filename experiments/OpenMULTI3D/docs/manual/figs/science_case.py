@@ -79,7 +79,7 @@ def launch_demo(name, blends=False):
     cfg = {
         "io_params": {"datadir": "."},
         "atmos_params": {"atmos_file": ATMOSPHERE},
-        "atom_params": {"atom_file": "./input/atoms/atom.ba06", "use_atom_abnd": True},
+        "atom_params": {"atom_file": "./input/atoms/atom.ba06", "abundance": 2.11},
         "nlte_params": {"convlim": 1e-2},
     }
     if blends:

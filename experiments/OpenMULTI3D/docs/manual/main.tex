@@ -410,7 +410,7 @@ This section computes one NLTE line, plots it and then turns it into a spectrum 
 \begin{minted}{Fortran}
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
-&atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
+&atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
 !&linelist_params    linelist_file='./input/linelists/master_line.txt' /
 !&spectrum_params    R_sampling=5e5 aa_blue=4550 aa_red=4558 /
@@ -482,7 +482,7 @@ A namelist group starts with \texttt{\&} and ends with \texttt{/}; keys left out
 \begin{itemize}
     \item \fort{&io_params} names the parent of the run directory, \fort{datadir}. The run writes to \File{<datadir>/<namelist name>/}, here \File{data/demo/}. \fort{gb_step} and \fort{do_trace} only control console messages.
     \item \fort{&atmos_params} names the model atmosphere; its format follows from the file name.
-    \item \fort{&atom_params} names the model atom. \fort{use_atom_abnd=T} takes the Ba abundance from the atom file; without it the abundance comes from the abundance table (Sec.~\ref{sec:abundances}).
+    \item \fort{&atom_params} names the model atom. \fort{abundance=2.11} sets the Ba abundance on the astronomical scale, $\log_{10}(N_\mathrm{Ba}/N_\mathrm{H})+12$; without it the abundance comes from the abundance table and [Fe/H] of the run (Sec.~\ref{sec:abundances}).
     \item \fort{&nlte_params}: a positive \fort{convlim} turns on the NLTE iterations, which stop once the largest relative population change falls below it. For diagnostic lines of a single element, \fort{convlim=1e-2} is a reasonable start; the presets use \fort{1e-3}, and Sec.~\ref{sec:convergence} shows how to test whether a value is small enough.
     \item The two commented groups add a line list and a wavelength window. Without them the spectrum is computed only on the wavelength points of the model atom's own transitions, as in the left panel of Fig.~\ref{fig:demo}.
 \end{itemize}
@@ -514,7 +514,7 @@ The download holds four tables: \File{absmet} for solar metallicity and \File{m-
 \begin{minted}{Fortran}
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
-&atom_params         atom_file='./input/atoms/atom.ba06' use_atom_abnd=T /
+&atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
 &opac_table_params   absmet_file='./input/absmet_files/absmet' /
 &linelist_params     linelist_file='./input/linelists/master_line.txt' /
@@ -1369,7 +1369,7 @@ An NLTE run writes a second spectrum, the LTE set (\py{crop(LTE=True)}), compute
 
 \subsection{Order of the abundance keys}
 
-Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} and \fort{use_atom_abnd} set the abundance of a NLTE element last of all.
+Abundances are applied in this order: the file, the [Fe/H] shift, \fort{alpha_enhancement}, \fort{r_process_enhancement}, the abundances of a MARCS file if \fort{use_abnd=T}, finally \fort{abundances}. \Code{\&atom\_params\%abundance} sets the abundance of a NLTE element last of all.
 
 \subsection{Background opacity and line blanketing}\label{sec:absmet}
 
