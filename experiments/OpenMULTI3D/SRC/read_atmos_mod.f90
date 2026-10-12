@@ -23,6 +23,9 @@ MODULE read_atmos_mod
     integer :: n(3), nx, ny, nz
     integer :: gz=0 ! ghost zones
     logical :: is_3d=.false.
+    ! The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
+    ! slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
+    logical :: has_pe=.false.
     real(4), dimension(:,:,:), allocatable :: ltemp, lpe, lrho
     real(4), dimension(:,:,:), allocatable :: vx, vy, vz, vmic
     real(4), dimension(:),     allocatable :: xx, yy, zz
@@ -230,6 +233,7 @@ contains
     ia%ltemp = atmos%ltemp
     ia%lpe   = atmos%lpe
     ia%lrho  = atmos%lrho
+    ia%has_pe = atmos%has_pe
   END SUBROUTINE adopt
 
   !===============================================================================
@@ -394,11 +398,10 @@ contains
   END SUBROUTINE thick2thin
 
   !===============================================================================
-  SUBROUTINE setup_amr_mesh(self, amr, nsub, use_ne)
+  SUBROUTINE setup_amr_mesh(self, amr, nsub)
     class(input_atmos_t), intent(inout), target :: self
     character(len=*), intent(in) :: amr
     integer, intent(in) :: nsub
-    logical, intent(in) :: use_ne
     integer :: i, j, k, nx, ny, nz
     real(4), dimension(nsub+1) :: sub_edge, var_edge
     real(4), dimension(:), allocatable :: amr_ref, tmp
@@ -430,7 +433,7 @@ contains
 
     select case (uppercase(amr))
     case ('P')
-      if (.not. use_ne) error stop 'AMR based on pressure is not supported when use_ne is false'
+      if (.not. self%has_pe) error stop 'AMR based on pressure needs a snapshot with an electron pressure'
       lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
     case ('T')
       lpe => self%ltemp(:,:,1+self%gz:nz+self%gz)
@@ -492,8 +495,8 @@ contains
     !-----------------------------------------------------------------------------
     if (.not. prune_top) return
     if (self%nx*self%ny <= 1) return
-    if (.not. use_ne) then
-      call console_warn (ch_atmos, 'prune_top needs use_ne=T; no planes removed')
+    if (.not. self%has_pe) then
+      call console_warn (ch_atmos, 'prune_top needs a snapshot with an electron pressure; no planes removed')
       return
     endif
     nz = self%nz - 2*self%gz
