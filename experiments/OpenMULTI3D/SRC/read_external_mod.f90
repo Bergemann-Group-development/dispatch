@@ -219,7 +219,7 @@ contains
           close(lunit)
         endif
       else
-        call ia%setup_amr_mesh(amr, dims, use_ne)
+        call ia%setup_amr_mesh(amr, dims)
       endif
     endif
 
