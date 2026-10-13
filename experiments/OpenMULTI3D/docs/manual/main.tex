@@ -1729,7 +1729,7 @@ The reader tries the native order and, if any of the four header records fails, 
 
 \subsection{Window files}\label{sec:windowfiles}
 
-\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment; every window is split into the same number of output patches.
+\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment. The windows share about \fort{n_windows} output patches in proportion to their number of points; each window gets at least one, and no patch has fewer than 16 points unless its window does.
 
 \subsection{Output files}\label{sec:output}
 
@@ -1929,7 +1929,7 @@ The atmosphere is divided vertically into slabs (z-slabs, \fort{dims} or graded 
     \item \textbf{RT column} (\File{rt\_column\_mod.f90}). The only radiative transfer task. There is one per frequency window and ray. It sweeps through the slabs of the column in the direction of the ray and passes each exit plane on to the next slab. Columns are executed in parallel by OpenMP.
 \end{itemize}
 
-A run is split in wavelength with \fort{n_windows}: the internal spectrum has \fort{n_windows} windows (with \fort{decouple_continuum=T} a second set of \fort{n_windows} windows carries the bound-free radiation) and the output spectrum has a number of windows of its own. Memory use grows with the number of threads; its dependence on \fort{n_windows} is described in Sec.~\ref{sec:Memory}.
+A run is split in wavelength with \fort{n_windows}: the internal spectrum has \fort{n_windows} windows (with \fort{decouple_continuum=T} a second set of \fort{n_windows} windows carries the bound-free radiation) and the output spectrum is split into about \fort{n_windows} windows of at least 16 points where the grid allows, none of which spans two windows of a window file. Memory use grows with the number of threads; its dependence on \fort{n_windows} is described in Sec.~\ref{sec:Memory}.
 
 The column scheduler does not use MPI: the program stops with an error if started with more than one MPI rank.
 

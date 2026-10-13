@@ -175,7 +175,10 @@ MODULE m3d_patch_mod
     ! Largest memory estimate [GiB] the run may start with: 0 takes the physical
     ! memory of the machine, a negative value switches the check off
     real(8), public, save :: mem_limit_gb=0
-    integer, public, save :: n_windows_out=0   ! output frequency patch count, set in composition_pre_init
+    integer, public, save :: n_windows_out=0   ! output frequency patch count, set by set_n_windows_out
+    ! Output patches -(out_patch_offset(i)+1) .. -out_patch_offset(i+1) split output
+    ! window i (the whole grid without a window_file); set with n_windows_out
+    integer, public, save, allocatable :: out_patch_offset(:)
     ! convlim <= 0 requests no NLTE iterations (see resolve_nlte_iterations)
     real(8), public:: convlim=0d0, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.

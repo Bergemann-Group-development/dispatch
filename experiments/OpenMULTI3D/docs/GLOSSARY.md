@@ -122,12 +122,13 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   (`res` in `tumult.convolutions`), which sets the width of the kernel an observation or a
   comparison is convolved with.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
-  constant-`R_sampling` *segment* per window. Output patches never span two segments; with
-  fewer windows than `n_windows`, each window is split into `n_windows` output patches.
+  constant-`R_sampling` *segment* per window. Output patches never span two segments; the
+  segments share about `n_windows` output patches in proportion to their points, at least one
+  each and none below 16 points unless the segment is smaller.
 - *wavelength windows* (`n_windows` in `&run_params`, and `n_windows_out`): the number of wavelength-ordered
   pieces the internal and the output spectrum are divided into, each with its own radiative-transfer
   tasks. `n_windows` defaults to twice the thread count, doubled while the memory estimate exceeds
-  70 % of the memory limit; `n_windows_out` follows from it and is not an input. Not the *window file* windows, which are requested
+  70 % of the memory limit; `n_windows_out` follows from it and the output grid and is not an input. Not the *window file* windows, which are requested
   wavelength ranges, and not `nnu`, the number of frequency points of a grid or line profile.
 - *line window*: the span `[lam_min, lam_max]` of the shared frequency grid an NLTE run
   integrates one bound-bound transition's rates over; set by the model atom's `qmax` (in

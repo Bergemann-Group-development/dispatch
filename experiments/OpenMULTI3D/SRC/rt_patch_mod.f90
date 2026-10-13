@@ -18,7 +18,7 @@ MODULE rt_patch_mod
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
-    dlam, n_windows_out, &
+    dlam, out_patch_offset, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
@@ -74,8 +74,8 @@ MODULE rt_patch_mod
 
   !-----------------------------------------------------------------------------
   ! Output patches use IDs -n_windows_out:-1, internal patches use 1:n_windows.  n_windows_out
-  ! (m3d_patch_mod, set in composition_pre_init) equals n_windows for a contiguous output
-  ! grid; a window_file grid gets a whole number of patches per window.
+  ! and the patches of each output window (out_patch_offset) are set by set_n_windows_out
+  ! in composition_patch_mod.
   !-----------------------------------------------------------------------------
   public :: verify_output_patch_coverage, window_shape, slab_memory, trans_copy_bytes, &
             point_table_bytes
@@ -1216,7 +1216,7 @@ contains
     ! An output patch on a window_file grid visits the lines of its whole window, however
     ! many patches that window is split into; unallocated, window_lam is absent.
     if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
-      i_seg = output_patch_window(self%sp, self%i_nu, n_windows_out)
+      i_seg = output_patch_window(out_patch_offset, self%i_nu)
       allocate(window_lam(2))
       window_lam = self%sp%lam([self%sp%segment_first(i_seg), self%sp%segment_last(i_seg)])
     endif
@@ -1821,6 +1821,25 @@ contains
       end do
     end do
 
+    ! Separate LTE line-list opacity table (non-departure species only), keyed by
+    ! i_nu like opac and shared across i_mu twins. Built velocity-free here; the
+    ! Doppler shift is applied when it is interpolated into the foreground.  It
+    ! precedes the 1D background store, whose early return would skip it.
+    if (do_sample_opac .and. rtp%sample_linelist .and. &
+        associated(self%m3d_parent%ll_opac_tables)) then
+      if (.not. associated(self%ll_opac)) then
+        self%ll_opac      => self%m3d_parent%ll_opac_tables(self%i_nu)
+        self%ll_opac_lock => self%m3d_parent%ll_opac_locks (self%i_nu)
+      endif
+      if (.not. self%ll_opac%initialised) then
+        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%set('ll_opac_table')
+        if (.not. self%ll_opac%initialised) then   ! a twin may have filled it meanwhile
+          call self%generate_ll_opacity_table(self%sub_sp, include_absmet)
+        endif
+        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%unset('ll_opac_table')
+      endif
+    endif
+
     ! A 1D atmosphere is static, and its background depends on i_nu alone, so the
     ! first rt_patch of an i_nu stores chi_cont and sigma while its twins wait on
     ! the lock; they and every later iteration and pass copy them back.
@@ -1873,24 +1892,6 @@ contains
           endif
         endif
         if (associated(self%opac_lock)) call self%opac_lock%unset('opac_table')
-      endif
-    endif
-
-    ! Separate LTE line-list opacity table (non-departure species only), keyed by
-    ! i_nu like opac and shared across i_mu twins. Built velocity-free here; the
-    ! Doppler shift is applied when it is interpolated into the foreground.
-    if (do_sample_opac .and. rtp%sample_linelist .and. &
-        associated(self%m3d_parent%ll_opac_tables)) then
-      if (.not. associated(self%ll_opac)) then
-        self%ll_opac      => self%m3d_parent%ll_opac_tables(self%i_nu)
-        self%ll_opac_lock => self%m3d_parent%ll_opac_locks (self%i_nu)
-      endif
-      if (.not. self%ll_opac%initialised) then
-        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%set('ll_opac_table')
-        if (.not. self%ll_opac%initialised) then   ! a twin may have filled it meanwhile
-          call self%generate_ll_opacity_table(self%sub_sp, include_absmet)
-        endif
-        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%unset('ll_opac_table')
       endif
     endif
 
@@ -3750,29 +3751,30 @@ contains
   END SUBROUTINE mem_unregister
 
   !===============================================================================
-  !> Verify that the n_windows_out output patches of a segmented (window_file) grid tile
-  !> it exactly: in i_nu order each patch is non-empty, starts where the previous
+  !> Verify that the output patches of a segmented (window_file) grid tile it
+  !> exactly: in i_nu order each patch is non-empty, starts where the previous
   !> one ended (the windows are adjacent in grid index) and lies inside one window.
   !===============================================================================
-  SUBROUTINE verify_output_patch_coverage(output_sp, n_windows_out)
+  SUBROUTINE verify_output_patch_coverage(output_sp, offset)
     class(atomic_spectrum_type), intent(in) :: output_sp
-    integer, intent(in) :: n_windows_out
-    integer :: i_nu, i_seg, fs, fe, prev_fe
+    integer, intent(in) :: offset(:)
+    integer :: i_nu, i_seg, fs, fe, prev_fe, n_out
     character(len=256) :: msg
     !---------------------------------------------------------------------------
     if (output_sp%n_segments == 0) return
 
-    if (mod(n_windows_out, output_sp%n_segments) /= 0) then
+    if (size(offset) /= output_sp%n_segments + 1) then
       write(msg,'(A,I0,A,I0)') &
-        'n_windows_out=', n_windows_out, ' is not a multiple of n_segments=', output_sp%n_segments
+        'output patch offsets for ', size(offset)-1, ' windows on a grid of ', output_sp%n_segments
       call console_error (msg)
-      error stop 'n_windows_out and n_segments mismatch'
+      error stop 'output patch offsets and n_segments mismatch'
     endif
 
+    n_out = offset(size(offset))
     prev_fe = 0
-    do i_nu = -1, -n_windows_out, -1
-      call output_patch_range(output_sp, i_nu, n_windows_out, fs, fe)
-      i_seg = output_patch_window(output_sp, i_nu, n_windows_out)
+    do i_nu = -1, -n_out, -1
+      call output_patch_range(output_sp, offset, i_nu, fs, fe)
+      i_seg = output_patch_window(offset, i_nu)
       if (fs /= prev_fe + 1 .or. fe < fs .or. &
           fs < output_sp%segment_first(i_seg) .or. fe > output_sp%segment_last(i_seg)) then
         write(msg,'(A,I0,A,I0,A,I0,A,I0)') 'output patch i_nu=', i_nu, &
@@ -3788,7 +3790,7 @@ contains
       error stop 'incomplete segment coverage'
     endif
 
-    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,I0,A)') 'Verified: ', n_windows_out, &
+    if (console_on(ch_m3d, 1)) write(console_unit,'(A,I0,A,I0,A)') 'Verified: ', n_out, &
       ' output patches tile ', output_sp%n_segments, ' windows'
   END SUBROUTINE verify_output_patch_coverage
 
