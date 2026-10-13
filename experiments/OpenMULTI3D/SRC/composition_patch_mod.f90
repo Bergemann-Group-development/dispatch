@@ -13,7 +13,7 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
-  rotate_atmos, decouple_continuum, n_windows, n_windows_out, use_vel, &
+  rotate_atmos, decouple_continuum, n_windows, n_windows_out, out_patch_offset, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
   n_nlte_patches, nlte_finished
   USE rt_params_mod, only: rt_iter, rt_out, pivot_z
@@ -296,23 +296,38 @@ INTEGER FUNCTION max_n_windows (spectra) RESULT (n)
 END FUNCTION max_n_windows
 
 !===============================================================================
-!> Output frequency patches.  A contiguous output grid is split like the internal
-!> one, into n_windows parts.  A window_file grid is split per window, so that no patch
-!> spans the gap between two windows (see output_patch_range).  With fewer windows
-!> than n_windows, each window is split into n_windows parts, so the output pass still has
-!> at least n_windows tasks per depth for the threads; the smallest window caps that
-!> count at one point per part.
+!> Output frequency patches.  The output windows (the segments of a window_file
+!> grid, or the whole grid) share n_windows patches in proportion to their number
+!> of points, so the output pass has about n_windows tasks per depth for the
+!> threads.  A window gets at least one patch, and only as many as leave each
+!> patch min_out_patch points or more: a patch of a few points costs about as
+!> much fixed overhead (opacity tables and their Doppler padding, the lines of
+!> its window it visits) as a large one.
 !===============================================================================
 SUBROUTINE set_n_windows_out (output_sp)
   class(atomic_spectrum_type), intent(in) :: output_sp
+  integer, parameter :: min_out_patch = 16
+  integer, allocatable :: npts(:)
+  integer :: i
   !-----------------------------------------------------------------------------
-  if (output_sp%n_segments > 0) then
-    n_windows_out = output_sp%n_segments
-    if (output_sp%n_segments < n_windows) n_windows_out = output_sp%n_segments * &
-      min(n_windows, minval(output_sp%segment_last - output_sp%segment_first + 1))
-  else
-    n_windows_out = n_windows
+  if (allocated(out_patch_offset)) deallocate(out_patch_offset)
+  if (output_sp%nnu == 0) then
+    allocate(out_patch_offset(1), source=0)
+    n_windows_out = 0
+    return
   endif
+  if (output_sp%n_segments > 0) then
+    allocate(npts, source=output_sp%segment_last - output_sp%segment_first + 1)
+  else
+    allocate(npts(1), source=output_sp%nnu)
+  endif
+  allocate(out_patch_offset(size(npts)+1))
+  out_patch_offset(1) = 0
+  do i=1, size(npts)
+    out_patch_offset(i+1) = out_patch_offset(i) + max(1, min(npts(i)/min_out_patch, &
+      nint(real(n_windows,8)*npts(i)/sum(npts))))
+  end do
+  n_windows_out = out_patch_offset(size(npts)+1)
 END SUBROUTINE set_n_windows_out
 
 !===============================================================================
@@ -413,9 +428,8 @@ SUBROUTINE create_rt_slabs (self)
     call self%create_sub_patches(groups(i)%nu, groups(i)%mu, groups(i)%sp, groups(i)%atoms)
   end do
 
-  if (nlte_patch%output_sp%n_segments > 0) then
-    call verify_output_patch_coverage(nlte_patch%output_sp, n_windows_out)
-  endif
+  if (nlte_patch%output_sp%n_segments > 0) &
+    call verify_output_patch_coverage(nlte_patch%output_sp, out_patch_offset)
 
   self%spectra => null()
   if (.not. associated(self%nlte_patch)) then
