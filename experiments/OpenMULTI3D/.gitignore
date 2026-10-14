@@ -90,6 +90,9 @@ benchmarks/*
 !.claude/agents/
 .claude/**/__pycache__/
 
+# Example namelists are source.
+!examples/
+
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml
 

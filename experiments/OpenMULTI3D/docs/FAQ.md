@@ -98,8 +98,8 @@ same requests and submit the same operations.
 `data/<namelist-name>/`.
 
 ```bash
-OMP_STACKSIZE=256M ./dispatch.x demo.nml     # 1D MARCS Sun, toy Ba atom, LTE + NLTE
-./dispatch.x demo3d.nml                      # 3D snapshot; download it first, see QUICKSTART.md
+OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml     # 1D MARCS Sun, toy Ba atom, LTE + NLTE
+./dispatch.x examples/sun_ba_3d.nml                      # 3D snapshot; download it first, see QUICKSTART.md
 ```
 
 [QUICKSTART.md](../QUICKSTART.md) walks through the same run and the plotting below. Namelist sections and their
@@ -132,7 +132,7 @@ controlled separately.
 
 ```python
 import tumult as tm
-run = tm.read('data/demo/')
+run = tm.read('data/examples/sun_ba_1d/')
 run.crop().plot()                                   # NLTE flux, normalised
 run.crop(x0=4554.033, dx=2.5, LTE=True).plot()      # LTE, ±2.5 Å around a line
 run.crop(imu=0, vdop=1.5).plot()                    # disk-centre intensity, Gaussian broadened
@@ -149,7 +149,7 @@ and `LTE`. `run.mus` lists the angle quadrature.
 `dispatch.x`, and returns without running when a completed output exists for that name.
 
 ```python
-folder, ran = tm.launch('demo_run', default='demo.nml',
+folder, ran = tm.launch('demo_run', default='examples/sun_ba_1d.nml',
                         nml_settings={'atom_params': {'convlim': 1e-3}})
 tm.read(folder).crop().plot()
 ```
