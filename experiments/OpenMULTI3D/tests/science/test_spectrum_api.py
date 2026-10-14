@@ -1,8 +1,7 @@
-"""Phase 3 API additions: Spectrum.measure / Spectrum.convolve / crop(window=...).
+"""Spectrum.measure, Spectrum.convolve and crop(window=...) against the older spellings.
 
-These are additive entry points; the legacy spellings (get_weq flags, crop's four window
-styles, crop(**conv)) stay pinned by the Phase 0 goldens. Here we prove the new forms
-are exactly equivalent to the old ones.
+The older spellings (get_weq flags, crop's four window styles, crop(**conv)) remain in
+use and are pinned by goldens. These tests show that both forms give identical results.
 """
 import astropy.units as u
 import numpy as np

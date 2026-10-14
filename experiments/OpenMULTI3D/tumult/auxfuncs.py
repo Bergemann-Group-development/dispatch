@@ -641,8 +641,7 @@ def angular_distance(ra1, dec1, ra2, dec2):
 def lowpass_fft_thresh(xx, yy, thresh=15, force_period=False):
   # NOT the same filter as tumult.utils.lowpass (Gaussian roll-off in ln-lambda at a
   # spectral resolution R): this is a brick-wall FFT cut at `thresh` cycles per x-unit
-  # on a linear grid. Renamed from `lowpass` in the Phase 1 consolidation; no callers
-  # existed at that point.
+  # on a linear grid.
   newx = np.linspace(xx.min(), xx.max(), len(xx)*3)
   dx = newx[1] - newx[0]
   yy = np.interp(newx, xx, yy)
@@ -668,17 +667,6 @@ def lowpass_fft_thresh(xx, yy, thresh=15, force_period=False):
   newy = np.interp(xx, newx, filtered_signal)
   return newy
 
-
-def lowpass(xx, yy, thresh=15, force_period=False):
-  # deprecated alias for lowpass_fft_thresh. NOTE: shadowed at package level by
-  # tumult.utils.lowpass (a different filter with a `resolution` argument), which is
-  # what `tumult.lowpass` has always resolved to - only direct `auxfuncs.lowpass`
-  # imports land here, and none exist in the codebase.
-  import warnings
-  warnings.warn("auxfuncs.lowpass is deprecated; use lowpass_fft_thresh (brick-wall "
-                "FFT cut) or tumult.utils.lowpass (Gaussian roll-off at resolution R).",
-                DeprecationWarning, stacklevel=2)
-  return lowpass_fft_thresh(xx, yy, thresh=thresh, force_period=force_period)
 
 #=====================================================================
 def split_words(text):
@@ -736,9 +724,3 @@ def pchip_sigma(xx, yy, x, dx):
   dy = func.derivative(1)(x)*dx
   return np.abs(dy)
 
-#=====================================================================
-# The second (identical) pad_boolean definition that used to live here was deleted in
-# the Phase 1 consolidation - the first definition above is the one that survives.
-# calc_teff was deleted too: unit-aware version lives in tumult.utils (this one worked
-# in raw CGS and its planck_thresh branch called an undefined `crop_spectrum`).
-# get_bisector moved to tumult.utils (re-exported above).

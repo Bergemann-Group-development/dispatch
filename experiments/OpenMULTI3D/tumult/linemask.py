@@ -409,7 +409,7 @@ def write_linemask_file(path, mset: LineMaskSet, included_only: bool = True) -> 
     path.write_text(header + body + "\n")
 
 
-# --- local-continuum helpers (Phase 6 renorm) ---------------------------------------------
+# --- local-continuum helpers ---------------------------------------------------------
 
 def extrapolate_edge_knots(p1: tuple, p2: tuple, smin: float, smax: float) -> list:
     """The four colinear continuum knots for a mask: the two inner markers plus edge knots at

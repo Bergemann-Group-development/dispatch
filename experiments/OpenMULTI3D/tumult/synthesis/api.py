@@ -295,7 +295,7 @@ def _collapse_snapshots(runs, job_keys, job_weights, job_params):
 
 
 def _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points):
-    """Load the finished node runs into a tm.grid at ``star`` (separable vmic axis when
+    """Load the finished node runs into a tm.RunGrid at ``star`` (separable vmic axis when
     ``vmic_points > 2``, else linear bracket with stored interpolation weights)."""
     teff, logg, feh = star[:3]
     # snapshot nodes (keyed by snapshot tag) have no vmic lattice to collapse
@@ -307,7 +307,7 @@ def _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_poi
         'feh':  [p[2] for p in params],
         'vmic': [p[3] for p in params],
     }
-    g = tm.grid(spectra, separable=(['vmic'] if sep_vmic else None), **param_dict)
+    g = tm.RunGrid(spectra, separable=(['vmic'] if sep_vmic else None), **param_dict)
     g.p0 = {'teff': teff, 'logg': logg, 'feh': feh, 'vmic': vmic}
     if not sep_vmic:
         g.interp_weights = np.asarray(weights, dtype=float)
@@ -561,7 +561,7 @@ def build_stellar_grid(top, star, atmos_files,
                        vmic_step=0.5, vmic_points=2, departures_top=None, nlte=None,
                        cancel_token=None, dep_dirs=None):
     """
-    Build a tm.grid for the target stellar point by finding the enclosing
+    Build a tm.RunGrid for the target stellar point by finding the enclosing
     model atmospheres, launching MULTI3D runs for them in parallel, and
     loading the results into a SpectrumGrid indexed by stellar parameters.
 
@@ -622,7 +622,7 @@ def build_stellar_grid(top, star, atmos_files,
 
     Returns
     -------
-    tm.grid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
+    tm.RunGrid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
     """
     launch_kwargs = launch_kwargs or {}
     if max_threads is None:
@@ -1386,13 +1386,13 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
 
         if separable is not None:
             try:
-                grid = tm.grid(spectra, separable=list(separable), **params)
+                grid = tm.RunGrid(spectra, separable=list(separable), **params)
             except ValueError as err:
                 print(f"adaptive_fit: separable interpolation unavailable this round "
                       f"({err}); falling back to linear.")
-                grid = tm.grid(spectra, **params)
+                grid = tm.RunGrid(spectra, **params)
         else:
-            grid = tm.grid(spectra, **params)
+            grid = tm.RunGrid(spectra, **params)
         p0 = {k: (list(guesses[k]) if k == "continuum" else float(guesses[k]))
               for k in axes + post_fit if k in guesses}
         best, fitted = grid.fit(target, fit=axes + post_fit, p0=p0, **fit_kwargs)
@@ -1518,7 +1518,7 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
         if any(runs[d] is None for d in runs):
             raise RuntimeError("Some runs failed, cannot build grid.")
         das = sorted(runs.keys())
-        return tm.grid([runs[d] for d in das], da=das), das
+        return tm.RunGrid([runs[d] for d in das], da=das), das
 
     def find_interval(da_val, knots):
         idx = np.searchsorted(knots, da_val, side='right') - 1

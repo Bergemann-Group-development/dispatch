@@ -1,12 +1,11 @@
 """Atmosphere-node selection for stellar-grid synthesis.
 
-Extracted from ``build_stellar_grid`` in the Phase 6 decomposition: given a target star
-and an atmosphere-file grid, decide *which* model atmospheres to synthesise and with what
-interpolation weights. vmic is decoupled from the spatial selection — it barely affects
-the atmospheric structure but strongly affects line strengths, and MULTI3D applies it as
-a uniform namelist override — so atmospheres are bracketed only in (teff, logg, feh) and
-each selected node is synthesised at the ``vmic_step``-lattice points bracketing the
-query vmic.
+Given a target star and an atmosphere-file grid, decide *which* model atmospheres to
+synthesise and with what interpolation weights. vmic is decoupled from the spatial
+selection — it barely affects the atmospheric structure but strongly affects line
+strengths, and MULTI3D applies it as a uniform namelist override — so atmospheres are
+bracketed only in (teff, logg, feh) and each selected node is synthesised at the
+``vmic_step``-lattice points bracketing the query vmic.
 
 A 3D snapshot grid (see :mod:`tumult.synthesis.snapshot_grid`) maps each node to a
 sequence of snapshots. Its velocity field replaces microturbulence, so such nodes carry no

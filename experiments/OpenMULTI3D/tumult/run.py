@@ -1,7 +1,6 @@
 """The dispatch run class (`Run`) and its helpers.
 
-Moved from tumult/tumult.py in the Phase 6 decomposition (that module remains as the
-package's import shim). The raw patch-save reading lives in :mod:`tumult.io_binary`
+The raw patch-save reading lives in :mod:`tumult.io_binary`
 and the intensity-layout / flux physics in :mod:`tumult.flux`; this class is the
 orchestration and analysis facade over them (lazy atmos/linelist/atom properties,
 spectra, departures, contribution functions, plotting).

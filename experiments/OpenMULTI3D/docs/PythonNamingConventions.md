@@ -106,7 +106,4 @@ several editor panes side by side.
 
 ## Known inconsistencies
 
-- `utils.py` and `auxfuncs.py` are grab bags, and `auxfuncs.py` exists mainly to keep old
-  wildcard imports resolving. Neither is a pattern to extend.
-- `tumult.tumult` and `tumult.grid` remain as aliases of `Run` and `RunGrid` for code
-  outside this repository.
+- `utils.py` and `auxfuncs.py` are grab bags. Neither is a pattern to extend.
