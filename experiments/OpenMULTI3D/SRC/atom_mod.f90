@@ -218,7 +218,12 @@ MODULE atom_mod
     ! A transition whose threshold lies above cut_x kT cannot be formed in
     ! real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
     ! a continuum the LTE ratio n*_i/n*_j ~ exp(h nu0/kT), which turns the stored
-    ! emission sum into the recombination rate, overflows.  For a line the
+    ! emission sum into the recombination rate, overflows.  Well before that, a
+    ! build that flushes subnormals to zero (ifort's default) loses the radiation
+    ! field in the formal solution: at 77 kT a continuum's mean intensity came out
+    ! exactly zero across its edge, which left a level whose only link was that
+    ! continuum without any outgoing rate and the rate matrix singular.  cut_x
+    ! keeps that margin below the clamp.  For a line the
     ! upward and downward rates cancel to within real(4) rounding, which leaves
     ! a manifold of levels connected only by such lines (the 2p5 nl levels of
     ! Na II) free to drift by orders of magnitude per iteration.  In such a cell
@@ -228,7 +233,7 @@ MODULE atom_mod
     ! zero.  The pair ties the upper level to the lower one, which is all these
     ! levels need: they hold less than exp(-cut_x) of the lower level's atoms.
     !---------------------------------------------------------------------------
-    real(8), parameter :: cut_x=80d0, bf_cut_rate=1d0
+    real(8), parameter :: cut_x=70d0, bf_cut_rate=1d0
     !---------------------------------------------------------------------------
     ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
     ! so the natural damping is geometric: e -> e**sor_w, which is exactly
