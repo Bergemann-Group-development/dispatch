@@ -874,6 +874,7 @@ class Run(object):
         check_and_combine('nline')
         check_and_combine('dim')
         check_and_combine('abundances')
+        check_and_combine('segments')
 
         weights = weights or np.ones(len(runs))/len(runs)
 
