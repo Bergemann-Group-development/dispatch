@@ -435,7 +435,8 @@ class Run(object):
 
             if mean:
                 ltau = np.mean(xy[:,0], axis=0)
-                yy1d = [np.interp(ltau, xy[i,0], xy[i,1]) for i in range(len(xy))]
+                # log tau runs from the bottom up, i.e. decreases; np.interp needs it rising
+                yy1d = [np.interp(ltau, x[np.argsort(x)], y[np.argsort(x)]) for x, y in xy]
                 yy1d = np.mean(yy1d, axis=0)
                 return ltau, yy1d
             else:
