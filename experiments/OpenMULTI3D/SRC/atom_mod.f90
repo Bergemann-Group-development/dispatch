@@ -218,7 +218,12 @@ MODULE atom_mod
     ! A transition whose threshold lies above cut_x kT cannot be formed in
     ! real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
     ! a continuum the LTE ratio n*_i/n*_j ~ exp(h nu0/kT), which turns the stored
-    ! emission sum into the recombination rate, overflows.  For a line the
+    ! emission sum into the recombination rate, overflows.  Well before that, a
+    ! build that flushes subnormals to zero (ifort's default) loses the radiation
+    ! field in the formal solution: at 77 kT a continuum's mean intensity came out
+    ! exactly zero across its edge, which left a level whose only link was that
+    ! continuum without any outgoing rate and the rate matrix singular.  cut_x
+    ! keeps that margin below the clamp.  For a line the
     ! upward and downward rates cancel to within real(4) rounding, which leaves
     ! a manifold of levels connected only by such lines (the 2p5 nl levels of
     ! Na II) free to drift by orders of magnitude per iteration.  In such a cell
@@ -228,7 +233,7 @@ MODULE atom_mod
     ! zero.  The pair ties the upper level to the lower one, which is all these
     ! levels need: they hold less than exp(-cut_x) of the lower level's atoms.
     !---------------------------------------------------------------------------
-    real(8), parameter :: cut_x=80d0, bf_cut_rate=1d0
+    real(8), parameter :: cut_x=70d0, bf_cut_rate=1d0
     !---------------------------------------------------------------------------
     ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
     ! so the natural damping is geometric: e -> e**sor_w, which is exactly
@@ -532,10 +537,11 @@ MODULE atom_mod
               ! (an Inf rate coefficient is enough).  The limiter below would pass a NaN
               ! on and the population floor would then replace it, leaving every level
               ! of the cell at min_pop_frac and the run reporting a zero change, so
-              ! this stops the run instead.
+              ! this stops the run instead.  The cell is given in mesh indices: the
+              ! patches are depth slabs, so only z needs the patch's offset.
               if (.not. all(abs(e) <= huge(1d0))) then
                 write(msg,'(a,a,a,3(1x,i0),a,i0,a)') 'statistical equilibrium of ', trim(self%id), &
-                  ' has no finite solution at x,y,z =', x, y, z, ' (', count(.not. (abs(e) <= huge(1d0))), &
+                  ' has no finite solution at x,y,z =', x, y, z+diag_zs-1, ' (', count(.not. (abs(e) <= huge(1d0))), &
                   ' levels); check the rate coefficients for overflow'
                 call console_error (msg)
                 error stop
@@ -1037,6 +1043,11 @@ MODULE atom_mod
     integer :: nbf_col
     character(8) :: key, str1, str2, str3
     logical :: abort
+    integer :: nbound, worst_l, worst_u
+    real(8) :: tpow, drop, worst_drop
+    real(8), allocatable :: dlogt(:)
+    character(8) :: worst_key
+    real(8), parameter :: bound_tol = log(1.05d0)
     integer, save :: itimer=0
     character(len=256) :: msg
     !---------------------------------------------------------------------------------
@@ -1267,6 +1278,10 @@ MODULE atom_mod
 
       read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
 
+      allocate(dlogt(ntemp-1))
+      dlogt = log(self%tgrid(2:ntemp,1) / self%tgrid(1:ntemp-1,1))
+      nbound = 0
+      worst_drop = 0
       do i=1, ncol
         call nextentry(latom) 
         read(latom, *, iostat=iostat) idx, key, l, u, self%cgrid(1:ntemp,i)
@@ -1305,6 +1320,44 @@ MODULE atom_mod
           col%ul = u
 
           self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+
+          ! A Maxwellian rate coefficient is T^(-3/2) int sigma(E) E exp(-E/kT) dE from
+          ! the threshold on.  Measured from the threshold, every weight exp(-eps/kT)
+          ! grows with T and sigma >= 0, so Upsilon T (OHM), q T^2 (CE, CI, with
+          ! gencol's sqrt(T) and Boltzmann factors) and the downward hydrogen rate
+          ! times T^(3/2) (CH) cannot fall with T.  A record that falls faster carries
+          ! a wrong T dependence.  CHI and CH0 are upward rates, whose test would need
+          ! the threshold energy the data were computed with.
+          select case(trim(key))
+          case ('CE', 'CI')
+            tpow = 2
+          case ('CH')
+            tpow = 1.5d0
+          case ('OHM', 'OHMEGA')
+            tpow = 1
+          case default
+            tpow = 0
+          end select
+          if (tpow > 0) then
+            drop = 0
+            do j=1, ntemp-1
+              drop = max(drop, self%cgrid(j,i) - self%cgrid(j+1,i) - tpow*dlogt(j))
+            end do
+            if (drop > bound_tol) then
+              nbound = nbound + 1
+              if (console_on(ch_m3d, 2)) then
+                write(msg,'(a,1x,a,2(1x,i0),a,f0.3)') 'collision record', trim(key), l, u, &
+                  ' falls faster than the Maxwellian bound between nodes by a factor ', exp(drop)
+                call console_warn (ch_m3d, msg)
+              endif
+              if (drop > worst_drop) then
+                worst_drop = drop
+                worst_key = key
+                worst_l = l
+                worst_u = u
+              endif
+            endif
+          endif
           col%log = .true.
           
           ! set derivatives for 3rd order hermite interpolation
@@ -1329,6 +1382,13 @@ MODULE atom_mod
           end select
         end select
       end do
+      if (nbound > 0) then
+        write(msg,'(2a,i0,a,i0,3a,2(1x,i0),a,es9.2)') trim(self%id), ': ', nbound, ' of ', ncol, &
+          ' collision records fall faster with T than a Maxwellian average allows (by more', &
+          ' than 5% between nodes); worst ', trim(worst_key), worst_l, worst_u, ', by a factor ', &
+          exp(worst_drop)
+        call console_warn (ch_m3d, msg)
+      endif
     endif
     close(latom)
     if (abort) error stop 'abort in atom_mod%read_pandas'

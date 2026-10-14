@@ -20,9 +20,10 @@ module m3d_debug_mod
   ! change, not a fix: use it to decide whether an instability is fed by the
   ! unaccelerated scattering iteration.
   logical, public :: diag_no_scat_loop=.false.
-  ! global z of the patch currently being updated, so the diag_pops prints (which
-  ! happen down in atom_mod, where only patch-local indices exist) can be placed
-  ! in the atmosphere; set by nlte_patch_t%update before update_populations
+  ! global z of the patch currently being updated, so the diag_pops prints and the
+  ! statistical-equilibrium error (which happen down in atom_mod, where only
+  ! patch-local indices exist) can be placed in the atmosphere; set by
+  ! nlte_patch_t%update before update_populations
   integer, public :: diag_zs=0
   !$omp threadprivate(memcheck, diag_zs)
 
