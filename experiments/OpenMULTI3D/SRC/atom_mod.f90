@@ -532,10 +532,11 @@ MODULE atom_mod
               ! (an Inf rate coefficient is enough).  The limiter below would pass a NaN
               ! on and the population floor would then replace it, leaving every level
               ! of the cell at min_pop_frac and the run reporting a zero change, so
-              ! this stops the run instead.
+              ! this stops the run instead.  The cell is given in mesh indices: the
+              ! patches are depth slabs, so only z needs the patch's offset.
               if (.not. all(abs(e) <= huge(1d0))) then
                 write(msg,'(a,a,a,3(1x,i0),a,i0,a)') 'statistical equilibrium of ', trim(self%id), &
-                  ' has no finite solution at x,y,z =', x, y, z, ' (', count(.not. (abs(e) <= huge(1d0))), &
+                  ' has no finite solution at x,y,z =', x, y, z+diag_zs-1, ' (', count(.not. (abs(e) <= huge(1d0))), &
                   ' levels); check the rate coefficients for overflow'
                 call console_error (msg)
                 error stop
