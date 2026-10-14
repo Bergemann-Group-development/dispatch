@@ -39,7 +39,7 @@ def load_patch_files(folder, kind):
                 dct[key] = np.memmap(resolved_folder + file, dtype=dtype, mode='r',
                                      shape=dims, order='F')
     except FileNotFoundError:
-        raise FileNotFoundError(f'{meta_file} not found!')
+        raise FileNotFoundError(f'{meta_file} not found!') from None
     return dct, dims
 
 

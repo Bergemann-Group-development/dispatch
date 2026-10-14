@@ -60,7 +60,7 @@ def test_unparseable_rows_are_dropped_not_fatal(tmp_path):
 
 
 def test_blank_file_yields_no_points(tmp_path):
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         sio.load_spectrum(_write(tmp_path, "empty.txt", "# only a comment\n"))
 
 

@@ -44,7 +44,6 @@ from __future__ import annotations
 from copy import deepcopy
 
 import html
-import logging
 import time
 import uuid
 from pathlib import Path
@@ -55,7 +54,6 @@ import numpy as np
 from tumult import abundance as ab
 from tumult.measurement import mask_key
 from ..workspace import store
-from tumult.synthesis import workflows as synth
 from ..ui.style import ACCENT
 from .cogpanel import Chi2Panel, CogPanel
 from .diagnostics import empty_points

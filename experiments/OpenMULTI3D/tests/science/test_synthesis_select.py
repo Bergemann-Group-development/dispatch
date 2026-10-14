@@ -56,9 +56,9 @@ def test_select_nodes_vmic_points_pchip_mode(atmos_grid):
     assert vmic == 1.3
     assert len(nodes) == 8  # 2 teff nodes x 4 vmic levels
     per_spatial = {}
-    for jkey, teff, logg, feh, v, weight, path, absmet in nodes:
+    for jkey, _teff, _logg, _feh, v, weight, _path, _absmet in nodes:
         per_spatial.setdefault(jkey[0], []).append((v, weight))
-    for spatial, levels in per_spatial.items():
+    for _spatial, levels in per_spatial.items():
         vs = sorted(v for v, _ in levels)
         assert vs == [0.5, 1.0, 1.5, 2.0]
         ws = {w for _, w in levels}

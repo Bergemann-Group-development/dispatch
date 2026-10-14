@@ -1,10 +1,8 @@
 import numpy as np
 import pandas as pd
-from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy import integrate, optimize
-from scipy.interpolate import CubicHermiteSpline
 from numba import njit, jit
 import re
 import os
@@ -14,7 +12,6 @@ from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
 import collections.abc
-from .decorators import broadcast_arguments
 import tempfile
 
 from .const import (  # noqa: F401 - single constants source; re-exported for back-compat
@@ -193,7 +190,7 @@ def between_ext(arr, pos, criterion=np.greater_equal):
     return mask.astype(np.bool)
 
 #=====================================================================
-def polyfit(xy, dydx=[]):
+def polyfit(xy, dydx=()):
   n1 = len(xy)
   n2 = len(dydx)
   n = n1+n2
@@ -333,7 +330,6 @@ def voigt_profile(xx, x0, a, sigma, amp):
     # LEGACY parameterisation (un-normalised peak, different argument order); the modern
     # model is tumult.profile.VoigtProfile / tumult.utils.voigt_profile. Kept because the
     # two are NOT numerically equivalent.
-  s2 = np.sqrt(2)
   vv = (xx-x0) / sigma
   return 1 - amp*voigt_function(a, vv)
 
@@ -558,7 +554,7 @@ def marcs_to_pandas(file):
     lines.pop(0)
 
     df = pd.DataFrame()
-    for t in range(2):
+    for _ in range(2):
       data = lines[:nrows]
       lines = lines[nrows:]
       sub = pd.read_csv(StringIO('\n'.join(data)), sep=r'\s+')
@@ -568,7 +564,7 @@ def marcs_to_pandas(file):
     lines = lines[1:] # skip the first line of the second section
     widths = [3,] + [7,] * 11
 
-    for t in range(3):
+    for _ in range(3):
       data = lines[:nrows]
       lines = lines[nrows:]
       sub = pd.read_fwf(StringIO('\n'.join(data)), widths=widths, sep=r'\s+')

@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 gui = ["bokeh>=3.4", "ipykernel>=6.29"]
 test = ["pytest>=8.0"]
+lint = ["ruff>=0.6"]
 
 # tumult and TumultStudio locate libhop.so, dispatch.x and input/ relative to the
 # checkout, so install in editable mode: pip install -e ".[gui,test]"
@@ -31,3 +32,18 @@ include = ["tumult*", "TumultStudio*"]
 [tool.setuptools.package-data]
 tumult = ["presets/*.nml", "*.mplstyle", "*.jl", "HOP.jl/**"]
 TumultStudio = ["static/**", "templates/**"]
+
+# Rules that find defects (pyflakes, bugbear, import placement, syntax). Style is left to
+# docs/PythonNamingConventions.md, whose one-letter comprehension names E741 would flag.
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F", "E4", "E9", "B"]
+# zip(strict=...) would turn silent truncation into errors at many call sites; decide
+# per site, not by rule.
+ignore = ["B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# The lambdas there run within the loop iteration that defines them.
+"benchmarks/api/run_reference_benchmarks.py" = ["B023"]

@@ -15,7 +15,6 @@ wavelengths, normalised flux; input_data dataset kpno).
 """
 from pathlib import Path
 
-import astropy.units as u
 import matplotlib
 
 matplotlib.use("Agg")

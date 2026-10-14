@@ -36,7 +36,7 @@ def broadcast_arguments(obj='self', numeric=True, **explicit_dims):
 
             # ---------- STEP 3: broadcast *every* argument (even scalars) ----------
             bcast = {}
-            for name, (arr, extradim, tail) in info.items():
+            for name, (arr, _, tail) in info.items():
                 # Everything becomes shape = target_extra + tail
                 full_shape = target_extra + tail
                 bcast[name] = np.broadcast_to(arr, full_shape)

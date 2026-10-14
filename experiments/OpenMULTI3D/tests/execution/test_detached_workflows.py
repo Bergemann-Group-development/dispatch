@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from tumult.synthesis import Atmosphere, SynthConfig, SynthRequest, submission
-from tumult.synthesis.cancel import CancelledError
 
 pytestmark = pytest.mark.skipif(os.name != 'posix', reason='detached workflows need POSIX')
 

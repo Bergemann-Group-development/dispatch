@@ -132,7 +132,7 @@ def test_listing_failure_is_shown_with_a_retry(tmp_path, studio_config, monkeypa
 def test_atoms_and_opacity_pages_use_their_own_folders(tmp_path, studio_config):
     from TumultStudio.workspace import store
     atoms = write_lists(tmp_path / "www", folder="atoms/public")
-    absmet = write_lists(tmp_path / "www", folder="absmet_files")
+    write_lists(tmp_path / "www", folder="absmet_files")
     work = tmp_path / "work"
     store.set_section("synthesis", {"dispatch_cwd": str(work), "absmet": "tables"})
     ctx, changes = _SyncContext(), []

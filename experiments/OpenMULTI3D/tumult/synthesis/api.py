@@ -1481,7 +1481,6 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
     if not atom_file.exists():
         raise FileNotFoundError(f"Atom file {atom_file} not found!")
 
-    sign = 1 if ref == 'LTE' else -1
     max_iter = 10
 
     teff, logg, feh = star[:3]
@@ -1547,7 +1546,7 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
             intervals[(ii, knots[ii], knots[ii + 1])].append((l0, g))
 
         new_points = []
-        for (ii, lo, hi), line_guesses in intervals.items():
+        for (_, lo, hi), line_guesses in intervals.items():
             if hi - lo < tol:
                 continue
             guess_values = [g for _, g in line_guesses]

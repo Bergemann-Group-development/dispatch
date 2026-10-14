@@ -30,8 +30,7 @@ from .api import (compute_spectrum, compute_spectra,
                   normalise_windows, write_window_file,
                   PROVENANCE_NAME)
 from ..abundance import (
-    SYNTH_PAD_AA, abund_to_xfe, convert_abundances,
-    read_solar_abundances, xfe_to_abund,
+    SYNTH_PAD_AA, read_solar_abundances, xfe_to_abund,
 )
 from .cancel import CancelToken, CancelledError
 from .inputs import Atmosphere, AtmosphereGrid, Snapshot

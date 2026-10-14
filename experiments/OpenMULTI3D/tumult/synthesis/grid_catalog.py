@@ -347,7 +347,7 @@ def _fetch_snapshots(plan, progress, cancel):
             cancel.check()
         label = f.path
 
-        def report(got, _size, base=done):
+        def report(got, _size, base=done, label=label):
             if progress is not None:
                 progress(base + got, total, label)
         target = plan.dest / f.path

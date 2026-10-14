@@ -317,7 +317,6 @@ def convert_label_to_x_axis(label: str):
                 parity_even = True
             # now lets see the last character. if a number, pop it
         if label[-1].isnumeric():
-                J_value = int(label[-1])
                 label = label[:-1]
             # ok now the last 2 values should hopefully be s-value and L-value
         L_value = label[-1]

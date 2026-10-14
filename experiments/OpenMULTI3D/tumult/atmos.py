@@ -354,7 +354,7 @@ class AtmosClass(object):
             else:
                     mux, muy, muz = self.run.vec[ang]
 
-            for i in range(rot90):
+            for _ in range(rot90):
                     tmp = -xx
                     xx = yy
                     yy = tmp
