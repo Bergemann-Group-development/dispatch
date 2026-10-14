@@ -91,6 +91,7 @@ MODULE nlte_patch_mod
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
   logical, save :: stale_stop_checked=.false.
+  logical, save :: departures_reported=.false.
   logical, public, save :: external_sp=.false.
   ! The output pass takes the lines of the atom's species from the line list, with the
   ! atom's departure coefficients, instead of from the atom's own transitions:
@@ -865,6 +866,17 @@ contains
     nmu = merge(size(rt_out%vec, 2), 0, rotate_atmos)
     allocate(self%departures(j, 1+nmu))
     self%m3d_parent%departures => self%departures
+
+    ! every patch reads the same files, so the first one reports them
+    !$omp critical (departures_report_cr)
+    if (.not. departures_reported .and. console_on(ch_m3d, 1)) then
+      do i=1, nprecomp
+        write(console_unit,'(A,A,A,A)') 'read departures for ', trim(keys(i)), ' from ', &
+          trim(save_folder)//'pop_'//trim(keys(i))
+      end do
+    end if
+    departures_reported = .true.
+    !$omp end critical (departures_report_cr)
 
     do i=1, nprecomp
       call self%load6('pop_'//trim(keys(i)), run_dir=run_dir, alloc=mem)
