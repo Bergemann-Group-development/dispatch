@@ -1038,6 +1038,11 @@ MODULE atom_mod
     integer :: nbf_col
     character(8) :: key, str1, str2, str3
     logical :: abort
+    integer :: nbound, worst_l, worst_u
+    real(8) :: tpow, drop, worst_drop
+    real(8), allocatable :: dlogt(:)
+    character(8) :: worst_key
+    real(8), parameter :: bound_tol = log(1.05d0)
     integer, save :: itimer=0
     character(len=256) :: msg
     !---------------------------------------------------------------------------------
@@ -1268,6 +1273,10 @@ MODULE atom_mod
 
       read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
 
+      allocate(dlogt(ntemp-1))
+      dlogt = log(self%tgrid(2:ntemp,1) / self%tgrid(1:ntemp-1,1))
+      nbound = 0
+      worst_drop = 0
       do i=1, ncol
         call nextentry(latom) 
         read(latom, *, iostat=iostat) idx, key, l, u, self%cgrid(1:ntemp,i)
@@ -1306,6 +1315,44 @@ MODULE atom_mod
           col%ul = u
 
           self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+
+          ! A Maxwellian rate coefficient is T^(-3/2) int sigma(E) E exp(-E/kT) dE from
+          ! the threshold on.  Measured from the threshold, every weight exp(-eps/kT)
+          ! grows with T and sigma >= 0, so Upsilon T (OHM), q T^2 (CE, CI, with
+          ! gencol's sqrt(T) and Boltzmann factors) and the downward hydrogen rate
+          ! times T^(3/2) (CH) cannot fall with T.  A record that falls faster carries
+          ! a wrong T dependence.  CHI and CH0 are upward rates, whose test would need
+          ! the threshold energy the data were computed with.
+          select case(trim(key))
+          case ('CE', 'CI')
+            tpow = 2
+          case ('CH')
+            tpow = 1.5d0
+          case ('OHM', 'OHMEGA')
+            tpow = 1
+          case default
+            tpow = 0
+          end select
+          if (tpow > 0) then
+            drop = 0
+            do j=1, ntemp-1
+              drop = max(drop, self%cgrid(j,i) - self%cgrid(j+1,i) - tpow*dlogt(j))
+            end do
+            if (drop > bound_tol) then
+              nbound = nbound + 1
+              if (console_on(ch_m3d, 2)) then
+                write(msg,'(a,1x,a,2(1x,i0),a,f0.3)') 'collision record', trim(key), l, u, &
+                  ' falls faster than the Maxwellian bound between nodes by a factor ', exp(drop)
+                call console_warn (ch_m3d, msg)
+              endif
+              if (drop > worst_drop) then
+                worst_drop = drop
+                worst_key = key
+                worst_l = l
+                worst_u = u
+              endif
+            endif
+          endif
           col%log = .true.
           
           ! set derivatives for 3rd order hermite interpolation
@@ -1330,6 +1377,13 @@ MODULE atom_mod
           end select
         end select
       end do
+      if (nbound > 0) then
+        write(msg,'(2a,i0,a,i0,3a,2(1x,i0),a,es9.2)') trim(self%id), ': ', nbound, ' of ', ncol, &
+          ' collision records fall faster with T than a Maxwellian average allows (by more', &
+          ' than 5% between nodes); worst ', trim(worst_key), worst_l, worst_u, ', by a factor ', &
+          exp(worst_drop)
+        call console_warn (ch_m3d, msg)
+      endif
     endif
     close(latom)
     if (abort) error stop 'abort in atom_mod%read_pandas'
