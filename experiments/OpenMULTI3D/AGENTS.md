@@ -81,7 +81,8 @@ The local `Makefile` uses `../../config/Makefile` from the parent Dispatch
 checkout. Check compiler and host settings before building. Consult
 `README_INSTALL.md` and `pyproject.toml` for setup, checking that their
 instructions fit the current environment. From this directory, use `make` to
-build, `python -m pytest tests/<relevant_test>.py` for selected tests and
+build, `python -m pytest tests/<relevant_test>.py` for selected tests, `ruff check .`
+for Python lint (rules in `pyproject.toml`) and
 `python -m TumultStudio` for the GUI (`bokeh serve --show TumultStudio` without its landing page). Numerical tests may require
 input data and compiled libraries.
 
