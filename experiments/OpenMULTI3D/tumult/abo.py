@@ -36,9 +36,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-TS_ROOT = '/mnt/beegfs/gemini/groups/bergemann/users/hoppe/TSFitPy/turbospectrum'
-ANSTEE_DAT = f'{TS_ROOT}/DATA/Anstee-1802-2014.dat'
-IRWIN_DAT = f'{TS_ROOT}/DATA/IRWIN_atoms_v07.3.dat'
+# The Anstee tables ship with the input data, which HOP reads too. The Irwin
+# ionisation energies come from a Turbospectrum checkout, named by TURBOSPECTRUM_PATH.
+ANSTEE_DAT = Path(__file__).resolve().parents[1] / 'input' / 'Anstee-1802-2014.dat'
+IRWIN_DAT = Path(os.environ.get('TURBOSPECTRUM_PATH', '')) / 'DATA' / 'IRWIN_atoms_v07.3.dat'
 
 # anstee.f matching tolerances and its cm^-1 -> eV conversion
 DLAM, DEV, CM_PER_EV = 0.05, 0.02, 8067.0
