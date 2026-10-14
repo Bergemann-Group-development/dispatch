@@ -1265,7 +1265,7 @@ MODULE atom_mod
       call os%allocate(self%cgrid, [ntemp, ncol],    label='atom%cgrid')
       call os%allocate(self%dcdt,  [ntemp, ncol],    label='atom%dcdt')
 
-      read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
+      read(dummy_string, *) str1, str2, str3, self%tgrid(:, 1)
 
       do i=1, ncol
         call nextentry(latom) 
