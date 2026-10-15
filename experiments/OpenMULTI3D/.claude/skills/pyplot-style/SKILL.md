@@ -48,6 +48,15 @@ it falls short:
 7. **Legends:** `handlelength=1.5`.
 8. **Suptitles:** `fontsize="medium"`, `fontweight="bold"`.
 9. **Output:** save as `.pdf`.
+10. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
+    regular weight, inside its top-left corner, row by row. The 8 pt offset clears the
+    style's inward 6 pt ticks:
+
+    ```python
+    for letter, ax in zip("abcdefghijkl", axes.flat):
+        ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(8, -8),
+                    textcoords="offset points", ha="left", va="top")
+    ```
 
 ```python
 import matplotlib.pyplot as plt
