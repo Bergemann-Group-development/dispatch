@@ -30,7 +30,7 @@ summary), then ``--write``, and give the reason in the commit message.
 import numpy as np
 import pytest
 
-from tests.native.hop_reference import (HOP_DLAM, HOP_LIB, HOP_LINELIST, HOP_VMIC,
+from tests.native.hop_reference import (HOP_DLAM, HOP_LIB, HOP_LINELIST, HOP_VMIC, PROJECT_DIR,
                                         hop_eos_reference, hop_grid, hop_opacity_reference,
                                         hop_wavelengths)
 from tests.support.golden import assert_matches_golden, load_golden
@@ -150,6 +150,22 @@ def test_reopen_after_close():
         with HopEOS(feh=0.0) as hop:
             seen.append(hop.load_state([5777.0], rho=[2.5e-7]).ne[0])
     assert seen[0] == seen[1]
+
+
+def test_legacy_absdat_with_occupation_weighted_eos():
+    """The legacy absdat gives H I four partition-function levels, fewer than the
+    hydrogenic levels the occupation-weighted EOS (mhd_eos, on by default) fills.
+
+    Filling them without resizing the array corrupts the heap and aborts the process.
+    """
+    from tumult.hop import HopEOS
+
+    inputs = PROJECT_DIR / "input"
+    with HopEOS(absdat_file=inputs / "absdat", abund_file=inputs / "abund" / "legacy_abund",
+                molec_file=inputs / "molec_data.txt") as hop:
+        hop.load_state(np.array([5000.0, 6000.0]), ne=np.array([1e13, 1e14]))
+        chi, _ = hop.opacity(np.array([2000.0, 6563.0]))
+    assert np.all(np.isfinite(chi)) and np.all(chi > 0)
 
 
 def test_option_errors_carry_the_librarys_message():
