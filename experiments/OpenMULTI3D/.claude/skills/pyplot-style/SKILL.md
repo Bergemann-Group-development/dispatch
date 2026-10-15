@@ -43,8 +43,9 @@ it falls short:
 5. **Markers:** pick the size with the marker (`","`, `"."`, `"o"`) instead of
    `markersize` or `s`. A scatter of 3D data with one point per spatial grid point uses
    `marker=","` and `rasterized=True`.
-6. **Logarithms:** an axis label of a logarithmic quantity says which one,
-   `$\log_{10}$` or `$\ln$`, never a bare `$\log$`.
+6. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
+   never a bare `$\log$`. The treatment a quantity belongs to is an upright subscript,
+   `$A_{\rm NLTE} - A_{\rm LTE}$` or `EW$_{\rm 3D\,NLTE}$`, not `A(NLTE)`.
 7. **Legends:** `handlelength=1.5`.
 8. **Suptitles:** `fontsize="medium"`, `fontweight="bold"`.
 9. **Output:** save as `.pdf`.
