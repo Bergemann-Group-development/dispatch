@@ -1218,8 +1218,9 @@ contains
     class(nlte_patch_t), target :: self
     type(atom_type) :: atom
     class(bftrans_type), pointer :: trans
-    integer :: i, lower, kc
-    logical :: ok
+    integer :: i, lower, kc, k
+    logical :: ok, same_species
+    real(8) :: exc
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
     do i=1, size(composition%trans)
@@ -1231,18 +1232,28 @@ contains
        case default
         ok = .false.
         if (trans%level%g > 0) then
-          if (uppercase(trans%ion%id(1:2)) == atom%id) then
+          ! the species is the part of the ion id before the ionisation stage ('Fe' of
+          ! 'Fe I'; a molecule id has none). Ids are compared without case, so the
+          ! atomic weight tells CO from Co.
+          k = index(trans%ion%id, ' ')
+          if (k == 0) k = len(trans%ion%id) + 1
+          same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
+                         abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
+          if (same_species) then
             if (trans%molecular) then
               ok = .true.
             else
               do kc=1, atom%ncont
                 if (.not. atom%trans%cont(kc)%active) cycle
                 lower = atom%trans%cont(kc)%i
-
-                if (atom%ev(lower)==0) then
-                  ok = trans%level%xion == atom%ev(lower)
+                if (atom%ion(lower) /= trans%ion%j) cycle
+                ! the table gives the excitation within its ion, atom%ev counts from
+                ! the neutral ground state
+                exc = atom%ev(lower) - minval(atom%ev, mask=atom%ion==atom%ion(lower))
+                if (exc == 0) then
+                  ok = trans%level%xion == 0
                 else
-                  ok = abs(trans%level%xion / atom%ev(lower) - 1) < 1d-2
+                  ok = abs(trans%level%xion / exc - 1) < 1d-2
                 endif
                 if (ok) exit
               end do
@@ -1252,7 +1263,6 @@ contains
               if (first_time) then
                 if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
               endif
-              exit
             endif
           endif
         endif
