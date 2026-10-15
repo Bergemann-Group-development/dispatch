@@ -25,10 +25,17 @@ it falls short:
    `tumult.plotting_scripts.get_plt()` resets matplotlib to its defaults and applies the
    same style on its first call. Call it before any `rcParams` change when the figure also
    uses tumult's plotting methods, otherwise their first call undoes the change.
-2. **Colours:** the default colour cycle, in its order. Lines that may overlap differ in
-   their dash style (`"-"`, `"--"`, `":"`, `"-."`) as well.
-3. **Reference values** (observations, `axhline`/`axvline` guides, zero lines) are
-   `color="lightgrey"`.
+2. **Colours** follow each dataset's role in the panel:
+   - a single dataset is `"black"`;
+   - datasets ranked by physical completeness: the most complete treatment (3D NLTE) is
+     `"black"`, the simplest (1D LTE) `"tomato"`, and an intermediate one (1D NLTE,
+     3D LTE) `"cornflowerblue"` or dashed black;
+   - datasets of equal standing, where the plot must not favour one result, take the
+     default colour cycle in its order.
+
+   Lines that may overlap differ in their dash style (`"-"`, `"--"`, `":"`, `"-."`) as well.
+3. **Reference values** are `color="lightgrey"`: a dataset that is fitted against, such
+   as observations, and guides such as `axhline`/`axvline` or zero lines.
 4. **Sizes:** the figure size sets the print size, and for LaTeX documents also the
    `\pltscale` the figure is included with. Change the font size where that is not enough.
    Leave tick and axis line sizes alone. Keep the standard `linewidth`; change it only as a
@@ -48,8 +55,8 @@ import matplotlib.pyplot as plt
 plt.style.use("tumult.Bergemann2020")
 fig, ax = plt.subplots()
 ax.plot(obs.x, obs.y, color="lightgrey", label="KPNO")
-ax.plot(lte.x, lte.y, label="LTE")
-ax.plot(nlte.x, nlte.y, "--", label="NLTE")
+ax.plot(lte.x, lte.y, "--", color="tomato", label="1D LTE")
+ax.plot(nlte.x, nlte.y, color="black", label="1D NLTE")
 ax.axhline(1.0, color="lightgrey")
 ax.set_ylabel(r"$\log_{10}\,(W/\lambda)$")
 ax.legend(handlelength=1.5)
