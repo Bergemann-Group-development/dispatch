@@ -47,7 +47,8 @@ it falls short:
    never a bare `$\log$`. The treatment a quantity belongs to is an upright subscript,
    `$A_{\rm NLTE} - A_{\rm LTE}$` or `EW$_{\rm 3D\,NLTE}$`, not `A(NLTE)`.
 7. **Legends:** `handlelength=1.5`.
-8. **Suptitles:** `fontsize="medium"`, `fontweight="bold"`.
+8. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
+   `math_fontfamily="custom"`, which sets their math in the style's bold math fonts.
 9. **Output:** save as `.pdf`.
 10. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
     regular weight, inside its top-left corner, row by row. The 8 pt offset clears the
@@ -70,7 +71,8 @@ ax.plot(nlte.x, nlte.y, color="black", label="1D NLTE")
 ax.axhline(1.0, color="lightgrey")
 ax.set_ylabel(r"$\log_{10}\,(W/\lambda)$")
 ax.legend(handlelength=1.5)
-fig.suptitle("Mg I 5711", fontsize="medium", fontweight="bold")
+fig.suptitle(r"Mg I $\lambda 5711$", fontsize="medium", fontweight="bold",
+             math_fontfamily="custom")
 fig.savefig(out / "mg5711.pdf")
 ```
 
