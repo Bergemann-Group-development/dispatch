@@ -1044,7 +1044,7 @@ MODULE atom_mod
     character(8) :: key, str1, str2, str3
     logical :: abort
     integer :: nbound, worst_l, worst_u
-    real(8) :: tpow, drop, worst_drop
+    real(8) :: tpow, drop, node_drop, worst_drop
     real(8), allocatable :: dlogt(:)
     character(8) :: worst_key
     real(8), parameter :: bound_tol = log(1.05d0)
@@ -1325,13 +1325,13 @@ MODULE atom_mod
           ! the threshold on.  Measured from the threshold, every weight exp(-eps/kT)
           ! grows with T and sigma >= 0, so Upsilon T (OHM), q T^2 (CE, CI, with
           ! gencol's sqrt(T) and Boltzmann factors) and the downward hydrogen rate
-          ! times T^(3/2) (CH) cannot fall with T.  A record that falls faster carries
-          ! a wrong T dependence.  CHI and CH0 are upward rates, whose test would need
-          ! the threshold energy the data were computed with.
+          ! times T^(3/2) (CH) cannot fall with T.  For CH0, use the unshifted kinetic
+          ! energy: q T^(3/2) cannot fall, without knowing the threshold.  When
+          ! ch0_hmip is set, q is the table value times exp(-0.754 eV/kT).
           select case(trim(key))
           case ('CE', 'CI')
             tpow = 2
-          case ('CH')
+          case ('CH', 'CH0')
             tpow = 1.5d0
           case ('OHM', 'OHMEGA')
             tpow = 1
@@ -1341,7 +1341,12 @@ MODULE atom_mod
           if (tpow > 0) then
             drop = 0
             do j=1, ntemp-1
-              drop = max(drop, self%cgrid(j,i) - self%cgrid(j+1,i) - tpow*dlogt(j))
+              node_drop = self%cgrid(j,i) - self%cgrid(j+1,i) - tpow*dlogt(j)
+              if (key == 'CH0' .and. ch0_hmip) then
+                node_drop = node_drop - 0.754d0*e_k * &
+                  (1/self%tgrid(j,1) - 1/self%tgrid(j+1,1))
+              endif
+              drop = max(drop, node_drop)
             end do
             if (drop > bound_tol) then
               nbound = nbound + 1
