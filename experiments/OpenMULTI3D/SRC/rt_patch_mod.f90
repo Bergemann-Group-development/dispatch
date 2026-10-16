@@ -2496,7 +2496,7 @@ contains
     real(4), dimension(:), allocatable :: vphi
     real(4) :: wmu, idf, vpr, a, ni, nj
     real(8) :: q
-    real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
+    real(4) :: lower_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, fs, fe
     logical :: LTE, do_LTE, get_wphi, sum_wphi
     integer, intent(in) :: i_set, iatom
@@ -2531,8 +2531,12 @@ contains
       fe = line%ired
       sum_wphi = get_wphi .and. sums_over_windows(self, line)
 
+      ! A line whose lower level lies lower_off above the atom's level i (a component
+      ! of a combined level) absorbs from that level's share exp(-lower_off/kT).  Both
+      ! terms of the line opacity take that share: the stimulated emission factor
+      ! beta(nu) already holds the line's own photon energy, so the line source
+      ! function is the Planck function in LTE, whatever the upper level's offset.
       lower_off = line%lower_ev - atom%ev(line%i)
-      upper_off = line%upper_ev - atom%ev(line%j)
 
       ! Adding bound-bound opacities
       do z=1, self%nz
@@ -2551,8 +2555,10 @@ contains
               bj = adata%b(x,y,z,line%j)
             endif
 
-            if (lower_off /= 0) bi = bi * exp(-lower_off*ekt)
-            if (upper_off /= 0) bj = bj * exp(-upper_off*ekt)
+            if (lower_off /= 0) then
+              bi = bi * exp(-lower_off*ekt)
+              bj = bj * exp(-lower_off*ekt)
+            endif
 
             associate(phi => vphi(fs:fe))
               if (line%hydrogen) then
@@ -2646,7 +2652,7 @@ contains
     real(4) :: g_th, g_dev
     real(8) :: beta_ref
     real(8) :: q
-    real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
+    real(4) :: lower_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
@@ -2712,8 +2718,8 @@ contains
       ! variation of the quadrature error between directions.
       own_norm = per_direction .and. .not. sums_over_windows(self, line)
       if (own_norm) wqf(fs:fe) = line%wq(fs:fe)
+      ! the lower-level share of add_bound_bound_opacities, for both levels
       lower_off = line%lower_ev - atom%ev(line%i)
-      upper_off = line%upper_ev - atom%ev(line%j)
 
       do z=1,self%nz
         do y=1,self%ny
@@ -2732,14 +2738,16 @@ contains
                        / (adata%nstar(x,y,z,line%i) * atom%g(line%j))
               inv_nref = real(min((1d0 - beta_ref)/beta_ref, 1d35), 4)
             endif
-            if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
-            if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
+            if (lower_off /= 0) then
+              ni = ni * exp(-lower_off*ekt)
+              nj = nj * exp(-lower_off*ekt)
+            endif
             if (preconditioning) then
               ! Same arithmetic, in the same order, as add_bound_bound_opacities:
               ! the split tracking can only take this line's emissivity back out
               ! of the local source term if it is the identical float.
               split_bj = adata%b(x,y,z,line%j)
-              if (upper_off /= 0) split_bj = split_bj * exp(-upper_off*ekt)
+              if (lower_off /= 0) split_bj = split_bj * exp(-lower_off*ekt)
               if (line%hydrogen .and. H_occupation_probability) &
                 split_bj = split_bj * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
               split_Rij = adata%nstar(x,y,z,line%i) * pop_ratio(x,y,z)
