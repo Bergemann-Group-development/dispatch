@@ -399,6 +399,13 @@ indefinitely.
 `'largest'` works with every iteration solver and needs no further settings. It holds
 six extra `real(4)` arrays and two `integer` arrays over the frequency and spatial grid.
 
+Each bound-bound rate is accumulated in two parts: the integral of the Planck occupation
+number over the profile, relative to its value at the level separation, and the deviation
+of the radiation field from it. The upward and downward rates are assembled from both in
+`real(8)`, so the thermal parts obey detailed balance exactly, also for a line whose
+wavelength differs from its level energies. In a radiation field equal to the Planck
+function (`fixed_Jnu=1`) the departures come out within `real(4)` rounding of 1.
+
 Do not read a plain lambda iteration (`preconditioning=F`) as a reference for this. It
 reports updates of 1e-5 while still tens of percent from the solution in the upper
 atmosphere, and creeps towards it over hundreds of thousands of iterations.

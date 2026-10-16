@@ -63,7 +63,10 @@ MODULE atom_mod
       real(8), dimension(:,:,:,:), allocatable :: b
       real(8), dimension(:,:,:,:,:), allocatable :: oldb
       ! radiative rates, summed over frequency windows and directions.  real(4)
-      ! suffices: each window's contribution is already a real(4) sum
+      ! suffices: each window's contribution is already a real(4) sum.  For a
+      ! continuum they are the rate coefficients R_ij and R_ji.  For a line they are
+      ! the thermal and deviation integrals of bound_bound_rates, from which
+      ! line_rate_coefficients forms R_ij and R_ji.
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
       real(4), dimension(:,:,:,:), allocatable :: gamma_ji
       ! Profile integral of the lines that a wavelength window edge cuts, summed
@@ -157,6 +160,8 @@ MODULE atom_mod
       procedure :: normalize_profiles
       procedure :: update_populations
       procedure :: setup_transition_matrix
+      procedure :: line_rate_coefficients
+      procedure :: rate_coefficients
       procedure :: collision_rates
       procedure :: write_rates
       procedure :: read_pandas
@@ -348,7 +353,6 @@ MODULE atom_mod
     integer, intent(in) :: iter
     real(8), dimension(:,:,:,:), pointer, contiguous :: nstar
     real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
-    real(8) :: gij
     integer :: i
     ! ----------------------------------------------------------------------------
     adata => self%data
@@ -371,15 +375,14 @@ MODULE atom_mod
       end do
     endif
 
+    ! the statistical weights of a line enter in line_rate_coefficients
     do i=1, self%nline
       line => self%trans%line(i)
       if (.not. line%active) cycle
-      gij = self%g(line%i) / self%g(line%j)
       if (allocated(adata%wphi(i)%w)) then
         gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * adata%wphi(i)%w
         gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * adata%wphi(i)%w
       endif
-      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
     end do
     
     do i=i, self%nrad
@@ -697,7 +700,7 @@ MODULE atom_mod
     class(transition_type), pointer :: trans
     real(8), dimension(:), pointer :: b, nstar
     real(4), dimension(:), pointer :: rij, rji
-    real(8) :: totn, e_kT, cut_rate
+    real(8) :: totn, e_kT, cut_rate, r_up, r_down
     integer :: kr, pos, i, j, x,y,z
     logical :: ok, db_here
     logical, save :: first_time=.true.
@@ -740,19 +743,25 @@ MODULE atom_mod
         self%data%w(j,i) = self%data%w(j,i) + cut_rate * nstar(j) / nstar(i)
         cycle
       endif
-      self%data%w(j,i) = self%data%w(j,i) + rij(kr)
-      self%data%w(i,j) = self%data%w(i,j) + rji(kr)
+      if (kr <= self%nline) then
+        call self%line_rate_coefficients(kr, nstar, rij(kr), rji(kr), r_up, r_down)
+      else
+        r_up = rij(kr)
+        r_down = rji(kr)
+      endif
+      self%data%w(j,i) = self%data%w(j,i) + r_up
+      self%data%w(i,j) = self%data%w(i,j) + r_down
       ! Detailed balance check: deep down the radiation field is Planckian, so the
       ! radiative rates alone have to satisfy n_i* R_ij = n_j* R_ji for every
       ! transition.  Any transition that fails this is out of LTE for a numerical
       ! reason, not a physical one.
       if (db_here) then
-        if (rji(kr) /= 0) then
+        if (r_down /= 0) then
           print '(A,F8.1,A,I6,A,L2,A,I4,A,I4,A,ES11.4,A,ES11.4,A,ES11.4)', &
             'DIAGDB T=', comp%temp(x,y,z), ' kr=', kr, ' cont=', kr>self%nline, &
             ' i=', i, ' j=', j, &
-            ' Rij=', rij(kr), ' Rji=', rji(kr), &
-            ' ratio=', nstar(i)*rij(kr)/(nstar(j)*rji(kr))
+            ' Rij=', r_up, ' Rji=', r_down, &
+            ' ratio=', nstar(i)*r_up/(nstar(j)*r_down)
         endif
       endif
     enddo
@@ -797,6 +806,64 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
+  ! Rate coefficients R_ij and R_ji [1/s] of line kr in one cell, from the thermal and
+  ! deviation integrals th and dev that bound_bound_rates stores (see there):
+  !   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
+  ! n_ref = beta_ref/(1-beta_ref) with beta_ref = n*_j g_i/(n*_i g_j), the Planck
+  ! occupation number at the level energy difference.  Forming them here in real(8)
+  ! puts the thermal parts in detailed balance, n*_i R_ij = n*_j R_ji, to real(8)
+  ! rounding, while th and dev stay real(4).
+  !====================================================================================
+  pure SUBROUTINE line_rate_coefficients (self, kr, nstar, th, dev, r_up, r_down)
+    class(atom_type), intent(in) :: self
+    integer, intent(in) :: kr
+    real(8), intent(in) :: nstar(:)
+    real(4), intent(in) :: th, dev
+    real(8), intent(out) :: r_up, r_down
+    real(8) :: beta_ref, g_ij
+    integer :: i, j
+    !------------------------------------------------------------------------------------
+    i = self%trans%line(kr)%i
+    j = self%trans%line(kr)%j
+    g_ij = self%g(i) / self%g(j)
+    if (nstar(i) > 0 .and. nstar(j) > 0) then
+      beta_ref = nstar(j) * g_ij / nstar(i)
+      r_up = th * (beta_ref/(1d0 - beta_ref)) + dev
+      r_down = g_ij * (th/(1d0 - beta_ref) + dev)
+    else
+      r_up = 0d0
+      r_down = 0d0
+    endif
+  END SUBROUTINE line_rate_coefficients
+
+  !====================================================================================
+  ! The rate coefficients of transition kr in every cell, in real(4), for output.
+  !====================================================================================
+  SUBROUTINE rate_coefficients (self, kr, rij, rji)
+    class(atom_type), intent(in) :: self
+    integer, intent(in) :: kr
+    real(4), dimension(:,:,:), intent(out) :: rij, rji
+    real(8) :: r_up, r_down
+    integer :: x, y, z
+    !------------------------------------------------------------------------------------
+    if (kr > self%nline) then
+      rij = self%data%gamma_ij(:,:,:,kr)
+      rji = self%data%gamma_ji(:,:,:,kr)
+      return
+    endif
+    do z=1, size(rij,3)
+      do y=1, size(rij,2)
+        do x=1, size(rij,1)
+          call self%line_rate_coefficients(kr, self%data%nstar(x,y,z,:), &
+            self%data%gamma_ij(x,y,z,kr), self%data%gamma_ji(x,y,z,kr), r_up, r_down)
+          rij(x,y,z) = real(r_up, 4)
+          rji(x,y,z) = real(r_down, 4)
+        end do
+      end do
+    end do
+  END SUBROUTINE rate_coefficients
+
+  !====================================================================================
   ! Collision rate coefficients of one cell into self%data%c, in the convention of the
   ! rate matrix: c(j,i) is the coefficient [1/s] from level i to level j.
   !====================================================================================
@@ -836,7 +903,7 @@ MODULE atom_mod
     class(composition_type) :: comp
     character(len=*), intent(in) :: rad_file, col_file
     integer, intent(in) :: iter
-    real(4), dimension(:,:,:,:), allocatable :: cup
+    real(4), dimension(:,:,:,:), allocatable :: cup, rij, rji
     integer :: m(3), nk, x, y, z, i, j, k, lunit
     !----------------------------------------------------------------------------------
     m = shape(self%data%totn)
@@ -846,8 +913,13 @@ MODULE atom_mod
     write(lunit) int(self%irad,4), int(self%jrad,4)
     write(lunit) self%data%b * self%data%nstar
     write(lunit) self%data%nstar
-    write(lunit) self%data%gamma_ij, self%data%gamma_ji
+    allocate(rij(m(1), m(2), m(3), self%nrad), rji(m(1), m(2), m(3), self%nrad))
+    do k=1, self%nrad
+      call self%rate_coefficients(k, rij(:,:,:,k), rji(:,:,:,k))
+    end do
+    write(lunit) rij, rji
     close(lunit)
+    deallocate(rij, rji)
 
     if (os%exists(trim(col_file))) return
     allocate(cup(m(1), m(2), m(3), nk*(nk-1)/2))

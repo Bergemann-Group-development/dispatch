@@ -183,6 +183,9 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: chi_cont  ! continuum extinction, total
     real(4), dimension(:,:,:,:), allocatable :: sigma     ! coherent-scattering part of chi_cont (<= it)
     real(4), dimension(:,:,:,:), allocatable :: beta      ! LTE Boltzmann factor exp(-h*nu/kT)
+    ! Planck occupation number beta/(1-beta), the thermal reference of the
+    ! bound-bound rate integrals; allocated where this patch computes them
+    real(4), dimension(:,:,:,:), allocatable :: nbnu
     real(4), dimension(:,:,:,:), allocatable :: xhat      ! working extinction (see above)
     real(4), dimension(:,:,:,:), allocatable :: ehat      ! emissivity / working source (see above)
     ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
@@ -464,6 +467,8 @@ contains
     enddo
     ! split_opac(2), split_id, split_chi(2), split_chi_id, Irem and escape
     if (rate_formulation == 'largest' .and. rates) work = work + 8*field
+    ! nbnu
+    if (rates .and. shape%bound_bound) work = work + field
     if (line_scattering) work = work + 4*field
     ! the do_scat_precond and compute_psi tests of execute
     scat_ali = scattering_preconditioning .and. .not. shape%do_final &
@@ -961,6 +966,10 @@ contains
       allocate(self%xhat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%ehat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%work(fs:fe,self%nx,self%ny,zs:ze,3), source=0.)
+      if (self%bound_bound .and. any(self%get_rates)) then
+        allocate(self%nbnu(fs:fe,self%nx,self%ny,self%nz), source=0.)
+        call mem_register(self%nbnu, label='self%nbnu')
+      endif
       if (self%split_rates) then
         allocate(self%split_opac(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
         allocate(self%split_id(fs:fe,self%nx,self%ny,self%nz), source=0)
@@ -1062,6 +1071,10 @@ contains
                    self%split_offset, self%Irem, self%escape)
       endif
       call mem_unregister(self%work     , label='self%work')
+      if (allocated(self%nbnu)) then
+        call mem_unregister(self%nbnu, label='self%nbnu')
+        deallocate(self%nbnu)
+      endif
       call mem_unregister(self%chi_cont , label='self%chi_cont')
       call mem_unregister(self%sigma    , label='self%sigma')
       call mem_unregister(self%beta     , label='self%beta')
@@ -1817,6 +1830,13 @@ contains
             ! eta/beta; a hard zero here produces Inf/NaN (see convert_to_work_units).
             self%beta(f,x,y,z) = max(exp(-hv_kT), tiny(1.0))
           end do
+          ! the form set_fixed_Jnu gives Jnu=Bnu, so that a Planck field leaves
+          ! exactly zero in the deviation integrals of bound_bound_rates
+          if (allocated(self%nbnu)) then
+            do f=fs, fe
+              self%nbnu(f,x,y,z) = self%beta(f,x,y,z) / (1 - self%beta(f,x,y,z))
+            end do
+          endif
         end do
       end do
     end do
@@ -2622,8 +2642,9 @@ contains
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: wmunu, vph
     real(4) :: wmu, idf, vpr, a, ni, nj, phi
-    real(4) :: vvv, sum_I, sum_P, sum_A
-    real(4) :: g_ij, g_ji
+    real(4) :: vvv, sum_I, sum_P, sum_A, sum_T, sum_U, nb, inv_nref
+    real(4) :: g_th, g_dev
+    real(8) :: beta_ref
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
@@ -2638,6 +2659,25 @@ contains
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
+    ! Each line stores two integrals per cell instead of the rates themselves:
+    !
+    !   th  = A int phi * spont * nbnu/n_ref          (thermal part)
+    !   dev = A int phi * (up - nbnu*spont)           (deviation from it)
+    !
+    ! with up and spont the (preconditioned) absorption and spontaneous integrands
+    ! and n_ref = beta_ref/(1-beta_ref) the Planck occupation number at the level
+    ! energy difference, beta_ref = n*_j g_i/(n*_i g_j).  line_rate_coefficients
+    ! (atom_mod) forms the rates from them in real(8):
+    !
+    !   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
+    !
+    ! The thermal parts are then in detailed balance to real(8) rounding, n*_i R_ij
+    ! = n*_j R_ji for J = Bnu, whatever the profile, the frequency quadrature, the
+    ! line's own nu0 and the real(4) rounding of th.  (n_ref+1)*nbnu/n_ref equals
+    ! (nbnu+1)*beta/beta_ref, so the downward thermal part carries the
+    ! exp(-h(nu-nu0)/kT) of the emissivity add_bound_bound_opacities uses; the
+    ! deviation part is taken with the absorption profile in both directions.
+    ! For J = Bnu without preconditioning (fixed_Jnu), dev is exactly zero.
     split_rates = self%split_rates
     do_scat = self%do_line_scat
     ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
@@ -2684,6 +2724,14 @@ contains
             vpr = vproj(x,y,z)
             a = trans%adamp(x,y,z,i)
             ekt = comp%e_kT(x,y,z)
+            ! 1/n_ref, held below the real(4) range: it only reaches the bound in
+            ! cells far beyond radiative_cut, whose rates the matrix does not use
+            inv_nref = 0.0
+            if (adata%nstar(x,y,z,line%i) > 0 .and. adata%nstar(x,y,z,line%j) > 0) then
+              beta_ref = adata%nstar(x,y,z,line%j) * atom%g(line%i) &
+                       / (adata%nstar(x,y,z,line%i) * atom%g(line%j))
+              inv_nref = real(min((1d0 - beta_ref)/beta_ref, 1d35), 4)
+            endif
             if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
             if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
             if (preconditioning) then
@@ -2702,8 +2750,9 @@ contains
               if (line%hydrogen .and. H_occupation_probability) &
                 split_bi = split_bi * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
               abs_coef = split_Rij * split_bi
-              ! normalize_profiles scales g_ji by g_i/g_j, so this ratio is what makes
-              ! the two corrections cancel in the net rate at the old populations.
+              ! line_rate_coefficients scales the downward integral by g_i/g_j, so this
+              ! ratio is what makes the two corrections cancel in the net rate at the
+              ! old populations.
               g_ratio = 0.0
               if (nj > 0.0) g_ratio = (ni/nj) * (atom%g(line%j)/atom%g(line%i))
             endif
@@ -2711,6 +2760,8 @@ contains
             sum_A = 0.0
             sum_I = 0.0
             sum_P = 0.0
+            sum_T = 0.0
+            sum_U = 0.0
             sum_w = 0.0
             ! One f-loop per rate formulation and profile kind, so that none
             ! carries the rate_formulation branch.
@@ -2728,7 +2779,7 @@ contains
                     q = line%q(f) - vpr
                     phi = hprofile(hline, hcell, q)
                     vvv = phi * wmunu(f)
-                    sum_A = sum_A + vvv
+                    sum_A = sum_A + vvv * (self%nbnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2743,7 +2794,7 @@ contains
                     phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                     vvv = phi * wmunu(f)
                     if (own_norm) sum_w = sum_w + phi * wqf(f)
-                    sum_A = sum_A + vvv
+                    sum_A = sum_A + vvv * (self%nbnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2782,34 +2833,48 @@ contains
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
                 vvv = vph(f) * wmunu(f)
-                sum_I = sum_I + vvv*up
-                sum_A = sum_A + vvv*spont
+                nb = self%nbnu(f,x,y,z)
+                sum_T = sum_T + vvv*spont*(nb*inv_nref)
+                sum_U = sum_U + vvv*(up - nb*spont)
               end do
             else if (split_rates) then
               do f=fs, fe
                 vvv = vph(f) * wmunu(f)
-                sum_I = sum_I + vvv*self%work(f,x,y,z,3)
-                sum_A = sum_A + vvv
+                nb = self%nbnu(f,x,y,z)
+                sum_T = sum_T + vvv*(nb*inv_nref)
+                sum_U = sum_U + vvv*(self%work(f,x,y,z,3) - nb)
               end do
             endif
 
-            g_ij = sum_I
-            g_ji = sum_I + sum_A
-            if (preconditioning .and. .not. split_rates) then
-              g_ij = g_ij - sum_P * eta_coef
-              g_ji = g_ji - sum_P * eta_coef * g_ratio
+            if (split_rates) then
+              g_th = sum_T
+              g_dev = sum_U
+            else
+              ! The 'original' formulation keeps its own sums, with the
+              ! preconditioning corrections that cancel in the net rate at the old
+              ! populations; its upward and downward integrals, sum_I - sum_P*eta_coef
+              ! and sum_I + sum_A - sum_P*eta_coef*g_ratio, are split into th and dev
+              ! after the fact, so its rates keep the real(4) rounding of a
+              ! difference.
+              g_th = sum_A
+              g_dev = sum_I
+              if (preconditioning) then
+                g_th = g_th - sum_P * eta_coef * (g_ratio - 1.0)
+                g_dev = g_dev - sum_P * eta_coef
+              endif
+              if (inv_nref > 0.0) g_dev = g_dev - g_th/inv_nref
             endif
             if (own_norm) then
               if (split_rates) sum_w = sum(vph(fs:fe) * wqf(fs:fe))
               ! lines below the strength cutoff have no profile weight and no rate
               if (sum_w > 0.0) then
-                g_ij = g_ij / (sum_w * wtot)
-                g_ji = g_ji / (sum_w * wtot)
+                g_th = g_th / (sum_w * wtot)
+                g_dev = g_dev / (sum_w * wtot)
               endif
             endif
 
-            trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
-            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+            trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_th
+            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_dev
           end do
         end do
       end do
