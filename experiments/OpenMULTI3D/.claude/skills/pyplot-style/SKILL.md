@@ -5,19 +5,7 @@ description: House style for matplotlib figures in OpenMULTI3D (notebooks, analy
 
 # Matplotlib figures
 
-## Reuse first
-
-Look for a plotting function made for the purpose before writing one, and extend it where
-it falls short:
-
-- `tumult.Run`: `plot_depart`, `plot_resolved`, `plot_cog_corr`, `plot_line_labels`,
-  `plot_line_stem`, `plot_cntrbf`, `plot_cntrbf_map`
-- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_mean`, `plot_ltau_cube`,
-  `plot_geo_cube`, `plot_ltau_hist`, the transition's `plot_clv` and `plot_resolved`,
-  the atom's `plot_grotrian`
-- `tumult/plotting_scripts.py`: `comparison_scatter`, `scatter_density`, `quickplot`,
-  `plot_line_annotations`, `plot_arrow`
-- `docs/manual/figs/science_case.py` for the manual's figures
+For reading tumult output and the existing plotting functions, see the `tumult-plots` skill.
 
 ## Rules
 
