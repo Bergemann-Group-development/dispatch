@@ -173,7 +173,8 @@ MODULE rt_patch_mod
     ! Direction-independent background, per (f,x,y,z), rebuilt once per i_set in
     ! background().  Filled in this order:
     !   lte_background_opacities  chi_cont, sigma  (from the table or comp%opacity)
-    !                             beta = exp(-h*nu/kT), clamped off zero
+    !                             beta = exp(-h*nu/kT), clamped off zero, and
+    !                             Bnu = beta/(1-beta)
     !   lte_background_emission   ehat = chi_cont*Bnu + sigma*(Jnu - Bnu)   [= eta]
     !   convert_to_work_units     xhat = chi_cont + ehat, then ehat -> ehat/beta
     !   add_bound_free_opacities  accumulates into xhat and ehat
@@ -183,9 +184,7 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: chi_cont  ! continuum extinction, total
     real(4), dimension(:,:,:,:), allocatable :: sigma     ! coherent-scattering part of chi_cont (<= it)
     real(4), dimension(:,:,:,:), allocatable :: beta      ! LTE Boltzmann factor exp(-h*nu/kT)
-    ! Planck occupation number beta/(1-beta), the thermal reference of the
-    ! bound-bound rate integrals; allocated where this patch computes them
-    real(4), dimension(:,:,:,:), allocatable :: nbnu
+    real(4), dimension(:,:,:,:), allocatable :: Bnu       ! Planck function in transfer units, beta/(1-beta)
     real(4), dimension(:,:,:,:), allocatable :: xhat      ! working extinction (see above)
     real(4), dimension(:,:,:,:), allocatable :: ehat      ! emissivity / working source (see above)
     ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
@@ -449,7 +448,8 @@ contains
     cell = word*product(real(n,8))
     field = cell*shape%nf
     sets = field*shape%n_set
-    work = 5*field + 3*word*shape%nf*n(1)*n(2)*(real(n(3),8)+2*ng(3))
+    ! chi_cont, sigma, beta, Bnu, xhat, ehat, and work(...,1:3) with its ghost zones
+    work = 6*field + 3*word*shape%nf*n(1)*n(2)*(real(n(3),8)+2*ng(3))
     retained = 0.d0
     boundary = 3*word*shape%nf*n(1)*n(2)*shape%n_mu*shape%n_set
     ! u_phase, allocated by patch_t%init when the patch first executes
@@ -467,8 +467,6 @@ contains
     enddo
     ! split_opac(2), split_id, split_chi(2), split_chi_id, Irem and escape
     if (rate_formulation == 'largest' .and. rates) work = work + 8*field
-    ! nbnu
-    if (rates .and. shape%bound_bound) work = work + field
     if (line_scattering) work = work + 4*field
     ! the do_scat_precond and compute_psi tests of execute
     scat_ali = scattering_preconditioning .and. .not. shape%do_final &
@@ -963,13 +961,10 @@ contains
       allocate(self%chi_cont(fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%sigma   (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%beta    (fs:fe,self%nx,self%ny,self%nz), source=0.)
+      allocate(self%Bnu     (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%xhat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%ehat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%work(fs:fe,self%nx,self%ny,zs:ze,3), source=0.)
-      if (self%bound_bound .and. any(self%get_rates)) then
-        allocate(self%nbnu(fs:fe,self%nx,self%ny,self%nz), source=0.)
-        call mem_register(self%nbnu, label='self%nbnu')
-      endif
       if (self%split_rates) then
         allocate(self%split_opac(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
         allocate(self%split_id(fs:fe,self%nx,self%ny,self%nz), source=0)
@@ -994,6 +989,7 @@ contains
       call mem_register(self%chi_cont,  label='self%chi_cont')
       call mem_register(self%sigma,     label='self%sigma')
       call mem_register(self%beta,      label='self%beta')
+      call mem_register(self%Bnu,       label='self%Bnu')
       call mem_register(self%xhat,      label='self%xhat')
       call mem_register(self%ehat,      label='self%ehat')
       call mem_register(self%work,      label='self%work')
@@ -1071,17 +1067,14 @@ contains
                    self%split_offset, self%Irem, self%escape)
       endif
       call mem_unregister(self%work     , label='self%work')
-      if (allocated(self%nbnu)) then
-        call mem_unregister(self%nbnu, label='self%nbnu')
-        deallocate(self%nbnu)
-      endif
       call mem_unregister(self%chi_cont , label='self%chi_cont')
       call mem_unregister(self%sigma    , label='self%sigma')
       call mem_unregister(self%beta     , label='self%beta')
+      call mem_unregister(self%Bnu      , label='self%Bnu')
       call mem_unregister(self%xhat     , label='self%xhat')
       call mem_unregister(self%ehat     , label='self%ehat')
       deallocate(self%work)
-      deallocate(self%chi_cont, self%sigma, self%beta, self%xhat, self%ehat)
+      deallocate(self%chi_cont, self%sigma, self%beta, self%Bnu, self%xhat, self%ehat)
       deallocate(self%twohnu3_c2)
       do i=1, self%natom
         trans => self%trans(i)
@@ -1829,14 +1822,11 @@ contains
             ! stay finite where beta would underflow, and downstream code forms
             ! eta/beta; a hard zero here produces Inf/NaN (see convert_to_work_units).
             self%beta(f,x,y,z) = max(exp(-hv_kT), tiny(1.0))
+            ! every use of the Planck function in transfer units reads this one
+            ! float, so that J = Bnu (initial_Jnu, fixed_Jnu) leaves exactly zero
+            ! in J - Bnu and in the deviation integrals of bound_bound_rates
+            self%Bnu(f,x,y,z) = self%beta(f,x,y,z) / (1 - self%beta(f,x,y,z))
           end do
-          ! the form set_fixed_Jnu gives Jnu=Bnu, so that a Planck field leaves
-          ! exactly zero in the deviation integrals of bound_bound_rates
-          if (allocated(self%nbnu)) then
-            do f=fs, fe
-              self%nbnu(f,x,y,z) = self%beta(f,x,y,z) / (1 - self%beta(f,x,y,z))
-            end do
-          endif
         end do
       end do
     end do
@@ -1948,7 +1938,7 @@ contains
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
-    real(4) :: Bnu, wscat
+    real(4) :: wscat
     character(8) :: Jnu_label
     logical :: Jnu_to_Bnu, do_scat_now
     integer :: fs, fe
@@ -2126,9 +2116,8 @@ contains
         do x=1, self%nx
           do f=fs, fe
             associate(Jnu=>self%Jnu(f,x,y,z,i_set), chi=>self%chi_cont(f,x,y,z), &
-                      eta=>self%ehat(f,x,y,z), beta=>self%beta(f,x,y,z), &
+                      eta=>self%ehat(f,x,y,z), Bnu=>self%Bnu(f,x,y,z), &
                       sigma=>self%sigma(f,x,y,z))
-              Bnu = beta / (1 - beta)
               if (Jnu_to_Bnu) then
                 Jnu = Bnu
               endif
@@ -2667,11 +2656,12 @@ contains
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     ! Each line stores two integrals per cell instead of the rates themselves:
     !
-    !   th  = A int phi * spont * nbnu/n_ref          (thermal part)
-    !   dev = A int phi * (up - nbnu*spont)           (deviation from it)
+    !   th  = A int phi * spont * Bnu/n_ref          (thermal part)
+    !   dev = A int phi * (up - Bnu*spont)           (deviation from it)
     !
-    ! with up and spont the (preconditioned) absorption and spontaneous integrands
-    ! and n_ref = beta_ref/(1-beta_ref) the Planck occupation number at the level
+    ! with up and spont the (preconditioned) absorption and spontaneous integrands,
+    ! Bnu = beta/(1-beta) the Planck occupation number at each frequency, and
+    ! n_ref = beta_ref/(1-beta_ref) the Planck occupation number at the level
     ! energy difference, beta_ref = n*_j g_i/(n*_i g_j).  line_rate_coefficients
     ! (atom_mod) forms the rates from them in real(8):
     !
@@ -2679,8 +2669,8 @@ contains
     !
     ! The thermal parts are then in detailed balance to real(8) rounding, n*_i R_ij
     ! = n*_j R_ji for J = Bnu, whatever the profile, the frequency quadrature, the
-    ! line's own nu0 and the real(4) rounding of th.  (n_ref+1)*nbnu/n_ref equals
-    ! (nbnu+1)*beta/beta_ref, so the downward thermal part carries the
+    ! line's own nu0 and the real(4) rounding of th.  (n_ref+1)*Bnu/n_ref equals
+    ! (Bnu+1)*beta/beta_ref, so the downward thermal part carries the
     ! exp(-h(nu-nu0)/kT) of the emissivity add_bound_bound_opacities uses; the
     ! deviation part is taken with the absorption profile in both directions.
     ! For J = Bnu without preconditioning (fixed_Jnu), dev is exactly zero.
@@ -2787,7 +2777,7 @@ contains
                     q = line%q(f) - vpr
                     phi = hprofile(hline, hcell, q)
                     vvv = phi * wmunu(f)
-                    sum_A = sum_A + vvv * (self%nbnu(f,x,y,z)*inv_nref)
+                    sum_A = sum_A + vvv * (self%Bnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2802,7 +2792,7 @@ contains
                     phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                     vvv = phi * wmunu(f)
                     if (own_norm) sum_w = sum_w + phi * wqf(f)
-                    sum_A = sum_A + vvv * (self%nbnu(f,x,y,z)*inv_nref)
+                    sum_A = sum_A + vvv * (self%Bnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2841,14 +2831,14 @@ contains
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
                 vvv = vph(f) * wmunu(f)
-                nb = self%nbnu(f,x,y,z)
+                nb = self%Bnu(f,x,y,z)
                 sum_T = sum_T + vvv*spont*(nb*inv_nref)
                 sum_U = sum_U + vvv*(up - nb*spont)
               end do
             else if (split_rates) then
               do f=fs, fe
                 vvv = vph(f) * wmunu(f)
-                nb = self%nbnu(f,x,y,z)
+                nb = self%Bnu(f,x,y,z)
                 sum_T = sum_T + vvv*(nb*inv_nref)
                 sum_U = sum_U + vvv*(self%work(f,x,y,z,3) - nb)
               end do
@@ -3381,7 +3371,6 @@ contains
   !===============================================================================
   SUBROUTINE set_fixed_Jnu (self)
     class(rt_patch_t) :: self
-    real(4) :: Bnu
     integer :: i, j
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -3391,8 +3380,7 @@ contains
       do y=1, self%ny
         do x=1, self%nx
           do f=self%fs, self%fe
-            associate(beta=>self%beta(f,x,y,z), Inu=>self%work(f,x,y,z,3))
-              Bnu = beta / (1 - beta)
+            associate(Bnu=>self%Bnu(f,x,y,z), Inu=>self%work(f,x,y,z,3))
               Inu = fixed_Jnu * Bnu
             end associate
           end do
