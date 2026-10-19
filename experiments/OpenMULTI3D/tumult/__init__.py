@@ -19,6 +19,7 @@ Public entry points by domain:
 - physics helpers:   vac2air, air2vac, planck, voigt_function
 - in-process EOS:    HopEOS (load_state / opacity), logstep, wavelength_grid
                      (ctypes interface to libhop.so)
+- plotting:          IDL_DASHES (IDL's LINESTYLE 0-5 as matplotlib dash tuples)
 - constants:         the `const` submodule (frozen CGS; see its docstring)
 """
 from . import const
@@ -39,6 +40,7 @@ from .abundance import (cog_invert, aggregate, aggregate_unweighted, reduced_ew,
 from .profile import Profile, profile_names, get_profile_class
 from .convolutions import (convolve, combined_kernel, rot_kernel, gauss_kernel,
                            macro_kernel, convert_res_to_vdop)
+from .plotting_scripts import IDL_DASHES
 from .physics import vac2air, air2vac, planck, voigt_function
 from .hop import HopEOS, HopError, logstep, wavelength_grid
 from .atom import Atom, read_atom
@@ -80,5 +82,5 @@ __all__ = [
     "ensure_unit", "pchip_mono", "lowpass", "linear_edge_normalisation",
     "auto_crop_core", "get_bisector", "calc_teff", "apply_brault_filter",
     "kpno_spectral_filter", "const", "Atom", "read_atom",
-    "HopEOS", "HopError", "logstep", "wavelength_grid",
+    "HopEOS", "HopError", "logstep", "wavelength_grid", "IDL_DASHES",
 ]
