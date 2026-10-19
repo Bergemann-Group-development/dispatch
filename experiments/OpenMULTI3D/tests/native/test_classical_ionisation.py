@@ -2,7 +2,7 @@
 
 The tabulated ionisation rates of the public model atoms all lead from a level to the
 upper level of its continuum, and so do DETAIL's generated ones. The classical recipes
-(``classic_ci``, ``classic_chi``) follow them: with the recipes on, a pair of levels
+(``e_ionisation``, ``h_ionisation``) follow them: with the recipes on, a pair of levels
 without tabulated rates is coupled by ionisation exactly when the upper level ends the
 lower level's continuum. ``o41f`` has excited O II levels and a continuum that ends in
 one of them (2p3 2D), so both kinds of continuum are covered.
@@ -42,7 +42,8 @@ def test_classical_ionisation_leads_to_the_continuum_upper_level(tmp_path):
     (work / 'r.nml').write_text(f"""
 &io_params datadir='data' do_trace=F /
 &atmos_params atmos_format='marcs' atmos_file='{MARCS}' /
-&atom_params atom_file='{ATOM}' classic_ce=T classic_ci=T classic_ch=T classic_chi=T /
+&atom_params atom_file='{ATOM}' e_excitation='regemorter'
+    e_ionisation='seaton' h_excitation='drawin' h_ionisation='drawin' /
 &nlte_params convlim=1d-3 /
 &rt_iteration_params maxiter=1 /
 &rt_output_params maxiter=0 /

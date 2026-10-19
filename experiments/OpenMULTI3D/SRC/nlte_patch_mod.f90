@@ -14,7 +14,7 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
-    classic_ce, classic_ci, classic_ch, classic_chi, upsilon_floor, &
+    e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden, upsilon_floor, &
     ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w, line_grid_file
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
@@ -157,7 +157,7 @@ contains
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
-      classic_ce, classic_ci, classic_ch, classic_chi, upsilon_floor, &
+      e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden, upsilon_floor, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
       disable_bf, disable_bb, fmin, &
@@ -178,6 +178,11 @@ contains
         read (io%input, atom_params)
       end if
       call io%namelist_warning ('atom_params', iostat)
+      call check_recipe('e_excitation', e_excitation, 'regemorter')
+      call check_recipe('e_ionisation', e_ionisation, 'seaton')
+      call check_recipe('h_excitation', h_excitation, 'drawin')
+      call check_recipe('h_ionisation', h_ionisation, 'drawin')
+      call check_recipe('h_forbidden', h_forbidden, 'takeda')
 
       line_list_precedence = output_from_line_list .and. output_grid_and_list
 
@@ -380,6 +385,18 @@ contains
     self%natom = natom
     call trace%end(itimer)
   END SUBROUTINE pre_init_atom
+
+  !===============================================================================
+  ! A classical-recipe switch of &atom_params is off ('') or names its recipe.
+  !===============================================================================
+  SUBROUTINE check_recipe (key, value, recipe)
+    character(len=*), intent(in) :: key, value, recipe
+    !-----------------------------------------------------------------------------
+    if (value == '' .or. value == recipe) return
+    call console_error('&atom_params '//key//"='"//trim(value)//"': the recipe is '"// &
+      recipe//"', or '' for none")
+    error stop 'check_recipe'
+  END SUBROUTINE check_recipe
 
   !===============================================================================
   SUBROUTINE pre_init_spectrum (self, output_sp)
