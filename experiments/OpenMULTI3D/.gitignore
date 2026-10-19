@@ -93,6 +93,7 @@ benchmarks/*
 
 # Example namelists are source.
 !examples/
+!examples/*.nml
 
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml
