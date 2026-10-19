@@ -9,7 +9,8 @@ on surfaces of a reference variable:
 - ``'tau500'``: log tau at 500 nm, the surface of the Stagger <3D> models;
 - ``'tauross'``: log tau of an approximate Rosseland mean, the harmonic mean of the
   continuum extinction at a handful of wavelengths (``ROSS_LAM``, 0.3-2 micron) weighted
-  by dB_lambda/dT;
+  by dB_lambda/dT, computed only when :func:`columns` is asked for it (it costs eight
+  opacity interpolations per cell, against one for tau_500);
 - ``'lpe'``: log electron pressure.
 
 The recipes (``RECIPES``) average T, rho and P_e geometrically (``'geo'``), take
@@ -148,7 +149,7 @@ class Columns:
     vy: np.ndarray
     vz: np.ndarray
     ltau500: np.ndarray
-    ltauross: np.ndarray
+    ltauross: np.ndarray | None = None
 
     @property
     def lpe(self):
@@ -156,13 +157,16 @@ class Columns:
 
     @classmethod
     def concatenate(cls, parts):
-        return cls(**{k: np.concatenate([getattr(p, k) for p in parts])
-                      for k in cls.__dataclass_fields__})
+        def join(k):
+            arrays = [getattr(p, k) for p in parts]
+            return None if any(a is None for a in arrays) else np.concatenate(arrays)
+        return cls(**{k: join(k) for k in cls.__dataclass_fields__})
 
 
-def columns(atm, table):
-    """One snapshot (AtmosphereFile) as Columns, with tau_500 and tau_Ross from
-    ``table``.  The ghost zones are dropped and the top found by the density."""
+def columns(atm, table, tauross=False):
+    """One snapshot (AtmosphereFile) as Columns, with tau_500 from ``table`` and, if
+    ``tauross``, tau_Ross.  The ghost zones are dropped and the top found by the
+    density."""
     sl = slice(atm.gz, atm.shape[2] - atm.gz)
     ltemp = atm.ltemp[..., sl].astype(float)
     lrho = atm.lrho[..., sl].astype(float)
@@ -178,9 +182,11 @@ def columns(atm, table):
     flat = lambda a: a.reshape(n, -1)                     # noqa: E731
     ltemp, lrho, lpe = flat(ltemp), flat(lrho), flat(lpe)
     tau500 = optical_depth(table.chi500(ltemp, lrho), lrho, height)
-    tauross = optical_depth(table.chi_ross(ltemp, lrho), lrho, height)
+    ltauross = None
+    if tauross:
+        ltauross = np.log10(optical_depth(table.chi_ross(ltemp, lrho), lrho, height))
     return Columns(np.exp(ltemp), np.exp(lrho), np.exp(lpe), np.broadcast_to(height, ltemp.shape),
-                   *map(flat, v), np.log10(tau500), np.log10(tauross))
+                   *map(flat, v), np.log10(tau500), ltauross)
 
 
 def _on_surfaces(cols, x, newx, top='isothermal'):
@@ -234,6 +240,8 @@ def _on_surfaces(cols, x, newx, top='isothermal'):
 def surface_coordinate(cols, surface):
     """The per-column coordinate of a surface family, made monotonic downward (a
     running maximum from the top, which only matters for P_e near the top)."""
+    if surface == 'tauross' and cols.ltauross is None:
+        raise ValueError('these columns have no tau_Ross; build them with columns(..., tauross=True)')
     x = {'tau500': cols.ltau500, 'tauross': cols.ltauross, 'lpe': cols.lpe}[surface]
     return np.maximum.accumulate(x, axis=-1)
 
