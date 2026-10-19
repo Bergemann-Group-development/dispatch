@@ -9,7 +9,7 @@ pass are switched off, so the iteration table shows the plain preconditioned ite
 |---|---|
 | `mdw` | p4000 g4.5 [Fe/H]=0 |
 | `sun` | p5777 g4.4 [Fe/H]=0 |
-| `tos` | p6250 g3.5 [Fe/H]=-5 |
+| `tos` | p6500 g4.0 [Fe/H]=-3 |
 | `rsg` | s4000 g1.0 [Fe/H]=0, 15 solar masses |
 | `rgb` | s5000 g2.0 [Fe/H]=-3 |
 
@@ -37,21 +37,21 @@ wanders at a fixed change has a precision floor rather than slow convergence.
 
 ## Reference behaviour
 
-Branch `rt-column-tasks`, 30 September 2026, 4 threads, Apple M1 on AC power. The changes
-of the last iterations are all below 0.005%.
+`main` at 632b5c811, 19 October 2026, 4 threads, Apple M1 on AC power. The changes of the
+last iterations are all below 0.005%.
 
 | Namelist | Iterations to 1e-5 | Wall time |
 |---|---|---|
-| `mg86g_mdw` | 37 | 2 s |
-| `mg86g_sun` | 52 | 3 s |
-| `mg86g_tos` | 69 | 4 s |
-| `mg86g_rsg` | 79 | 5 s |
-| `mg86g_rgb` | 45 | 3 s |
-| `h20_mdw` | 9 | 6 s |
-| `h20_sun` | 36 | 22 s |
-| `h20_tos` | 44 | 27 s |
-| `h20_rsg` | 16 | 10 s |
-| `h20_rgb` | 57 | 28 s |
+| `mg86g_mdw` | 37 | 1 s |
+| `mg86g_sun` | 52 | 1 s |
+| `mg86g_tos` | 111 | 3 s |
+| `mg86g_rsg` | 79 | 2 s |
+| `mg86g_rgb` | 45 | 1 s |
+| `h20_mdw` | 9 | 4 s |
+| `h20_sun` | 36 | 12 s |
+| `h20_tos` | 42 | 14 s |
+| `h20_rsg` | 16 | 6 s |
+| `h20_rgb` | 57 | 18 s |
 
 `mg86g_rsg` is the sensitive case. The core of the Mg I 2852 A resonance line in its
 outer layers is so thick that its escape probability is close to the fp32 rounding of
