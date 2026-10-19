@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import RectBivariateSpline
+from numba import njit, prange
 
 from .hop import HopEOS, read_atmosphere
 
@@ -56,20 +56,62 @@ def rosseland_weights(lam, temp):
     return w / w.sum(axis=-1, keepdims=True)
 
 
+@njit(parallel=True, cache=True)
+def _hermite2d(x0, dx, y0, dy, nodes, xs, ys, out):
+    """Tensor-product cubic Hermite interpolation on a uniform grid: ``nodes`` holds the
+    value, d/dx, d/dy and d2/dxdy at every node (4, nx, ny).  Points outside the grid
+    take the value at its edge."""
+    nx, ny = nodes.shape[1], nodes.shape[2]
+    for k in prange(xs.size):
+        u = (xs[k] - x0) / dx
+        v = (ys[k] - y0) / dy
+        i = min(max(int(np.floor(u)), 0), nx - 2)
+        j = min(max(int(np.floor(v)), 0), ny - 2)
+        t = min(max(u - i, 0.0), 1.0)
+        s = min(max(v - j, 0.0), 1.0)
+        t2, s2 = t * t, s * s
+        val_t = (2 * t2 * t - 3 * t2 + 1, 3 * t2 - 2 * t2 * t)
+        der_t = ((t2 * t - 2 * t2 + t) * dx, (t2 * t - t2) * dx)
+        val_s = (2 * s2 * s - 3 * s2 + 1, 3 * s2 - 2 * s2 * s)
+        der_s = ((s2 * s - 2 * s2 + s) * dy, (s2 * s - s2) * dy)
+        acc = 0.0
+        for p in range(2):
+            for q in range(2):
+                acc += (nodes[0, i + p, j + q] * val_t[p] * val_s[q]
+                        + nodes[1, i + p, j + q] * der_t[p] * val_s[q]
+                        + nodes[2, i + p, j + q] * val_t[p] * der_s[q]
+                        + nodes[3, i + p, j + q] * der_t[p] * der_s[q])
+        out[k] = acc
+
+
 class OpacityTable:
     """ln of HOP's continuum extinction per gram, chi/rho [cm2/g], at 500 nm and at
     ``lam`` on a regular (ln T, ln rho) grid, for one composition.
 
-    Built once per model (:meth:`build`) and reused for all its snapshots; bicubic
-    spline interpolation in (ln T, ln rho) of the logarithm.
+    Built once per model (:meth:`build`) and reused for all its snapshots.  The
+    logarithm is interpolated in (ln T, ln rho) by bicubic Hermite polynomials whose
+    node derivatives are second-order finite differences of the table, so any
+    biquadratic is reproduced exactly; monotone (PCHIP) slopes would flatten the smooth
+    extrema of the opacity and double the error against HOP.  The evaluation runs in
+    parallel with numba.
     """
 
     def __init__(self, lnt, lnrho, lam, lnk500, lnk):
         self.lnt, self.lnrho, self.lam = map(np.asarray, (lnt, lnrho, lam))
         self.lnk500, self.lnk = np.asarray(lnk500), np.asarray(lnk)
-        self._k500 = RectBivariateSpline(self.lnt, self.lnrho, self.lnk500)
-        self._k = [RectBivariateSpline(self.lnt, self.lnrho, self.lnk[..., i])
-                   for i in range(self.lam.size)]
+        dx, dy = np.diff(self.lnt), np.diff(self.lnrho)
+        if not (np.allclose(dx, dx[0]) and np.allclose(dy, dy[0])):
+            raise ValueError('the opacity table needs uniform ln T and ln rho grids')
+        self._grid = (float(self.lnt[0]), float(dx[0]), float(self.lnrho[0]), float(dy[0]))
+        self._k500 = self._nodes(self.lnk500)
+        self._k = [self._nodes(self.lnk[..., i]) for i in range(self.lam.size)]
+
+    def _nodes(self, f):
+        """Value, d/dlnT, d/dlnrho and the cross derivative at every node."""
+        fx = np.gradient(f, self.lnt, axis=0, edge_order=2)
+        fy = np.gradient(f, self.lnrho, axis=1, edge_order=2)
+        fxy = np.gradient(fx, self.lnrho, axis=1, edge_order=2)
+        return np.ascontiguousarray(np.stack([f, fx, fy, fxy]), dtype=float)
 
     @classmethod
     def build(cls, lnt, lnrho, feh=0.0, alpha_enhancement=0.0, lam=ROSS_LAM, **hop_kwargs):
@@ -103,10 +145,12 @@ class OpacityTable:
         d = np.load(path)
         return cls(d['lnt'], d['lnrho'], d['lam'], d['lnk500'], d['lnk'])
 
-    @staticmethod
-    def _eval(spline, lnt, lnrho):
+    def _eval(self, nodes, lnt, lnrho):
         lnt, lnrho = np.broadcast_arrays(lnt, lnrho)
-        return spline(lnt.ravel(), lnrho.ravel(), grid=False).reshape(lnt.shape)
+        out = np.empty(lnt.size)
+        _hermite2d(*self._grid, nodes, np.ascontiguousarray(lnt, dtype=float).ravel(),
+                   np.ascontiguousarray(lnrho, dtype=float).ravel(), out)
+        return out.reshape(lnt.shape)
 
     def chi500(self, lnt, lnrho):
         """Extinction at 500 nm [1/cm]."""
