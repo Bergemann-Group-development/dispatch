@@ -316,6 +316,7 @@ contains
     real(8), dimension(:), allocatable :: chi, tau
     real(8) :: dz, v1, vn
     integer :: i, j, nx, ny, nz
+    logical :: z_down
     !-----------------------------------------------------------------------------
     nx = self%nx
     ny = self%ny
@@ -328,6 +329,12 @@ contains
       vn = self%lpe(1,1,nz)
     endif
 
+    ! vz is the component along the model's own z axis, and the mesh has z pointing
+    ! up. It changes sign when that axis points into the star, whichever end of the
+    ! arrays the model stores first (Stagger2 stores the top first with z up).
+    z_down = (v1 < vn) .eqv. (self%zz(1) < self%zz(nz))
+    if (z_down) self%vz = -self%vz
+
     if (v1 < vn) then
       do j=1, ny
         do i=1, nx
@@ -336,7 +343,7 @@ contains
           self%lpe  (i,j,:) =  self%lpe  (i,j,nz:1:-1)
           self%vx   (i,j,:) =  self%vx   (i,j,nz:1:-1)
           self%vy   (i,j,:) =  self%vy   (i,j,nz:1:-1)
-          self%vz   (i,j,:) = -self%vz   (i,j,nz:1:-1)
+          self%vz   (i,j,:) =  self%vz   (i,j,nz:1:-1)
           self%vmic (i,j,:) =  self%vmic (i,j,nz:1:-1)
         end do
       end do
