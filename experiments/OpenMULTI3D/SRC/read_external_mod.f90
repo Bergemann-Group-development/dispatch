@@ -75,6 +75,7 @@ contains
     class(experiment_t), pointer:: patch
     class(link_t), pointer:: link, next
     integer :: lunit, iostat, k, ip
+    real(4) :: vmic_mean
     integer :: patches_per_mpi=1
     integer :: dims=1, nx=-1, ny=-1, nz=-1, snap=0
     integer :: verbose=console_inherit, level=1
@@ -182,6 +183,8 @@ contains
       if (console_on(ch_atmos, 1)) &
         write (console_unit,'(2a)') 'Reading saved atmosphere from ', trim(atmos_file)
       call self%read_saved_snapshot(atmos_file, dims)
+      vmic_mean = saved_mean_vmic(atmos_file)
+      if (vmic_mean > 0) opac_table_vmic = vmic_mean
     else
       if (console_on(ch_atmos, 1)) &
         write (console_unit,'(4a)') 'Reading ', trim(atmos_format), ' atmosphere from ', trim(atmos_file)
@@ -397,6 +400,52 @@ contains
       error stop
     end select
   END SUBROUTINE read_model
+
+  !===============================================================================
+  !> The cell mean of the microturbulence a saved atmosphere stores, over the
+  !> unrotated copy of every patch in save/atmos_meta.txt. It stands in for the
+  !> model's mean vmic, which sets opac_table_vmic when a model is read directly.
+  !===============================================================================
+  REAL(4) FUNCTION saved_mean_vmic (save_dir) result(vmic_mean)
+    character(len=*), intent(in):: save_dir
+    type(m3d_patch_t) :: layout                         ! for the atmos slot indices
+    real(4), dimension(:,:,:,:,:), allocatable :: atmos
+    character(len=512) :: name
+    integer :: lunit, dunit, iostat, bits, sizes(5)
+    real(8) :: total, n_cells
+    !-----------------------------------------------------------------------------
+    open(file=trim(save_dir)//'/save/atmos_meta.txt', newunit=lunit, form='FORMATTED', &
+         status='old', iostat=iostat)
+    if (iostat /= 0) then
+      call console_error ('no save/atmos_meta.txt in '//trim(save_dir))
+      error stop
+    endif
+    read (lunit, *)                                     ! header
+    total = 0
+    n_cells = 0
+    do
+      read (lunit, *, iostat=iostat) name, bits, sizes  ! n(3), slots, copies
+      if (is_iostat_end(iostat)) exit
+      if (iostat /= 0 .or. bits /= 32) then
+        call console_error ('unreadable entry in '//trim(save_dir)//'/save/atmos_meta.txt')
+        error stop
+      endif
+      allocate(atmos(sizes(1),sizes(2),sizes(3),sizes(4),sizes(5)))
+      open(file=trim(save_dir)//'/save/'//trim(name), newunit=dunit, access='stream', &
+           status='old', action='read')
+      read (dunit) atmos
+      close(dunit)
+      total = total + sum(real(atmos(:,:,:,layout%i_vmic,1), 8))
+      n_cells = n_cells + product(sizes(1:3))
+      deallocate(atmos)
+    end do
+    close(lunit)
+    if (n_cells == 0) then
+      call console_error ('no patches listed in '//trim(save_dir)//'/save/atmos_meta.txt')
+      error stop
+    endif
+    vmic_mean = real(total / n_cells, 4)
+  END FUNCTION saved_mean_vmic
 
   !===============================================================================
   !> A run with rotate_atmos=T needs one ray-aligned copy of the atmosphere per
