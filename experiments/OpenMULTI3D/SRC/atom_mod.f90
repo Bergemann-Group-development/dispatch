@@ -1649,6 +1649,9 @@ MODULE atom_mod
         if (self%ion(j) < self%ion(i)) cycle
 
         cont = self%ion(j) > self%ion(i)
+        ! ionisation leads only to the upper level of the level's own continuum, the
+        ! ground level of the next ion unless the bound-free table names another
+        if (cont .and. j /= self%trans%cont(i)%j) cycle
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
           fac = self%cdata(tri)
           nj = self%data%nstar(x,y,z,j)
