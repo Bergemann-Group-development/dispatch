@@ -3,7 +3,6 @@ selection share, the catalogue's reading of each archive, and the remote-zip tra
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import re
 import threading
 import zipfile
 

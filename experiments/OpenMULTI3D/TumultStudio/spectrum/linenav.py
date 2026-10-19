@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import html
 import logging
-from pathlib import Path
 from urllib.parse import unquote
 
 import numpy as np

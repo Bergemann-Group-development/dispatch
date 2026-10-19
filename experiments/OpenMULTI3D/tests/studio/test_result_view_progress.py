@@ -14,7 +14,6 @@ strip that outlives the job, or a selected result opening on no row.
 """
 import re
 
-import numpy as np
 import pytest
 
 from tests.support.spectra import gaussian_line
@@ -169,7 +168,6 @@ def test_a_followed_job_polls_its_running_synthesis(studio, monkeypatch):
     hands each change to the submitter; the poll ends with the job. The handle is a
     stand-in whose fraction the test moves; the document's periodic callbacks and the
     IO pool are driven here instead of by a server."""
-    import time
     from TumultStudio.execution import workflows as wf
     from TumultStudio.execution.jobs import FINISHED, Job, RUNNING
     from tumult.synthesis.cancel import CancelToken

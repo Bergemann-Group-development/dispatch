@@ -5,19 +5,7 @@ description: House style for matplotlib figures in OpenMULTI3D (notebooks, analy
 
 # Matplotlib figures
 
-## Reuse first
-
-Look for a plotting function made for the purpose before writing one, and extend it where
-it falls short:
-
-- `tumult.Run`: `plot_depart`, `plot_resolved`, `plot_cog_corr`, `plot_line_labels`,
-  `plot_line_stem`, `plot_cntrbf`, `plot_cntrbf_map`
-- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_mean`, `plot_ltau_cube`,
-  `plot_geo_cube`, `plot_ltau_hist`, the transition's `plot_clv` and `plot_resolved`,
-  the atom's `plot_grotrian`
-- `tumult/plotting_scripts.py`: `comparison_scatter`, `scatter_density`, `quickplot`,
-  `plot_line_annotations`, `plot_arrow`
-- `docs/manual/figs/science_case.py` for the manual's figures
+For reading tumult output and the existing plotting functions, see the `tumult-plots` skill.
 
 ## Rules
 
@@ -40,17 +28,20 @@ it falls short:
    `\pltscale` the figure is included with. Change the font size where that is not enough.
    Leave tick and axis line sizes alone. Keep the standard `linewidth`; change it only as a
    last resort.
-5. **Markers:** pick the size with the marker (`","`, `"."`, `"o"`) instead of
+5. **Layout:** create every figure with `layout="constrained"` (`plt.subplots(...,
+   layout="constrained")`, `plt.figure(..., layout="constrained")`) instead of calling
+   `tight_layout()`. It keeps a suptitle and the legends close to the panels.
+6. **Markers:** pick the size with the marker (`","`, `"."`, `"o"`) instead of
    `markersize` or `s`. A scatter of 3D data with one point per spatial grid point uses
    `marker=","` and `rasterized=True`.
-6. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
+7. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
    never a bare `$\log$`. The treatment a quantity belongs to is an upright subscript,
    `$A_{\rm NLTE} - A_{\rm LTE}$` or `EW$_{\rm 3D\,NLTE}$`, not `A(NLTE)`.
-7. **Legends:** `handlelength=1.5`.
-8. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
+8. **Legends:** `handlelength=1.5`.
+9. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
    `math_fontfamily="custom"`, which sets their math in the style's bold math fonts.
-9. **Output:** save as `.pdf`.
-10. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
+10. **Output:** save as `.pdf`.
+11. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
     regular weight, inside its top-left corner, row by row. The 8 pt offset clears the
     style's inward 6 pt ticks:
 
@@ -64,7 +55,7 @@ it falls short:
 import matplotlib.pyplot as plt
 
 plt.style.use("tumult.Bergemann2020")
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(layout="constrained")
 ax.plot(obs.x, obs.y, color="lightgrey", label="KPNO")
 ax.plot(lte.x, lte.y, "--", color="tomato", label="1D LTE")
 ax.plot(nlte.x, nlte.y, color="black", label="1D NLTE")

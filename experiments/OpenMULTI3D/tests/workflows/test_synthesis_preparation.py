@@ -93,7 +93,6 @@ def test_reference_linelist_uses_producing_run(tmp_path, monkeypatch):
 
 
 def test_spectrum_table_preserves_first_intensity_and_units():
-    import numpy as np
     import pandas as pd
     from astropy import units as u
     from tumult.korg import Korg

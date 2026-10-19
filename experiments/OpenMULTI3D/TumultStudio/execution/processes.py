@@ -25,7 +25,7 @@ import logging
 from pathlib import Path
 import time
 
-from .jobs import CANCELLING, FAILED, FINISHED, QUEUED, RUNNING, ExternalRun
+from .jobs import CANCELLING, FAILED, FINISHED, QUEUED, RUNNING
 
 SHOW_AFTER_S = 0.5
 LOG_TAIL_LINES = 20

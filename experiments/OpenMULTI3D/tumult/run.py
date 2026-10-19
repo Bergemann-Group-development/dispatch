@@ -1,7 +1,6 @@
 """The dispatch run class (`Run`) and its helpers.
 
-Moved from tumult/tumult.py in the Phase 6 decomposition (that module remains as the
-package's import shim). The raw patch-save reading lives in :mod:`tumult.io_binary`
+The raw patch-save reading lives in :mod:`tumult.io_binary`
 and the intensity-layout / flux physics in :mod:`tumult.flux`; this class is the
 orchestration and analysis facade over them (lazy atmos/linelist/atom properties,
 spectra, departures, contribution functions, plotting).
@@ -12,7 +11,6 @@ from .auxfuncs import (assign_group_indices, interp_tau, optical_depth_from_top,
 from ._abundance_numerics import cog_invert
 from .const import CC
 from .physics import vac2air
-from .decorators import broadcast_arguments
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    read_angle_quadrature, read_segments, read_set_manifest,
                    split_ie)
@@ -26,7 +24,6 @@ import numpy as np
 import pandas as pd
 from astropy import units as u
 import pathlib
-import functools
 from tqdm import tqdm
 import multiprocessing as mp
 
@@ -254,19 +251,22 @@ class Run(object):
         return atoms
 
     #=====================================================================
-    @functools.cache
     def get_line(self, lam0, tol=0.05, verbose=True):
         #-----------------------------------------------------------------
         """The bound-bound transition of the run's model atoms nearest to ``lam0`` [Å,
         air], a :class:`tumult.trans.Transition`; ``verbose`` warns when it is further
-        than ``tol`` [Å] away."""
-        trans = [t for atom in self.atoms for t in atom.bbtrans]
-        all_lam0 = np.array([t.lam0 for t in trans])
-        line = trans[np.argmin(abs(all_lam0-lam0))]
-        if verbose and abs(line.lam0 - lam0) > tol:
-            print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
-
-        return line
+        than ``tol`` [Å] away. Repeated calls return the same object, memoised on the
+        run so that it is freed with the run."""
+        memo = self.__dict__.setdefault('_line_memo', {})
+        key = (lam0, tol, verbose)
+        if key not in memo:
+            trans = [t for atom in self.atoms for t in atom.bbtrans]
+            all_lam0 = np.array([t.lam0 for t in trans])
+            line = trans[np.argmin(abs(all_lam0-lam0))]
+            if verbose and abs(line.lam0 - lam0) > tol:
+                print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
+            memo[key] = line
+        return memo[key]
 
     #=====================================================================
     def get_spectrum(self, ang=None, imu=None, LTE=False, cont=False, resolved=False,

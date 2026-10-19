@@ -15,7 +15,6 @@ session, returning the spectrum to the automatic flat scaling, which Cancel undo
 """
 from __future__ import annotations
 
-import logging
 import html
 
 import astropy.units as u

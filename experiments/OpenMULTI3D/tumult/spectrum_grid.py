@@ -440,7 +440,7 @@ def _polytope_volume(halfspaces, interior):
         return 0.0, None
 
 
-def get_nn_weights(points, query, draw=False, hull=None, vor1=None):
+def get_nn_weights(points, query, draw=False, hull=None):
     """Sibson natural-neighbour weights/indices for ``query`` within ``points``.
 
     Computed exactly from the Sibson definition: the weight of neighbour ``n`` is the
@@ -452,8 +452,7 @@ def get_nn_weights(points, query, draw=False, hull=None, vor1=None):
     where the previous area-stealing heuristic over-counted next-ring nodes and lost
     linear precision; here ``sum(w_i * p_i) == q`` to machine precision.
 
-    ``hull`` (ConvexHull of ``points``) is reused across queries when supplied. ``vor1``
-    is accepted for backward compatibility and no longer used.
+    ``hull`` (ConvexHull of ``points``) is reused across queries when supplied.
     """
     if draw:
         # only the debug scatter path needs matplotlib; deferred so importing this
@@ -680,8 +679,8 @@ def _get_interp_weights(points, query, method='Delaunay', keep=_NN_WEIGHT_KEEP):
             c['nn'] = (Voronoi(pn), cKDTree(pn), ConvexHull(pn))
         sel = _nn_select(pn, qn, c['nn'])
         if sel is None:                  # local shortcut declined -> full subgrid
-            vor1, _kd, hull = c['nn']
-            w, li = get_nn_weights(pn, qn, hull=hull, vor1=vor1)
+            hull = c['nn'][2]
+            w, li = get_nn_weights(pn, qn, hull=hull)
         else:
             w, li = sel
         if len(li) == 0 or li[0] < 0:

@@ -11,8 +11,9 @@ deliberately: each transition gets a vertical stub at its own wavelength which b
 shared, evenly-spaced label slot above the spectrum, so a whole blend of one ion converges on a
 single name. :meth:`_elbows` is that algorithm — consecutive same-ion runs grouped, the runs
 ranked by summed strength, and the top ``ntop`` (as many as the pixels allow) given a slot by
-:meth:`_slots`: strongest first, each taking the free slot nearest its own wavelength without
-crossing an elbow already placed.
+``tumult.plotting_scripts.assign_label_slots``, which ``tumult``'s ``plot_line_labels`` shares:
+strongest first, each taking the free slot nearest its own wavelength without crossing an elbow
+already placed.
 
 There is exactly one annotator for the app (``ctx.annot``), shared the way the canvas is, and one
 Show/Hide button in the toolbar. Ownership is a plain token: whoever attached last owns the
@@ -83,11 +84,12 @@ standing in for the range the original returned to its caller.
 """
 from __future__ import annotations
 
-import logging
 
 import numpy as np
 from bokeh.core.properties import value
 from bokeh.models import ColumnDataSource, CustomJS, HoverTool, LabelSet, TapTool
+
+from tumult.plotting_scripts import assign_label_slots
 
 from ..ui.htmlbridge import toggle
 from ..ui.style import BG, MUTED
@@ -521,7 +523,8 @@ class LineAnnotations:
         each elbow reports when clicked. ``(None, …)`` when there is nothing to lay out.
 
         Every entry arrives already merged and already ranked, and ascending in ``xx``, so
-        all that is left is the slot assignment — see :meth:`_slots`. A blend that ends up
+        all that is left is the slot assignment —
+        see :func:`tumult.plotting_scripts.assign_label_slots`. A blend that ends up
         with no slot is dropped here, so every array returned is the kept subset and they
         stay index-aligned with each other.
         """
@@ -532,7 +535,9 @@ class LineAnnotations:
         if pxmax - pxmin <= 0:
             return _nothing()
 
-        keep, newx = self._slots(xx, strength, pxmin, pxmax)
+        # _rank has already capped the blends at _ntop, so none goes without for lack of
+        # a slot, only for the crossing constraint
+        keep, newx = assign_label_slots(xx, strength, max(self._ntop(), xx.size), pxmin, pxmax)
         if not keep.size:
             return _nothing()
         xx, pick_lam0 = xx[keep], pick_lam0[keep]
@@ -542,60 +547,6 @@ class LineAnnotations:
         xl = np.vstack([xx, xx, newx, newx])
         yl = base * ones + h * np.vstack([step * ones for step in ELBOW_STEPS])
         return xl, yl, newx, np.asarray(labels, dtype=object), pick_lam0, np.asarray(labels)
-
-    def _slots(self, xx, strength, pxmin, pxmax):
-        """Which blends get a label slot, and where — strongest first, and never crossing.
-
-        The slots are a property of the *frame*, not of the lines: :meth:`_ntop` positions,
-        one label wide, evenly spaced across the visible window, and there whether or not
-        anything claims them. That is what keeps a name over its line. Spacing them across
-        the stretch the blends themselves span — as this did — makes the pitch depend on what
-        the window happens to hold: it shrinks as blends are found closer together, and on a
-        full-spectrum view, where the ``ntop`` strongest all fall in one band, it collapses
-        the whole set of names into that band, far from most of the lines they belong to.
-        What changed is who claims them. Left to right, the first blend in the window took the slot nearest itself
-        whatever it was worth, and a crowd of weak lines at the blue end could push every
-        strong one after them rightward, off the feature it names. Now the *strongest* blend
-        picks first and gets the slot nearest its own wavelength, then the next strongest,
-        and so on: the names that matter most sit closest to the lines they belong to, and
-        the error is pushed onto the ones nobody is reading.
-
-        No elbow may cross one already placed — two names swapped over their own lines are
-        worse than one name missing — so a blend may only take a slot lying between those its
-        nearest placed neighbours to either side already hold. A blend boxed in by stronger
-        neighbours gets nothing and is dropped. That is the intended outcome: what is lost is
-        always the weakest thing competing for the space.
-
-        ``xx`` must be ascending, which is what makes an index comparison a left/right one.
-        Returns ``(keep, slot_x)`` — the indices that got a slot, still ascending in x, and
-        the slot each landed on. O(n^2) on a few tens of labels, which is all the frame holds.
-        """
-        n = xx.size
-        # the fixed grid: nslot cells of one label width across the frame, each slot at its
-        # cell's centre, so the pitch is PX_PER_LABEL exactly and does not move with the
-        # contents. _rank has already capped n at nslot, so no blend goes without for lack
-        # of a slot — only for the crossing constraint below.
-        nslot = max(self._ntop(), n)
-        bins = pxmin + (np.arange(nslot) + 0.5) * (pxmax - pxmin) / nslot
-        free = np.ones(bins.size, dtype=bool)
-        slot = np.full(n, -1, dtype=np.int64)      # blend -> slot, -1 while unplaced
-        for i in np.argsort(-np.asarray(strength, dtype=float), kind="stable"):
-            placed = np.flatnonzero(slot >= 0)
-            # the crossing constraint: strictly inside the slots the neighbours already hold
-            left, right = placed[placed < i], placed[placed > i]
-            lo = int(slot[left].max()) + 1 if left.size else 0
-            hi = int(slot[right].min()) - 1 if right.size else bins.size - 1
-            if lo > hi:
-                continue
-            window = np.arange(lo, hi + 1)
-            window = window[free[window]]
-            if not window.size:
-                continue
-            take = int(window[np.argmin(np.abs(bins[window] - xx[i]))])
-            slot[i], free[take] = take, False
-        keep = np.flatnonzero(slot >= 0)
-        return keep, bins[slot[keep]]
-
 
     # --- painting -------------------------------------------------------------------------
     def refresh(self):

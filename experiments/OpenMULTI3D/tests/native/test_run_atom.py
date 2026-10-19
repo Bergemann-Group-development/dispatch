@@ -3,7 +3,7 @@
 dispatch.x writes the conversion of a MULTI atom there (``atom.ba06`` becomes
 ``ba06.txt``), and :meth:`tumult.run.Run.get_line` finds a transition in it whose levels
 select departure coefficients: Ba II 4554 Å is 6s 2S - 6p 2P3/2, levels 1 and 4 counted
-from 0. The run is the 1D solar demo of ``demo.nml`` (well under a second).
+from 0. The run is the 1D solar demo of ``examples/sun_ba_1d.nml`` (well under a second).
 
 Needs the built ``dispatch.x``.
 """
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(not EXECUTABLE.is_file(), reason='needs dispatch
 def run(tmp_path_factory):
     work = tmp_path_factory.mktemp('demo')
     (work / 'input').symlink_to(ROOT / 'input')
-    nml = (ROOT / 'demo.nml').read_text().replace("datadir='data'", f"datadir='{work / 'data'}'")
+    nml = (ROOT / 'examples' / 'sun_ba_1d.nml').read_text().replace("datadir='data'", f"datadir='{work / 'data'}'")
     (work / 'demo.nml').write_text(nml)
     subprocess.run([str(EXECUTABLE), 'demo.nml'], cwd=work, check=True, capture_output=True,
                    env=dict(os.environ, OMP_NUM_THREADS='1'))

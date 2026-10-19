@@ -9,7 +9,6 @@ from scipy import optimize
 from .convolutions import convolve, kernel_width
 from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, \
                    get_weq, kpno_spectral_filter, pchip_mono, lowpass
-from .plotting_scripts import adjust_max_xticks
 
 
 def get_wavelength_shift(vshift):

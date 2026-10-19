@@ -3,7 +3,6 @@
 The durable-submission contracts, which need the workflow daemon, are in
 ``tests/execution/test_synthesis_submission.py``.
 """
-import time
 from pathlib import Path
 
 import numpy as np

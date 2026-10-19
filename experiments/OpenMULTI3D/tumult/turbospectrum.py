@@ -1,23 +1,21 @@
-from .spectrum import Spectrum
 from .auxfuncs import atomic_weights, near_equal_split, tmp_txtfile
 from .const import BK
 from .atmos import AtmosClass
-from astropy import units as u
 import numpy as np
 import pandas as pd
-from concurrent.futures import ProcessPoolExecutor
 import subprocess
 from pathlib import Path
 import multiprocessing as mp
-import tempfile
 from contextlib import ExitStack
 from functools import partial
 from io import StringIO
+import os
 import pickle
 
-TS_PATH = '/mnt/beegfs/gemini/groups/bergemann/users/hoppe/TSFitPy/turbospectrum/'
-
 from ._spectrum_table import SpectrumTable
+
+# The Turbospectrum checkout that launch runs in unless given cwd.
+TS_PATH = os.environ.get('TURBOSPECTRUM_PATH')
 
 
 class Turbospectrum(SpectrumTable):
@@ -46,7 +44,11 @@ class Turbospectrum(SpectrumTable):
     @classmethod
     #=================================================================
     def launch(cls, input, llist=None, cwd=None, settings=None, verbose=False):
-        cwd = Path(cwd or TS_PATH)
+        cwd = cwd or TS_PATH
+        if cwd is None:
+            raise ValueError("Turbospectrum.launch needs cwd or the TURBOSPECTRUM_PATH "
+                             "environment variable, the Turbospectrum checkout to run in")
+        cwd = Path(cwd)
 
         with ExitStack() as stack:
             if settings is not None:

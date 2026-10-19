@@ -1,8 +1,7 @@
 """Intensity-array physics: the saved ``ie`` layout, the angle quadrature, and the
 mu-integration to flux.
 
-Extracted from the run class in the Phase 6 decomposition so the physics-critical
-pieces are named, documented and unit-tested instead of living inline:
+The physics-critical pieces of reading a run live here, apart from the run class:
 
 * :func:`read_set_manifest` parses ``sets.txt``, the run's own description of what
   each slot on the saved set axis holds;

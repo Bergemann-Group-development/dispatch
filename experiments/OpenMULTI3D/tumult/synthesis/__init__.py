@@ -34,9 +34,8 @@ from .snapshot import (solve_departures, synthesise_snapshot,
 from .operations import check_fit, fit, run_values, synthesize, synthesize_lines
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .submission import WorkflowHandle, discover_workflows, open_workflow, submit_operation
-from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
 from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default_pattern, build_settings, compile_pattern, compute, compute_batch,
-                        compute_window_batch, fitted_abundance_terms,
+                        fitted_abundance_terms,
                         compute_reference, discover_atmos_grid,
                         recover_params, resolve_request, execute_request,
                         solve_request_departures)

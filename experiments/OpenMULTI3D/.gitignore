@@ -2,6 +2,7 @@
 # source and its reviewed fixtures visible without exposing generated artifacts.
 !.gitignore
 !AGENTS.md
+!README.md
 !QUICKSTART.md
 !CLAUDE.md
 !SUBAGENTS.md
@@ -89,6 +90,10 @@ benchmarks/*
 !.claude/skills/
 !.claude/agents/
 .claude/**/__pycache__/
+
+# Example namelists are source.
+!examples/
+!examples/*.nml
 
 # The shipped namelist presets are source.
 !tumult/presets/**/*.nml

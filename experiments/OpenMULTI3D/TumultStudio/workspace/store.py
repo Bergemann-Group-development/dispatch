@@ -140,7 +140,7 @@ def _file_lock():
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise ConfigError(CONFIG_PATH, f"Another writer has held the config "
-                                                   f"lock for over {LOCK_TIMEOUT_S:g} s")
+                                                   f"lock for over {LOCK_TIMEOUT_S:g} s") from None
                 time.sleep(0.01)
         yield
     finally:

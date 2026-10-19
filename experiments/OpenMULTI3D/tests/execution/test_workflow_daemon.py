@@ -290,7 +290,6 @@ def test_thread_events_follow_the_allocation_and_a_shared_run_counts_once(
     workflow's ``threads`` event reports that run's allocation, and ``usage`` matches."""
     import contextvars
     from concurrent.futures import ThreadPoolExecutor
-    from tumult import launch
     from tumult.synthesis.executor import _run_batch
     from tumult.synthesis.runtime import get_runtime
     import tumult as tm

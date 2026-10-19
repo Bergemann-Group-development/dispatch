@@ -1,8 +1,6 @@
 """tumult - post-processing and synthesis driving for OpenMULTI3D / dispatch.
 
-Public entry points by domain (Phase 1 consolidation replaced the former wildcard
-imports with this explicit surface; legacy names still resolve through ``__getattr__``
-below, with a DeprecationWarning):
+Public entry points by domain:
 
 - reading runs:      read, read_list, combine, RunGrid  (the run class itself: Run)
 - running dispatch:  launch, monitor
@@ -25,7 +23,6 @@ below, with a DeprecationWarning):
 """
 from . import const
 from .run import Run, RunGrid, read_list
-from .run import Run as tumult, RunGrid as grid  # pre-rename names
 from .launch import launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
@@ -64,7 +61,7 @@ def load_ipython_extension(ipython):
     set_matplotlib_formats("svg")
 
 __all__ = [
-    "read", "read_list", "combine", "Run", "RunGrid", "grid", "tumult",
+    "read", "read_list", "combine", "Run", "RunGrid",
     "launch", "monitor",
     "Spectrum", "SpectrumGrid", "LineList",
     "load_spectrum", "load_file", "is_run", "load_run",
@@ -85,20 +82,3 @@ __all__ = [
     "kpno_spectral_filter", "const", "Atom", "read_atom",
     "HopEOS", "HopError", "logstep", "wavelength_grid",
 ]
-
-# Anything the wildcard imports used to expose still resolves here, so old notebooks
-# keep working - but with a nudge toward the module that owns the name. Lookup order
-# mirrors the old "last import wins" precedence (plotting_scripts > utils > auxfuncs).
-def __getattr__(name):
-    import importlib
-    import warnings
-
-    for mod_name in ("plotting_scripts", "utils", "auxfuncs"):
-        mod = importlib.import_module(f".{mod_name}", __name__)
-        if hasattr(mod, name):
-            warnings.warn(
-                f"'tumult.{name}' resolves through a legacy wildcard import; import it "
-                f"from 'tumult.{mod_name}' explicitly.",
-                DeprecationWarning, stacklevel=2)
-            return getattr(mod, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

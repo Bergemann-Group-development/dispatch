@@ -17,12 +17,11 @@ Wavelengths are air on the tumult side and vacuum inside Korg. The driver conver
 window bounds and every line once, and writes the spectrum back on the air axis, so
 `lam` here lines up sample-for-sample with an OpenMULTI3D run over the same window.
 """
-from .spectrum import Spectrum
 from .auxfuncs import (atomic_weights, get_particle_weight, molecule_dict,
                        near_equal_split, tmp_txtfile)
 from .const import BK
 from .atmos import AtmosClass
-from astropy import units as u
+from ._spectrum_table import SpectrumTable
 import numpy as np
 import pandas as pd
 import subprocess
@@ -125,9 +124,6 @@ def write_linelist(llist, filename):
     out.to_csv(filename, index=False)
     return out
 
-
-#=====================================================================
-from ._spectrum_table import SpectrumTable
 
 
 class Korg(SpectrumTable):
