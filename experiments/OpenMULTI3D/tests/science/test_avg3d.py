@@ -26,6 +26,24 @@ def exponential_columns(ncol=4, nz=200, h=1.5e7, scatter=0.0, seed=1):
                          vz=v[2], ltau500=np.log10(tau), ltauross=np.log10(tau)), chi, h
 
 
+def test_opacity_table_reproduces_a_biquadratic():
+    """The table interpolant is exact for a biquadratic in (ln T, ln rho), including
+    between the nodes at the grid edges, and holds the edge value outside."""
+    lnt = np.arange(8.0, 9.5, 0.02)
+    lnrho = np.arange(-25.0, -15.0, 0.1)
+    tt, rr = np.meshgrid(lnt, lnrho, indexing='ij')
+    def quad(t, r):
+        t, r = t - 8.7, r + 20.0
+        return 1.5 - 0.7 * t**2 + 0.3 * t * r - 0.05 * r**2 + 0.02 * t**2 * r**2
+    table = avg3d.OpacityTable(lnt, lnrho, [5000.0], quad(tt, rr), quad(tt, rr)[..., None])
+    rng = np.random.default_rng(2)
+    t = rng.uniform(lnt[0], lnt[-1], 1000)
+    r = rng.uniform(lnrho[0], lnrho[-1], 1000)
+    np.testing.assert_allclose(np.log(table.chi500(t, r)) - r, quad(t, r), rtol=0, atol=1e-10)
+    outside = np.log(table.chi500(lnt[-1] + 0.5, lnrho[0] - 1.0)) - (lnrho[0] - 1.0)
+    np.testing.assert_allclose(outside, quad(lnt[-1], lnrho[0]), rtol=0, atol=1e-10)
+
+
 def test_optical_depth_of_an_exponential_atmosphere():
     cols, chi, h = exponential_columns()
     dz = cols.z[0, 0] - cols.z[0, 1]

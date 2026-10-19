@@ -9,7 +9,8 @@ on surfaces of a reference variable:
 - ``'tau500'``: log tau at 500 nm, the surface of the Stagger <3D> models;
 - ``'tauross'``: log tau of an approximate Rosseland mean, the harmonic mean of the
   continuum extinction at a handful of wavelengths (``ROSS_LAM``, 0.3-2 micron) weighted
-  by dB_lambda/dT;
+  by dB_lambda/dT, computed only when :func:`columns` is asked for it (it costs eight
+  opacity interpolations per cell, against one for tau_500);
 - ``'lpe'``: log electron pressure.
 
 The recipes (``RECIPES``) average T, rho and P_e geometrically (``'geo'``), take
@@ -29,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import RectBivariateSpline
+from numba import njit, prange
 
 from .hop import HopEOS, read_atmosphere
 
@@ -55,20 +56,62 @@ def rosseland_weights(lam, temp):
     return w / w.sum(axis=-1, keepdims=True)
 
 
+@njit(parallel=True, cache=True)
+def _hermite2d(x0, dx, y0, dy, nodes, xs, ys, out):
+    """Tensor-product cubic Hermite interpolation on a uniform grid: ``nodes`` holds the
+    value, d/dx, d/dy and d2/dxdy at every node (4, nx, ny).  Points outside the grid
+    take the value at its edge."""
+    nx, ny = nodes.shape[1], nodes.shape[2]
+    for k in prange(xs.size):
+        u = (xs[k] - x0) / dx
+        v = (ys[k] - y0) / dy
+        i = min(max(int(np.floor(u)), 0), nx - 2)
+        j = min(max(int(np.floor(v)), 0), ny - 2)
+        t = min(max(u - i, 0.0), 1.0)
+        s = min(max(v - j, 0.0), 1.0)
+        t2, s2 = t * t, s * s
+        val_t = (2 * t2 * t - 3 * t2 + 1, 3 * t2 - 2 * t2 * t)
+        der_t = ((t2 * t - 2 * t2 + t) * dx, (t2 * t - t2) * dx)
+        val_s = (2 * s2 * s - 3 * s2 + 1, 3 * s2 - 2 * s2 * s)
+        der_s = ((s2 * s - 2 * s2 + s) * dy, (s2 * s - s2) * dy)
+        acc = 0.0
+        for p in range(2):
+            for q in range(2):
+                acc += (nodes[0, i + p, j + q] * val_t[p] * val_s[q]
+                        + nodes[1, i + p, j + q] * der_t[p] * val_s[q]
+                        + nodes[2, i + p, j + q] * val_t[p] * der_s[q]
+                        + nodes[3, i + p, j + q] * der_t[p] * der_s[q])
+        out[k] = acc
+
+
 class OpacityTable:
     """ln of HOP's continuum extinction per gram, chi/rho [cm2/g], at 500 nm and at
     ``lam`` on a regular (ln T, ln rho) grid, for one composition.
 
-    Built once per model (:meth:`build`) and reused for all its snapshots; bicubic
-    spline interpolation in (ln T, ln rho) of the logarithm.
+    Built once per model (:meth:`build`) and reused for all its snapshots.  The
+    logarithm is interpolated in (ln T, ln rho) by bicubic Hermite polynomials whose
+    node derivatives are second-order finite differences of the table, so any
+    biquadratic is reproduced exactly; monotone (PCHIP) slopes would flatten the smooth
+    extrema of the opacity and double the error against HOP.  The evaluation runs in
+    parallel with numba.
     """
 
     def __init__(self, lnt, lnrho, lam, lnk500, lnk):
         self.lnt, self.lnrho, self.lam = map(np.asarray, (lnt, lnrho, lam))
         self.lnk500, self.lnk = np.asarray(lnk500), np.asarray(lnk)
-        self._k500 = RectBivariateSpline(self.lnt, self.lnrho, self.lnk500)
-        self._k = [RectBivariateSpline(self.lnt, self.lnrho, self.lnk[..., i])
-                   for i in range(self.lam.size)]
+        dx, dy = np.diff(self.lnt), np.diff(self.lnrho)
+        if not (np.allclose(dx, dx[0]) and np.allclose(dy, dy[0])):
+            raise ValueError('the opacity table needs uniform ln T and ln rho grids')
+        self._grid = (float(self.lnt[0]), float(dx[0]), float(self.lnrho[0]), float(dy[0]))
+        self._k500 = self._nodes(self.lnk500)
+        self._k = [self._nodes(self.lnk[..., i]) for i in range(self.lam.size)]
+
+    def _nodes(self, f):
+        """Value, d/dlnT, d/dlnrho and the cross derivative at every node."""
+        fx = np.gradient(f, self.lnt, axis=0, edge_order=2)
+        fy = np.gradient(f, self.lnrho, axis=1, edge_order=2)
+        fxy = np.gradient(fx, self.lnrho, axis=1, edge_order=2)
+        return np.ascontiguousarray(np.stack([f, fx, fy, fxy]), dtype=float)
 
     @classmethod
     def build(cls, lnt, lnrho, feh=0.0, alpha_enhancement=0.0, lam=ROSS_LAM, **hop_kwargs):
@@ -102,10 +145,12 @@ class OpacityTable:
         d = np.load(path)
         return cls(d['lnt'], d['lnrho'], d['lam'], d['lnk500'], d['lnk'])
 
-    @staticmethod
-    def _eval(spline, lnt, lnrho):
+    def _eval(self, nodes, lnt, lnrho):
         lnt, lnrho = np.broadcast_arrays(lnt, lnrho)
-        return spline(lnt.ravel(), lnrho.ravel(), grid=False).reshape(lnt.shape)
+        out = np.empty(lnt.size)
+        _hermite2d(*self._grid, nodes, np.ascontiguousarray(lnt, dtype=float).ravel(),
+                   np.ascontiguousarray(lnrho, dtype=float).ravel(), out)
+        return out.reshape(lnt.shape)
 
     def chi500(self, lnt, lnrho):
         """Extinction at 500 nm [1/cm]."""
@@ -148,7 +193,7 @@ class Columns:
     vy: np.ndarray
     vz: np.ndarray
     ltau500: np.ndarray
-    ltauross: np.ndarray
+    ltauross: np.ndarray | None = None
 
     @property
     def lpe(self):
@@ -156,13 +201,16 @@ class Columns:
 
     @classmethod
     def concatenate(cls, parts):
-        return cls(**{k: np.concatenate([getattr(p, k) for p in parts])
-                      for k in cls.__dataclass_fields__})
+        def join(k):
+            arrays = [getattr(p, k) for p in parts]
+            return None if any(a is None for a in arrays) else np.concatenate(arrays)
+        return cls(**{k: join(k) for k in cls.__dataclass_fields__})
 
 
-def columns(atm, table):
-    """One snapshot (AtmosphereFile) as Columns, with tau_500 and tau_Ross from
-    ``table``.  The ghost zones are dropped and the top found by the density."""
+def columns(atm, table, tauross=False):
+    """One snapshot (AtmosphereFile) as Columns, with tau_500 from ``table`` and, if
+    ``tauross``, tau_Ross.  The ghost zones are dropped and the top found by the
+    density."""
     sl = slice(atm.gz, atm.shape[2] - atm.gz)
     ltemp = atm.ltemp[..., sl].astype(float)
     lrho = atm.lrho[..., sl].astype(float)
@@ -178,9 +226,11 @@ def columns(atm, table):
     flat = lambda a: a.reshape(n, -1)                     # noqa: E731
     ltemp, lrho, lpe = flat(ltemp), flat(lrho), flat(lpe)
     tau500 = optical_depth(table.chi500(ltemp, lrho), lrho, height)
-    tauross = optical_depth(table.chi_ross(ltemp, lrho), lrho, height)
+    ltauross = None
+    if tauross:
+        ltauross = np.log10(optical_depth(table.chi_ross(ltemp, lrho), lrho, height))
     return Columns(np.exp(ltemp), np.exp(lrho), np.exp(lpe), np.broadcast_to(height, ltemp.shape),
-                   *map(flat, v), np.log10(tau500), np.log10(tauross))
+                   *map(flat, v), np.log10(tau500), ltauross)
 
 
 def _on_surfaces(cols, x, newx, top='isothermal'):
@@ -234,6 +284,8 @@ def _on_surfaces(cols, x, newx, top='isothermal'):
 def surface_coordinate(cols, surface):
     """The per-column coordinate of a surface family, made monotonic downward (a
     running maximum from the top, which only matters for P_e near the top)."""
+    if surface == 'tauross' and cols.ltauross is None:
+        raise ValueError('these columns have no tau_Ross; build them with columns(..., tauross=True)')
     x = {'tau500': cols.ltau500, 'tauross': cols.ltauross, 'lpe': cols.lpe}[surface]
     return np.maximum.accumulate(x, axis=-1)
 
