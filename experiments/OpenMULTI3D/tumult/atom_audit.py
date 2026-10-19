@@ -162,10 +162,15 @@ def ion_ground(atom):
 
 
 def continuum_level(atom):
-    """For each level, the level that dispatch ionises it to (first level of the next
-    stage), or -1."""
+    """For each level, the level that dispatch ionises it to: the upper level of its
+    continuum, which is the first level of the next stage unless the bound-free table's
+    ``j`` column names another, or -1."""
     grounds = ion_ground(atom)
-    return np.array([grounds.get(int(s) + 1, -1) for s in atom.lvl.ion])
+    cont = np.array([grounds.get(int(s) + 1, -1) for s in atom.lvl.ion])
+    if getattr(atom, 'bft', None) is not None and 'j' in atom.bft:
+        named = atom.bft[atom.bft.j >= 0].drop_duplicates('i')
+        cont[named.i.to_numpy()] = named.j.to_numpy()
+    return cont
 
 
 # ---------------------------------------------------------------------------------------
