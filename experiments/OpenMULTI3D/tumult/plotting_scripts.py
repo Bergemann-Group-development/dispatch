@@ -243,6 +243,46 @@ def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
     plt.plot(end[0], end[1], marker=(3, 0, angle), color=p.get_color(), markersize=markersize)
 
 #=====================================================================
+def assign_label_slots(xx, strength, nslot, xmin, xmax):
+    """Give line labels slots on a fixed grid, strongest first, without crossing elbows.
+
+    The slots belong to the frame: ``nslot`` cells of equal width across ``xmin``..``xmax``,
+    each slot at its cell's centre, so the pitch does not depend on where the lines fall.
+    The strongest line picks first and takes the free slot nearest its own position, then
+    the next strongest, so the names that matter most sit closest to their lines.
+
+    No elbow may cross one already placed, so a line may only take a slot between those its
+    nearest placed neighbours on either side hold. A line boxed in by stronger neighbours
+    gets no slot and is dropped: the loss always falls on the weakest line competing for
+    the space. Equal strengths are placed left to right.
+
+    ``xx`` must be ascending, which makes an index comparison a left/right one. Returns
+    ``(keep, slot_x)``: the indices that got a slot, still ascending, and the slot each
+    landed on. O(n^2) on the few tens of labels a frame holds.
+    """
+    n = xx.size
+    bins = xmin + (np.arange(nslot) + 0.5) * (xmax - xmin) / nslot
+    free = np.ones(bins.size, dtype=bool)
+    slot = np.full(n, -1, dtype=np.int64)      # line -> slot, -1 while unplaced
+    for i in np.argsort(-np.asarray(strength, dtype=float), kind="stable"):
+        placed = np.flatnonzero(slot >= 0)
+        # the crossing constraint: strictly inside the slots the neighbours already hold
+        left, right = placed[placed < i], placed[placed > i]
+        lo = int(slot[left].max()) + 1 if left.size else 0
+        hi = int(slot[right].min()) - 1 if right.size else bins.size - 1
+        if lo > hi:
+            continue
+        window = np.arange(lo, hi + 1)
+        window = window[free[window]]
+        if not window.size:
+            continue
+        take = int(window[np.argmin(np.abs(bins[window] - xx[i]))])
+        slot[i], free[take] = take, False
+    keep = np.flatnonzero(slot >= 0)
+    return keep, bins[slot[keep]]
+
+
+#=====================================================================
 def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
                       rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
                       ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', **kwargs):
@@ -294,25 +334,14 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
 
         labels = labels[mask]
         xx = xx[mask]
+        weights = weights[mask]
 
-    n = xx.size
-
-    newn = max(newn, n)
-    nn = np.ones(n)
-
-    newx = np.linspace(xmin, xmax, newn+2)[1:-1]
-
-    xlist = list(xx)
-    binlist = list(newx)
-
-    newx = []
-    for x in xlist:
-        i = np.argmin(np.abs(binlist - x))
-        newx.append(binlist[i])
-        del binlist[i]
-
-    oldx = xx
-    newx = np.sort(newx)
+    order = np.argsort(xx, kind="stable")
+    xx, labels = xx[order], labels[order]
+    strength = np.zeros(xx.size) if weights is None else weights[order]
+    keep, newx = assign_label_slots(xx, strength, max(newn, xx.size), xmin, xmax)
+    oldx, labels = xx[keep], labels[keep]
+    nn = np.ones(keep.size)
 
     xl = np.vstack([newx, newx, oldx, oldx])
     yl = ymax*nn + np.vstack([h*nn, 0.8*h*nn, 0.2*h*nn, 0*nn])
