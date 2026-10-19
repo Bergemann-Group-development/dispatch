@@ -5,8 +5,9 @@
 \fort{atmos_file} & Path of the model. \fort{atmos_root} is prepended if set.\\
 \fort{atmos_format} & Reader to use; the default \fort{'unknown'} infers it from the file name (Sec.~\ref{sec:atmosformats}).\\
 \fort{FeH} & [Fe/H]. Scales all elements except H, He and Li. Default: take the value from the model, or 0.\\
-\fort{vmic} & Microturbulence in \si{\km\per\s}. Default $-1$ keeps the model's value.\\
+\fort{vmic} & Microturbulence in \si{\km\per\s} at every point of the model, 1D or 3D. Default $-1$ keeps the model's value, which is zero for 3D models. With \fort{use_vel=F,F,F}, a 3D model can be given the microturbulence of a 1D model it is compared with.\\
 \fort{use_rho}, \fort{use_ne} & Use density and electron density from the model (default \fort{T}). If the model lacks one it is computed by the equation of state.\\
+\fort{use_vel} & Use the model's velocity components $x$, $y$, $z$ (default \fort{T,T,T}). \fort{F,F,F} sets the velocity field to zero, which separates its effect on the spectrum from that of the inhomogeneities.\\
 \fort{use_abnd} & Adopt the abundances stored in a MARCS file (default \fort{F}).\\
 \fort{nx}, \fort{ny}, \fort{nz} & Number of mesh cells in each direction. Default $-1$ takes the number of points of the model (1 horizontally for 1D models). The model is always interpolated onto the mesh, which is graded according to \fort{amr}; the interpolation is set by \fort{pchip_interpolation} and \fort{log_interpolation}.\\
 \fort{snap} & Snapshot number for Stagger models.\\

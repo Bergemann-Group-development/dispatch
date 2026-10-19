@@ -383,22 +383,30 @@ contains
      case('co5bold')
       call read_co5bold(file)
      case ('marcs')
-      call read_marcs(file, FeH, vmic, external_abund)
+      call read_marcs(file, FeH, external_abund)
       if (.not. use_abnd) deallocate(external_abund)
      case ('multi', 'm3dis')
       call read_multi_snapshot(file)
      case ('text')
-      call read_text_1d(file, vmic, FeH)
+      call read_text_1d(file, FeH)
      case ('multi1d')
-      call read_multi_1d(file, vmic)
+      call read_multi_1d(file)
      case ('siu_bin')
-      call read_siu_bin(file, vmic)
+      call read_siu_bin(file)
      case default
       call console_error ('unknown atmos_format '//trim(format)// &
         ". Options are: 'Stagger', 'Co5bold', 'Multi', &
       &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
       error stop
     end select
+    ! A namelist vmic replaces the model's microturbulence in every format, so a 3D
+    ! model run with use_vel=.false. can be given the vmic of a 1D comparison model.
+    if (vmic >= 0) then
+      ia%vmic = vmic
+      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
+    else if (console_on(ch_atmos, 1) .and. any(ia%vmic > 0)) then
+      write(console_unit,'(A, F6.2)') 'Vmic from the model, mean: Vmic =', sum(ia%vmic) / size(ia%vmic)
+    endif
   END SUBROUTINE read_model
 
   !===============================================================================
