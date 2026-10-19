@@ -31,17 +31,21 @@ For reading tumult output and the existing plotting functions, see the `tumult-p
 5. **Layout:** create every figure with `layout="constrained"` (`plt.subplots(...,
    layout="constrained")`, `plt.figure(..., layout="constrained")`) instead of calling
    `tight_layout()`. It keeps a suptitle and the legends close to the panels.
-6. **Markers:** pick the size with the marker (`","`, `"."`, `"o"`) instead of
+6. **Margins:** keep matplotlib's default 5% axis margins (`axes.xmargin`,
+   `axes.ymargin`), which keep markers off the frame. Override them with `ax.margins(...)`,
+   `set_xlim`/`set_ylim` or rcParams only for a specific reason, such as an axis whose
+   ends are fixed by the quantity (a spectral window, an image extent).
+7. **Markers:** pick the size with the marker (`","`, `"."`, `"o"`) instead of
    `markersize` or `s`. A scatter of 3D data with one point per spatial grid point uses
    `marker=","` and `rasterized=True`.
-7. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
+8. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
    never a bare `$\log$`. The treatment a quantity belongs to is an upright subscript,
    `$A_{\rm NLTE} - A_{\rm LTE}$` or `EW$_{\rm 3D\,NLTE}$`, not `A(NLTE)`.
-8. **Legends:** `handlelength=1.5`.
-9. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
-   `math_fontfamily="custom"`, which sets their math in the style's bold math fonts.
-10. **Output:** save as `.pdf`.
-11. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
+9. **Legends:** `handlelength=1.5`.
+10. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
+    `math_fontfamily="custom"`, which sets their math in the style's bold math fonts.
+11. **Output:** save as `.pdf`.
+12. **Panel letters:** every panel of a multi-panel figure carries `(a)`, `(b)`, ... in
     regular weight, inside its top-left corner, row by row. The 8 pt offset clears the
     style's inward 6 pt ticks:
 
