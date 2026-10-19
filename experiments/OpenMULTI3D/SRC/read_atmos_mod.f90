@@ -120,10 +120,9 @@ contains
   END SUBROUTINE read_stagger2
 
   !===============================================================================
-  SUBROUTINE read_marcs (file, FeH, vmic, abund)
+  SUBROUTINE read_marcs (file, FeH, abund)
     character(len=*), intent(in) :: file
     real(8), intent(out) :: FeH
-    real(4), intent(in) :: vmic
     real(4), intent(inout), dimension(:), allocatable :: abund
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
@@ -134,20 +133,13 @@ contains
       FeH = atmos%feh
       if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
     endif
-
-    if (vmic < 0) then
-      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', atmos%vmic(1,1,1)
-    else
-      ia%vmic = vmic
-    endif
   END SUBROUTINE read_marcs
 
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-  SUBROUTINE read_text_1d(atmos_file, vmic, FeH)
+  SUBROUTINE read_text_1d(atmos_file, FeH)
     character(len=*) :: atmos_file
-    real(4), intent(in) :: vmic
     real(8), intent(out) :: FeH
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
@@ -157,11 +149,6 @@ contains
       if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
     endif
 
-    if (vmic >= 0) then
-      ia%vmic = vmic
-      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
-    endif
-
     use_ne = use_ne .and. atmos%has_pe
     use_rho = use_rho .and. atmos%has_rho
   END SUBROUTINE read_text_1d
@@ -169,16 +156,11 @@ contains
 !===============================================================================
 !> Reads the actual text files and stores variables under ia
 !===============================================================================
-  SUBROUTINE read_multi_1d(atmos_file, vmic)
+  SUBROUTINE read_multi_1d(atmos_file)
     character(len=*) :: atmos_file
-    real(4), intent(in) :: vmic
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_multi_1d_file, atmos_file, atmos)
-    if (vmic >= 0) then
-      ia%vmic = vmic
-      if (console_on(ch_atmos, 1)) write(console_unit,'(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
-    endif
 
     use_ne = .true.
     use_rho = .false.
@@ -237,15 +219,11 @@ contains
   END SUBROUTINE adopt
 
   !===============================================================================
-  SUBROUTINE read_siu_bin(atmos_file, vmic)
+  SUBROUTINE read_siu_bin(atmos_file)
     character(len=*) :: atmos_file
-    real(4), intent(in) :: vmic
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_siu_bin_file, atmos_file, atmos)
-    if (vmic >= 0) then
-      ia%vmic  = vmic
-    endif
   END SUBROUTINE read_siu_bin
 
 
