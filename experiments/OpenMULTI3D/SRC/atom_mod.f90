@@ -185,10 +185,12 @@ MODULE atom_mod
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: legacy_freql=.False.
-    ! classical recipes for transitions without collision data in the atom file, named by
-    ! the atom-file key of the process they stand in for: CE van Regemorter, CI Seaton,
-    ! CH and CHI Drawin
-    logical, public :: classic_ce=.False., classic_ci=.False., classic_ch=.False., classic_chi=.False.
+    ! classical recipes for transitions without collision data in the atom file, one
+    ! switch per process holding the name of its recipe ('' off): electron excitation
+    ! 'regemorter', electron ionisation 'seaton', hydrogen excitation and ionisation
+    ! 'drawin', and hydrogen excitation of pairs without a line 'takeda'
+    character(len=16), public :: e_excitation='', e_ionisation='', h_excitation='', &
+      h_ionisation='', h_forbidden=''
     ! lower bound on the effective collision strength of the CE recipe (Allen's form)
     real(8), public :: upsilon_floor=0.
     logical, public :: kramer_bf=.False.
@@ -806,7 +808,7 @@ MODULE atom_mod
     integer, intent(in) :: x, y, z
     !----------------------------------------------------------------------------------
     self%data%c = 0.d0
-    if (classic_ce .or. classic_ci .or. classic_ch .or. classic_chi) &
+    if (any([e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden] /= '')) &
       call self%classic_col(comp,x,y,z)
     if (associated(self%coll)) call self%gencol(comp,x,y,z)
   END SUBROUTINE collision_rates
@@ -1674,7 +1676,7 @@ MODULE atom_mod
           ! collisions with electrons
           cup = 0
           if (.not. self%ecol(tri)) then
-            if (cont .and. classic_ci) then
+            if (cont .and. e_ionisation == 'seaton') then
               ! ionization by electron collisions
               if (fac == 0) then
                 lam0 = HZ_TO_AA*h_e / dev
@@ -1683,7 +1685,7 @@ MODULE atom_mod
               tmp = min(0.1*self%ion(i), 0.3)
               cup = seaton * fac * tmp / u0 * ex
               cup = cup * cbfesc
-            else if (.not. cont .and. classic_ce) then
+            else if (.not. cont .and. e_excitation == 'regemorter') then
               ! excitation of neutrals by electron collisions: van Regemorter, at least
               ! Allen's form with the effective collision strength upsilon_floor.  The
               ! floor is a collision strength of the pair of atom levels, so its rate per
@@ -1703,18 +1705,25 @@ MODULE atom_mod
             endif
           endif
 
-          ! collisions with hydrogen (Drawin)
-          if (.not. self%hcol(tri) .and. merge(classic_chi, classic_ch, cont)) then
-            divu = (RydV/dev)**2
-            tmp = 2.0/u0
-            tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
-            cup = nh1 * self%drawin * divu * tmp * ex * sqt
-            
-            if (cont) then
-              cup = cup * cbfhsc
-            else
-              cup = cup * f
+          ! collisions with hydrogen: Drawin, or Takeda's recipe for pairs without a line
+          if (.not. self%hcol(tri)) then
+            cup = 0
+            if (.not. cont .and. fac == 0 .and. h_forbidden == 'takeda') then
+              ! Allen's form with the collision strength of the ion charge plus one,
+              ! scaled to hydrogen by sqrt(m_e/m_H), as DETAIL's mode 25
+              cup = nh1 * (allen/ne) * self%ion(i) / self%g(i) * ex * sqrt(ame/amh)
               cup = cup * cbbhsc
+            else if (merge(h_ionisation, h_excitation, cont) == 'drawin') then
+              divu = (RydV/dev)**2
+              tmp = 2.0/u0
+              tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
+              cup = nh1 * self%drawin * divu * tmp * ex * sqt
+              if (cont) then
+                cup = cup * cbfhsc
+              else
+                cup = cup * f
+                cup = cup * cbbhsc
+              endif
             endif
             if (cup /= 0) then
               cup = cup * colscale
