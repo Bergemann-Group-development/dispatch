@@ -8,5 +8,6 @@
 \File{departures} & Departure coefficients only: \fort{convlim=1e-3}, no formal solution, populations saved.\\
 \File{read\_departures} & Spectrum on the departure coefficients of another run, named by \fort{atmos_file}; no NLTE iteration.\\
 \File{turbospectrum}, \File{multi1d}, \File{multi3d} & Settings of these codes, for comparisons. Use each on its own.\\
+\File{detail} & Background of DETAIL, for comparisons of departure coefficients: the atom's lines and continua on one frequency set (\fort{decouple_continuum=F}), LTE blends of the other species from a line list (\File{vald\_atoms.txt}) in the iteration pass instead of the \fort{absmet_file} table, no frozen columns and the model's electron density. Use it on its own, in departure runs without an output grid; it costs 3--4 times a default 1D Fe run.\\
 \bottomrule
 \end{longtblr}
