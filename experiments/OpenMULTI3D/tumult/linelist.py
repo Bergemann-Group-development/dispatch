@@ -157,13 +157,13 @@ class LineList(pd.DataFrame):
     with open(filename) as f:
       lines = f.readlines()
       lines = [l.strip() for l in lines if len(l.strip()) > 0]
-      nlines = int(lines.pop(0))
+      lines.pop(0)                         # the line count
       while len(lines) > 0:
         # lower level
         idi = lines.pop(0)
         ji, ecmi, gi = [float(x) for x in lines.pop(0).split()]
         # upper level
-        idj = lines.pop(0)
+        lines.pop(0)                       # upper-level label
         jj, ecmj, gj = [float(x) for x in lines.pop(0).split()]
         # line data
         lam0, lams, lame = [float(x) for x in lines.pop(0).split()]

@@ -121,10 +121,10 @@ folder above when that preference is a single file. The Model atoms page always 
 Run the demo namelist:
 
 ```bash
-OMP_STACKSIZE=256M ./dispatch.x demo.nml
+OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
 ```
 
-`demo.nml` synthesises the four Ba II lines of a six-level toy model atom
+`examples/sun_ba_1d.nml` synthesises the four Ba II lines of a six-level toy model atom
 (`input/atoms/atom.ba06`: 4554, 4934, 5853 and 6497 Å) in a MARCS solar model, in LTE
 and NLTE, without a background line list. It takes well under a minute (about one second
 on eight cores). `tm.launch` sets the same `OMP_STACKSIZE` for every run it starts.
@@ -134,12 +134,12 @@ The run succeeded when the last line of the output is
 OpenMULTI3D terminated successfully.
 ```
 
-and `data/demo/` holds the run. Then read the result from Python:
+and `data/examples/sun_ba_1d/` holds the run. Then read the result from Python:
 
 ```python
 import tumult as tm
 
-run = tm.read("data/demo")
+run = tm.read("data/examples/sun_ba_1d")
 for lte in (True, False):
     core = run.crop(x0=4554.033, dx=1.0, LTE=lte).ydata.min()
     print("LTE " if lte else "NLTE", f"Ba II 4554 core flux {core:.3f}")

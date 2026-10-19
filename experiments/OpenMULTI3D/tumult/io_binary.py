@@ -1,7 +1,6 @@
 """Raw dispatch patch-save reading (binary memmaps + their meta files).
 
-Extracted from the run class in the Phase 6 decomposition: this module knows the
-on-disk layout — ``<kind>_meta.txt`` describing per-patch ``.bin`` memmaps keyed by
+This module knows the on-disk layout — ``<kind>_meta.txt`` describing per-patch ``.bin`` memmaps keyed by
 ``(iz, inu)`` — and how to stitch the patches back together. It knows nothing about
 the physics of what the arrays mean (see :mod:`tumult.flux` for the intensity layout).
 """
@@ -40,7 +39,7 @@ def load_patch_files(folder, kind):
                 dct[key] = np.memmap(resolved_folder + file, dtype=dtype, mode='r',
                                      shape=dims, order='F')
     except FileNotFoundError:
-        raise FileNotFoundError(f'{meta_file} not found!')
+        raise FileNotFoundError(f'{meta_file} not found!') from None
     return dct, dims
 
 

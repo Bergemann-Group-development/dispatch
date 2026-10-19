@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import html
 import time
-import logging
 
 import astropy.units as u
 import numpy as np
@@ -53,7 +52,6 @@ from tumult import refstars
 from tumult import sparams as sp
 from ..workspace import naming
 from ..workspace import store
-from tumult.synthesis import workflows as synth
 from .diagnostics import PANEL_AXES, empty_points
 from .localcontinuum import LOCAL_CONTINUUM_HEAD, continuum_cell
 from .resultview import ResultView, format_value, preparation_note, value_label
@@ -644,7 +642,7 @@ class IonBalanceTool(ResultView):
         self.push_panel()
         if self.selected() is result:
             self._render_selected()
-        p, s = result.params, result.sigmas
+        p = result.params
         if result.diagnose_only:
             self.notify(f"{result.element} balance diagnostics at the given parameters — "
                         f"see the residuals under the table.", level="info")

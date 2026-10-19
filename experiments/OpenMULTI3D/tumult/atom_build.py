@@ -303,7 +303,7 @@ def fine_structure_groups(atom, max_spread_ev=0.5):
     keys = [re.sub(r'([SPDFGHIKLMNOQ])\d+(/\d)?(\*?)\s*$', r'\1\3', str(l).split('=')[-1].strip())
             for l in lvl.label]
     groups = {}
-    for i, (k, s, e) in enumerate(zip(keys, lvl.ion, lvl.ev)):
+    for i, (k, s, _e) in enumerate(zip(keys, lvl.ion, lvl.ev)):
         groups.setdefault((s, k), []).append(i)
     out = []
     for members in groups.values():

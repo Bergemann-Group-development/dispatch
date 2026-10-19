@@ -197,7 +197,7 @@ def check_levels(atom, energy_tolerance=0.01):
 
     findings = []
     bad = []
-    for stage, grp in lvl.groupby('ion'):
+    for _stage, grp in lvl.groupby('ion'):
         dif = np.diff(grp.ev.to_numpy())
         bad += list(grp.index[1:][dif < 0])
     if bad:
@@ -205,7 +205,7 @@ def check_levels(atom, energy_tolerance=0.01):
                                 f'{len(bad)} levels lower than their predecessor in the same ion',
                                 len(bad), bad))
     dup = []
-    for stage, grp in lvl.groupby('ion'):
+    for _stage, grp in lvl.groupby('ion'):
         ecm = grp.ecm.to_numpy()
         gg = grp.g.to_numpy()
         idx = grp.index.to_numpy()
@@ -382,7 +382,6 @@ def check_nist_levels(atom, nist_levels, tolerance_cm=50.0, below_limit_ev=None)
     this (the atom is not expected to hold the levels just below the limit).
     """
     nl = match_levels(atom, nist_levels, tolerance_cm)
-    lim = {s: g.ev.max() for s, g in nist_levels.groupby('ion')}
     findings = []
     if below_limit_ev is not None and 'limit_ev' in nl:
         nl['bound_ev'] = nl.limit_ev - nl.ev

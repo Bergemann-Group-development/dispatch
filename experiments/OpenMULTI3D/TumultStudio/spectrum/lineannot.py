@@ -83,7 +83,6 @@ standing in for the range the original returned to its caller.
 """
 from __future__ import annotations
 
-import logging
 
 import numpy as np
 from bokeh.core.properties import value

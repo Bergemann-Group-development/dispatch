@@ -406,7 +406,7 @@ This section computes one NLTE line, plots it and then turns it into a spectrum 
 
 \subsection{Run the demo}
 
-\File{demo.nml}, in the experiment directory, computes the solar Ba\,\textsc{ii} 4554.0\,{\AA} line with a six-level Ba atom on a 1D MARCS model, in LTE and NLTE:
+\File{examples/sun\_ba\_1d.nml}, in the experiment directory, computes the solar Ba\,\textsc{ii} 4554.0\,{\AA} line with a six-level Ba atom on a 1D MARCS model, in LTE and NLTE:
 
 \begin{minted}{Fortran}
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
@@ -420,7 +420,7 @@ This section computes one NLTE line, plots it and then turns it into a spectrum 
 Type in the experiment directory, with the virtual environment active:
 
 \begin{minted}{bash}
-OMP_STACKSIZE=256M ./dispatch.x demo.nml
+OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
 \end{minted}
 
 The prefix \Code{OMP\_STACKSIZE=256M} sets an environment variable for this one command, which the OpenMP threads need, and \Code{./} runs the program from the current directory. The run takes well under a second. Its console output ends like this (shortened):
@@ -441,7 +441,7 @@ OpenMULTI3D terminated successfully.
 
 Each row of the table is one NLTE iteration: the largest relative change of a level population, the level where it occurs (counted from zero) and the grid position. The change falls until it is below \fort{convlim}, here 1\,\%; an asterisk marks an iteration accelerated by Ng's method \citep{Ng1974}, which extrapolates from the previous iterations. A run that used up \fort{maxiter} without meeting \fort{convlim} ends with a warning that gives the last relative change instead of the final line. Sec.~\ref{sec:convergence} explains how to judge convergence.
 
-The results are in \File{data/demo/}: the namelists actually used (\File{params.nml}), the console log (\File{rank\_00000.log}), a per-level convergence report and, in \File{save/}, the spectra, populations and atmosphere as binary files. Sec.~\ref{sec:output} lists them; \Code{tm.read} reads them, so you never open them yourself.
+The results are in \File{data/examples/sun\_ba\_1d/}: the namelists actually used (\File{params.nml}), the console log (\File{rank\_00000.log}), a per-level convergence report and, in \File{save/}, the spectra, populations and atmosphere as binary files. Sec.~\ref{sec:output} lists them; \Code{tm.read} reads them, so you never open them yourself.
 
 \subsection{Plot the line}
 
@@ -449,7 +449,7 @@ Start Python or a Jupyter notebook in the experiment directory and plot the line
 
 \begin{minted}{Python}
 import tumult as tm
-run = tm.read("data/demo")
+run = tm.read("data/examples/sun_ba_1d")
 line = run.get_line(4554.033)
 line.crop().plot(label="NLTE")
 line.crop(LTE=True).plot(label="LTE", linestyle="--")
@@ -473,7 +473,7 @@ plt.legend()
 \begin{figure}[!ht]
     \centering
     \includegraphics[scale=\pltscale]{figs/demo_ba.pdf}
-    \caption{The first run. Upper left: departure coefficients of the lower and upper level of Ba\,\textsc{ii} 4554\,{\AA}, by level index. Upper right: the line from \texttt{demo.nml} in NLTE and LTE, on the wavelength grid of the model atom. Lower panel: the same line in the 4550--4558\,{\AA} window with the line list switched on (Sec.~\ref{sec:nextstep}); the labels name the strongest lines in the window. The line list splits Ba\,\textsc{ii} 4554 into 15 hyperfine and isotopic components, all with the departure coefficients of the atom, so several labels fall on it.}\label{fig:demo}
+    \caption{The first run. Upper left: departure coefficients of the lower and upper level of Ba\,\textsc{ii} 4554\,{\AA}, by level index. Upper right: the line from \texttt{examples/sun\_ba\_1d.nml} in NLTE and LTE, on the wavelength grid of the model atom. Lower panel: the same line in the 4550--4558\,{\AA} window with the line list switched on (Sec.~\ref{sec:nextstep}); the labels name the strongest lines in the window. The line list splits Ba\,\textsc{ii} 4554 into 15 hyperfine and isotopic components, all with the departure coefficients of the atom, so several labels fall on it.}\label{fig:demo}
 \end{figure}
 
 \subsection{What the namelist says}
@@ -481,14 +481,14 @@ plt.legend()
 A namelist group starts with \texttt{\&} and ends with \texttt{/}; keys left out take their defaults, and \texttt{!} comments out a line.
 
 \begin{itemize}
-    \item \fort{&io_params} names the parent of the run directory, \fort{datadir}. The run writes to \File{<datadir>/<namelist name>/}, here \File{data/demo/}. \fort{gb_step} and \fort{do_trace} only control console messages.
+    \item \fort{&io_params} names the parent of the run directory, \fort{datadir}. The run writes to \File{<datadir>/<namelist path without .nml>/}, here \File{data/examples/sun\_ba\_1d/}. \fort{gb_step} and \fort{do_trace} only control console messages.
     \item \fort{&atmos_params} names the model atmosphere; its format follows from the file name.
     \item \fort{&atom_params} names the model atom. \fort{abundance=2.11} sets the Ba abundance on the astronomical scale, $\log_{10}(N_\mathrm{Ba}/N_\mathrm{H})+12$; without it the abundance comes from the abundance table and [Fe/H] of the run (Sec.~\ref{sec:abundances}).
     \item \fort{&nlte_params}: a positive \fort{convlim} turns on the NLTE iterations, which stop once the largest relative population change falls below it. For diagnostic lines of a single element, \fort{convlim=1e-2} is a reasonable start; the presets use \fort{1e-3}, and Sec.~\ref{sec:convergence} shows how to test whether a value is small enough.
     \item The two commented groups add a line list and a wavelength window. Without them the spectrum is computed only on the wavelength points of the model atom's own transitions, as in the upper right panel of Fig.~\ref{fig:demo}.
 \end{itemize}
 
-Two rules apply to every invocation of \File{dispatch.x}. Pass the namelist as a short relative path, such as \File{demo.nml}: a long absolute path aborts the run at start-up (\fort{datadir} inside the namelist may be absolute). Without an argument, \File{input.nml} is read and the output goes directly into \fort{datadir}.
+Two rules apply to every invocation of \File{dispatch.x}. Pass the namelist as a short relative path, such as \File{examples/sun\_ba\_1d.nml}: a long absolute path aborts the run at start-up (\fort{datadir} inside the namelist may be absolute). Without an argument, \File{input.nml} is read and the output goes directly into \fort{datadir}.
 
 \subsection{What a run does}\label{sec:anatomy}
 
@@ -510,7 +510,7 @@ The demo computes the Ba line alone. A spectrum to compare with observations add
 python -m tumult.synthesis.input_data fetch absmet
 \end{minted}
 
-The download holds four tables: \File{absmet} for solar metallicity and \File{m-1.00a+0.40...bin}, \File{m-2.00...} and \File{m-3.00...} for $[\mathrm{Fe/H}]=-1$, $-2$ and $-3$ with $[\alpha/\mathrm{Fe}]=+0.4$; a run uses the one nearest to the model's [Fe/H] (Sec.~\ref{sec:absmet}). Copy \File{demo.nml} to \File{demo\_blends.nml}, remove the \texttt{!} before the last two lines and add the solar table, so that the file reads
+The download holds four tables: \File{absmet} for solar metallicity and \File{m-1.00a+0.40...bin}, \File{m-2.00...} and \File{m-3.00...} for $[\mathrm{Fe/H}]=-1$, $-2$ and $-3$ with $[\alpha/\mathrm{Fe}]=+0.4$; a run uses the one nearest to the model's [Fe/H] (Sec.~\ref{sec:absmet}). Copy \File{examples/sun\_ba\_1d.nml} to \File{sun\_ba\_blends.nml}, remove the \texttt{!} before the last two lines and add the solar table, so that the file reads
 
 \begin{minted}{Fortran}
 &io_params           datadir='data' gb_step=6.0 do_trace=F /
@@ -523,10 +523,10 @@ The download holds four tables: \File{absmet} for solar metallicity and \File{m-
 &spectrum_params     R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
-Run it with \Code{OMP\_STACKSIZE=256M ./dispatch.x demo\_blends.nml} and plot the whole window with the strongest lines labelled:
+Run it with \Code{OMP\_STACKSIZE=256M ./dispatch.x sun\_ba\_blends.nml} and plot the whole window with the strongest lines labelled:
 
 \begin{minted}{Python}
-run = tm.read("data/demo_blends")
+run = tm.read("data/sun_ba_blends")
 run.crop(window=(4550, 4558)).plot()
 run.plot_line_labels(ntop=8)
 \end{minted}
@@ -540,7 +540,7 @@ You have now run the code, read its output and added blends. The recipe of Sec.~
 \begin{itemize}
     \item NLTE is off unless \fort{convlim}$>0$.
     \item Without a metal-opacity table (\fort{absmet_file}) the NLTE iterations have no line blanketing. The table has to match the model's [Fe/H] (Sec.~\ref{sec:absmet}).
-    \item \File{demo.nml} converges only to $10^{-2}$; Sec.~\ref{sec:convergence} shows how to test convergence.
+    \item \File{examples/sun\_ba\_1d.nml} converges only to $10^{-2}$; Sec.~\ref{sec:convergence} shows how to test convergence.
 \end{itemize}
 
 The next part gives recipes for the common calculations, shows how to read and check their results, and then works through a complete NLTE analysis.
@@ -597,7 +597,7 @@ Keep the lines of the NLTE atom's species in the list: in an NLTE run they take 
 
 \subsection{Compute NLTE lines in one run}\label{sec:recNLTE}
 
-When one spectrum is needed for one atmosphere and one or a few model atoms, a single run solves the populations and computes the spectrum. This is \File{demo\_blends.nml} of Sec.~\ref{sec:nextstep} with the settings used for results:
+When one spectrum is needed for one atmosphere and one or a few model atoms, a single run solves the populations and computes the spectrum. This is \File{sun\_ba\_blends.nml} of Sec.~\ref{sec:nextstep} with the settings used for results:
 
 \begin{minted}{Fortran}
 &io_params           datadir='data' /
@@ -654,7 +654,7 @@ The results of a run are read and plotted with the Python package \Code{tumult},
 import astropy.units as u
 import tumult as tm
 
-run = tm.read("data/demo")
+run = tm.read("data/examples/sun_ba_1d")
 print(run.mode, run.lam.size, run.mus, run.abundances["Ba"])
 \end{minted}
 
@@ -1771,7 +1771,7 @@ Presets combine: applied in order, a later one overrides the keys an earlier one
 \section{Namelist Reference}\label{sec:namelists}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Each run is controlled by a Fortran namelist file, for example \File{demo.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key stops the run at start-up with \Code{Fortran runtime error: Cannot match namelist object name}, followed by the key. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
+Each run is controlled by a Fortran namelist file, for example \File{examples/sun\_ba\_1d.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key stops the run at start-up with \Code{Fortran runtime error: Cannot match namelist object name}, followed by the key. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
 
 \input{tabs/namelist_groups}
 

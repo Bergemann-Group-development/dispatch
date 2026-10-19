@@ -1,6 +1,5 @@
 from inspect import signature
 import numpy as np
-import pandas as pd
 from scipy.ndimage import convolve
 import os
 
@@ -19,7 +18,6 @@ _plt = None
 def get_plt():
     global _plt
     if _plt is None:
-        import matplotlib
         import matplotlib.pyplot as plt
         plt.style.use('default')
         plt.style.use(os.path.join(current_dir, 'Bergemann2020.mplstyle'))
@@ -230,10 +228,8 @@ def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
     # Calculate the direction vector in data coordinates
     dx, dy = end[0] - start[0], end[1] - start[1]
 
-    # Get axis data limits and aspect ratio correction
+    # Aspect ratio correction
     ax = plt.gca()
-    xlim = ax.get_xlim()
-    ylim = ax.get_ylim()
     data_ratio = ax.get_data_ratio()  # Ratio of y-unit to x-unit
 
     # Scale dy by the data ratio to account for aspect ratio

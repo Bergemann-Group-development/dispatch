@@ -159,7 +159,7 @@ class EquivalentWidth:
             f'<div class="field-group"><label>SNR</label>'
             + num_input('class="field-input ew-snr-input"', snr, min=0, placeholder="—")
             + '</div>'
-            f'<div class="field-group"><label>Continuum uncertainty [%]</label>'
+            '<div class="field-group"><label>Continuum uncertainty [%]</label>'
             + num_input('class="field-input ew-cont-input"', cont, min=0, step=0.1)
             + '</div>'
             f'<div class="field-group"><label>Equivalent width</label>'

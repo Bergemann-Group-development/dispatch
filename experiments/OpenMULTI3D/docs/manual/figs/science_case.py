@@ -15,7 +15,6 @@ wavelengths, normalised flux; input_data dataset kpno).
 """
 from pathlib import Path
 
-import astropy.units as u
 import matplotlib
 
 matplotlib.use("Agg")
@@ -96,7 +95,7 @@ def launch(name, abundance=REFERENCE, cntrbf=False):
 
 
 def launch_demo(name, blends=False):
-    """The Ba II 4554 run of demo.nml; with blends, the version of Sec. 4 that adds a
+    """The Ba II 4554 run of examples/sun_ba_1d.nml; with blends, the version of Sec. 4 that adds a
     line list, a 4550-4558 A window and the solar metal-opacity table."""
     cfg = {
         "io_params": {"datadir": "."},

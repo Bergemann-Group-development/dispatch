@@ -1,10 +1,8 @@
 import numpy as np
 import pandas as pd
-from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy import integrate, optimize
-from scipy.interpolate import CubicHermiteSpline
 from numba import njit, jit
 import re
 import os
@@ -14,7 +12,6 @@ from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
 import collections.abc
-from .decorators import broadcast_arguments
 import tempfile
 
 from .const import (  # noqa: F401 - single constants source; re-exported for back-compat
@@ -193,7 +190,7 @@ def between_ext(arr, pos, criterion=np.greater_equal):
     return mask.astype(np.bool)
 
 #=====================================================================
-def polyfit(xy, dydx=[]):
+def polyfit(xy, dydx=()):
   n1 = len(xy)
   n2 = len(dydx)
   n = n1+n2
@@ -333,7 +330,6 @@ def voigt_profile(xx, x0, a, sigma, amp):
     # LEGACY parameterisation (un-normalised peak, different argument order); the modern
     # model is tumult.profile.VoigtProfile / tumult.utils.voigt_profile. Kept because the
     # two are NOT numerically equivalent.
-  s2 = np.sqrt(2)
   vv = (xx-x0) / sigma
   return 1 - amp*voigt_function(a, vv)
 
@@ -558,7 +554,7 @@ def marcs_to_pandas(file):
     lines.pop(0)
 
     df = pd.DataFrame()
-    for t in range(2):
+    for _ in range(2):
       data = lines[:nrows]
       lines = lines[nrows:]
       sub = pd.read_csv(StringIO('\n'.join(data)), sep=r'\s+')
@@ -568,7 +564,7 @@ def marcs_to_pandas(file):
     lines = lines[1:] # skip the first line of the second section
     widths = [3,] + [7,] * 11
 
-    for t in range(3):
+    for _ in range(3):
       data = lines[:nrows]
       lines = lines[nrows:]
       sub = pd.read_fwf(StringIO('\n'.join(data)), widths=widths, sep=r'\s+')
@@ -641,8 +637,7 @@ def angular_distance(ra1, dec1, ra2, dec2):
 def lowpass_fft_thresh(xx, yy, thresh=15, force_period=False):
   # NOT the same filter as tumult.utils.lowpass (Gaussian roll-off in ln-lambda at a
   # spectral resolution R): this is a brick-wall FFT cut at `thresh` cycles per x-unit
-  # on a linear grid. Renamed from `lowpass` in the Phase 1 consolidation; no callers
-  # existed at that point.
+  # on a linear grid.
   newx = np.linspace(xx.min(), xx.max(), len(xx)*3)
   dx = newx[1] - newx[0]
   yy = np.interp(newx, xx, yy)
@@ -668,17 +663,6 @@ def lowpass_fft_thresh(xx, yy, thresh=15, force_period=False):
   newy = np.interp(xx, newx, filtered_signal)
   return newy
 
-
-def lowpass(xx, yy, thresh=15, force_period=False):
-  # deprecated alias for lowpass_fft_thresh. NOTE: shadowed at package level by
-  # tumult.utils.lowpass (a different filter with a `resolution` argument), which is
-  # what `tumult.lowpass` has always resolved to - only direct `auxfuncs.lowpass`
-  # imports land here, and none exist in the codebase.
-  import warnings
-  warnings.warn("auxfuncs.lowpass is deprecated; use lowpass_fft_thresh (brick-wall "
-                "FFT cut) or tumult.utils.lowpass (Gaussian roll-off at resolution R).",
-                DeprecationWarning, stacklevel=2)
-  return lowpass_fft_thresh(xx, yy, thresh=thresh, force_period=force_period)
 
 #=====================================================================
 def split_words(text):
@@ -736,9 +720,3 @@ def pchip_sigma(xx, yy, x, dx):
   dy = func.derivative(1)(x)*dx
   return np.abs(dy)
 
-#=====================================================================
-# The second (identical) pad_boolean definition that used to live here was deleted in
-# the Phase 1 consolidation - the first definition above is the one that survives.
-# calc_teff was deleted too: unit-aware version lives in tumult.utils (this one worked
-# in raw CGS and its planck_thresh branch called an undefined `crop_spectrum`).
-# get_bisector moved to tumult.utils (re-exported above).

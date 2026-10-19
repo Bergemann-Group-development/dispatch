@@ -135,8 +135,6 @@ def test_grid_record_discovery_and_mesh_route_by_format(grid, tmp_path):
 
 def test_prepare_builds_snapshot_grid_settings(grid, tmp_path):
     from tumult.synthesis import workflows
-    record = {'folder': str(grid), 'format': 'Stagger2', 'snapshots': '1',
-              'pattern': workflows.STAGGER_PATTERN, 'resolution': [40, 40, 120]}
     from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest
     atmosphere = AtmosphereGrid(grid, pattern=workflows.STAGGER_PATTERN, format='Stagger2',
                                 snapshots='1', resolution=(40, 40, 120))

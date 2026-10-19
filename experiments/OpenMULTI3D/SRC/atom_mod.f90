@@ -1276,7 +1276,7 @@ MODULE atom_mod
       call os%allocate(self%cgrid, [ntemp, ncol],    label='atom%cgrid')
       call os%allocate(self%dcdt,  [ntemp, ncol],    label='atom%dcdt')
 
-      read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
+      read(dummy_string, *) str1, str2, str3, self%tgrid(:, 1)
 
       allocate(dlogt(ntemp-1))
       dlogt = log(self%tgrid(2:ntemp,1) / self%tgrid(1:ntemp-1,1))

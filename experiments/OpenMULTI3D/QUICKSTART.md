@@ -17,7 +17,7 @@ Shell commands are shown with a `$` prompt; everything else is Python.
 
 ## 1. The example
 
-`demo.nml` is the namelist the installation check runs. It names two inputs:
+`examples/sun_ba_1d.nml` is the namelist the installation check runs. It names two inputs:
 
 - **The atmosphere** `input/atmos/sun.mod`, a link to the MARCS model of the Sun,
   `p5777_g+4.4_m0.0_t01_st_z+0.00_..._s+0.00.mod`: a plane-parallel, hydrostatic 1D
@@ -35,7 +35,7 @@ strong 4554 Å line in the real Sun. Its purpose is to show the LTE and NLTE wor
 abundances derived from it are not to be used in a publication. The larger atoms under
 `input/atoms/` (Fe, Mg, O) are the ones the analysis workflows use.
 
-`demo.nml` computes the statistical equilibrium of this atom in NLTE, with the LTE
+`examples/sun_ba_1d.nml` computes the statistical equilibrium of this atom in NLTE, with the LTE
 solution as a by-product, and writes the emergent spectrum over the four lines only: with
 no `spectrum_params` section, the wavelength grid is the atom's own line quadrature, 201
 points per line. No background line list is included (the `linelist_params` line is
@@ -49,15 +49,15 @@ wavelength it reads to standard air, whatever its range.
 ## 2. Run the calculation
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x demo.nml
+$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
 ```
 
-`dispatch.x` takes one namelist and writes its run under `data/<namelist name>/`, here
-`data/demo/`. The console shows the atmosphere and atom being read, then one table row
+`dispatch.x` takes one namelist and writes its run under `data/<namelist path without .nml>/`,
+here `data/examples/sun_ba_1d/`. The console shows the atmosphere and atom being read, then one table row
 per iteration of the statistical equilibrium (`n/99`, with an asterisk after `n` when the
 iteration was accelerated by Ng extrapolation), whose `global` column is the
 largest relative population change of the previous iteration. Once that change falls
-below `convlim` (0.01 in `demo.nml`), every depth patch completes the current iteration
+below `convlim` (0.01 in `examples/sun_ba_1d.nml`), every depth patch completes the current iteration
 and the solve stops. The run ends with
 
 ```
@@ -96,7 +96,7 @@ register are left out, and the process RSS is correspondingly higher.
 ```python
 import tumult as tm
 
-run = tm.read("data/demo")
+run = tm.read("data/examples/sun_ba_1d")
 print(run.mode, run.lam.size, run.lam.min(), run.lam.max())
 print(run.abundances["Ba"])
 ```
@@ -111,10 +111,10 @@ the wavelength grid (`run.lam`), the emergent intensities and fluxes and the mod
 (`run.atoms[0]`). `run.mode` says whether the run solved NLTE or was an LTE run, which
 carries no separate LTE spectrum. The abundance is on the
 astronomical scale, A(Ba) = log10(N_Ba/N_H) + 12 = 2.11, set by `abundance=2.11` in
-`demo.nml`; the standard composition `input/abund/abund_magg22` has 2.17.
+`examples/sun_ba_1d.nml`; the standard composition `input/abund/abund_magg22` has 2.17.
 
 The 804 points are the four line windows, so the grid has gaps between them. Never read
-the binary files under `data/demo/save/` yourself: `run` decodes their layout and unit
+the binary files under `data/examples/sun_ba_1d/save/` yourself: `run` decodes their layout and unit
 conventions.
 
 ## 4. Plot the normalised flux
@@ -204,11 +204,11 @@ The exact values depend on the compiler and platform in the last digit.
 ## 6. Change the barium abundance
 
 `tm.launch` writes a namelist from a default and a dictionary of overrides, runs
-`dispatch.x` on it and returns the output folder. The tracked `demo.nml` stays as it is;
+`dispatch.x` on it and returns the output folder. The tracked `examples/sun_ba_1d.nml` stays as it is;
 the new namelist is written under the name you give:
 
 ```python
-folder, ran = tm.launch("quickstart_ba_rich", default="demo.nml",
+folder, ran = tm.launch("quickstart_ba_rich", default="examples/sun_ba_1d.nml",
                         nml_settings={"atom_params": {"abundance": 2.41}},
                         verbose=1)
 rich = tm.read(folder)
@@ -226,7 +226,7 @@ This writes `quickstart_ba_rich.nml` here, runs it with the console output in
 0.3 dex. `ran` is `False` when a finished run of that name already exists, in which case
 nothing is recomputed. Any namelist entry can be overridden the same way, for example
 `{"nlte_params": {"convlim": 1e-3}}` for a tighter convergence limit. Editing a copy of
-`demo.nml` by hand and running the copy with `dispatch.x` is equivalent.
+`examples/sun_ba_1d.nml` by hand and running the copy with `dispatch.x` is equivalent.
 
 ```python
 line.crop().plot(label="A(Ba) = 2.11")
@@ -256,7 +256,7 @@ back = tm.load_file("quickstart_ba4554_nlte.txt")
 
 `Spectrum.save(path)` and `Spectrum.load(path)` round-trip the same object with its units
 through JSON for use from Python. The run folder itself is the complete record: a later
-session repeats step 3 on `data/demo` or `data/quickstart_ba_rich`.
+session repeats step 3 on `data/examples/sun_ba_1d` or `data/quickstart_ba_rich`.
 
 To look at the runs in the GUI, start TumultStudio from this directory:
 
@@ -265,7 +265,7 @@ $ python -m TumultStudio
 ```
 
 The landing page opens in the browser. Choose **Open ▾ → Spectrum…**, navigate the file
-picker to this checkout's `data/demo` folder and press **Open run**: the run's normalised
+picker to this checkout's `data/examples/sun_ba_1d` folder and press **Open run**: the run's normalised
 NLTE flux appears on the canvas and in the object list on the left. Open
 `data/quickstart_ba_rich` the same way to overlay the abundance-changed run, and open the
 saved text file through the same picker with **Open** to add the cropped line. The canvas
@@ -276,7 +276,7 @@ the GUI.
 **This is the end of the quickstart.** To remove what it created:
 
 ```
-$ rm -rf quickstart_* data/quickstart_* data/demo
+$ rm -rf quickstart_* data/quickstart_* data/examples
 ```
 
 Where to go next:
@@ -391,7 +391,7 @@ recipes. `rm -rf quickstart_synth data/quickstart_synth` removes this example's 
 
 This example downloads 82 MB and runs for several minutes on eight cores.
 
-`demo3d.nml` runs the same barium atom in one snapshot of a solar 3D radiation-hydrodynamic
+`examples/sun_ba_3d.nml` runs the same barium atom in one snapshot of a solar 3D radiation-hydrodynamic
 simulation, in M3DIS format. Download and unpack it into `input/atmos/`, where downloaded
 files are ignored by Git:
 
@@ -411,24 +411,24 @@ archive.unlink()
 on a stalled connection instead of hanging and resumes a partial download when the
 block is run again.
 
-The snapshot is a 160 × 160 × 159 cube; `demo3d.nml` samples it onto 30 × 30 columns
+The snapshot is a 160 × 160 × 159 cube; `examples/sun_ba_3d.nml` samples it onto 30 × 30 columns
 (`atmos_params` `nx`, `ny`) of 96 cells (the `nz` default), coarse enough for a
 demonstration. Run it:
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x demo3d.nml
+$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_3d.nml
 ```
 
 The iteration blocks look like the 1D ones, and each takes far longer: every iteration
 solves the transfer along the angle quadrature through 900 columns instead of one, and
 the solution converged after 13 iterations in six and a half minutes on an eight-core
-laptop. The output is `data/demo3d/`. `tm.read` opens it like a 1D run; the saved
+laptop. The output is `data/examples/sun_ba_3d/`. `tm.read` opens it like a 1D run; the saved
 intensities and the flux are means over the horizontal plane, so the profile is the
 disc-integrated line of the whole snapshot:
 
 ```python
-run1d = tm.read("data/demo")
-run3d = tm.read("data/demo3d")
+run1d = tm.read("data/examples/sun_ba_1d")
+run3d = tm.read("data/examples/sun_ba_3d")
 
 run1d.get_line(4554.033).crop().plot(label="1D MARCS, NLTE")
 run3d.get_line(4554.033).crop().plot(label="3D snapshot, NLTE")
