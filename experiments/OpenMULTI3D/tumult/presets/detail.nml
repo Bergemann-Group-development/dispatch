@@ -1,0 +1,29 @@
+! Comparison with DETAIL as used for Fe (Mashonkina et al. 2011, Bergemann et al. 2012):
+! the atom's lines and continua overlap on one frequency set, LTE blends of the other
+! species come from a line list at all of the atom's frequencies, the atom's own species
+! and continua stay out of the background, no columns are frozen and n_e is the model's.
+! The line list replaces the metal-opacity table and follows the run's abundances, so no
+! table needs to match [Fe/H]. Use on its own, in departure runs without an output grid.
+&nlte_params
+  decouple_continuum = .false.
+  premature_finish = .false.
+/
+! An absmet table cannot be used here: it carries the atom's own lines, which a coupled
+! frequency set would count twice.
+&rt_iteration_params
+  include_linelist = .true.
+  include_absmet = .false.
+/
+&atom_params
+  overlapping_bb = .true.
+  overlapping_bf = .true.
+  exclude_trace_cont = .true.
+  exclude_from_line_list = .true.
+/
+! Atomic lines from 1000 to 25500 A; the list has to cover the atom's transitions.
+&linelist_params
+  linelist_file = 'input/linelists/master_linelists/vald_atoms.txt'
+/
+&atmos_params
+  use_ne = .true.
+/

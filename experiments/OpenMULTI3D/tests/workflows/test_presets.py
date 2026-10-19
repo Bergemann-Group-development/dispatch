@@ -105,6 +105,19 @@ def test_a_comment_may_hold_an_apostrophe():
                                                               "dlam": 5}}
 
 
+def test_detail_preset_blankets_the_coupled_set_from_a_line_list():
+    """DETAIL adds LTE blends at all of the atom's frequencies and leaves the atom's own
+    lines out of them. On a coupled frequency set the absmet table, which carries the
+    atom's lines, would count them twice, so the preset takes the blends from a line list
+    with the atom's species excluded."""
+    settings = presets.load("detail").settings
+    assert settings["nlte_params"]["decouple_continuum"] is False
+    assert settings["rt_iteration_params"] == {"include_linelist": True,
+                                               "include_absmet": False}
+    assert settings["atom_params"]["exclude_from_line_list"] is True
+    assert settings["linelist_params"]["linelist_file"]
+
+
 @pytest.mark.parametrize("name", ["multi1d", "multi3d", "turbospectrum"])
 def test_comparison_presets_withhold_molecular_damping_estimates(name):
     """MULTI and Turbospectrum estimate no damping of molecular lines from the molecule's
