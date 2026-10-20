@@ -245,7 +245,7 @@ MODULE m3d_patch_mod
     logical, public, save :: suppress_masers=.false. ! instead force chi>0 (kills the maser)
     logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true.
-    logical, public, save :: use_rho=.true., use_ne=.true.
+    logical, public, save :: use_rho=.true., use_ne=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
     logical, public, save :: column_by_column=.false.
