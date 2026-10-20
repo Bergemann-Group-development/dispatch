@@ -1,7 +1,9 @@
+#include "../HOP/read_namelist.inc"
 MODULE nlte_patch_mod
   USE os_mod
   USE gpatch_mod
   USE io_mod
+  USE namelist_check_mod, only: namelist_error
   USE scaling_mod
   USE trace_mod
   USE bits_mod
@@ -153,7 +155,7 @@ contains
     integer, allocatable :: atom_lines(:)
     logical, allocatable :: selected(:)
     integer :: il
-    integer :: i, j, iostat, nlvl
+    integer :: i, j, nlvl
     namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
@@ -171,13 +173,7 @@ contains
       allocate(abundance(64), source=-99.9d0)
       atom_file = ''
 
-      rewind (io%input)
-      read (io%input, atom_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, atom_params)
-      end if
-      call io%namelist_warning ('atom_params', iostat)
+      READ_NAMELIST(atom_params)
       call check_recipe('e_excitation', e_excitation, 'regemorter')
       call check_recipe('e_ionisation', e_ionisation, 'seaton')
       call check_recipe('h_excitation', h_excitation, 'drawin')
@@ -215,12 +211,7 @@ contains
 
       if (n_in_lines > 0) then
         allocate(in_lines(n_in_lines))
-        rewind (io%input)
-        read (io%input, line_mask, iostat=iostat)
-        if (iostat > 0) then
-          rewind (io%input)
-          read (io%input, line_mask)
-        end if
+        READ_NAMELIST(line_mask)
         write (io%namelist, line_mask)
       endif
 

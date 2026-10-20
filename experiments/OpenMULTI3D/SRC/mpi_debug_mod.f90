@@ -1,5 +1,7 @@
+#include "../HOP/read_namelist.inc"
 MODULE mpi_debug_mod
   USE io_mod
+  USE namelist_check_mod, only: namelist_error
   USE mpi_mod
 #ifdef __INTEL_COMPILER
   USE IFPORT
@@ -10,7 +12,7 @@ contains
 
   !===============================================================================
   SUBROUTINE check_mpi_debug()
-    integer :: lunit, iostat
+    integer :: lunit
     integer :: halt=0
     logical :: debug=.false.
     character(len=128) :: pid_file
@@ -23,9 +25,7 @@ contains
     write(lunit, '(I0)') getpid()
     close(lunit)
 
-    rewind (io%input)
-    read(io%input, mpi_debug_params, iostat=iostat)
-    call io%namelist_warning ('mpi_debug_params', iostat)
+    READ_NAMELIST(mpi_debug_params)
     write (io%namelist, mpi_debug_params)
 
     if (.not. debug) return
