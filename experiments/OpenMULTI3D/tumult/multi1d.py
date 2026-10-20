@@ -18,9 +18,10 @@ absolute fluxes are converted from per Hz to per Å. MULTI defines the flux as
 normalised spectrum is divided by MULTI's own continuum, the background-only flux at line
 centre (`FLUX(0)`), which is also what MULTI's equivalent widths use.
 
-MULTI computes the LTE profiles of an NLTE atom only in a separate run with `ITMAX=0`;
-`from_tumult_run` makes both, in `NLTE/` and `LTE/`, and `crop(LTE=True)` reads the
-second.
+MULTI computes the LTE profiles of an NLTE atom only in a separate run with `ITMAX=0`
+(`ITMAX` also counts the scattering iterations, `ILAMBD` would update the populations);
+`from_tumult_run` makes both, in `NLTE/` and `LTE/`, the LTE run with the scattering
+formal solver (`ISCAT=1`), and `crop(LTE=True)` reads the second.
 """
 import os
 import re
@@ -420,14 +421,16 @@ class Multi1D:
 
         cfg = dict(DEFAULT_INPUT)
         cfg['ITMAX'] = nml['rt_iteration_params']['maxiter']
-        cfg['ILAMBD'] = nml['rt_output_params']['maxiter']
         cfg['ELIM1'] = cfg['ELIM2'] = nml['nlte_params']['convlim']
         cfg['QNORM'] = nml['atom_params']['qnorm']
         absmet_file = nml['opac_table_params']['absmet_file'].strip()
         cfg['IOSMET'] = 1 if absmet_file else 0
         cfg.update(settings or {})
 
-        runs = {'LTE': {**cfg, 'ITMAX': 0}}
+        # Without iterations the background scattering is only consistent with the
+        # radiation field in the scattering formal solver (ISCAT=1); with ISCAT=0 the
+        # LTE wings sit up to 0.3 % below the continuum FLUX(0).
+        runs = {'LTE': {**cfg, 'ITMAX': 0, 'ILAMBD': 0, 'ISCAT': 1}}
         if run.mode == 'NLTE':
             runs = {'NLTE': cfg, **runs}
         for name, run_cfg in runs.items():
