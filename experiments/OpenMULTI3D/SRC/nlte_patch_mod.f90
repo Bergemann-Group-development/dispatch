@@ -230,8 +230,7 @@ contains
             ! a MULTI atom is read through its conversion, which becomes the run's copy;
             ! components split off a selected line are selected with it
             call read_classic_atom(atom_file, classic)
-            ! atom.mg86g becomes mg86g.txt
-            read_file = trim(io%run_dir)//'atoms/'//trim(atom_name(6:))//'.txt'
+            read_file = run_atom_file(classic%id)
             if (mpi%master) call write_pandas_atom(classic, read_file, atom_file)
             call mpi%barrier('atom conversion')
             if (allocated(in_lines)) then
@@ -302,11 +301,10 @@ contains
           ! output patch's output_atoms point at and what write_linelist_out walks
           call atom%build_ll(out_trans(i))
 
-          ! the run's copy of a table-format atom keeps its name; a MULTI atom's
-          ! conversion was written above
+          ! a MULTI atom's conversion was written to the run's copy above
           if (pandas_format) then
-            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom_name))
-            atom%file = trim(io%run_dir)//'atoms/'//trim(atom_name)
+            atom%file = run_atom_file(atom%id)
+            call os%copy_file(trim(atom_file), trim(atom%file))
           else
             atom%file = read_file
           endif
@@ -376,6 +374,30 @@ contains
     self%natom = natom
     call trace%end(itimer)
   END SUBROUTINE pre_init_atom
+
+  !===============================================================================
+  !> The run's copy of an atom whose file gives the id `id`: atoms/<id>.txt, named
+  !> after the id the atom takes in the run, that of its element or molecule (FE
+  !> becomes Fe), or the file's id for a species the composition does not hold.
+  !> A read_departures run finds the atom of saved departures by that id.
+  !===============================================================================
+  FUNCTION run_atom_file (id) RESULT (file)
+    character(len=*), intent(in) :: id
+    character(len=512) :: file
+    class(element_type), pointer :: element
+    class(molec_type), pointer :: molecule
+    character(len=len(id)) :: run_id
+    !-----------------------------------------------------------------------------
+    run_id = id
+    call composition%element_by_id(id(1:3), element, verbose=.false.)
+    if (associated(element)) then
+      run_id = element%id
+    else
+      call composition%molecule_by_id(id(1:3), molecule, verbose=.false.)
+      if (associated(molecule)) run_id = molecule%id
+    endif
+    file = trim(io%run_dir)//'atoms/'//trim(run_id)//'.txt'
+  END FUNCTION run_atom_file
 
   !===============================================================================
   ! A classical-recipe switch of &atom_params is off ('') or names its recipe.
@@ -893,7 +915,7 @@ contains
       deallocate(mem)               ! load6 allocates it afresh for the next atom
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       dep%nlevel = size(dep%mem,4)
-      dep%atom => departure_atom(trim(save_folder)//'pop_'//trim(keys(i))//'_atom.txt')
+      dep%atom => departure_atom(trim(run_dir)//'/atoms/'//trim(keys(i))//'.txt')
       if (size(dep%atom%ev) /= dep%nlevel) then
         call console_error('the saved atom of '//trim(keys(i))//' does not match its departures')
         error stop 'init_departures'
@@ -992,12 +1014,6 @@ contains
       end do
 
       call self%save6(out_mem, label='pop_'//trim(atom%id), add2meta=.not. self%pop_meta_written)
-      ! the atom the departures belong to, which a read_departures run matches its
-      ! line-list lines against
-      !$omp critical (write_atom_copy)
-      if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_atom.txt')) &
-        call os%copy_file(trim(atom%file), trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_atom.txt')
-      !$omp end critical (write_atom_copy)
       deallocate(out_mem)
     end do
     self%pop_meta_written = .true.
