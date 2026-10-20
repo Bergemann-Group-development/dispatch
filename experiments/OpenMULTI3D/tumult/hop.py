@@ -164,7 +164,9 @@ class HopEOS:
     HOP module-level settings applied *before* the Fortran init (required for
     init-time options such as ``abundances`` or ``exclude_elements``); the
     recognized names are exactly what ``option_names()`` reports; the value is
-    parsed by libhop against the option's own type.
+    parsed by libhop against the option's own type.  ``absmet_file`` loads the
+    sampled metal-line table that ``opacity(include_absmet=True)`` needs; the table
+    is process-wide, so every instance in a process must name the same file.
 
     The library is silent by default (``verbose=False``, i.e. HOP console level
     -1); ``verbose=0`` prints warnings, ``verbose=True``/1 adds what a dispatch
@@ -197,6 +199,11 @@ class HopEOS:
                 raise HopError(f'data file not found: {p}')
 
         options = dict(options or {})
+        if 'absmet_file' in options:
+            absmet = Path(options['absmet_file']).resolve()
+            if not absmet.is_file():
+                raise HopError(f'absmet file not found: {absmet}')
+            options['absmet_file'] = str(absmet)
         # the VCS hydrogen-profile tables and the ABO cross-section tables of
         # Turbospectrum lists sit next to the other input data, but HOP's default
         # paths are cwd-relative -- make them absolute unless overridden
@@ -573,7 +580,8 @@ class HopEOS:
         dispatch 'opa'/'scat' table holds.
 
         chi is the total: continuum (Thomson + Rayleigh folded in), the sampled
-        metal-line background with ``include_absmet``, and the LTE line list with
+        metal-line background with ``include_absmet`` (which needs the instance's
+        ``absmet_file`` option), and the LTE line list with
         ``linelist``.  scat is the scattering part *of* it: Thomson + Rayleigh,
         plus -- with ``line_scattering`` -- the (1-eps)-weighted absmet and
         line-list opacity, the van Regemorter split composition_type%opacity
@@ -607,6 +615,8 @@ class HopEOS:
         lam = self._check_lam(lam)
         if self._state is None:
             raise HopError('no state loaded; call load_state first')
+        if include_absmet and 'absmet_file' not in self._recipe:
+            raise HopError('include_absmet needs the absmet_file option')
         if linelist is not None:
             linelist = self._linelist_files(linelist)
         nchunks = max(1, min(nchunks or nprocs, lam.size))

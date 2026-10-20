@@ -60,7 +60,10 @@ def test_chunking_is_exact_without_a_linelist():
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()
-    with HopEOS(feh=0.0) as hop:
+    absmet = PROJECT_DIR / 'input' / 'absmet_files' / 'absmet'
+    if not absmet.is_file():
+        pytest.skip('solar absmet table not present')
+    with HopEOS(feh=0.0, absmet_file=absmet) as hop:
         hop.load_state(temp, rho=rho)
         for kw in ({}, dict(include_absmet=True)):
             chi1, scat1 = hop.opacity(lam, nchunks=1, **kw)
