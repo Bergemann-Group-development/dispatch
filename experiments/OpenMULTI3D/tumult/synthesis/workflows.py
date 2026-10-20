@@ -37,6 +37,7 @@ from .inputs import Atmosphere, AtmosphereGrid, Snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
 from .snapshot_grid import SNAPSHOT_FORMATS, discover_grid
 from ..auxfuncs import update_dict
+from ..launch import run_file
 from . import presets
 
 # the workflow layer under every run (tumult/presets/internal/base.nml)
@@ -1231,7 +1232,7 @@ def delete_cache_entry(prefs, path):
     # remove the matching input namelist (mirrors the run path under input_root)
     in_root = input_root(prefs).resolve()
     rel = p.relative_to(root)
-    in_nml = (in_root / rel).with_suffix(".nml")
+    in_nml = run_file(in_root / rel, ".nml")
     in_nml.unlink(missing_ok=True)
     in_bucket = in_nml.parent  # drop the now-empty bucket too
     if in_bucket != in_root and in_bucket.is_dir() and not any(in_bucket.iterdir()):

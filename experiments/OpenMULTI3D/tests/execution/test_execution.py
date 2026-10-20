@@ -513,20 +513,45 @@ def test_job_record_states_a_finished_run(tmp_path, monkeypatch):
     assert listed['resolved'] == 'finished' and Path(listed['output']) == output
 
 
-def test_job_record_survives_a_crashed_run(tmp_path, monkeypatch):
-    """A run that never wrote abund.txt is reported failed, not silently absent."""
+def test_failed_run_raises_with_its_error_line(tmp_path, monkeypatch):
+    """A synchronous run that dispatch.x ends with an error raises, quotes the error
+    line that stderr interleaves into the log, is recorded failed and is no cache hit."""
     from tumult import launch
     from tumult.synthesis import jobrecord
 
     execution = tmp_path / 'execution'
     execution.mkdir()
-    _stub_dispatch(execution, 'sys.exit(3)\n')
+    _stub_dispatch(execution, '(out/"abund.txt").write_text("partial")\n'
+                              'print(" console line")\n'
+                              'print("Fortran runtime error: Cannot match namelist object name '
+                              'lambda_min", flush=True)\n'
+                              'print(" Reading marcs atmosphere")\nsys.exit(2)\n')
     monkeypatch.chdir(execution)
 
-    output, _ = launch('cache/job', verbose=0)
+    with pytest.raises(RuntimeError, match='status 2.*\n.*Cannot match namelist object name'):
+        launch('cache/job', verbose=0)
+    output = execution / 'data/cache/job'
     assert jobrecord.state_of(output) == 'failed'
-    # and the failure is not mistaken for a cache hit on the next launch
-    assert launch('cache/job', verbose=0)[1] is True
+    assert not (output / 'abund.txt').exists()
+    _stub_dispatch(execution, '(out/"abund.txt").write_text("done")\n')
+    assert launch('cache/job', verbose=0) == (output, True)
+
+
+def test_run_names_keep_their_dots(tmp_path, monkeypatch):
+    """dispatch.x names a run after its namelist up to the last dot, so 'ba_2.11' must be
+    written as 'ba_2.11.nml': two abundances differing after the dot are two runs."""
+    from tumult import launch
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    _stub_dispatch(execution, '(out/"abund.txt").write_text(sys.argv[1])\n')
+    monkeypatch.chdir(execution)
+
+    for name in ('ba_2.11', 'ba_2.16'):
+        output, ran = launch(f'grid/{name}', verbose=0)
+        assert ran and output == execution / 'data/grid' / name
+        assert (output / 'abund.txt').read_text() == f'grid/{name}.nml'
+        assert (execution / 'data/grid' / f'{name}.log').is_file()
 
 
 def test_job_record_reports_a_killed_run_as_lost(tmp_path):

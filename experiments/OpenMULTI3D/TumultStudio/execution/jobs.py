@@ -298,8 +298,9 @@ class ExternalRun:
     def from_summary(cls, summary):
         """From an ``external`` job of the daemon's list."""
         from pathlib import Path
+        from tumult.launch import run_file
         folder = Path(summary["folder"])
-        log = folder.with_suffix(".log")
+        log = run_file(folder, ".log")
         return cls(str(folder), folder.name, summary["state"], summary.get("pid"),
                    summary.get("host"), summary.get("slurm_id"), summary.get("input"),
                    summary.get("started"), (str(log),) if log.is_file() else (),
