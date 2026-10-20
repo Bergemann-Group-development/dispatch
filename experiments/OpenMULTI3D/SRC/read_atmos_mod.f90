@@ -79,8 +79,9 @@ contains
   END SUBROUTINE read_co5bold
 
   !===============================================================================
-  !> use_ne enters as the request and leaves true only where the snapshot has an
-  !> .aux file to take n_e from.
+  !> The .aux file is read whenever it exists, so that the mesh grading can use
+  !> its electron pressure; use_ne leaves true only where it was requested and
+  !> the snapshot has one.
   !===============================================================================
   SUBROUTINE read_stagger(stagger_file, snap, use_ne)
     character(len=*), intent(in) :: stagger_file
@@ -91,9 +92,9 @@ contains
     character(len=512) :: msg
     !-----------------------------------------------------------------------------
     call trace%begin('read_stagger_data', itimer=itimer)
-    call read_stagger_file(stagger_file, snap, use_ne, atmos, ierr, msg)
+    call read_stagger_file(stagger_file, snap, .true., atmos, ierr, msg)
     call adopt(atmos, ierr, msg)
-    use_ne = atmos%has_pe
+    use_ne = use_ne .and. atmos%has_pe
     call trace%end(itimer)
   END SUBROUTINE read_stagger
 
@@ -394,13 +395,29 @@ contains
     real(4), dimension(:,:,:), pointer, contiguous :: lpe
     real(4) :: vmin, vmax
     integer :: zs, ze
+    character :: grading
     !-----------------------------------------------------------------------------
     nx = self%nx
     ny = self%ny
     nz = self%nz - 2*self%gz
     allocate(self%sub_pos(nsub), self%sub_size(nsub))
 
-    if (uppercase(amr) == 'Z') then
+    select case (uppercase(amr))
+    case ('P')
+      if (.not. self%has_pe) then
+        call console_warn (ch_atmos, "amr='P' needs a model with an electron pressure; using amr='Z'")
+        grading = 'Z'
+      else
+        grading = 'P'
+      endif
+    case ('Z')
+      grading = 'Z'
+    case default
+      call console_error ("amr='"//trim(amr)//"' is not one of 'P', 'Z' or ''")
+      error stop 'invalid amr'
+    end select
+
+    if (grading == 'Z') then
       var_edge(1) = 0
       do i=1, nsub
         call unequal_intervals(nz, i, nsub, zs, ze)
@@ -415,14 +432,7 @@ contains
     allocate(amr_ref(nz), source=0.0)
     allocate(tmp(nz), source=0.0)
     zz => self%zz(1+self%gz:nz+self%gz)
-
-    select case (uppercase(amr))
-    case ('P')
-      if (.not. self%has_pe) error stop 'AMR based on pressure needs a snapshot with an electron pressure'
-      lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
-    case ('T')
-      lpe => self%ltemp(:,:,1+self%gz:nz+self%gz)
-    end select
+    lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
 
     do k=1, nz
       do j=1, ny
@@ -444,12 +454,6 @@ contains
 
     vmin = amr_ref(1)
     vmax = amr_ref(nz)
-    if (uppercase(amr) == 'T') then
-      amr_ref = (amr_ref - vmin) / (vmax - vmin)
-      amr_ref = 1 - (1-amr_ref)**(2.d0/3.d0)
-      vmin = 0
-      vmax = 1
-    endif
     var_edge = linspace(vmin, vmax, nsub+1)
     call interp1d_sorted(amr_ref, zz, var_edge, sub_edge)
     !sub_edge = sub_edge * nz / (nz-1)

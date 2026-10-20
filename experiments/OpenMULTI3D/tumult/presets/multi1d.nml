@@ -4,6 +4,7 @@
   use_ne = .true.
   use_rho = .false.
   use_vel = 3*.false.
+  amr = 'Z'
 /
 &nlte_params
   decouple_continuum = .true.

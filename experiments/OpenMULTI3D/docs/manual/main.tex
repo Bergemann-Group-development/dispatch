@@ -1247,7 +1247,7 @@ A 1D model is a plane-parallel stratification; a 3D snapshot is a box that is pe
 
 \subsection{Equation of state}
 
-HOP solves the ionisation and molecular equilibrium at the temperature and density (or electron pressure) of each point, for the composition of Sec.~\ref{sec:abundances}. Atomic partition functions and ionisation energies come from \fort{absdat_file}, the molecular partition functions and equilibrium constants from \fort{molec_file}, which by default holds those of \citet{BarklemCollet2016}. The electron density of the model is used where the format provides it (\fort{use_ne}); it is then imposed, and the ionisation equilibrium is solved without requiring charge conservation. Otherwise the electron density follows from the equilibrium.
+HOP solves the ionisation and molecular equilibrium at the temperature and density (or electron pressure) of each point, for the composition of Sec.~\ref{sec:abundances}. Atomic partition functions and ionisation energies come from \fort{absdat_file}, the molecular partition functions and equilibrium constants from \fort{molec_file}, which by default holds those of \citet{BarklemCollet2016}. By default the electron density follows from the equilibrium. With \fort{use_ne=T} the electron density of the model is used where the format provides it; it is then imposed, and the ionisation equilibrium is solved without requiring charge conservation.
 
 \subsection{Continuous opacity and scattering}
 
