@@ -58,20 +58,29 @@ def run_file(folder, suffix):
     return folder.with_name(folder.name + suffix)
 
 
-# Lines by which dispatch.x reports a fatal error: console_error, mpi%abort's box and
-# the Fortran runtime (an unknown namelist key, for example).
+# Lines by which dispatch.x reports a fatal error: console_error (the namelist check among
+# them), mpi%abort's box and the Fortran runtime.
 FATAL_LINE = re.compile(r'^\s*(ERROR:|\*\* REASON:|Fortran runtime error:|ERROR STOP)')
 
 
 def _failure_message(returncode, log_file):
-    """The error a failed dispatch.x run raises: exit status, log path and the first
-    fatal line of the log, which stderr interleaves with the console output."""
+    """The error a failed dispatch.x run raises: exit status, log path and the error report
+    of the log, which stderr interleaves with the console output: each fatal line with the
+    lines indented by two spaces that continue it, such as the namelist check's valid keys
+    (list-directed console output starts with one space)."""
     message = f"dispatch exited with status {returncode}" + (f": {log_file}" if log_file else "")
-    if log_file is not None:
-        for line in pathlib.Path(log_file).read_text(errors='replace').splitlines():
-            if FATAL_LINE.match(line):
-                return f"{message}\n{line.strip()}"
-    return message
+    if log_file is None:
+        return message
+    report, continuing = [], False
+    for line in pathlib.Path(log_file).read_text(errors='replace').splitlines():
+        if FATAL_LINE.match(line):
+            report.append(line.strip())
+            continuing = True
+        elif continuing and line.startswith('  ') and line.strip():
+            report.append(line.rstrip())
+        else:
+            continuing = False
+    return '\n'.join([message] + report)
 
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,

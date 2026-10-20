@@ -523,13 +523,17 @@ def test_failed_run_raises_with_its_error_line(tmp_path, monkeypatch):
     execution.mkdir()
     _stub_dispatch(execution, '(out/"abund.txt").write_text("partial")\n'
                               'print(" console line")\n'
-                              'print("Fortran runtime error: Cannot match namelist object name '
-                              'lambda_min", flush=True)\n'
-                              'print(" Reading marcs atmosphere")\nsys.exit(2)\n')
+                              'print("ERROR: unknown key lambda_min in &spectrum_params")\n'
+                              'print("ERROR: valid keys in &spectrum_params:")\n'
+                              'print("  daa aa_red aa_blue")\n'
+                              'print(" Reading marcs atmosphere")\nsys.exit(1)\n')
     monkeypatch.chdir(execution)
 
-    with pytest.raises(RuntimeError, match='status 2.*\n.*Cannot match namelist object name'):
+    with pytest.raises(RuntimeError) as failure:
         launch('cache/job', verbose=0)
+    assert str(failure.value).splitlines()[1:] == [
+        'ERROR: unknown key lambda_min in &spectrum_params',
+        'ERROR: valid keys in &spectrum_params:', '  daa aa_red aa_blue']
     output = execution / 'data/cache/job'
     assert jobrecord.state_of(output) == 'failed'
     assert not (output / 'abund.txt').exists()
