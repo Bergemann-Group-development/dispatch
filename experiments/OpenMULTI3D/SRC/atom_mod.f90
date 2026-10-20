@@ -2036,6 +2036,8 @@ MODULE atom_mod
     integer :: i, s, l
     integer, save :: itimer=0
     !---------------------------------------------------------------------
+    ! an atom without collision tables (ncol = 0, as the DETAIL conversions) has none
+    if (.not. associated(self%coll)) return
     call trace%begin('atom_type%set_colliders', itimer=itimer)
     do i=1, size(self%coll)
       associate(col => self%coll(i))
