@@ -134,7 +134,7 @@ controlled separately.
 import tumult as tm
 run = tm.read('data/examples/sun_ba_1d/')
 run.crop().plot()                                   # NLTE flux, normalised
-run.crop(x0=4554.033, dx=2.5, LTE=True).plot()      # LTE, ±2.5 Å around a line
+run.crop(x0=4554.033, width=5, LTE=True).plot()     # LTE, 5 Å wide (dx=2.5 is the half-width)
 run.crop(imu=0, vdop=1.5).plot()                    # disk-centre intensity, Gaussian broadened
 line = run.get_line(4554.033)                       # a model-atom transition
 line.crop(norm=False).plot()

@@ -52,6 +52,21 @@ def test_crop_window_mutually_exclusive():
         sp.crop(window=(4999.0, 5001.0), x0=5000.0, dx=1.0)
 
 
+def test_crop_width_is_the_full_window():
+    """width is the full width around x0 and dx the half-width: both name one window."""
+    sp, x, y = _spectrum()
+    a = sp.crop(x0=5000.0, width=2.0)
+    b = sp.crop(window=(4999.0, 5001.0))
+    c = sp.crop(x0=5000.0, dx=1.0)
+    for other in (b, c):
+        np.testing.assert_array_equal(np.asarray(a.xdata.value), np.asarray(other.xdata.value))
+        np.testing.assert_array_equal(np.asarray(a.ydata), np.asarray(other.ydata))
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        sp.crop(x0=5000.0, width=2.0, dx=1.0)
+    with pytest.raises(ValueError, match="needs x0"):
+        sp.crop(width=2.0)
+
+
 def test_convolve_equals_crop_conv():
     sp, x, y = _spectrum()
     a = sp.convolve(vdop=3.0, vrot=2.0, zeta_rt=1.5, vshift=0.5)

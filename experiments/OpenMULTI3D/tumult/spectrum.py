@@ -406,23 +406,26 @@ class Spectrum:
         continuum=None,
         continuum_window=None,
         window=None,
+        width=None,
         **kwargs,
     ):
         """
         Crop the spectrum to a specified range.
 
-        The preferred way to give the range is ``window=(xmin, xmax)``; the older
-        (x0, dx) / (xmin, xmax) / slc / newx spellings remain supported.
+        The range is given as ``window=(xmin, xmax)``, by ``x0`` with ``width`` or ``dx``,
+        by ``xmin``/``xmax``, by ``slc`` or by ``newx``.
 
         Parameters:
         -----------
         window : tuple of two floats/Quantities, optional
             The crop range as one ``(xmin, xmax)`` pair (canonical form; mutually
-            exclusive with x0/dx, xmin/xmax and slc).
+            exclusive with x0/dx/width, xmin/xmax and slc).
         x0 : float or astropy.units.Quantity, optional
             Central position of the crop window.
+        width : float or astropy.units.Quantity, optional
+            Full width of the crop window, centred on x0: [x0-width/2, x0+width/2].
         dx : float or astropy.units.Quantity, optional
-            Width of the crop window (range [x0-dx, x0+dx]).
+            Half-width of the crop window, centred on x0: [x0-dx, x0+dx].
         xmin, xmax : float or astropy.units.Quantity, optional
             Minimum/Maximum x value.
         relative : bool, optional
@@ -452,10 +455,16 @@ class Spectrum:
         # Parse crop arguments
         # Use ensure_unit to handle unit conversions and defaults
         if window is not None:
-            if any(v is not None for v in (x0, dx, xmin, xmax, slc)):
-                raise ValueError(
-                    "window=(xmin, xmax) is mutually exclusive with x0/dx, xmin/xmax and slc.")
+            if any(v is not None for v in (x0, dx, width, xmin, xmax, slc)):
+                raise ValueError("window=(xmin, xmax) is mutually exclusive with "
+                                 "x0/dx/width, xmin/xmax and slc.")
             xmin, xmax = window
+        if width is not None:
+            if dx is not None:
+                raise ValueError("width (full width) and dx (half-width) are mutually exclusive.")
+            if x0 is None:
+                raise ValueError("width needs x0, the centre of the crop window.")
+            dx = ensure_unit(width, self.xunit) / 2
         if (xmin is not None and xmax is not None and x0 is None and dx is None
                 and slc is None and newx is None and vshift is None and continuum is None
                 and not (kwargs or relative or renorm)):
