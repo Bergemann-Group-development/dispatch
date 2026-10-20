@@ -688,8 +688,9 @@ Attribute & Content\\
 # NLTE flux, normalised to the continuum
 run.crop().plot()
 run.crop(window=(4550, 4558)).plot()
-# window x0 +- dx, axis in Delta lambda
-run.crop(x0=4554.0, dx=1.0, relative=True).plot()
+# a 2 Angstrom window centred on x0 (dx=1.0, the half-width, gives the same),
+# axis in Delta lambda
+run.crop(x0=4554.0, width=2.0, relative=True).plot()
 
 # nearest transition of the model atom
 line = run.get_line(4554.033)
