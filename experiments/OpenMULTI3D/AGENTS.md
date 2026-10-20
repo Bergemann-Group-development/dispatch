@@ -105,6 +105,8 @@ Comments and docstrings should explain current behavior and its rationale.
 Update stale descriptions when code changes. File history belongs in version
 control; omit accounts of earlier implementations and editing sessions.
 
+Write each Markdown and LaTeX paragraph, list item and table cell on a single line, with no hard line breaks inside it; editors wrap the text to the window. When editing an existing hard-wrapped paragraph, join it onto one line; leave untouched paragraphs as they are.
+
 Use skills for recurring procedures when useful. Reference maintained code and
 documentation, keep executable logic in code and maintain shared policies here.
 
