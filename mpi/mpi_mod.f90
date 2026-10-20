@@ -303,7 +303,7 @@ SUBROUTINE abort_mpi (self, reason)
     !$omp end critical (mpi_cr)
   end if
 #endif
-  call exit
+  call exit (127)
 contains
   !-----------------------------------------------------------------------------
   subroutine message (unit)

@@ -192,11 +192,11 @@ class WorkflowHandle:
     def _native_runs(self, record):
         """State and progress of each native run this workflow has scheduled so far."""
         from . import jobrecord
-        from tumult.launch import monitor
+        from tumult.launch import monitor, run_file
         items = []
         for folder in record.get('runs') or ():
             folder = Path(folder)
-            log_path = folder.with_suffix('.log')
+            log_path = run_file(folder, '.log')
             native = jobrecord.read(folder)
             items.append({'output': str(folder),
                           'log': str(log_path) if log_path.is_file() else None,
@@ -218,7 +218,7 @@ class WorkflowHandle:
         the launcher record of each run is read, and the queue and dispatch logs are
         small text files."""
         from . import jobrecord
-        from tumult.launch import monitor
+        from tumult.launch import monitor, run_file
         record = _read(self.folder) or {}
         if since is None:
             stamp = self.progress_stamp()
@@ -237,7 +237,7 @@ class WorkflowHandle:
                 continue
             if state != 'running':
                 continue
-            log = folder.with_suffix('.log')
+            log = run_file(folder, '.log')
             done, total = monitor(folder, log if log.is_file() else None)
             fractions.append(min(1.0, float(done) / float(total)) if total else 0.0)
         return sum(fractions) / len(fractions) if fractions else None
@@ -270,8 +270,9 @@ class WorkflowHandle:
 
     @property
     def logs(self):
-        logs = [str(Path(run).with_suffix('.log')) for run in self.runs
-                if Path(run).with_suffix('.log').is_file()]
+        from tumult.launch import run_file
+        logs = [str(run_file(run, '.log')) for run in self.runs
+                if run_file(run, '.log').is_file()]
         driver = (self.folder / DRIVER_LOG)
         if driver.is_file():
             logs.append(str(driver))

@@ -239,7 +239,16 @@ SUBROUTINE composition_pre_init (self)
           end if
         end do
       elseif (any(linelist_file /= '')) then
-        call console_warn (ch_hop, 'linelist_params: no pass includes or samples the line list; line list not read')
+        ! Without a spectrum_params grid the output pass runs on the model atom's
+        ! frequencies (or not at all), which carry no line-list window.
+        if ((rt_out%include_linelist .or. rt_out%sample_linelist) .and. &
+            size(rt_out%vec,2) > 0 .and. .not. external_sp) then
+          call console_warn (ch_hop, 'linelist_params: line list not read: the output pass has no ' // &
+            'spectrum; set aa_blue, aa_red and R_sampling in spectrum_params')
+        else
+          call console_warn (ch_hop, 'linelist_params: line list not read: neither the output ' // &
+            'nor the iteration pass includes or samples it')
+        endif
       endif
       if (allocated(ll_intervals)) deallocate(ll_intervals)
     end block

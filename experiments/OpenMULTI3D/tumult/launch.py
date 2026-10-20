@@ -51,6 +51,38 @@ def run_complete(folder):
     return (pathlib.Path(folder) / 'abund.txt').exists()
 
 
+def run_file(folder, suffix):
+    """A file beside run ``folder`` named after it, such as its ``.log`` or ``.nml``.
+    The suffix is appended to the whole name, since run names may contain dots."""
+    folder = pathlib.Path(folder)
+    return folder.with_name(folder.name + suffix)
+
+
+# Lines by which dispatch.x reports a fatal error: console_error (the namelist check among
+# them), mpi%abort's box and the Fortran runtime.
+FATAL_LINE = re.compile(r'^\s*(ERROR:|\*\* REASON:|Fortran runtime error:|ERROR STOP)')
+
+
+def _failure_message(returncode, log_file):
+    """The error a failed dispatch.x run raises: exit status, log path and the error report
+    of the log, which stderr interleaves with the console output: each fatal line with the
+    lines indented by two spaces that continue it, such as the namelist check's valid keys
+    (list-directed console output starts with one space)."""
+    message = f"dispatch exited with status {returncode}" + (f": {log_file}" if log_file else "")
+    if log_file is None:
+        return message
+    report, continuing = [], False
+    for line in pathlib.Path(log_file).read_text(errors='replace').splitlines():
+        if FATAL_LINE.match(line):
+            report.append(line.strip())
+            continuing = True
+        elif continuing and line.startswith('  ') and line.strip():
+            report.append(line.rstrip())
+        else:
+            continuing = False
+    return '\n'.join([message] + report)
+
+
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,
            log_file=None, slurm_script=None, verbose=2, dry=False, run_async=False, runner=None,
            cancel_token=None):
@@ -78,8 +110,9 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             print(f"{output_folder} already exists")
         return output_folder, False
 
-    # Write the NML file
-    input_file = input_path.with_suffix('.nml')
+    # dispatch.x names the run after the namelist up to its last dot: run 'ba_2.11'
+    # reads 'ba_2.11.nml'.
+    input_file = run_file(input_path, '.nml')
     nml.to_file(cwd / input_file)
     
     if dry:
@@ -99,7 +132,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
     # Open log file if requested
     if verbose < 2 and log_file is None:
-      log_file = output_folder.with_suffix('.log')
+      log_file = run_file(output_folder, '.log')
 
     if log_file is not None:
         # dispatch.x creates output_folder itself only once it runs (after this point),
@@ -133,52 +166,48 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             jobrecord.write(output_folder, nml, pid=process.pid, state='submitted')
             return output_folder, process
 
-        if cancel_token is None:
+        if slurm_script:
             process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
             # sbatch exits as soon as the job is queued, so its pid is not the run's and
-            # its exit status does not say whether the run succeeded.
-            jobrecord.write(output_folder, nml, pid=None if slurm_script else process.pid,
-                            state='submitted' if slurm_script else 'running')
-            process.wait()
-            result = process
-            if not slurm_script:
-                jobrecord.finish(output_folder,
-                                 'finished' if result.returncode == 0 else 'failed')
-        else:
-            cancel_token.check()
-            process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle,
-                                       start_new_session=(os.name == 'posix'))
-            jobrecord.write(output_folder, nml, pid=process.pid)
-            detach = cancel_token.watch_process(process)
-            try:
-                process.wait()
-                # The termination cause is read here, before any cleanup touches the token:
-                # a cancelled token means the user (or session) ended the run, whatever the
-                # killed child's exit status says; otherwise a nonzero status is a failure.
-                cancel_token.check()
-                if process.returncode:
-                    raise RuntimeError(f"dispatch exited with status {process.returncode}: {log_file}")
-            except BaseException as exc:
-                cancelled = isinstance(exc, CancelledError)
-                if not cancelled:
-                    kill_process(process)   # an interrupted wait must not leave the child running
-                process.wait()       # reap the child before releasing its CPU allocation
-                # abund.txt is written during initialisation, before completion.
-                # Failed/cancelled jobs must not become cache hits on the next run.
-                (output_folder / 'abund.txt').unlink(missing_ok=True)
-                jobrecord.finish(output_folder, 'cancelled' if cancelled else 'failed',
-                                 returncode=process.returncode,
-                                 log=str(log_file) if log_file else None,
-                                 error=None if cancelled else f'{type(exc).__name__}: {exc}')
-                raise
-            finally:
-                detach()
-            result = process
-            jobrecord.finish(output_folder, 'finished')
+            # its exit status says only whether the job was queued.
+            jobrecord.write(output_folder, nml, state='submitted')
+            if process.wait():
+                raise RuntimeError(f"sbatch exited with status {process.returncode}: {log_file}")
+            return output_folder, True
 
-        if result.returncode != 0 and log_file:
-            print(f"Error: Command failed. Check {log_file} for details.")
-            
+        if cancel_token is not None:
+            cancel_token.check()
+        # Its own session lets kill_process end dispatch.x with its OpenMP children.
+        process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle,
+                                   start_new_session=(os.name == 'posix'))
+        jobrecord.write(output_folder, nml, pid=process.pid)
+        detach = cancel_token.watch_process(process) if cancel_token else (lambda: None)
+        try:
+            process.wait()
+            # The termination cause is read here, before any cleanup touches the token:
+            # a cancelled token means the user (or session) ended the run, whatever the
+            # killed child's exit status says; otherwise a nonzero status is a failure.
+            if cancel_token is not None:
+                cancel_token.check()
+            if process.returncode:
+                raise RuntimeError(_failure_message(process.returncode, log_file))
+        except BaseException as exc:
+            cancelled = isinstance(exc, CancelledError)
+            if not cancelled:
+                kill_process(process)   # an interrupted wait must not leave the child running
+            process.wait()       # reap the child before releasing its CPU allocation
+            # abund.txt is written during initialisation, before completion.
+            # Failed/cancelled jobs must not become cache hits on the next run.
+            (output_folder / 'abund.txt').unlink(missing_ok=True)
+            jobrecord.finish(output_folder, 'cancelled' if cancelled else 'failed',
+                             returncode=process.returncode,
+                             log=str(log_file) if log_file else None,
+                             error=None if cancelled else f'{type(exc).__name__}: {exc}')
+            raise
+        finally:
+            detach()
+        jobrecord.finish(output_folder, 'finished')
+
     finally:
         if log_file is not None:
             log_handle.close()

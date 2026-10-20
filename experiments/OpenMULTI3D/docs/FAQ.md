@@ -154,9 +154,7 @@ folder, ran = tm.launch('demo_run', default='examples/sun_ba_1d.nml',
 tm.read(folder).crop().plot()
 ```
 
-`ran` is `False` when a cached run was served. `threads`, `run_async`, `slurm_script` and
-`cancel_token` are documented in `tumult/launch.py`. `tm.monitor(folder)` returns a
-`(done, total)` estimate for a running job.
+`ran` is `False` when a cached run was served. A run that `dispatch.x` ends with an error raises `RuntimeError` with the error report of its log, and is not reused as a cache hit. The run name is the namelist name without `.nml`, dots included. `threads`, `run_async`, `slurm_script` and `cancel_token` are documented in `tumult/launch.py`. `tm.monitor(folder)` returns a `(done, total)` estimate for a running job.
 
 ### How do I find runs that are still going, whoever started them?
 
