@@ -1771,7 +1771,7 @@ Presets combine: applied in order, a later one overrides the keys an earlier one
 \section{Namelist Reference}\label{sec:namelists}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Each run is controlled by a Fortran namelist file, for example \File{examples/sun\_ba\_1d.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key stops the run at start-up with \Code{Fortran runtime error: Cannot match namelist object name}, followed by the key. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
+Each run is controlled by a Fortran namelist file, for example \File{examples/sun\_ba\_1d.nml}. A namelist group is introduced by \&, ends with \texttt{/} and may hold any subset of its keys. All other keys take their defaults. An unknown key stops the run at start-up. Comments start with \texttt{!}. The complete set of namelists actually used, with defaults, is written to \File{params.nml} in the run directory.
 
 \input{tabs/namelist_groups}
 

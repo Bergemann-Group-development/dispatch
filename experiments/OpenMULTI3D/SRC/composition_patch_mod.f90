@@ -1,5 +1,7 @@
+#include "../HOP/read_namelist.inc"
 MODULE composition_patch_mod
   USE io_mod
+  USE namelist_check_mod, only: namelist_error
   USE os_mod
   USE omp_mod
   USE task_mod, only: task_t
@@ -101,7 +103,7 @@ contains
 
 !===============================================================================
 SUBROUTINE read_composition_params ()
-  integer :: i, iostat
+  integer :: i
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=console_inherit
   namelist /composition_params/ verbose, absdat_file, abund_file, &
@@ -122,33 +124,15 @@ SUBROUTINE read_composition_params ()
   allocate(linelist_file(128))
   linelist_file = ''
 
-  rewind (io%input)
-  read (io%input, composition_params, iostat=iostat)
-  if (iostat > 0) then
-    rewind (io%input)
-    read (io%input, composition_params)
-  end if
-  call io%namelist_warning ('composition_params', iostat)
+  READ_NAMELIST(composition_params)
 
   write (io%namelist, composition_params)
 
-  rewind (io%input)
-  read (io%input, opac_table_params, iostat=iostat)
-  if (iostat > 0) then
-    rewind (io%input)
-    read (io%input, opac_table_params)
-  end if
-  call io%namelist_warning ('opac_table_params', iostat)
+  READ_NAMELIST(opac_table_params)
 
   write (io%namelist, opac_table_params)
 
-  rewind (io%input)
-  read (io%input, linelist_params, iostat=iostat)
-  if (iostat > 0) then
-    rewind (io%input)
-    read (io%input, linelist_params)
-  end if
-  call io%namelist_warning ('linelist_params', iostat)
+  READ_NAMELIST(linelist_params)
 
   ! Build QLG-bot's lookup tables. Must precede any opacity accumulation -- see the
   ! kernel note in HOP/linelist_mod.f90.

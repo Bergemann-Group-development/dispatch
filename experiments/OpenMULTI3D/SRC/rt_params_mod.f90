@@ -1,5 +1,7 @@
+#include "../HOP/read_namelist.inc"
 MODULE rt_params_mod
   USE io_mod
+  USE namelist_check_mod, only: namelist_error
   USE ray_mod, only: set_carlson_quadratures, set_radau_quadratures, &
                      set_lobatto_quadratures, set_gauss_quadratures, &
                      set_custom_quadratures, set_grid_quadratures
@@ -79,7 +81,6 @@ CONTAINS
     character(len=32)  :: angle_quad
     integer :: ntheta, nphi, maxiter
     logical :: sample_back_opac, sample_linelist, include_linelist, include_absmet
-    integer :: iostat
     namelist /rt_iteration_params/ solver, angle_quad, ntheta, nphi, maxiter, sample_back_opac, &
       sample_linelist, include_linelist, include_absmet
     namelist /rt_output_params/ solver, angle_quad, ntheta, nphi, maxiter, sample_back_opac, &
@@ -96,24 +97,12 @@ CONTAINS
       call to_locals (rt_params_t(angle_quad='radau', ntheta=2, nphi=4, &
         solver='linear', include_linelist=.false., include_absmet=.true., &
         maxiter=maxiter_unset))
-      rewind (io%input)
-      read (io%input, rt_iteration_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, rt_iteration_params)
-      end if
-      call io%namelist_warning ('rt_iteration_params', iostat)
+      READ_NAMELIST(rt_iteration_params)
       call from_locals (rt_iter)
       ! output-pass defaults
       call to_locals (rt_params_t(angle_quad='lobatto', ntheta=4, nphi=4, &
         solver='quadratic', include_linelist=.true., include_absmet=.false.))
-      rewind (io%input)
-      read (io%input, rt_output_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, rt_output_params)
-      end if
-      call io%namelist_warning ('rt_output_params', iostat)
+      READ_NAMELIST(rt_output_params)
       call from_locals (rt_out)
       ! the composition module builds its sampled LTE line table (and masks
       ! departure species out of it) whenever either pass samples the line list

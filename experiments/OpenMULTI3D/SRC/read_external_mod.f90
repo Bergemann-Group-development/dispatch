@@ -1,8 +1,10 @@
+#include "../HOP/read_namelist.inc"
 !===============================================================================
 !> Reads a tabulated model atmosphere from a text file
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
+  USE namelist_check_mod, only: namelist_error
   USE os_mod
   USE mpi_coords_mod
   USE mpi_mod
@@ -98,22 +100,10 @@ contains
     ! The first thread reads the namelist parameters and saves them
     !-----------------------------------------------------------------------------
     call io%lock%set
-    rewind (io%input)
-    read (io%input, nml=console_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, console_params)
-    end if
-    call io%namelist_warning ('console_params', iostat)
+    READ_NAMELIST(console_params)
     call console_set_level (level)
     call console_set_master (mpi%master)
-    rewind (io%input)
-    read (io%input, nml=atmos_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, atmos_params)
-    end if
-    call io%namelist_warning ('atmos_params', iostat)
+    READ_NAMELIST(atmos_params)
     ! atmos_root is prepended to atmos_file
     if (atmos_root /= '') atmos_file = trim(atmos_root)//'/'//trim(atmos_file)
 

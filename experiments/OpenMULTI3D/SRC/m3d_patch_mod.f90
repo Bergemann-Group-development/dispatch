@@ -1,3 +1,4 @@
+#include "../HOP/read_namelist.inc"
 MODULE m3d_patch_mod
     USE os_mod
     USE list_mod
@@ -9,6 +10,7 @@ MODULE m3d_patch_mod
     USE snapshots_mod
     USE mesh_mod
     USE io_mod
+    USE namelist_check_mod, only: namelist_error
     USE data_io_mod
     USE timer_mod
     USE trace_mod
@@ -338,7 +340,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE pre_init (self)
     class(m3d_patch_t), target:: self
-    integer :: iostat, i
+    integer :: i
     logical, save :: first_time=.true.
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -350,39 +352,15 @@ MODULE m3d_patch_mod
     call io%lock%set ('m3d_patch_t%pre_init')
     if (first_time) then
       first_time = .false.
-      rewind (io%input)
-      read (io%input, nlte_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, nlte_params)
-      end if
-      call io%namelist_warning ('nlte_params', iostat)
+      READ_NAMELIST(nlte_params)
       select case (rate_formulation)
       case ('original', 'largest')
       case default
         error stop 'rate_formulation must be original or largest'
       end select
-      rewind (io%input)
-      read (io%input, output_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, output_params)
-      end if
-      call io%namelist_warning ('output_params', iostat)
-      rewind (io%input)
-      read (io%input, m3d_debug_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, m3d_debug_params)
-      end if
-      call io%namelist_warning ('m3d_debug_params', iostat)
-      rewind (io%input)
-      read (io%input, run_params, iostat=iostat)
-      if (iostat > 0) then
-        rewind (io%input)
-        read (io%input, run_params)
-      end if
-      call io%namelist_warning ('run_params', iostat)
+      READ_NAMELIST(output_params)
+      READ_NAMELIST(m3d_debug_params)
+      READ_NAMELIST(run_params)
       call read_rt_params ()
       call resolve_nlte_iterations ()
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
