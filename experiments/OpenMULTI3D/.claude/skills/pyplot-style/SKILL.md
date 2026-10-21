@@ -13,15 +13,19 @@ For reading tumult output and the existing plotting functions, see the `tumult-p
    `tumult.plotting_scripts.get_plt()` resets matplotlib to its defaults and applies the
    same style on its first call. Call it before any `rcParams` change when the figure also
    uses tumult's plotting methods, otherwise their first call undoes the change.
-2. **Colours** follow each dataset's role in the panel:
+2. **Colours** follow each dataset's role in the panel, with one scheme per figure:
    - a single dataset is `"black"`;
    - datasets ranked by physical completeness: the most complete treatment (3D NLTE) is
      `"black"`, the simplest (1D LTE) `"tomato"`, and an intermediate one (1D NLTE,
      3D LTE) `"cornflowerblue"` or dashed black;
    - datasets of equal standing, where the plot must not favour one result, take the
-     default colour cycle in its order.
+     default colour cycle in its order. A reference the others are compared with may
+     stay `"black"`.
 
-   Lines that may overlap differ in their dash style (`"-"`, `"--"`, `":"`, `"-."`) as well.
+   Never combine `"tomato"` or `"cornflowerblue"` with colours of the cycle in one
+   figure. When the datasets outnumber the ranking colours, the whole figure uses the
+   cycle in its order, the simplest treatment included. Lines that may overlap differ in
+   their dash style (`"-"`, `"--"`, `":"`, `"-."`) as well.
 3. **Reference values** are `color="lightgrey"`: a dataset that is fitted against, such
    as observations, and guides such as `axhline`/`axvline` or zero lines.
 4. **Sizes:** the figure size sets the print size, and for LaTeX documents also the
