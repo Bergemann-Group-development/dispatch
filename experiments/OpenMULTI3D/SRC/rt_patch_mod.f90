@@ -173,7 +173,8 @@ MODULE rt_patch_mod
     ! Direction-independent background, per (f,x,y,z), rebuilt once per i_set in
     ! background().  Filled in this order:
     !   lte_background_opacities  chi_cont, sigma  (from the table or comp%opacity)
-    !                             beta = exp(-h*nu/kT), clamped off zero
+    !                             beta = exp(-h*nu/kT), clamped off zero, and
+    !                             Bnu = beta/(1-beta)
     !   lte_background_emission   ehat = chi_cont*Bnu + sigma*(Jnu - Bnu)   [= eta]
     !   convert_to_work_units     xhat = chi_cont + ehat, then ehat -> ehat/beta
     !   add_bound_free_opacities  accumulates into xhat and ehat
@@ -183,6 +184,7 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: chi_cont  ! continuum extinction, total
     real(4), dimension(:,:,:,:), allocatable :: sigma     ! coherent-scattering part of chi_cont (<= it)
     real(4), dimension(:,:,:,:), allocatable :: beta      ! LTE Boltzmann factor exp(-h*nu/kT)
+    real(4), dimension(:,:,:,:), allocatable :: Bnu       ! Planck function in transfer units, beta/(1-beta)
     real(4), dimension(:,:,:,:), allocatable :: xhat      ! working extinction (see above)
     real(4), dimension(:,:,:,:), allocatable :: ehat      ! emissivity / working source (see above)
     ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
@@ -446,7 +448,8 @@ contains
     cell = word*product(real(n,8))
     field = cell*shape%nf
     sets = field*shape%n_set
-    work = 5*field + 3*word*shape%nf*n(1)*n(2)*(real(n(3),8)+2*ng(3))
+    ! chi_cont, sigma, beta, Bnu, xhat, ehat, and work(...,1:3) with its ghost zones
+    work = 6*field + 3*word*shape%nf*n(1)*n(2)*(real(n(3),8)+2*ng(3))
     retained = 0.d0
     boundary = 3*word*shape%nf*n(1)*n(2)*shape%n_mu*shape%n_set
     ! u_phase, allocated by patch_t%init when the patch first executes
@@ -958,6 +961,7 @@ contains
       allocate(self%chi_cont(fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%sigma   (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%beta    (fs:fe,self%nx,self%ny,self%nz), source=0.)
+      allocate(self%Bnu     (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%xhat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%ehat    (fs:fe,self%nx,self%ny,self%nz), source=0.)
       allocate(self%work(fs:fe,self%nx,self%ny,zs:ze,3), source=0.)
@@ -985,6 +989,7 @@ contains
       call mem_register(self%chi_cont,  label='self%chi_cont')
       call mem_register(self%sigma,     label='self%sigma')
       call mem_register(self%beta,      label='self%beta')
+      call mem_register(self%Bnu,       label='self%Bnu')
       call mem_register(self%xhat,      label='self%xhat')
       call mem_register(self%ehat,      label='self%ehat')
       call mem_register(self%work,      label='self%work')
@@ -1065,10 +1070,11 @@ contains
       call mem_unregister(self%chi_cont , label='self%chi_cont')
       call mem_unregister(self%sigma    , label='self%sigma')
       call mem_unregister(self%beta     , label='self%beta')
+      call mem_unregister(self%Bnu      , label='self%Bnu')
       call mem_unregister(self%xhat     , label='self%xhat')
       call mem_unregister(self%ehat     , label='self%ehat')
       deallocate(self%work)
-      deallocate(self%chi_cont, self%sigma, self%beta, self%xhat, self%ehat)
+      deallocate(self%chi_cont, self%sigma, self%beta, self%Bnu, self%xhat, self%ehat)
       deallocate(self%twohnu3_c2)
       do i=1, self%natom
         trans => self%trans(i)
@@ -1816,6 +1822,10 @@ contains
             ! stay finite where beta would underflow, and downstream code forms
             ! eta/beta; a hard zero here produces Inf/NaN (see convert_to_work_units).
             self%beta(f,x,y,z) = max(exp(-hv_kT), tiny(1.0))
+            ! every use of the Planck function in transfer units reads this one
+            ! float, so that J = Bnu (initial_Jnu, fixed_Jnu) leaves exactly zero
+            ! in J - Bnu and in the deviation integrals of bound_bound_rates
+            self%Bnu(f,x,y,z) = self%beta(f,x,y,z) / (1 - self%beta(f,x,y,z))
           end do
         end do
       end do
@@ -1928,7 +1938,7 @@ contains
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
-    real(4) :: Bnu, wscat
+    real(4) :: wscat
     character(8) :: Jnu_label
     logical :: Jnu_to_Bnu, do_scat_now
     integer :: fs, fe
@@ -2106,9 +2116,8 @@ contains
         do x=1, self%nx
           do f=fs, fe
             associate(Jnu=>self%Jnu(f,x,y,z,i_set), chi=>self%chi_cont(f,x,y,z), &
-                      eta=>self%ehat(f,x,y,z), beta=>self%beta(f,x,y,z), &
+                      eta=>self%ehat(f,x,y,z), Bnu=>self%Bnu(f,x,y,z), &
                       sigma=>self%sigma(f,x,y,z))
-              Bnu = beta / (1 - beta)
               if (Jnu_to_Bnu) then
                 Jnu = Bnu
               endif
@@ -2476,7 +2485,7 @@ contains
     real(4), dimension(:), allocatable :: vphi
     real(4) :: wmu, idf, vpr, a, ni, nj
     real(8) :: q
-    real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
+    real(4) :: lower_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, fs, fe
     logical :: LTE, do_LTE, get_wphi, sum_wphi
     integer, intent(in) :: i_set, iatom
@@ -2511,8 +2520,12 @@ contains
       fe = line%ired
       sum_wphi = get_wphi .and. sums_over_windows(self, line)
 
+      ! A line whose lower level lies lower_off above the atom's level i (a component
+      ! of a combined level) absorbs from that level's share exp(-lower_off/kT).  Both
+      ! terms of the line opacity take that share: the stimulated emission factor
+      ! beta(nu) already holds the line's own photon energy, so the line source
+      ! function is the Planck function in LTE, whatever the upper level's offset.
       lower_off = line%lower_ev - atom%ev(line%i)
-      upper_off = line%upper_ev - atom%ev(line%j)
 
       ! Adding bound-bound opacities
       do z=1, self%nz
@@ -2531,8 +2544,10 @@ contains
               bj = adata%b(x,y,z,line%j)
             endif
 
-            if (lower_off /= 0) bi = bi * exp(-lower_off*ekt)
-            if (upper_off /= 0) bj = bj * exp(-upper_off*ekt)
+            if (lower_off /= 0) then
+              bi = bi * exp(-lower_off*ekt)
+              bj = bj * exp(-lower_off*ekt)
+            endif
 
             associate(phi => vphi(fs:fe))
               if (line%hydrogen) then
@@ -2622,10 +2637,11 @@ contains
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: wmunu, vph
     real(4) :: wmu, idf, vpr, a, ni, nj, phi
-    real(4) :: vvv, sum_I, sum_P, sum_A
-    real(4) :: g_ij, g_ji
+    real(4) :: vvv, sum_I, sum_P, sum_A, sum_T, sum_U, nb, inv_nref
+    real(4) :: g_th, g_dev
+    real(8) :: beta_ref
     real(8) :: q
-    real(4) :: lower_off, upper_off, ekt, eta_coef, g_ratio
+    real(4) :: lower_off, ekt, eta_coef, g_ratio
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
@@ -2638,6 +2654,26 @@ contains
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
+    ! Each line stores two integrals per cell instead of the rates themselves:
+    !
+    !   th  = A int phi * spont * Bnu/n_ref          (thermal part)
+    !   dev = A int phi * (up - Bnu*spont)           (deviation from it)
+    !
+    ! with up and spont the (preconditioned) absorption and spontaneous integrands,
+    ! Bnu = beta/(1-beta) the Planck occupation number at each frequency, and
+    ! n_ref = beta_ref/(1-beta_ref) the Planck occupation number at the level
+    ! energy difference, beta_ref = n*_j g_i/(n*_i g_j).  line_rate_coefficients
+    ! (atom_mod) forms the rates from them in real(8):
+    !
+    !   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
+    !
+    ! The thermal parts are then in detailed balance to real(8) rounding, n*_i R_ij
+    ! = n*_j R_ji for J = Bnu, whatever the profile, the frequency quadrature, the
+    ! line's own nu0 and the real(4) rounding of th.  (n_ref+1)*Bnu/n_ref equals
+    ! (Bnu+1)*beta/beta_ref, so the downward thermal part carries the
+    ! exp(-h(nu-nu0)/kT) of the emissivity add_bound_bound_opacities uses; the
+    ! deviation part is taken with the absorption profile in both directions.
+    ! For J = Bnu without preconditioning (fixed_Jnu), dev is exactly zero.
     split_rates = self%split_rates
     do_scat = self%do_line_scat
     ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
@@ -2672,8 +2708,8 @@ contains
       ! variation of the quadrature error between directions.
       own_norm = per_direction .and. .not. sums_over_windows(self, line)
       if (own_norm) wqf(fs:fe) = line%wq(fs:fe)
+      ! the lower-level share of add_bound_bound_opacities, for both levels
       lower_off = line%lower_ev - atom%ev(line%i)
-      upper_off = line%upper_ev - atom%ev(line%j)
 
       do z=1,self%nz
         do y=1,self%ny
@@ -2684,14 +2720,24 @@ contains
             vpr = vproj(x,y,z)
             a = trans%adamp(x,y,z,i)
             ekt = comp%e_kT(x,y,z)
-            if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
-            if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
+            ! 1/n_ref, held below the real(4) range: it only reaches the bound in
+            ! cells far beyond radiative_cut, whose rates the matrix does not use
+            inv_nref = 0.0
+            if (adata%nstar(x,y,z,line%i) > 0 .and. adata%nstar(x,y,z,line%j) > 0) then
+              beta_ref = adata%nstar(x,y,z,line%j) * atom%g(line%i) &
+                       / (adata%nstar(x,y,z,line%i) * atom%g(line%j))
+              inv_nref = real(min((1d0 - beta_ref)/beta_ref, 1d35), 4)
+            endif
+            if (lower_off /= 0) then
+              ni = ni * exp(-lower_off*ekt)
+              nj = nj * exp(-lower_off*ekt)
+            endif
             if (preconditioning) then
               ! Same arithmetic, in the same order, as add_bound_bound_opacities:
               ! the split tracking can only take this line's emissivity back out
               ! of the local source term if it is the identical float.
               split_bj = adata%b(x,y,z,line%j)
-              if (upper_off /= 0) split_bj = split_bj * exp(-upper_off*ekt)
+              if (lower_off /= 0) split_bj = split_bj * exp(-lower_off*ekt)
               if (line%hydrogen .and. H_occupation_probability) &
                 split_bj = split_bj * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
               split_Rij = adata%nstar(x,y,z,line%i) * pop_ratio(x,y,z)
@@ -2702,8 +2748,9 @@ contains
               if (line%hydrogen .and. H_occupation_probability) &
                 split_bi = split_bi * comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
               abs_coef = split_Rij * split_bi
-              ! normalize_profiles scales g_ji by g_i/g_j, so this ratio is what makes
-              ! the two corrections cancel in the net rate at the old populations.
+              ! line_rate_coefficients scales the downward integral by g_i/g_j, so this
+              ! ratio is what makes the two corrections cancel in the net rate at the
+              ! old populations.
               g_ratio = 0.0
               if (nj > 0.0) g_ratio = (ni/nj) * (atom%g(line%j)/atom%g(line%i))
             endif
@@ -2711,6 +2758,8 @@ contains
             sum_A = 0.0
             sum_I = 0.0
             sum_P = 0.0
+            sum_T = 0.0
+            sum_U = 0.0
             sum_w = 0.0
             ! One f-loop per rate formulation and profile kind, so that none
             ! carries the rate_formulation branch.
@@ -2728,7 +2777,7 @@ contains
                     q = line%q(f) - vpr
                     phi = hprofile(hline, hcell, q)
                     vvv = phi * wmunu(f)
-                    sum_A = sum_A + vvv
+                    sum_A = sum_A + vvv * (self%Bnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2743,7 +2792,7 @@ contains
                     phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                     vvv = phi * wmunu(f)
                     if (own_norm) sum_w = sum_w + phi * wqf(f)
-                    sum_A = sum_A + vvv
+                    sum_A = sum_A + vvv * (self%Bnu(f,x,y,z)*inv_nref)
                     sum_I = sum_I + vvv * Inu
                     sum_P = sum_P + vvv * phi * Psi * self%beta(f,x,y,z)
                   end associate
@@ -2782,34 +2831,48 @@ contains
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
                 vvv = vph(f) * wmunu(f)
-                sum_I = sum_I + vvv*up
-                sum_A = sum_A + vvv*spont
+                nb = self%Bnu(f,x,y,z)
+                sum_T = sum_T + vvv*spont*(nb*inv_nref)
+                sum_U = sum_U + vvv*(up - nb*spont)
               end do
             else if (split_rates) then
               do f=fs, fe
                 vvv = vph(f) * wmunu(f)
-                sum_I = sum_I + vvv*self%work(f,x,y,z,3)
-                sum_A = sum_A + vvv
+                nb = self%Bnu(f,x,y,z)
+                sum_T = sum_T + vvv*(nb*inv_nref)
+                sum_U = sum_U + vvv*(self%work(f,x,y,z,3) - nb)
               end do
             endif
 
-            g_ij = sum_I
-            g_ji = sum_I + sum_A
-            if (preconditioning .and. .not. split_rates) then
-              g_ij = g_ij - sum_P * eta_coef
-              g_ji = g_ji - sum_P * eta_coef * g_ratio
+            if (split_rates) then
+              g_th = sum_T
+              g_dev = sum_U
+            else
+              ! The 'original' formulation keeps its own sums, with the
+              ! preconditioning corrections that cancel in the net rate at the old
+              ! populations; its upward and downward integrals, sum_I - sum_P*eta_coef
+              ! and sum_I + sum_A - sum_P*eta_coef*g_ratio, are split into th and dev
+              ! after the fact, so its rates keep the real(4) rounding of a
+              ! difference.
+              g_th = sum_A
+              g_dev = sum_I
+              if (preconditioning) then
+                g_th = g_th - sum_P * eta_coef * (g_ratio - 1.0)
+                g_dev = g_dev - sum_P * eta_coef
+              endif
+              if (inv_nref > 0.0) g_dev = g_dev - g_th/inv_nref
             endif
             if (own_norm) then
               if (split_rates) sum_w = sum(vph(fs:fe) * wqf(fs:fe))
               ! lines below the strength cutoff have no profile weight and no rate
               if (sum_w > 0.0) then
-                g_ij = g_ij / (sum_w * wtot)
-                g_ji = g_ji / (sum_w * wtot)
+                g_th = g_th / (sum_w * wtot)
+                g_dev = g_dev / (sum_w * wtot)
               endif
             endif
 
-            trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
-            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+            trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_th
+            trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_dev
           end do
         end do
       end do
@@ -3308,7 +3371,6 @@ contains
   !===============================================================================
   SUBROUTINE set_fixed_Jnu (self)
     class(rt_patch_t) :: self
-    real(4) :: Bnu
     integer :: i, j
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -3318,8 +3380,7 @@ contains
       do y=1, self%ny
         do x=1, self%nx
           do f=self%fs, self%fe
-            associate(beta=>self%beta(f,x,y,z), Inu=>self%work(f,x,y,z,3))
-              Bnu = beta / (1 - beta)
+            associate(Bnu=>self%Bnu(f,x,y,z), Inu=>self%work(f,x,y,z,3))
               Inu = fixed_Jnu * Bnu
             end associate
           end do

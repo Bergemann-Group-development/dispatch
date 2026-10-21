@@ -527,8 +527,9 @@ contains
     class(cont_type), pointer :: cont
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    real(4), dimension(:,:,:), allocatable :: cij, cji
+    real(4), dimension(:,:,:), allocatable :: cij, cji, rij, rji
     real(8), dimension(:,:), allocatable :: w, c
+    real(8) :: r_up, r_down
     integer :: i, j, k, p(3), m(3), ng_epos(4), count, lunit
     character(len=32) :: rates_tag
     real(8) :: ng_emax
@@ -574,8 +575,11 @@ contains
         endif
 
         if (save_rates==k) then
-          call self%save3(real(adata%gamma_ij(:,:,:,linecheck)), label='rij')
-          call self%save3(real(adata%gamma_ji(:,:,:,linecheck)), label='rji')
+          allocate(rij, rji, mold=cij)
+          call atom%rate_coefficients(linecheck, rij, rji)
+          call self%save3(rij, label='rij')
+          call self%save3(rji, label='rji')
+          deallocate(rij, rji)
           call self%save3(cij, label='cij')
           call self%save3(cji, label='cji')
         endif
@@ -627,6 +631,11 @@ contains
             memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),linecheck)
             memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),linecheck)
             if (linecheck<=atom%nline) then
+              call atom%line_rate_coefficients(linecheck, adata%nstar(p(1),p(2),p(3),:), &
+                adata%gamma_ij(p(1),p(2),p(3),linecheck), adata%gamma_ji(p(1),p(2),p(3),linecheck), &
+                r_up, r_down)
+              memcheck(2) = r_up
+              memcheck(3) = r_down
               memcheck(4) = 1
               if (allocated(adata%wphi(linecheck)%w)) memcheck(4) = adata%wphi(linecheck)%w(p(1),p(2),p(3))
             endif
