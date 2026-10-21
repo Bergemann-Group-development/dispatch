@@ -49,7 +49,7 @@ def test_the_atmosphere_selects_the_geometry_preset(tmp_path):
     assert preset_settings(one_d)["atmos_params"] == {"nz": 64}
     three_d = SynthRequest(config=config, atmosphere=Snapshot("cube", "M3DIS"), star=STAR)
     settings = preset_settings(three_d)
-    assert settings["atmos_params"] == {"nx": 30, "ny": 30, "nz": 96}
+    assert settings["atmos_params"] == {"nx": 30, "ny": 30, "nz": 96, "dims": 32}
     assert settings["run_params"] == {"rotate_atmos": True}
     assert all(settings[s] == {"sample_back_opac": True, "sample_linelist": True}
                for s in ("rt_iteration_params", "rt_output_params"))
