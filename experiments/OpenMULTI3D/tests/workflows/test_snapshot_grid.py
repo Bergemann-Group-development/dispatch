@@ -143,7 +143,7 @@ def test_prepare_builds_snapshot_grid_settings(grid, tmp_path):
     common, settings, _ = workflows._prepare(request, [{}])
     assert snapshot_grid.is_snapshot_node(common['atmos_files'])
     assert settings[0]['atmos_params'] == {'atmos_format': 'Stagger2',
-                                           'nx': 40, 'ny': 40, 'nz': 120}
+                                           'nx': 40, 'ny': 40, 'nz': 120, 'dims': 32}
 
 
 def test_grid_assembly_averages_a_node_over_its_snapshots(grid):
