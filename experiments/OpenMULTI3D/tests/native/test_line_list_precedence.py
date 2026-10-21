@@ -34,7 +34,7 @@ pytestmark = [
 ]
 
 
-def _run(tmp_path, name, extra, atom=True, rt='', ll=''):
+def _run(tmp_path, name, extra, atom=True, rt='', ll='', it='', with_list=True):
     work = tmp_path / name
     work.mkdir()
     (work / 'input').symlink_to(ROOT / 'input')
@@ -43,8 +43,9 @@ def _run(tmp_path, name, extra, atom=True, rt='', ll=''):
 &atmos_params atmos_format='marcs' atmos_file='{MARCS}' /
 {f"&atom_params atom_file='{ATOM}' {extra} /" if atom else ''}
 {"&nlte_params convlim=1d-2 /" if atom else ''}
+&rt_iteration_params {it} /
 &rt_output_params {rt} /
-&linelist_params linelist_file='{LINELIST}' {ll} /
+{f"&linelist_params linelist_file='{LINELIST}' {ll} /" if with_list else ''}
 &spectrum_params R_sampling=5e5 aa_blue=4549 aa_red=4559 /
 """)
     result = subprocess.run([str(EXECUTABLE), 'r.nml'], cwd=work, capture_output=True, text=True,
@@ -88,3 +89,24 @@ def test_lte_set_with_sampled_line_list_matches_plain_lte(tmp_path):
     reference = _equivalent_width(plain.crop())
     assert reference > 0
     assert _equivalent_width(sampled.crop(LTE=True)) == pytest.approx(reference, rel=2e-2)
+
+
+def _log_departures(run):
+    pop = run.read_patch_save('pop_Ba', folder=Path(run.folder) / 'save', zdim=2)
+    return np.log10(np.asarray(pop, float))
+
+
+def test_iteration_pass_without_include_linelist_ignores_the_line_list(tmp_path):
+    """``sample_linelist`` only chooses how a pass that includes the line list samples it.
+
+    The iteration pass does not include the line list by default, so with a line list
+    given and ``sample_linelist=T`` the departures are those of a run without line list,
+    and ``include_linelist=T`` changes them.
+    """
+    it = 'sample_back_opac=T sample_linelist=T'
+    _, without = _run(tmp_path, 'without', '', it=it, with_list=False)
+    _, sampled = _run(tmp_path, 'sampled_it', '', it=it)
+    _, included = _run(tmp_path, 'included_it', '', it=it + ' include_linelist=T')
+    reference = _log_departures(without)
+    assert np.max(np.abs(_log_departures(sampled) - reference)) < 1e-5
+    assert np.max(np.abs(_log_departures(included) - reference)) > 1e-3

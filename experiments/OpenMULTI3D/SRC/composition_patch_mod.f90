@@ -239,13 +239,12 @@ SUBROUTINE composition_pre_init (self)
       elseif (any(linelist_file /= '')) then
         ! Without a spectrum_params grid the output pass runs on the model atom's
         ! frequencies (or not at all), which carry no line-list window.
-        if ((rt_out%include_linelist .or. rt_out%sample_linelist) .and. &
-            size(rt_out%vec,2) > 0 .and. .not. external_sp) then
+        if (rt_out%include_linelist .and. size(rt_out%vec,2) > 0 .and. .not. external_sp) then
           call console_warn (ch_hop, 'linelist_params: line list not read: the output pass has no ' // &
             'spectrum; set aa_blue, aa_red and R_sampling in spectrum_params')
         else
           call console_warn (ch_hop, 'linelist_params: line list not read: neither the output ' // &
-            'nor the iteration pass includes or samples it')
+            'nor the iteration pass includes it')
         endif
       endif
       if (allocated(ll_intervals)) deallocate(ll_intervals)
@@ -450,10 +449,8 @@ SUBROUTINE build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, 
   !-----------------------------------------------------------------------------
 
   ! Determine which spectra use the line list
-  output_uses_ll = (rt_out%include_linelist .or. rt_out%sample_linelist) .and. &
-                   (size(rt_out%vec,2) > 0 .or. make_eos)
-  internal_uses_ll = (rt_iter%include_linelist .or. rt_iter%sample_linelist) .and. &
-                     (rt_iter%maxiter > 0)
+  output_uses_ll = rt_out%include_linelist .and. (size(rt_out%vec,2) > 0 .or. make_eos)
+  internal_uses_ll = rt_iter%include_linelist .and. rt_iter%maxiter > 0
 
   ! Initialize: will be updated to encompass all used spectra
   ll_lam = [huge(1d0), -huge(1d0)]
