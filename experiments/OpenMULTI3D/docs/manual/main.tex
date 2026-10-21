@@ -1732,7 +1732,7 @@ The reader tries the native order and, if any of the four header records fails, 
 
 \subsection{Window files}\label{sec:windowfiles}
 
-\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines. It needs \fort{R_sampling}$>0$ and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap, and each becomes one constant-$R$ segment. The windows share about \fort{n_windows} output patches in proportion to their number of points; each window gets at least one, and no patch has fewer than 16 points unless its window does.
+\Code{\&spectrum\_params\%window\_file} lists one window per line as ``\texttt{blue red}'' in {\AA} (air or vacuum, following the \fort{in_air} convention), with \texttt{\#} comment lines, and excludes \fort{lam_file}. The windows are sorted and merged where they touch or overlap. With \fort{R_sampling}$>0$ each becomes one constant-$R$ segment. Without \fort{R_sampling}, \fort{daa} or \fort{nnu} the output spectrum stays on the wavelengths of the model atom's transitions (or its \fort{line_grid_file}), and the windows keep only the points inside them; a bare \fort{aa_blue} and \fort{aa_red} crop it to one window. The constant-$R$ windows share about \fort{n_windows} output patches in proportion to their number of points; each window gets at least one, and no patch has fewer than 16 points unless its window does.
 
 \subsection{Output files}\label{sec:output}
 
