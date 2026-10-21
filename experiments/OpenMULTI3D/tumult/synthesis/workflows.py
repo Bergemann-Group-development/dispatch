@@ -748,9 +748,11 @@ def preset_settings(request, report=True):
     passes (``sample_back_opac`` and ``sample_linelist``). The flags go together: the
     Fortran builds the line table only in a pass that also samples the background, and a
     pass with ``sample_linelist`` alone reads no line opacity at all (``rt_patch_mod``).
-    Departure species are masked out of the table and computed in detail, so NLTE lines are
-    unaffected; a pass without a line list gets an empty table, which is how the departure
-    phase of a snapshot runs. The Fortran refuses an abundance ladder under
+    ``sample_linelist`` only chooses the table for a pass that includes the line list
+    (``include_linelist``, the default of the output pass only), so the departure phase of
+    a snapshot takes its line blanketing from the absmet table. Departure species are
+    masked out of the table and computed in detail, so NLTE lines are unaffected. The
+    Fortran refuses an abundance ladder under
     ``sample_linelist``, so a 3D ladder runs one process per rung
     (:func:`tumult.synthesis.api._foldable_ladder`).
     """

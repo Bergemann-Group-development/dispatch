@@ -1556,7 +1556,7 @@ Hydrogen lines need a block \fort{'H I'} in the line list (Sec.~\ref{sec:linelis
 %%%%%%%%%%%%%%%%%%%%%%
 
 \begin{description}
-    \item[Default.] The \File{3d} preset: a $30\times30\times96$ mesh, tabulated background and line opacities in both passes (\fort{sample_back_opac}, \fort{sample_linelist}), an atmosphere rotated for each ray (\fort{rotate_atmos=T}) and exit planes on disk (\fort{rt_to_file}).
+    \item[Default.] The \File{3d} preset: a $30\times30\times96$ mesh, tabulated background opacities in both passes and tabulated line opacities wherever a pass includes the line list (\fort{sample_back_opac}, \fort{sample_linelist}), an atmosphere rotated for each ray (\fort{rotate_atmos=T}) and exit planes on disk (\fort{rt_to_file}).
     \item[Change when] the result is to be tested against a finer mesh or more rays, or the memory of a node is exceeded.
     \item[Keys.] \fort{nx}, \fort{ny}, \fort{nz} and \fort{snap} (Sec.~\ref{nl:atmos}); \fort{angle_quad}, \fort{ntheta}, \fort{nphi} (Sec.~\ref{nl:rt}); \fort{rotate_atmos} (Sec.~\ref{nl:run}).
 \end{description}
@@ -1803,7 +1803,7 @@ Sec.~\ref{sec:abundances} gives the order in which the abundance keys are applie
 \subsection{\&rt\_iteration\_params and \&rt\_output\_params}\label{nl:rt}
 \input{tabs/rt_params}
 
-Both groups share these keys and the switches \fort{sample_back_opac} and \fort{sample_linelist}, with different defaults for the two passes (Sec.~\ref{sec:passes}). \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
+Both groups share these keys and the switches \fort{sample_back_opac}, \fort{include_linelist} and \fort{sample_linelist}, with different defaults for the two passes (Sec.~\ref{sec:passes}). \fort{include_linelist} decides whether a pass has line-list opacity; \fort{sample_linelist} only replaces its detailed lines by the sampled LTE table and has no effect in a pass without \fort{include_linelist}. \fort{&rt_output_params} also takes \fort{custom_mu}, \fort{ray_offset} and \fort{save_linelist} (writes \File{linelist\_out.txt}), and \fort{solver='none'} disables the output pass.
 
 \subsection{\&output\_params}\label{nl:output}
 \input{tabs/output_params}

@@ -27,6 +27,9 @@ MODULE rt_params_mod
   ! iterations appended after the rt_iter%maxiter NLTE iterations (was ilambd).
   ! Defaults differ per pass: include_linelist is F/T and include_absmet T/F
   ! for rt_iter/rt_out (see rt_params_nml).
+  ! include_linelist decides whether a pass has line-list opacity at all;
+  ! sample_linelist only chooses the sampled LTE table over detailed lines for a
+  ! pass that includes it, and is cleared in a pass that does not.
   !-----------------------------------------------------------------------------
   ! Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
   ! iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
@@ -129,7 +132,7 @@ CONTAINS
       p%nphi = nphi
       p%maxiter = maxiter
       p%sample_back_opac = sample_back_opac
-      p%sample_linelist = sample_linelist
+      p%sample_linelist = sample_linelist .and. include_linelist
       p%include_linelist = include_linelist
       p%include_absmet = include_absmet
     end subroutine from_locals
