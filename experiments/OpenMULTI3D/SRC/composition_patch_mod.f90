@@ -37,7 +37,7 @@ MODULE composition_patch_mod
   USE op_math_mod, only: interval_t, merge_intervals
   USE qlg, only: qlg_init
   USE hprofl_mod, only: hydrogen_BPO
-  USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
+  USE hvcs_mod, only: hydrogen_profiles, vcs_data_dir
   USE anstee_mod, only: anstee_file
   USE trace_mod
   USE console_mod
@@ -112,7 +112,7 @@ SUBROUTINE read_composition_params ()
   tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_rad, disable_stk, disable_vdw, molecule_damping_estimates, helium_scattering, &
-  hydrogen_BPO, hydrogen_vcs_table, vcs_data_dir, eosmet
+  hydrogen_BPO, hydrogen_profiles, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
