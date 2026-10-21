@@ -3,8 +3,9 @@
 A snapshot is read with :func:`tumult.hop.read_atmosphere` (dispatch.x's own reader).
 Optical depth comes from HOP's continuum opacity, tabulated once per composition on a
 (ln T, ln rho) grid (:class:`OpacityTable`) and interpolated at every cell, then
-integrated along each column.  The columns of several snapshots are pooled and averaged
-on surfaces of a reference variable:
+integrated along each column with dispatch.x's integrator
+(:func:`tumult.hop.optical_depth`).  The columns of several snapshots are pooled and
+averaged on surfaces of a reference variable:
 
 - ``'tau500'``: log tau at 500 nm, the surface of the Stagger <3D> models;
 - ``'tauross'``: log tau of an approximate Rosseland mean, the harmonic mean of the
@@ -32,7 +33,7 @@ from pathlib import Path
 import numpy as np
 from numba import njit, prange
 
-from .hop import HopEOS, read_atmosphere
+from .hop import HopEOS, optical_depth, read_atmosphere
 
 __all__ = ['OpacityTable', 'Columns', 'columns', 'surface_average', 'write_text',
            'ROSS_LAM', 'RECIPES', 'SURFACES', 'TOPS']
@@ -166,20 +167,6 @@ class OpacityTable:
         mean of the extinction at ``lam``."""
         w = rosseland_weights(self.lam, np.exp(lnt))
         return 1.0 / np.sum(w / self.chi_lam(lnt, lnrho), axis=-1)
-
-
-def optical_depth(chi, lnrho, z):
-    """tau along the last axis, index 0 at the top, by the trapezoid rule in height.
-
-    The top cell gets tau = chi H, with H the density scale height between the two top
-    cells: an isothermal atmosphere above the box with chi proportional to rho.  (The
-    extinction's own scale height is no basis for this: in a temperature inversion at
-    the top it is negative or huge.)"""
-    dz = np.abs(np.diff(z))
-    h = dz[0] / np.maximum(lnrho[..., 1] - lnrho[..., 0], 1e-2)
-    seg = 0.5 * (chi[..., 1:] + chi[..., :-1]) * dz
-    tau = np.concatenate([chi[..., :1] * h[..., None], seg], axis=-1)
-    return np.cumsum(tau, axis=-1)
 
 
 @dataclass

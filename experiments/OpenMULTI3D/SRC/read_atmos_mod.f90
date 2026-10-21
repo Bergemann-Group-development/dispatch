@@ -6,7 +6,8 @@ MODULE read_atmos_mod
   USE handyfuncs_mod
   USE const_mod
   USE op_math_mod, only: linspace
-  USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted
+  USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted, &
+                          heights_from_tau
   USE m3d_patch_mod, only: composition, use_ne, use_rho, make_eos, prune_top, prune_tol
   USE rt_params_mod, only: pivot_z, ray_offset
   USE ray_mod, only: one_dimensional
@@ -314,8 +315,8 @@ contains
     class(input_atmos_t), intent(inout) :: self
     type(composition_type) :: comp
     real(8), dimension(:,:,:), allocatable :: temp8, ne8, rho8
-    real(8), dimension(:), allocatable :: chi, tau
-    real(8) :: dz, v1, vn
+    real(8), dimension(:), allocatable :: chi, tau, z
+    real(8) :: v1, vn
     integer :: i, j, nx, ny, nz
     logical :: z_down
     !-----------------------------------------------------------------------------
@@ -357,7 +358,7 @@ contains
       allocate(rho8 (nx, ny, nz))
       allocate(ne8  (nx, ny, nz))
       allocate(chi(nz))
-      allocate(tau(nz))
+      allocate(tau(nz), z(nz))
       temp8 = exp(dble(self%ltemp))
       if (use_rho) rho8  = exp(dble(self%lrho))
       if (use_ne)  ne8   = exp(dble(self%lpe)) / (BK * temp8)
@@ -365,13 +366,10 @@ contains
       call comp%reassign_pointer()
       call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
       chi=comp%chi500(1,1,:)
-      tau=10**(dble(self%zz))
-
-      self%zz(nz) = 0
-      do i=nz-1, 1, -1
-        dz = (tau(i) - tau(i+1)) * 2 / (chi(i) + chi(i+1))
-        self%zz(i) = self%zz(i+1) + dz
-      end do
+      ! the column is bottom first here; heights_from_tau takes it top first
+      tau = 10**(dble(self%zz(nz:1:-1)))
+      call heights_from_tau(tau, chi(nz:1:-1), z)
+      self%zz = real(z(nz:1:-1), kind(self%zz))
     endif
 
     if (self%zz(1) > self%zz(nz)) then
