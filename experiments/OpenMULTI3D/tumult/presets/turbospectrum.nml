@@ -12,7 +12,7 @@
 &composition_params
   molec_file = 'input/molec_data_MARCS.txt'
   absdat_file = 'input/TS_absdat.dat'
-  hydrogen_profiles = 'analytic'
+  hydrogen_profiles = 'stehle'
   mhd_eos = .false.
   molecule_damping_estimates = .false.
 /
