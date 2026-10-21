@@ -5,9 +5,11 @@ continuum gives D(0) = I_c(0) - I(0) = int (chi_l I_c - eta_l) exp(-tau_nu) ds e
 so ``Run.get_cntrbf`` integrated over log tau_500 has to reproduce F_cnt - F for the
 flux and I_cnt - I for each ray, whatever the line strength. Ba II 4554 is a strong
 line whose core still has a large opacity at the top of the model, where the optical
-depth along the ray has to start from zero. The tolerance covers the trapezoidal
-quadrature of the 64-point mesh, about 1 % on the flux and 7 % in the core at
-mu = 0.2; a missing 1/mu, wrong flux weights or per-Hz units fail it by far.
+depth along the ray has to start from zero. The integral over log tau_500 uses the
+PCHIP quadrature of the tau_500 scale itself (``tumult.hop.pchip_integral``); on the
+64-point mesh it is within 0.75 % of the depression for the flux and both rays, the
+core at mu = 0.2 included. A missing 1/mu, wrong flux weights or per-Hz units fail the
+1.5 % tolerance by far.
 
 Needs the built ``dispatch.x`` and the tracked solar MARCS model, Ba atom and
 ``master_line.txt``.
@@ -20,6 +22,7 @@ import numpy as np
 import pytest
 
 import tumult
+from tumult.hop import pchip_integral
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
@@ -53,10 +56,10 @@ def run(tmp_path_factory):
     return tumult.read(work / 'data' / 'r')
 
 
-@pytest.mark.parametrize('imu, rtol', [(None, 0.03), (0, 0.03), (-1, 0.1)])
+@pytest.mark.parametrize('imu, rtol', [(None, 0.015), (0, 0.015), (-1, 0.015)])
 def test_integral_reproduces_depression(run, imu, rtol):
     ltau, cf = run.get_cntrbf(imu=imu)
-    integral = np.abs(np.trapezoid(cf, x=ltau, axis=-1))
+    integral = np.abs(pchip_integral(cf, ltau, axis=-1)[..., -1])
     if imu is None:
         depression = run.flux_cnt - run.flux
     else:

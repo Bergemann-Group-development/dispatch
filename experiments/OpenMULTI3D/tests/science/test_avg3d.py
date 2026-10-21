@@ -1,4 +1,4 @@
-"""tumult.avg3d: the optical-depth integral and the horizontal averages.
+"""tumult.avg3d: the optical-depth integral (tumult.hop.optical_depth) and the horizontal averages.
 
 Requirements: tau of an exponential atmosphere (chi proportional to rho) is chi H at
 every height, top boundary included; a horizontally homogeneous atmosphere averages to
@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 avg3d = pytest.importorskip('tumult.avg3d')
+optical_depth = pytest.importorskip('tumult.hop').optical_depth
 
 
 def exponential_columns(ncol=4, nz=200, h=1.5e7, scatter=0.0, seed=1):
@@ -19,7 +20,7 @@ def exponential_columns(ncol=4, nz=200, h=1.5e7, scatter=0.0, seed=1):
     lnrho = np.log(1e-7) - z / h + shift
     temp = 5000.0 * (1 + 0.3 * np.tanh(-z / 5e7)) * np.exp(scatter * rng.standard_normal((ncol, nz)))
     chi = 0.3 * np.exp(lnrho)
-    tau = avg3d.optical_depth(chi, lnrho, z)
+    tau = optical_depth(chi, lnrho, z)
     v = scatter * 1e5 * rng.standard_normal((3, ncol, nz))
     return avg3d.Columns(temp=temp, rho=np.exp(lnrho), pe=1e-3 * np.exp(lnrho) * temp,
                          z=np.broadcast_to(z, (ncol, nz)).copy(), vx=v[0], vy=v[1],
@@ -47,10 +48,10 @@ def test_opacity_table_reproduces_a_biquadratic():
 def test_optical_depth_of_an_exponential_atmosphere():
     cols, chi, h = exponential_columns()
     dz = cols.z[0, 0] - cols.z[0, 1]
-    # the top cell is exact; the trapezoid rule overestimates each segment's
-    # integral of an exponential by (dz/H)^2/12
+    # the top cell is exact; the PCHIP integral of an exponential is fourth order,
+    # about (dz/H)^4/180 relative (the trapezoid rule's (dz/H)^2/12 fails this)
     np.testing.assert_allclose(10**cols.ltau500[:, 0], chi[:, 0] * h, rtol=1e-12)
-    np.testing.assert_allclose(10**cols.ltau500, chi * h, rtol=1.01 * (dz / h)**2 / 12)
+    np.testing.assert_allclose(10**cols.ltau500, chi * h, rtol=(dz / h)**4 / 100)
 
 
 @pytest.mark.parametrize('surface', avg3d.SURFACES)
@@ -85,7 +86,7 @@ def test_gradient_top_continues_short_columns_like_complete_ones():
         z = np.linspace(ztop, -1.0e8, nz)
         lnrho = np.log(1e-7) - z / h
         temp = 5000.0 * (1 + 0.3 * np.tanh(-z / 5e7))
-        tau = avg3d.optical_depth(0.3 * np.exp(lnrho), lnrho, z)
+        tau = optical_depth(0.3 * np.exp(lnrho), lnrho, z)
         zero = np.zeros((1, nz))
         parts.append(avg3d.Columns(temp=temp[None], rho=np.exp(lnrho)[None],
                                    pe=1e-3 * np.exp(lnrho)[None] * temp, z=z[None],

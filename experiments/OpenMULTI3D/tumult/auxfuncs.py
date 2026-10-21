@@ -334,29 +334,11 @@ def voigt_profile(xx, x0, a, sigma, amp):
   return 1 - amp*voigt_function(a, vv)
 
 #=====================================================================
-def compute_tau_scale (chi, zz, axis=-1):
-    #-----------------------------------------------------------------
-    chi = np.moveaxis(chi, axis, 0)
-    chi = chi[::-1]
-    dz = np.diff(zz)[::-1]
-    tau  = np.array(np.zeros_like(chi))
-    dchi = np.array(np.zeros_like(chi))
-    tau1 = 0.5*(chi[1] + chi[0]) * dz[0]
-    tau2 = 0.5*(chi[2] + chi[1]) * dz[1] + tau1
-    mask = tau2>0
-    dchi[0, mask] = (tau1*tau1)[mask]/tau2[mask]
-    dchi[1:] = (0.5*(chi[1:] + chi[:-1]).T * dz).T
-    tau = np.cumsum(dchi, axis=0)
-    tau = tau[::-1]
-    tau = np.moveaxis(tau, 0, axis)
-    return tau
-
-#=====================================================================
 def optical_depth_from_top(chi, path, axis=-1):
     """Trapezoidal optical depth along ``path`` (increasing outwards), zero at the
-    outermost point, as the formal solver integrates it. ``compute_tau_scale``
-    instead extrapolates a finite depth above the mesh, which suits a continuum
-    reference scale but not a strong line whose opacity is still large at the top."""
+    outermost point, as the formal solver integrates it. ``tumult.hop.optical_depth``
+    instead gives the top cell a finite depth, which suits a continuum reference scale
+    but not a strong line whose opacity is still large at the top."""
     #-----------------------------------------------------------------
     chi = np.moveaxis(np.asarray(chi), axis, -1)
     dtau = 0.5*(chi[..., 1:] + chi[..., :-1]) * np.diff(path)

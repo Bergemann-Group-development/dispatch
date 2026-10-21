@@ -1,7 +1,8 @@
 import numpy as np
 from .const import BK, CC, UU
-from .auxfuncs import (atomic_weights, compute_tau_scale, crop_inputs, interp_tau,
+from .auxfuncs import (atomic_weights, crop_inputs, interp_tau,
                        near_equal_split)
+from .hop import optical_depth
 import pandas as pd
 from .plotting_scripts import scatter_density
 import pathlib
@@ -78,7 +79,7 @@ class AtmosClass(object):
                 self.vz   = np.array(mem[...,5]) * CC
                 self.chi  = np.array(mem[...,6])
                 self.vmic = np.array(mem[...,7])
-                self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
+                self.tau  = optical_depth(self.chi, np.log(self.rho), self.zz*1e8)
                 self.ltau = np.log10(self.tau)
 
                 zz = np.tile(self.zz, (nx, ny, 1)).squeeze()

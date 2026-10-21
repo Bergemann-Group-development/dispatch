@@ -11,6 +11,8 @@ cffi in ABI mode, exposing the same composition_type solves that dispatch.x uses
 - :func:`read_atmosphere` parses a model-atmosphere file (MARCS, text, MULTI 1D,
   the Stagger, Stagger-grid-2, MULTI/M3DIS and CO5BOLD snapshots, SIU) with the
   reader dispatch.x uses, at the file's full resolution.
+- :func:`optical_depth` integrates an optical depth down columns with dispatch.x's
+  integrator and top rule, and :func:`pchip_integral` is that quadrature for any series.
 - :func:`logstep` / :func:`wavelength_grid` build the ln(T) x ln(rho) node grid
   and the &spectrum_params wavelength grid a dispatch run would tabulate on, so a
   dispatch EOS/opacity table can be reproduced without running dispatch.x.
@@ -41,7 +43,8 @@ os.environ.setdefault('OMP_PROC_BIND', 'false')
 import cffi
 import numpy as np
 
-__all__ = ['HopEOS', 'HopError', 'AtmosphereFile', 'read_atmosphere', 'logstep',
+__all__ = ['HopEOS', 'HopError', 'AtmosphereFile', 'read_atmosphere', 'optical_depth',
+           'pchip_integral', 'logstep',
            'wavelength_grid', 'freq_split', 'find_library', 'find_header', 'open_library']
 
 _EXP_DIR = Path(__file__).resolve().parents[1]
@@ -743,6 +746,51 @@ def read_atmosphere(path, atmos_format='unknown', snap=0, use_aux=True):
         fields['lrho'] = None
     return AtmosphereFile(gz=gz, has_pe=bool(has_pe), has_rho=bool(has_rho), feh=feh,
                           abund=abund, **fields)
+
+
+def optical_depth(chi, lnrho, z, axis=-1):
+    """Optical depth down columns, by the integrator dispatch.x uses (HOP's
+    interpol_mod ``optical_depth``): :func:`pchip_integral` of chi in height, and
+    tau = chi H at the top cell, with H the smaller of the density and extinction scale
+    heights between the two top cells.
+
+    ``chi`` [1/cm] and ``lnrho`` (natural log) share a shape with depth along ``axis``;
+    ``z`` is the height [cm, increasing outward], of that shape or one-dimensional.
+    The top is the end of larger height, so the columns may be stored either way up.
+    Needs no HopEOS instance.
+    """
+    chi = np.moveaxis(np.asarray(chi, np.float64), axis, -1)
+    lnrho = np.moveaxis(np.asarray(lnrho, np.float64), axis, -1)
+    z = np.asarray(z, np.float64)
+    z = np.broadcast_to(z if z.ndim == 1 else np.moveaxis(z, axis, -1), chi.shape)
+    nz = chi.shape[-1]
+    order = slice(None, None, -1) if z[..., 0].mean() < z[..., -1].mean() else slice(None)
+    cols = [np.ascontiguousarray(a[..., order].reshape(-1, nz)) for a in (chi, lnrho, z)]
+    tau = np.empty_like(cols[0])
+    ffi, lib = open_library()
+    _check(lib, lib.hop_optical_depth(tau.shape[0], nz, *(_buf(a, np.float64, 'double *')
+                                                          for a in (*cols, tau))),
+           'hop_optical_depth')
+    return np.moveaxis(tau.reshape(chi.shape)[..., order], -1, axis)
+
+
+def pchip_integral(y, x, axis=-1):
+    """Cumulative integral of ``y`` over ``x`` from the first point along ``axis``,
+    exact for the monotone PCHIP interpolant of ``y`` (HOP's interpol_mod
+    ``pchip_integral``, the quadrature of :func:`optical_depth`). ``x`` has the shape of
+    ``y`` or is one-dimensional; the result has the sign of its steps.
+    """
+    y = np.moveaxis(np.asarray(y, np.float64), axis, -1)
+    x = np.asarray(x, np.float64)
+    x = np.broadcast_to(x if x.ndim == 1 else np.moveaxis(x, axis, -1), y.shape)
+    n = y.shape[-1]
+    series = [np.ascontiguousarray(a.reshape(-1, n)) for a in (x, y)]
+    cum = np.empty_like(series[0])
+    ffi, lib = open_library()
+    _check(lib, lib.hop_pchip_integral(cum.shape[0], n, *(_buf(a, np.float64, 'double *')
+                                                          for a in (*series, cum))),
+           'hop_pchip_integral')
+    return np.moveaxis(cum.reshape(y.shape), -1, axis)
 
 
 def _opacity_chunk(job, hop=None):
