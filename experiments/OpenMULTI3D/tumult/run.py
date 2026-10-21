@@ -543,7 +543,13 @@ class Run(object):
 
     #=====================================================================
     def plot_line_labels(self, offset=None, tol=0.02, show_atom=True,
-                         show_llist=True, dry=False, xmin=None, xmax=None, **kwargs):
+                         show_llist=True, dry=False, xmin=None, xmax=None, query=None, **kwargs):
+        """Labels the species of the strongest lines inside the current axes and returns the labels.
+
+        query is a pandas query string on the labels' columns ion, lam0, strength and loggf,
+        e.g. ``"ion == 'H I'"``. It applies after the lines within tol are merged; a model
+        atom's transitions carry the atom id as ion.
+        """
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         from .plotting_scripts import plot_line_annotations
@@ -619,6 +625,7 @@ class Run(object):
         if len(llist) > 0:
             llist = llist.sort_values(by='lam0').reset_index(drop=True)
             llist['ion'] = llist['ion'].str.strip()
+            if query is not None: llist = llist.query(query).reset_index(drop=True)
             if offset is not None: llist['lam0'] = llist['lam0'] + offset
             if not dry:
                 plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)

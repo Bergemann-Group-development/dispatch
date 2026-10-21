@@ -125,11 +125,9 @@ SUBROUTINE read_composition_params ()
   linelist_file = ''
 
   READ_NAMELIST(composition_params)
-
   write (io%namelist, composition_params)
 
   READ_NAMELIST(opac_table_params)
-
   write (io%namelist, opac_table_params)
 
   READ_NAMELIST(linelist_params)
