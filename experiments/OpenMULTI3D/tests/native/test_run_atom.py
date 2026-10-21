@@ -1,9 +1,9 @@
 """A run's model atom, read back from its ``atoms/`` folder.
 
-dispatch.x writes the conversion of a MULTI atom there (``atom.ba06`` becomes
-``ba06.txt``), and :meth:`tumult.run.Run.get_line` finds a transition in it whose levels
-select departure coefficients: Ba II 4554 Å is 6s 2S - 6p 2P3/2, levels 1 and 4 counted
-from 0. The run is the 1D solar demo of ``examples/sun_ba_1d.nml`` (well under a second).
+dispatch.x writes the conversion of a MULTI atom there, named after its species
+(``atom.ba06`` becomes ``Ba.txt``), and :meth:`tumult.run.Run.get_line` finds a
+transition in it whose levels select departure coefficients: Ba II 4554 Å is
+6s 2S - 6p 2P3/2, levels 1 and 4 counted from 0. The run is the 1D solar demo of ``examples/sun_ba_1d.nml`` (well under a second).
 
 Needs the built ``dispatch.x``.
 """
@@ -34,7 +34,7 @@ def run(tmp_path_factory):
 
 
 def test_the_run_keeps_the_converted_atom(run):
-    assert [p.name for p in (run.folder / 'atoms').iterdir()] == ['ba06.txt']
+    assert [p.name for p in (run.folder / 'atoms').iterdir()] == ['Ba.txt']
 
 
 def test_a_line_s_levels_select_their_departure_coefficients(run):
