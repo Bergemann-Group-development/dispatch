@@ -47,6 +47,19 @@ def get_plt_kwargs():
         _plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
     return _plt_kwargs
 
+
+# IDL's six direct-graphics LINESTYLE indices as matplotlib dash tuples, (offset,
+# (on, off, ...)) in units of the line width: ``plt.plot(x, y, ls=IDL_DASHES[2])``.
+# IDL's dash lengths depended on the output device, so these approximate its look.
+IDL_DASHES = {
+    0: (0, ()),                            # solid
+    1: (0, (1, 3)),                        # dotted
+    2: (0, (6, 4)),                        # dashed
+    3: (0, (6, 3, 1, 3)),                  # dash dot
+    4: (0, (6, 3, 1, 3, 1, 3, 1, 3)),      # dash dot dot dot
+    5: (0, (12, 4)),                       # long dashes
+}
+
 #=====================================================================
 def set_title(title, default=None):
     if title is None:

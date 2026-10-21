@@ -56,3 +56,9 @@ it falls short:
 
 A new plot of a run quantity that will be needed again belongs in tumult as a method next
 to these, with its reading logic in the matching `get_*` method, rather than in a script.
+
+## Style
+
+Figures follow the `pyplot-style` skill. Departure coefficient plots draw their curves
+with the IDL line styles in `tumult.IDL_DASHES`, cycling `IDL_DASHES[i % 6]` over the
+levels shown.
