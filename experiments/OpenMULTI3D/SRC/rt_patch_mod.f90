@@ -38,6 +38,7 @@ MODULE rt_patch_mod
   USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
   USE hprofl_mod, only: hprofile, hline_t, hydrogen_line, hcell_t, hcell_prepare
+  USE hvcs_mod, only: vcs_profile_t, vcs_supported
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, ref_lam, element_ids, &
@@ -88,6 +89,7 @@ MODULE rt_patch_mod
   type, public :: slab_shape_t
     integer :: nf=0, n_mu=0, n_set=1
     integer, allocatable :: nline(:), ncont(:)
+    integer, allocatable :: nhtab(:)     ! hydrogen lines with a tabulated profile
     logical, allocatable :: get_rates(:)
     logical :: bound_bound=.false., bound_free=.false., do_final=.false., do_out_sp=.false.
   end type slab_shape_t
@@ -99,6 +101,14 @@ MODULE rt_patch_mod
   ! boundary buffer (mem) and marks the last slab of a complete sweep with
   ! column_end.  up_twin and dn_twin are set there too.
   !-----------------------------------------------------------------------------
+  ! The tabulated profiles of an atom's hydrogen lines (hcell_t%vcs), prepared once
+  ! per cell and line and shared by the directions, sets and passes of one execute.
+  ! slot(i) indexes line i in p, 0 for a line without a table.
+  type :: hvcs_store_t
+    integer, allocatable :: slot(:)
+    type(vcs_profile_t), allocatable :: p(:,:,:,:)
+  end type hvcs_store_t
+
   type, public, extends(ray_patch_t) :: rt_patch_t
     class(rt_patch_t), pointer :: upstream=>null()
     class(rt_patch_t), pointer :: up_twin=>null()
@@ -133,6 +143,7 @@ MODULE rt_patch_mod
     real(4), allocatable :: split_opac(:,:,:,:,:), split_chi(:,:,:,:,:)
     integer, allocatable :: split_id(:,:,:,:), split_chi_id(:,:,:,:)
     integer, allocatable :: split_offset(:)
+    type(hvcs_store_t), allocatable :: hvcs(:)
     ! The formal solution without its own local term, Inu - Psi*eta_total, and
     ! the escape factor 1 - Psi*chi of the local term, both from the solver.
     real(4), allocatable :: Irem(:,:,:,:), escape(:,:,:,:)
@@ -338,10 +349,11 @@ contains
     shape%bound_free = self%bound_free
     shape%do_final = self%do_final
     shape%do_out_sp = self%do_out_sp
-    allocate(shape%nline(self%natom), shape%ncont(self%natom))
+    allocate(shape%nline(self%natom), shape%ncont(self%natom), shape%nhtab(self%natom))
     do i=1, self%natom
       shape%nline(i) = size(self%trans(i)%line)
       shape%ncont(i) = size(self%trans(i)%cont)
+      shape%nhtab(i) = count(table_line_slots(self%trans(i)%line) > 0)
     end do
     allocate(shape%get_rates, source=self%get_rates)
     call slab_memory (shape, self%n, self%ng, work, retained, boundary, persistent)
@@ -375,14 +387,14 @@ contains
     shape%nf = fe - fs + 1
     natom = 0
     if (associated(atoms)) natom = size(atoms)
-    allocate(shape%nline(natom), shape%ncont(natom))
+    allocate(shape%nline(natom), shape%ncont(natom), shape%nhtab(natom))
     if (natom > 0) then
       shape%bound_bound = any([(associated(atoms(i)%trans%line), i=1, natom)])
       shape%bound_free = any([(associated(atoms(i)%trans%cont), i=1, natom)])
     endif
     do i=1, natom
       call count_window_trans(atoms(i), shape%bound_bound, shape%bound_free, fs, fe, &
-                              shape%nline(i), shape%ncont(i))
+                              shape%nline(i), shape%ncont(i), shape%nhtab(i))
     end do
     allocate(shape%get_rates(natom), source=(.not. shape%do_out_sp))
   END FUNCTION window_shape
@@ -442,6 +454,7 @@ contains
     real(8), intent(out) :: work, retained, boundary, persistent
     real(8) :: word, cell, field, sets
     logical :: scat_ali, psi, rates
+    type(vcs_profile_t) :: hvcs_sample
     integer :: i
     !-----------------------------------------------------------------------------
     word = real(storage_size(0.0_4)/8,8)
@@ -463,6 +476,9 @@ contains
     endif
     do i=1, size(shape%nline)
       if (shape%bound_bound) work = work + cell*shape%nline(i)
+      ! hvcs, the prepared tabulated hydrogen profiles
+      if (shape%bound_bound .and. allocated(shape%nhtab)) work = work + &
+        product(real(n,8))*shape%nhtab(i)*storage_size(hvcs_sample)/8
       if (shape%get_rates(i)) work = work + 2*cell*(shape%nline(i) + shape%ncont(i))
     enddo
     ! split_opac(2), split_id, split_chi(2), split_chi_id, Irem and escape
@@ -768,22 +784,28 @@ contains
   !===============================================================================
   !> Number of active lines and continua of atom that reach into [fs_in, fe_in].
   !===============================================================================
-  SUBROUTINE count_window_trans (atom, bound_bound, bound_free, fs_in, fe_in, nline, ncont)
+  SUBROUTINE count_window_trans (atom, bound_bound, bound_free, fs_in, fe_in, nline, ncont, nhtab)
     type(atom_type), intent(in) :: atom
     logical, intent(in) :: bound_bound, bound_free
     integer, intent(in) :: fs_in, fe_in
     integer, intent(out) :: nline, ncont
-    integer :: i, fs, fe
+    integer, intent(out), optional :: nhtab
+    integer :: i, fs, fe, nh
     logical :: skip
     !-----------------------------------------------------------------------------
     nline = 0
     ncont = 0
+    nh = 0
     if (bound_bound) then
       do i=1, atom%nline
         associate (line => atom%trans%line(i))
           if (.not. line%active) cycle
           call line%check_range(fs_in, fe_in, fs, fe, skip)
-          if (.not. skip) nline = nline + 1
+          if (skip) cycle
+          nline = nline + 1
+          if (line%hydrogen) then
+            if (vcs_supported(line%i, line%j)) nh = nh + 1
+          endif
         end associate
       end do
     endif
@@ -796,7 +818,28 @@ contains
         end associate
       end do
     endif
+    if (present(nhtab)) nhtab = nh
   END SUBROUTINE count_window_trans
+
+  !===============================================================================
+  !> The index of each line among the hydrogen lines with a tabulated profile, 0
+  !> for the other lines (hvcs_store_t%slot).  The level indices of a hydrogen
+  !> line are its principal quantum numbers.
+  !===============================================================================
+  FUNCTION table_line_slots (lines) RESULT (slot)
+    type(line_type), intent(in) :: lines(:)
+    integer :: slot(size(lines))
+    integer :: i, k
+    !-----------------------------------------------------------------------------
+    k = 0
+    slot = 0
+    do i=1, size(lines)
+      if (.not. lines(i)%hydrogen) cycle
+      if (.not. vcs_supported(lines(i)%i, lines(i)%j)) cycle
+      k = k + 1
+      slot(i) = k
+    end do
+  END FUNCTION table_line_slots
 
   !===============================================================================
   !> With premature_finish, an iteration slab freezes (static_mem) once it is
@@ -997,10 +1040,18 @@ contains
         allocate(self%Jnu(fs:fe,self%nx,self%ny,self%nz,self%n_set), source=0.)
         call mem_register(self%Jnu, label='Jnu')
       endif
+      if (self%bound_bound) allocate(self%hvcs(self%natom))
       do i=1, self%natom
         trans => self%trans(i)
         if (self%bound_bound) then
           call os%allocate(trans%adamp, [self%nx,self%ny,self%nz,size(trans%line)], label='adamp', zero=.true.)
+          associate (store => self%hvcs(i))
+            allocate(store%slot(size(trans%line)), source=table_line_slots(trans%line))
+            if (any(store%slot > 0)) then
+              allocate(store%p(self%nx,self%ny,self%nz,maxval(store%slot)))
+              call os%mem_register(storage_size(store%p), size(store%p), 'hvcs')
+            endif
+          end associate
         endif
         if (self%get_rates(i)) then
           nrad = size(trans%line) + size(trans%cont)
@@ -1081,11 +1132,16 @@ contains
         if (self%bound_bound .and. allocated(trans%adamp)) then
           call os%deallocate(trans%adamp, label='adamp')
         endif
+        if (allocated(self%hvcs)) then
+          if (allocated(self%hvcs(i)%p)) &
+            call os%mem_register(storage_size(self%hvcs(i)%p), -size(self%hvcs(i)%p), 'hvcs')
+        endif
         if (self%get_rates(i)) then
           call os%deallocate(trans%gamma_ij, label='gamma_ij')
           call os%deallocate(trans%gamma_ji, label='gamma_ji')
         endif
       end do
+      if (allocated(self%hvcs)) deallocate(self%hvcs)
       if (allocated(self%chi_scat)) then
         call mem_unregister(self%chi_scat, label='self%chi_scat')
         call mem_unregister(self%one_m_eps, label='self%one_m_eps')
@@ -2491,7 +2547,7 @@ contains
     integer, intent(in) :: i_set, iatom
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, save :: itimer=0
-    integer :: x, y, z, f, index
+    integer :: x, y, z, f, index, k
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
     ! Copying continuum opacities to angle dependent opacities
@@ -2551,8 +2607,11 @@ contains
 
             associate(phi => vphi(fs:fe))
               if (line%hydrogen) then
+                k = self%hvcs(iatom)%slot(i)
+                if (k > 0) hcell%vcs = self%hvcs(iatom)%p(x,y,z,k)
                 call hcell_prepare(hline, temp(x,y,z), ne(x,y,z), fo(x,y,z), vbar2h(x,y,z), &
                                    tothi(x,y,z), t3nhe(x,y,z), idf, hcell)
+                if (k > 0) self%hvcs(iatom)%p(x,y,z,k) = hcell%vcs
                 do f=fs, fe
                   q = line%q(f) - vproj(x,y,z)
                   vphi(f) = hprofile(hline, hcell, q)
@@ -2651,7 +2710,7 @@ contains
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
     integer, save :: itimer=0
-    integer :: x, y, z, f
+    integer :: x, y, z, f, k
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     ! Each line stores two integrals per cell instead of the rates themselves:
@@ -2764,8 +2823,11 @@ contains
             ! One f-loop per rate formulation and profile kind, so that none
             ! carries the rate_formulation branch.
             if (line%hydrogen) then
+              k = self%hvcs(iatom)%slot(i)
+              if (k > 0) hcell%vcs = self%hvcs(iatom)%p(x,y,z,k)
               call hcell_prepare(hline, temp(x,y,z), ne(x,y,z), fo(x,y,z), vbar2h(x,y,z), &
                                  tothi(x,y,z), t3nhe(x,y,z), idf, hcell)
+              if (k > 0) self%hvcs(iatom)%p(x,y,z,k) = hcell%vcs
               if (split_rates) then
                 do f=fs, fe
                   q = line%q(f) - vpr
