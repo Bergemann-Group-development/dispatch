@@ -1,5 +1,7 @@
 ! Comparison with MULTI 1D: its frequency quadrature, Gauss angles, collision rates and
-! composition, with decoupled continua. Use on its own rather than combined.
+! composition, with decoupled continua and the absmet lines split into absorption and
+! scattering by van Regemorter's epsilon, as MULTI does (line_scattering). Use on its
+! own rather than combined.
 &atmos_params
   use_ne = .true.
   use_rho = .false.
@@ -40,4 +42,7 @@
   abund_file = 'input/abund/legacy_abund'
   molec_file = 'input/molec_data.txt'
   molecule_damping_estimates = .false.
+/
+&linelist_params
+  line_scattering = .true.
 /

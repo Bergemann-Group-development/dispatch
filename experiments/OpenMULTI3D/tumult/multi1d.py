@@ -51,7 +51,7 @@ DEFAULT_INPUT = {
     'IWEQW': 0, 'IWEVEC': 0, 'IWHEAD': 0, 'IWHSE': 0, 'IWLGMX': 1, 'IWLINE': 0,
     'IWLTE': 0, 'IWN': 0, 'IWNIIT': 0, 'IWOPAC': 0, 'IWRAD': 0, 'IWRATE': 0, 'IWSTRT': 0,
     'IWTAUQ': 0, 'IWTEST': 0, 'IWWMAT': 0, 'IWJFIX': 0, 'IWARN': 2, 'IOPACL': 0,
-    'ISCAT': 0, 'INCRAD': 0, 'INGACC': 1, 'ICRSW': 0, 'IOSMET': 0, 'EOSMET': 0,
+    'ISCAT': 0, 'INCRAD': 0, 'INGACC': 1, 'ICRSW': 0, 'IOSMET': 0, 'EOSMET': 0.5,
     'IDL1': 1, 'IDLNY': 0, 'IDLCNT': 0, 'IDLOPC': 0,
 }
 
