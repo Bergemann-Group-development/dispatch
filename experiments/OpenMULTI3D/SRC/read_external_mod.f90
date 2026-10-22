@@ -397,6 +397,9 @@ contains
     else if (console_on(ch_atmos, 1) .and. any(ia%vmic > 0)) then
       write(console_unit,'(A, F6.2)') 'Vmic from the model, mean: Vmic =', sum(ia%vmic) / size(ia%vmic)
     endif
+    if (console_on(ch_atmos, 1) .and. .not. ia%is_3d .and. any(ia%vz /= 0)) &
+      write(console_unit,'(A, 2F8.3)') 'Vz from the model [km/s], min and max:', &
+        minval(ia%vz)*1e-5, maxval(ia%vz)*1e-5
   END SUBROUTINE read_model
 
   !===============================================================================
