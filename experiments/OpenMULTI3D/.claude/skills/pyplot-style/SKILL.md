@@ -45,7 +45,7 @@ For reading tumult output and the existing plotting functions, see the `tumult-p
 8. **Labels:** a logarithmic quantity says which logarithm, `$\log_{10}$` or `$\ln$`,
    never a bare `$\log$`. The treatment a quantity belongs to is an upright subscript,
    `$A_{\rm NLTE} - A_{\rm LTE}$` or `EW$_{\rm 3D\,NLTE}$`, not `A(NLTE)`.
-9. **Legends:** `handlelength=1.5`.
+9. **Legends:** `handlelength=1.5`; `handlelength=3.0` when the lines use `tumult.plotting_scripts.IDL_DASHES`, whose longer patterns need it to show in the legend.
 10. **Suptitles:** `fontsize="medium"`, `fontweight="bold"` and
     `math_fontfamily="custom"`, which sets their math in the style's bold math fonts.
 11. **Output:** save as `.pdf`.
