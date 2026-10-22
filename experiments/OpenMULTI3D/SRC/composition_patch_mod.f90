@@ -391,8 +391,9 @@ SUBROUTINE create_rt_slabs (self)
     endif
   endif
   ! In 1D the LTE background opacity is the same for every direction, set and
-  ! iteration, so each i_nu of either pass computes it once (see
-  ! lte_background_opacities in rt_patch_mod).  make_eos writes tables instead.
+  ! iteration (it takes no Doppler shift, in 3D neither), so each i_nu of either
+  ! pass computes it once (see lte_background_opacities in rt_patch_mod).
+  ! make_eos writes tables instead.
   if (one_dimensional .and. .not. make_eos) then
     allocate(self%bg_point_tables(-n_windows_out:2*n_windows))
     allocate(self%bg_point_locks (-n_windows_out:2*n_windows))
@@ -400,10 +401,11 @@ SUBROUTINE create_rt_slabs (self)
       call self%bg_point_locks(i)%init('bg_point', i)
     end do
   endif
-  ! In 1D the detailed line opacity is isotropic, so the output pass computes it
-  ! once per output i_nu and set and reuses it for every direction, scattering
-  ! iteration and the final pass (see stored_linelist in rt_patch_mod); a column
-  ! holds few enough points to keep it.
+  ! In a static 1D atmosphere the detailed line opacity is isotropic, so the
+  ! output pass computes it once per output i_nu and set and reuses it for every
+  ! direction, scattering iteration and the final pass (see stored_linelist in
+  ! rt_patch_mod); a column holds few enough points to keep it.  With a vertical
+  ! velocity every direction sees its own shift, and the store stays empty.
   if (one_dimensional .and. rt_out%include_linelist .and. &
       .not. rt_out%sample_linelist) then
     allocate(self%ll_point_tables(-n_windows_out:-1))

@@ -331,11 +331,13 @@ contains
       vn = self%lpe(1,1,nz)
     endif
 
-    ! vz is the component along the model's own z axis, and the mesh has z pointing
-    ! up. It changes sign when that axis points into the star, whichever end of the
-    ! arrays the model stores first (Stagger2 stores the top first with z up).
+    ! The mesh has z pointing up.  The vz of a 3D model is the component along the
+    ! model's own z axis, which changes sign when that axis points into the star,
+    ! whichever end of the arrays the model stores first (Stagger2 stores the top
+    ! first with z up).  The 1D formats state vz positive outward whatever their
+    ! depth scale, so it keeps its sign.
     z_down = (v1 < vn) .eqv. (self%zz(1) < self%zz(nz))
-    if (z_down) self%vz = -self%vz
+    if (z_down .and. self%is_3d) self%vz = -self%vz
 
     if (v1 < vn) then
       do j=1, ny
@@ -617,7 +619,11 @@ contains
       endif
       vx = 0
       vy = 0
-      vz = 0
+      if (any(ia%vz /= 0)) then
+        call pchip_mono4(ia%zz, ia%vz(1,1,:), newz, vz(1,1,:), sorted=.true.)
+      else
+        vz = 0
+      endif
     else
       dx = ia%xx(2)
       dy = ia%yy(2)

@@ -1906,9 +1906,9 @@ contains
       endif
     endif
 
-    ! A 1D atmosphere is static, and its background depends on i_nu alone, so the
-    ! first rt_patch of an i_nu stores chi_cont and sigma while its twins wait on
-    ! the lock; they and every later iteration and pass copy them back.
+    ! The background of a 1D atmosphere depends on i_nu alone (it takes no Doppler
+    ! shift), so the first rt_patch of an i_nu stores chi_cont and sigma while its
+    ! twins wait on the lock; they and every later iteration and pass copy them back.
     use_store = associated(self%m3d_parent%bg_point_tables) .and. .not. do_make_eos
     if (use_store) then
       lock  => self%m3d_parent%bg_point_locks (self%i_nu)
