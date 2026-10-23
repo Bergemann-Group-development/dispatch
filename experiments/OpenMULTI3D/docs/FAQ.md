@@ -150,7 +150,7 @@ and `LTE`. `run.mus` lists the angle quadrature.
 
 ```python
 folder, ran = tm.launch('demo_run', default='examples/sun_ba_1d.nml',
-                        nml_settings={'atom_params': {'convlim': 1e-3}})
+                        nml_settings={'nlte_params': {'convlim': 1e-3}})
 tm.read(folder).crop().plot()
 ```
 
