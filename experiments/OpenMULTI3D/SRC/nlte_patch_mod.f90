@@ -1264,39 +1264,49 @@ contains
         ! do not exclude
        case default
         ok = .false.
-        if (trans%level%g > 0) then
-          ! the species is the part of the ion id before the ionisation stage ('Fe' of
-          ! 'Fe I'; a molecule id has none). Ids are compared without case, so the
-          ! atomic weight tells CO from Co.
-          k = index(trans%ion%id, ' ')
-          if (k == 0) k = len(trans%ion%id) + 1
-          same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
-                         abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
-          if (same_species) then
-            if (trans%molecular) then
-              ok = .true.
-            else
-              do kc=1, atom%ncont
-                if (.not. atom%trans%cont(kc)%active) cycle
-                lower = atom%trans%cont(kc)%i
-                if (atom%ion(lower) /= trans%ion%j) cycle
-                ! the table gives the excitation within its ion, atom%ev counts from
-                ! the neutral ground state
-                exc = atom%ev(lower) - minval(atom%ev, mask=atom%ion==atom%ion(lower))
-                if (exc == 0) then
-                  ok = trans%level%xion == 0
-                else
-                  ok = abs(trans%level%xion / exc - 1) < 1d-2
-                endif
-                if (ok) exit
-              end do
-            endif
-            if (ok) then
-              trans%active = .false.
-              if (first_time) then
-                if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
+        if (.not. associated(trans%ion)) cycle
+        ! the species is the part of the ion id before the ionisation stage ('Fe' of
+        ! 'Fe I'; a molecule id has none). Ids are compared without case, so the
+        ! atomic weight tells CO from Co.
+        k = index(trans%ion%id, ' ')
+        if (k == 0) k = len(trans%ion%id) + 1
+        same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
+                       abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
+        if (same_species .and. trim(trans%key) == 'H BF') then
+          ! a hydrogen continuum of the table has no level record: it is the bound-free
+          ! of principal quantum number trans%k, the atom's when one of its continua
+          ! starts from the neutral level of statistical weight 2 n^2
+          do kc=1, atom%ncont
+            if (.not. atom%trans%cont(kc)%active) cycle
+            lower = atom%trans%cont(kc)%i
+            ok = atom%ion(lower) == trans%ion%j .and. &
+                 abs(atom%g(lower) - 2d0*trans%k**2) < 0.5d0
+            if (ok) exit
+          end do
+        else if (same_species .and. trans%level%g > 0) then
+          if (trans%molecular) then
+            ok = .true.
+          else
+            do kc=1, atom%ncont
+              if (.not. atom%trans%cont(kc)%active) cycle
+              lower = atom%trans%cont(kc)%i
+              if (atom%ion(lower) /= trans%ion%j) cycle
+              ! the table gives the excitation within its ion, atom%ev counts from
+              ! the neutral ground state
+              exc = atom%ev(lower) - minval(atom%ev, mask=atom%ion==atom%ion(lower))
+              if (exc == 0) then
+                ok = trans%level%xion == 0
+              else
+                ok = abs(trans%level%xion / exc - 1) < 1d-2
               endif
-            endif
+              if (ok) exit
+            end do
+          endif
+        endif
+        if (ok) then
+          trans%active = .false.
+          if (first_time) then
+            if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
           endif
         endif
       end select
