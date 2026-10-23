@@ -1,8 +1,8 @@
 ! 3D snapshots: a 30x30x96 mesh in 32 vertical slabs, tabulated background and line
-! opacities, rays traced on the rotated atmosphere and exit planes of frozen columns kept
-! on disk.
+! opacities, rays traced on the rotated atmosphere, exit planes of frozen columns kept
+! on disk and NLTE populations saved every 10 iterations.
 &atmos_params        nx=30 ny=30 nz=96 dims=32 /
 &rt_iteration_params sample_back_opac=.true. sample_linelist=.true. /
 &rt_output_params    sample_back_opac=.true. sample_linelist=.true. /
 &run_params          rotate_atmos=.true. /
-&output_params       rt_to_file=.true. /
+&output_params       rt_to_file=.true. save_every=10 /
