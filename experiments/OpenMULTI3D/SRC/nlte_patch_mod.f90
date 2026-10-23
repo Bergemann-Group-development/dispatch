@@ -36,7 +36,7 @@ MODULE nlte_patch_mod
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
     save_net_rates
   USE rt_params_mod, only: rt_out
-  USE bftrans_mod, only: bftrans_type
+  USE bftrans_mod, only: bftrans_type, H_occupation_probability
   USE osmet_mod, only: osmet_type, osmet
   USE m3d_debug_mod
   USE shared_mod
@@ -1275,7 +1275,9 @@ contains
         if (same_species .and. trim(trans%key) == 'H BF') then
           ! a hydrogen continuum of the table has no level record: it is the bound-free
           ! of principal quantum number trans%k, the atom's when one of its continua
-          ! starts from the neutral level of statistical weight 2 n^2
+          ! starts from the neutral level of statistical weight 2 n^2.  With occupation
+          ! probabilities the table continuum keeps its dissolved-level part redward
+          ! of the series limit, which the atom's continuum lacks
           do kc=1, atom%ncont
             if (.not. atom%trans%cont(kc)%active) cycle
             lower = atom%trans%cont(kc)%i
@@ -1283,6 +1285,12 @@ contains
                  abs(atom%g(lower) - 2d0*trans%k**2) < 0.5d0
             if (ok) exit
           end do
+          if (ok .and. H_occupation_probability) then
+            trans%dissolved_only = .true.
+            if (first_time .and. console_on(ch_m3d, 2)) write(console_unit,'(2a)') &
+              'keeping only the dissolved-level part of ', trim(trans%label)
+            cycle
+          endif
         else if (same_species .and. trans%level%g > 0) then
           if (trans%molecular) then
             ok = .true.
