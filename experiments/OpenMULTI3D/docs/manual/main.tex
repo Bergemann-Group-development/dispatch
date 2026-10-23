@@ -1518,7 +1518,7 @@ An NLTE run iterates until the largest relative population change falls below \f
 
 \subsection{Per-patch convergence}
 
-\Code{\&nlte\_params\%convmax} applies the same test to each depth patch on its own. With \fort{premature_finish=T} (the default) a patch that has met it stops iterating, and once every patch has stopped the run ends. Unset, it never triggers; keep it below \fort{convlim} so that \fort{convlim} decides.
+\Code{\&nlte\_params\%convmax} applies the same test to each depth patch on its own. With \fort{premature_finish=T} (the default) a patch that has met it stops iterating, and once every patch has stopped the run ends. Unset, it is \fort{convlim}/10, and \fort{convmax=0} switches the test off; keep it below \fort{convlim} so that \fort{convlim} decides.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Line Broadening}\label{sec:broadening}

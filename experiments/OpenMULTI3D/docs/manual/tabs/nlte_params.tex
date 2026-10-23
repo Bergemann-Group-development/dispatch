@@ -3,7 +3,7 @@
 \fort{&nlte_params} & Meaning\\
 \midrule
 \fort{convlim} & Convergence limit of the relative population change. A positive value requests NLTE iterations; the default 0 keeps the atom in LTE.\\
-\fort{convmax} & Convergence limit of the relative population change within one depth patch (default \fort{tiny(1.0)}, never met). An atom that changes by less than \fort{convmax} in a patch is no longer updated there; with \fort{premature_finish} the patch then stops iterating, and once every patch has stopped the run ends. The closing message then reports that every patch met \fort{convmax} and the iteration count. Keep \fort{convmax} below \fort{convlim}, or leave it unset, so that \fort{convlim} decides.\\
+\fort{convmax} & Convergence limit of the relative population change within one depth patch (default \fort{convlim}/10; 0 is never met). An atom that changes by less than \fort{convmax} in a patch is no longer updated there; with \fort{premature_finish} the patch then stops iterating, and once every patch has stopped the run ends. The closing message then reports that every patch met \fort{convmax} and the iteration count. Keep \fort{convmax} below \fort{convlim}, so that \fort{convlim} decides.\\
 \fort{premature_finish} & Freeze the columns whose atoms and all deeper columns have met \fort{convmax} (default \fort{T}).\\
 \fort{preconditioning} & Preconditioned rates of Rybicki \& Hummer (1992) (default \fort{T}); \fort{rate_formulation='largest'} or \fort{'original'}.\\
 \fort{scattering_preconditioning} & Local approximate operator for continuum scattering (default \fort{F}), limited by \fort{scat_op_max}.\\
