@@ -181,8 +181,9 @@ MODULE m3d_patch_mod
     ! Output patches -(out_patch_offset(i)+1) .. -out_patch_offset(i+1) split output
     ! window i (the whole grid without a window_file); set with n_windows_out
     integer, public, save, allocatable :: out_patch_offset(:)
-    ! convlim <= 0 requests no NLTE iterations (see resolve_nlte_iterations)
-    real(8), public:: convlim=0d0, convmax=tiny(1.0)
+    ! convlim <= 0 requests no NLTE iterations, and a negative convmax becomes
+    ! convlim/10 (see resolve_nlte_iterations); convmax=0 is never met
+    real(8), public:: convlim=0d0, convmax=-1d0
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     ! Number of nlte_patches created on this rank, and whether all of them have
     ! converged.  Defaults to "nothing to wait for", so that a run without atoms,
@@ -606,6 +607,8 @@ MODULE m3d_patch_mod
   !> NLTE iterations are requested by nlte_params%convlim > 0.  An unset
   !> rt_iteration_params%maxiter then becomes the default limit and otherwise 0.
   !> A positive maxiter without convlim is rejected rather than run in LTE.
+  !> An unset convmax becomes convlim/10, so that patches stop iterating once they
+  !> are well inside the global limit.
   !===============================================================================
   SUBROUTINE resolve_nlte_iterations ()
     integer, parameter :: default_maxiter = 99
@@ -615,6 +618,7 @@ MODULE m3d_patch_mod
     else if (rt_iter%maxiter > 0 .and. convlim <= 0d0) then
       error stop 'rt_iteration_params%maxiter > 0 requires nlte_params%convlim > 0'
     end if
+    if (convmax < 0d0) convmax = 0.1d0*max(convlim, 0d0)
   END SUBROUTINE resolve_nlte_iterations
 
   !===============================================================================
