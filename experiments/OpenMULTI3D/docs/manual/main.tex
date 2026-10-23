@@ -640,7 +640,7 @@ Abundance fits to an observed spectrum and NLTE abundance corrections need many 
 
 \subsection{Synthesise a 3D snapshot}\label{sec:rec3d}
 
-A hydrodynamical snapshot is synthesised with the preset \File{3d}: a $30\times30\times96$ mesh, tabulated background and line opacities in both passes, an atmosphere rotated for each ray and exit planes on disk. Sec.~\ref{sec:3d} explains these choices. A 3D run needs far more memory than a 1D run (Sec.~\ref{sec:resources}) and usually a cluster node. The 3D readers supply no microturbulence, so \fort{vmic} has no effect. Spectra of several snapshots are averaged with \Code{tm.combine} (Sec.~\ref{sec:python}).
+A hydrodynamical snapshot is synthesised with the preset \File{3d}: a $30\times30\times96$ mesh, tabulated background and line opacities in both passes, an atmosphere rotated for each ray, exit planes on disk and NLTE populations saved every 10 iterations (\fort{save_every}, Sec.~\ref{sec:stopping}). Sec.~\ref{sec:3d} explains these choices. A 3D run needs far more memory than a 1D run (Sec.~\ref{sec:resources}) and usually a cluster node. The 3D readers supply no microturbulence, so \fort{vmic} has no effect. Spectra of several snapshots are averaged with \Code{tm.combine} (Sec.~\ref{sec:python}).
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Reading and Plotting Results} \label{sec:python}
@@ -1205,7 +1205,7 @@ echo exit > data/myrun/stop_nlte.flag
 
 The run looks for the file once per iteration, removes it, finishes the iteration under way and then ends the iterations as convergence would. A file left in the run directory from an earlier run is removed at the start. DISPATCH's own \File{stop.flag} instead aborts the run without writing departures.
 
-\fort{&output_params save_every=N} writes the populations every $N$ iterations as well, so that a run killed without warning (time limit, memory, node failure) leaves the departures of its last save. These intermediate files hold the populations on the model grid only; the ray-aligned copies (\fort{rotate_atmos=T}) are written at the end.
+\fort{&output_params save_every=N} writes the populations every $N$ iterations as well, so that a run killed without warning (time limit, memory, node failure) leaves the departures of its last save; the \File{3d} preset sets \fort{save_every=10}. These intermediate files hold the populations on the model grid only; the ray-aligned copies (\fort{rotate_atmos=T}) are written at the end.
 
 To continue, start a new run on the saved departures, with iterations:
 
@@ -1556,7 +1556,7 @@ Hydrogen lines need a block \fort{'H I'} in the line list (Sec.~\ref{sec:linelis
 %%%%%%%%%%%%%%%%%%%%%%
 
 \begin{description}
-    \item[Default.] The \File{3d} preset: a $30\times30\times96$ mesh, tabulated background opacities in both passes and tabulated line opacities wherever a pass includes the line list (\fort{sample_back_opac}, \fort{sample_linelist}), an atmosphere rotated for each ray (\fort{rotate_atmos=T}) and exit planes on disk (\fort{rt_to_file}).
+    \item[Default.] The \File{3d} preset: a $30\times30\times96$ mesh, tabulated background opacities in both passes and tabulated line opacities wherever a pass includes the line list (\fort{sample_back_opac}, \fort{sample_linelist}), an atmosphere rotated for each ray (\fort{rotate_atmos=T}), exit planes on disk (\fort{rt_to_file}) and NLTE populations saved every 10 iterations (\fort{save_every=10}).
     \item[Change when] the result is to be tested against a finer mesh or more rays, or the memory of a node is exceeded.
     \item[Keys.] \fort{nx}, \fort{ny}, \fort{nz} and \fort{snap} (Sec.~\ref{nl:atmos}); \fort{angle_quad}, \fort{ntheta}, \fort{nphi} (Sec.~\ref{nl:rt}); \fort{rotate_atmos} (Sec.~\ref{nl:run}).
 \end{description}
