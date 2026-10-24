@@ -36,7 +36,7 @@ MODULE nlte_patch_mod
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
     save_net_rates
   USE rt_params_mod, only: rt_out
-  USE bftrans_mod, only: bftrans_type
+  USE bftrans_mod, only: bftrans_type, H_occupation_probability
   USE osmet_mod, only: osmet_type, osmet
   USE m3d_debug_mod
   USE shared_mod
@@ -92,6 +92,9 @@ MODULE nlte_patch_mod
   integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
+  ! with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
+  ! levels an H model atom carries; .false. keeps them alongside the atom's continua
+  logical, save :: exclude_h_continua=.true.
   logical, save :: stale_stop_checked=.false.
   logical, save :: departures_reported=.false.
   logical, public, save :: external_sp=.false.
@@ -156,9 +159,9 @@ contains
     logical, allocatable :: selected(:)
     integer :: il
     integer :: i, j, nlvl
-    namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
-      use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-      exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
+    namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, exclude_h_continua, &
+      level_partf, use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
+      relative_abundance, exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
       e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden, upsilon_floor, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
@@ -1264,39 +1267,58 @@ contains
         ! do not exclude
        case default
         ok = .false.
-        if (trans%level%g > 0) then
-          ! the species is the part of the ion id before the ionisation stage ('Fe' of
-          ! 'Fe I'; a molecule id has none). Ids are compared without case, so the
-          ! atomic weight tells CO from Co.
-          k = index(trans%ion%id, ' ')
-          if (k == 0) k = len(trans%ion%id) + 1
-          same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
-                         abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
-          if (same_species) then
-            if (trans%molecular) then
-              ok = .true.
-            else
-              do kc=1, atom%ncont
-                if (.not. atom%trans%cont(kc)%active) cycle
-                lower = atom%trans%cont(kc)%i
-                if (atom%ion(lower) /= trans%ion%j) cycle
-                ! the table gives the excitation within its ion, atom%ev counts from
-                ! the neutral ground state
-                exc = atom%ev(lower) - minval(atom%ev, mask=atom%ion==atom%ion(lower))
-                if (exc == 0) then
-                  ok = trans%level%xion == 0
-                else
-                  ok = abs(trans%level%xion / exc - 1) < 1d-2
-                endif
-                if (ok) exit
-              end do
-            endif
-            if (ok) then
-              trans%active = .false.
-              if (first_time) then
-                if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
+        if (.not. associated(trans%ion)) cycle
+        ! the species is the part of the ion id before the ionisation stage ('Fe' of
+        ! 'Fe I'; a molecule id has none). Ids are compared without case, so the
+        ! atomic weight tells CO from Co.
+        k = index(trans%ion%id, ' ')
+        if (k == 0) k = len(trans%ion%id) + 1
+        same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
+                       abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
+        if (same_species .and. trim(trans%key) == 'H BF') then
+          if (.not. exclude_h_continua) cycle
+          ! a hydrogen continuum of the table has no level record: it is the bound-free
+          ! of principal quantum number trans%k, the atom's when one of its continua
+          ! starts from the neutral level of statistical weight 2 n^2.  With occupation
+          ! probabilities the table continuum keeps its dissolved-level part redward
+          ! of the series limit, which the atom's continuum lacks
+          do kc=1, atom%ncont
+            if (.not. atom%trans%cont(kc)%active) cycle
+            lower = atom%trans%cont(kc)%i
+            ok = atom%ion(lower) == trans%ion%j .and. &
+                 abs(atom%g(lower) - 2d0*trans%k**2) < 0.5d0
+            if (ok) exit
+          end do
+          if (ok .and. H_occupation_probability) then
+            trans%dissolved_only = .true.
+            if (first_time .and. console_on(ch_m3d, 2)) write(console_unit,'(2a)') &
+              'keeping only the dissolved-level part of ', trim(trans%label)
+            cycle
+          endif
+        else if (same_species .and. trans%level%g > 0) then
+          if (trans%molecular) then
+            ok = .true.
+          else
+            do kc=1, atom%ncont
+              if (.not. atom%trans%cont(kc)%active) cycle
+              lower = atom%trans%cont(kc)%i
+              if (atom%ion(lower) /= trans%ion%j) cycle
+              ! the table gives the excitation within its ion, atom%ev counts from
+              ! the neutral ground state
+              exc = atom%ev(lower) - minval(atom%ev, mask=atom%ion==atom%ion(lower))
+              if (exc == 0) then
+                ok = trans%level%xion == 0
+              else
+                ok = abs(trans%level%xion / exc - 1) < 1d-2
               endif
-            endif
+              if (ok) exit
+            end do
+          endif
+        endif
+        if (ok) then
+          trans%active = .false.
+          if (first_time) then
+            if (console_on(ch_m3d, 2)) write(console_unit,'(2a)') 'excluding transition ', trim(trans%label)
           endif
         endif
       end select
