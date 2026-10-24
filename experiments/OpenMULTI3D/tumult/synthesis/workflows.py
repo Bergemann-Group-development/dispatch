@@ -491,10 +491,6 @@ def build_settings(prefs, run_vals, atmos_format=None):
             from ..line_quadrature import QNORM_KMS
             atom["line_grid_file"] = str(run_vals["line_grid"])
             atom["qnorm"] = float(QNORM_KMS)
-        if prefs.get("convlim"):
-            atom["convlim"] = float(prefs["convlim"])
-        if prefs.get("convmax"):
-            atom["convmax"] = float(prefs["convmax"])
         settings["atom_params"] = atom
 
     return settings

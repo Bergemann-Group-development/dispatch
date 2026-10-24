@@ -11,6 +11,7 @@
   decouple_continuum = .false.
   initial_Jnu = 'zero'
   premature_finish = .false.
+  convmax = 0
 /
 &rt_iteration_params
   angle_quad = 'set_a4'
