@@ -92,6 +92,9 @@ MODULE nlte_patch_mod
   integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
+  ! with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
+  ! levels an H model atom carries; .false. keeps them alongside the atom's continua
+  logical, save :: exclude_h_continua=.true.
   logical, save :: stale_stop_checked=.false.
   logical, save :: departures_reported=.false.
   logical, public, save :: external_sp=.false.
@@ -156,9 +159,9 @@ contains
     logical, allocatable :: selected(:)
     integer :: il
     integer :: i, j, nlvl
-    namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, level_partf, &
-      use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-      exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
+    namelist /atom_params/ atom_root, atom_file, qnorm, exclude_trace_cont, exclude_h_continua, &
+      level_partf, use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
+      relative_abundance, exclude_from_line_list, output_from_line_list, kramer_bf, overlapping_bf, &
       e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden, upsilon_floor, &
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
@@ -1273,6 +1276,7 @@ contains
         same_species = lowercase(trans%ion%id(:k-1)) == lowercase(atom%id) .and. &
                        abs(trans%ion%awgt / atom%awgt - 1) < 1d-2
         if (same_species .and. trim(trans%key) == 'H BF') then
+          if (.not. exclude_h_continua) cycle
           ! a hydrogen continuum of the table has no level record: it is the bound-free
           ! of principal quantum number trans%k, the atom's when one of its continua
           ! starts from the neutral level of statistical weight 2 n^2.  With occupation
