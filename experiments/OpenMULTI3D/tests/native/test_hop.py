@@ -1,6 +1,6 @@
-"""The standalone HOP library (libhop.so) through the tumult.hop wrapper.
+"""The standalone HOP library (libhop.so) through the hopacity wrapper.
 
-Needs ``HOP/standalone/build/libhop.so`` (``make hop_standalone``). Chunking is only
+Needs ``HOP/hopacity/libhop.so`` (``make hop_standalone``). Chunking is only
 neutral within one process: a spawned worker reads only the lines within dlam of its own
 chunk, so a far Lorentz wing reaching in from outside that window is missing (as in a
 Dispatch run). Hence nprocs=1 here.
@@ -56,7 +56,7 @@ def test_chunking_is_exact_without_a_linelist():
     Each wavelength is computed independently there, so slicing the axis is exact.  This
     is the half of the chunking behaviour that a threaded hop_opacity may rely on.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()
@@ -92,7 +92,7 @@ def test_chunking_perturbs_line_opacity():
     threads, or results would depend on OMP_NUM_THREADS.  Thread the cell loop instead -
     cont/logref are indexed (f0,i,j,k), so per-cell work is untouched by that split.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()
@@ -119,7 +119,7 @@ def test_linelist_rebuild_is_transparent():
 
     This is the contract to preserve if the rebuild ever moves into the C shim.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()
@@ -146,7 +146,7 @@ def test_reopen_after_close():
     The reference generator and the two reference tests above all open an instance in
     the same process, so this is a precondition for the rest of the module.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     seen = []
     for _ in range(2):
@@ -161,7 +161,7 @@ def test_legacy_absdat_with_occupation_weighted_eos():
 
     Filling them without resizing the array corrupts the heap and aborts the process.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     inputs = PROJECT_DIR / "input"
     with HopEOS(absdat_file=inputs / "absdat", abund_file=inputs / "abund" / "legacy_abund",
@@ -175,7 +175,7 @@ def test_option_errors_carry_the_librarys_message():
     """hop_set_option distinguishes an unknown name from an unparseable value, and
     hop_last_error explains which - neither was possible with the old status-1-for-both
     three-setter API."""
-    from tumult.hop import HopEOS, HopError
+    from hopacity import HopEOS, HopError
 
     with HopEOS(feh=0.0) as hop:
         with pytest.raises(HopError, match="unknown option 'nonesuch'"):
@@ -192,7 +192,7 @@ def test_option_errors_carry_the_librarys_message():
 
 
 def test_species_error_names_the_species():
-    from tumult.hop import HopEOS, HopError
+    from hopacity import HopEOS, HopError
 
     with HopEOS(feh=0.0) as hop:
         with pytest.raises(HopError, match="unknown species 'Nonium XII'"):
@@ -201,7 +201,7 @@ def test_species_error_names_the_species():
 
 def test_second_instance_is_refused():
     """The single-instance guard is what the wrapper's rebuild logic relies on."""
-    from tumult.hop import HopEOS, HopError
+    from hopacity import HopEOS, HopError
 
     with HopEOS(feh=0.0):
         with pytest.raises(HopError, match="already open"):
@@ -224,7 +224,7 @@ def test_line_strengths_are_the_ranking_hop_itself_uses():
     proxy those same bands come out on top, so this is the assertion that would catch the
     accessor silently returning nothing useful.
     """
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
     from tumult.physics import air2vac
 
     lam = air2vac(np.arange(5000.0, 5002.0, 0.005))
@@ -250,7 +250,7 @@ def test_line_strengths_are_the_ranking_hop_itself_uses():
 
 def test_line_strengths_need_a_state():
     """The strengths are a by-product of an opacity call, so there has to be a state."""
-    from tumult.hop import HopEOS, HopError
+    from hopacity import HopEOS, HopError
 
     lam = np.array([5000.0, 5001.0])
     with HopEOS(feh=0.0) as hop:
@@ -260,7 +260,7 @@ def test_line_strengths_need_a_state():
 
 def test_linelist_numeric_reader_keeps_supported_and_fallback_syntax(tmp_path):
     """The fast reader covers normal decimals/exponents and preserves list-I/O fallback."""
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
     from tumult.physics import air2vac
 
     lines_path = tmp_path / "numeric-forms.txt"

@@ -1,15 +1,16 @@
 """The HOP EOS and opacity states the native references are computed on.
 
-Inputs are the tracked defaults of ``tumult.hop.HopEOS`` (``input/TS_absdat.dat``,
+Inputs are the tracked defaults of ``hopacity.HopEOS`` (``input/TS_absdat.dat``,
 ``input/abund/abund_magg22``, ``input/isotopes_blp``, ``input/molec_data_BC.txt``) and
-``input/linelists/master_line.txt``, through ``HOP/standalone/build/libhop.so``.
+``input/linelists/master_line.txt``, through the ``libhop.so`` that ``make -C
+HOP/standalone`` copies into ``HOP/hopacity/``.
 """
 from pathlib import Path
 
 import numpy as np
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-HOP_LIB = PROJECT_DIR / "HOP" / "standalone" / "build" / "libhop.so"
+HOP_LIB = PROJECT_DIR / "HOP" / "hopacity" / "libhop.so"
 HOP_LINELIST = PROJECT_DIR / "input" / "linelists" / "master_line.txt"
 
 # a coarse T x rho node grid (4 x 6 = 24 cells) and a narrow 10 AA window: small enough to
@@ -20,7 +21,7 @@ HOP_VMIC = 1.0         # [km/s]; must be pinned, it moves the line opacity a lot
 
 def hop_grid():
     """The (temp [K], rho [g/cm^3]) node grid, both shaped (ntemp, nrho)."""
-    from tumult.hop import logstep
+    from hopacity import logstep
 
     tab_temp = logstep(3500.0, 12000.0, 0.35)
     tab_rho = logstep(1e-10, 1e-7, 1.2)
@@ -29,14 +30,14 @@ def hop_grid():
 
 def hop_wavelengths():
     """The vacuum wavelength grid [AA] of the opacity reference."""
-    from tumult.hop import wavelength_grid
+    from hopacity import wavelength_grid
 
     return wavelength_grid(5160.0, 5170.0, R_sampling=20000)
 
 
 def hop_eos_reference():
     """Thermodynamic state, two species densities and the (T, ne) -> rho inversion."""
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     temp, rho = hop_grid()
     with HopEOS(feh=0.0) as hop:
@@ -56,7 +57,7 @@ def hop_eos_reference():
 
 def hop_opacity_reference():
     """Continuum and line-list opacity [1/cm] and scattering on the node grid."""
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()

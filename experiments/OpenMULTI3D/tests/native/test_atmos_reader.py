@@ -1,4 +1,4 @@
-"""tumult.hop.read_atmosphere: dispatch.x's atmosphere reader through libhop.
+"""hopacity.read_atmosphere: dispatch.x's atmosphere reader through libhop.
 
 The requirement is that Python sees the model exactly as the Fortran reader holds it.
 For a MARCS model the expected values are the file's own columns, parsed here from the
@@ -29,7 +29,7 @@ def marcs_columns(path):
 
 
 def test_marcs_columns_match_the_file():
-    from tumult.hop import read_atmosphere
+    from hopacity import read_atmosphere
     atm = read_atmosphere(MARCS)                            # format from the name
     temp, pe, rho = marcs_columns(MARCS)
     assert atm.shape == (1, 1, temp.size)
@@ -39,6 +39,6 @@ def test_marcs_columns_match_the_file():
 
 
 def test_missing_file_raises_with_the_reader_message():
-    from tumult.hop import HopError, read_atmosphere
+    from hopacity import HopError, read_atmosphere
     with pytest.raises(HopError, match='File not found'):
         read_atmosphere('no_such_model.mod')

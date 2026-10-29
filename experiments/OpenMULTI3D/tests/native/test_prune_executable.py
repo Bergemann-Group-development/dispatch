@@ -62,7 +62,7 @@ def test_executable_selects_what_the_in_process_crop_selects(tmp_path):
     states, and the sampling spans the structure.
     """
     import tumult as tm
-    from tumult.hop import wavelength_grid
+    from hopacity import wavelength_grid
     from tumult.physics import air2vac
     from tumult.linestrength import read_marcs
 

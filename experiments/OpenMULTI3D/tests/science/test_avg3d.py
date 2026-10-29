@@ -1,4 +1,4 @@
-"""tumult.avg3d: the optical-depth integral (tumult.hop.optical_depth) and the horizontal averages.
+"""tumult.avg3d: the optical-depth integral (hopacity.optical_depth) and the horizontal averages.
 
 Requirements: tau of an exponential atmosphere (chi proportional to rho) is chi H at
 every height, top boundary included; a horizontally homogeneous atmosphere averages to
@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 avg3d = pytest.importorskip('tumult.avg3d')
-optical_depth = pytest.importorskip('tumult.hop').optical_depth
+optical_depth = pytest.importorskip('hopacity').optical_depth
 
 
 def exponential_columns(ncol=4, nz=200, h=1.5e7, scatter=0.0, seed=1):

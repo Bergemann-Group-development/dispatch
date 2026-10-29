@@ -1,7 +1,7 @@
 """In-process interface to the HOP EOS/opacity engine (libhop.so).
 
-Wraps the standalone HOP library (built with ``make -C HOP/standalone``) via
-cffi in ABI mode, exposing the same composition_type solves that dispatch.x uses:
+Wraps the standalone HOP library ``libhop.so`` via cffi in ABI mode, exposing the
+same composition_type solves that dispatch.x uses:
 
 - :class:`HopEOS` -- allocate/initialize a composition instance, solve the EOS on
   arbitrary (T, rho) or (T, ne) points (``load_state``, after which the state is
@@ -16,6 +16,12 @@ cffi in ABI mode, exposing the same composition_type solves that dispatch.x uses
 - :func:`logstep` / :func:`wavelength_grid` build the ln(T) x ln(rho) node grid
   and the &spectrum_params wavelength grid a dispatch run would tabulate on, so a
   dispatch EOS/opacity table can be reproduced without running dispatch.x.
+- :func:`air2vac` / :func:`vac2air` convert wavelengths between standard air and vacuum.
+
+The library, its header and HOP's default input files sit in this package directory:
+an installed wheel carries them as files, and in a source checkout ``libhop.h`` and
+``input/`` are links into the HOP and OpenMULTI3D trees, and ``make -C HOP/standalone``
+copies the library here.
 
 Limitations: one instance per process (HOP keeps configuration in module-level
 globals); hard failures inside the Fortran (missing data files, solver
@@ -45,12 +51,11 @@ import numpy as np
 
 __all__ = ['HopEOS', 'HopError', 'AtmosphereFile', 'read_atmosphere', 'optical_depth',
            'pchip_integral', 'logstep',
-           'wavelength_grid', 'freq_split', 'find_library', 'find_header', 'open_library']
+           'wavelength_grid', 'freq_split', 'air2vac', 'vac2air',
+           'find_library', 'find_header', 'open_library']
 
-_EXP_DIR = Path(__file__).resolve().parents[1]
-_STANDALONE = _EXP_DIR / 'HOP' / 'standalone'
-_DEFAULT_LIB = _STANDALONE / 'build' / 'libhop.so'
-_DEFAULT_HEADER = _STANDALONE / 'libhop.h'
+_PKG_DIR = Path(__file__).resolve().parent
+_INPUT_DIR = _PKG_DIR / 'input'
 
 
 class HopError(RuntimeError):
@@ -58,27 +63,27 @@ class HopError(RuntimeError):
 
 
 def find_library():
-    """Locate libhop.so: $HOP_LIB if set, else HOP/standalone/build/libhop.so."""
+    """Locate libhop.so: $HOP_LIB if set, else the copy in this package directory."""
     lib = os.environ.get('HOP_LIB', '')
-    path = Path(lib) if lib else _DEFAULT_LIB
+    path = Path(lib) if lib else _PKG_DIR / 'libhop.so'
     if not path.is_file():
-        raise HopError(f"libhop.so not found at {path}; build it with "
-                       f"'make -C {_STANDALONE}' or point $HOP_LIB at it")
+        raise HopError(f"libhop.so not found at {path}; in a source checkout build it "
+                       f"with 'make -C HOP/standalone', or point $HOP_LIB at it")
     return path
 
 
 def find_header():
-    """Locate libhop.h: $HOP_HEADER if set, else HOP/standalone/libhop.h.
+    """Locate libhop.h: $HOP_HEADER if set, else the one in this package directory.
 
     The header is written from the BIND(C) declarations by the Makefile's ``bindings``
     target and committed, so it is the single source of truth for the ABI -- nothing here
     hand-writes a signature.
     """
     hdr = os.environ.get('HOP_HEADER', '')
-    path = Path(hdr) if hdr else _DEFAULT_HEADER
+    path = Path(hdr) if hdr else _PKG_DIR / 'libhop.h'
     if not path.is_file():
-        raise HopError(f"libhop.h not found at {path}; generate it with "
-                       f"'make -C {_STANDALONE} bindings'")
+        raise HopError(f"libhop.h not found at {path}; in a source checkout generate "
+                       f"it with 'make -C HOP/standalone bindings'")
     return path
 
 
@@ -163,7 +168,7 @@ class HopEOS:
     """The HOP composition_type, driven from Python.
 
     Parameters mirror the &composition_params namelist; data-file paths default
-    to the standard files under <experiment>/input/.  ``options`` is a dict of
+    to the standard files in this package's ``input/`` directory.  ``options`` is a dict of
     HOP module-level settings applied *before* the Fortran init (required for
     init-time options such as ``abundances`` or ``exclude_elements``); the
     recognized names are exactly what ``option_names()`` reports; the value is
@@ -193,10 +198,10 @@ class HopEOS:
             raise HopError('another HopEOS instance is already open in this '
                            'process (HOP holds global state); close() it first')
 
-        absdat_file = Path(absdat_file or _EXP_DIR / 'input' / 'TS_absdat.dat')
-        abund_file = Path(abund_file or _EXP_DIR / 'input' / 'abund' / 'abund_magg22')
-        isotope_file = Path(isotope_file) if isotope_file else _EXP_DIR / 'input' / 'isotopes_blp'
-        molec_file = Path(molec_file) if molec_file else _EXP_DIR / 'input' / 'molec_data_BC.txt'
+        absdat_file = Path(absdat_file or _INPUT_DIR / 'TS_absdat.dat')
+        abund_file = Path(abund_file or _INPUT_DIR / 'abund_magg22')
+        isotope_file = Path(isotope_file or _INPUT_DIR / 'isotopes_blp')
+        molec_file = Path(molec_file or _INPUT_DIR / 'molec_data_BC.txt')
         for p in (absdat_file, abund_file, isotope_file, molec_file):
             if not p.is_file():
                 raise HopError(f'data file not found: {p}')
@@ -210,8 +215,8 @@ class HopEOS:
         # the VCS hydrogen-profile tables and the ABO cross-section tables of
         # Turbospectrum lists sit next to the other input data, but HOP's default
         # paths are cwd-relative -- make them absolute unless overridden
-        options.setdefault('vcs_data_dir', str(_EXP_DIR / 'input' / 'vcs'))
-        options.setdefault('anstee_file', str(_EXP_DIR / 'input' / 'Anstee-1802-2014.dat'))
+        options.setdefault('vcs_data_dir', str(_INPUT_DIR / 'vcs'))
+        options.setdefault('anstee_file', str(_INPUT_DIR / 'Anstee-1802-2014.dat'))
 
         # everything needed to build an identical instance elsewhere: opacity()
         # hands this to its spawned workers, and uses it to rebuild this instance
@@ -849,7 +854,6 @@ def wavelength_grid(aa_blue, aa_red, R_sampling=0, daa=0, nnu=0, in_air=True):
     between the air->vacuum converted end points; otherwise an arithmetic grid
     from daa or nnu, converted to vacuum afterwards.
     """
-    from .physics import air2vac
     if R_sampling:
         blue, red = (air2vac(aa_blue), air2vac(aa_red)) if in_air else (aa_blue, aa_red)
         fac = 1.0 + 1.0 / R_sampling
@@ -867,3 +871,30 @@ def wavelength_grid(aa_blue, aa_red, R_sampling=0, daa=0, nnu=0, in_air=True):
         raise HopError('give R_sampling, daa or nnu together with aa_blue/aa_red')
     lam = aa_blue + daa * np.arange(nnu)
     return air2vac(lam) if in_air else lam
+
+
+def vac2air(vac):
+    """Vacuum -> (standard) air wavelength [AA], via the refractive index of _air2vac."""
+    if type(vac) != np.ndarray:
+        vac = np.array(vac)
+    vac = vac.astype(np.float64)
+    return vac / _air2vac(vac)
+
+
+def air2vac(air):
+    """Air -> vacuum wavelength [AA]; iterative refinement (3 steps) of the inverse."""
+    if type(air) != np.ndarray:
+        air = np.array(air)
+    air = air.astype(np.float64)
+    w = air * _air2vac(air)
+    w = air * _air2vac(w)
+    return air * _air2vac(w)
+
+
+def _air2vac(air):
+    """Refractive index n(lambda_air) for standard air (lambda in AA)."""
+    s = 1e4 / air
+    s2 = s**2
+    n = 1.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) \
+          + 0.0001599740894897 / (38.92568793293 - s2)
+    return n

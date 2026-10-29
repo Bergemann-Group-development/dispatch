@@ -293,7 +293,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     lines that stay above ``abs_floor`` of the continuum farther out than that, for the
     spectrum they produce.
     """
-    from .hop import HopEOS
+    from hopacity import HopEOS
     from .linestrength import read_marcs
     from .synthesis.runtime import HOP_LOCK
 

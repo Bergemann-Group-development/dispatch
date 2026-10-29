@@ -54,6 +54,10 @@ tests/**/*.pyc
 # the parent repository negates those directories wholesale, so new files in them
 # are visible.
 
+# setuptools output of the hopacity wheel build (HOP/pyproject.toml)
+HOP/build/
+HOP/*.egg-info/
+
 # The parent repository ignores *.txt as data; these are source.
 !pyproject.toml
 !slurm/

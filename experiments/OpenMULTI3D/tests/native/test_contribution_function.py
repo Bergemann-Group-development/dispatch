@@ -6,7 +6,7 @@ so ``Run.get_cntrbf`` integrated over log tau_500 has to reproduce F_cnt - F for
 flux and I_cnt - I for each ray, whatever the line strength. Ba II 4554 is a strong
 line whose core still has a large opacity at the top of the model, where the optical
 depth along the ray has to start from zero. The integral over log tau_500 uses the
-PCHIP quadrature of the tau_500 scale itself (``tumult.hop.pchip_integral``); on the
+PCHIP quadrature of the tau_500 scale itself (``hopacity.pchip_integral``); on the
 64-point mesh it is within 0.75 % of the depression for the flux and both rays, the
 core at mu = 0.2 included. A missing 1/mu, wrong flux weights or per-Hz units fail the
 1.5 % tolerance by far.
@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 import tumult
-from tumult.hop import pchip_integral
+from hopacity import pchip_integral
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'

@@ -14,7 +14,7 @@ dependencies = [
     "numba>=0.60",      # JIT kernels in tumult/auxfuncs.py, _qlg.py
     "astropy>=6.0",     # units, constants, FITS I/O
     "matplotlib>=3.8",
-    "cffi>=1.16",       # tumult/hop.py binds libhop.so against HOP/standalone/libhop.h
+    "cffi>=1.16",       # hopacity binds libhop.so against HOP/standalone/libhop.h
     "tqdm>=4.66",
     "certifi",          # CA bundle for the grid and line-list downloads; python.org macOS builds ship without one
 ]
@@ -24,10 +24,12 @@ gui = ["bokeh>=3.4", "ipykernel>=6.29"]
 test = ["pytest>=8.0"]
 lint = ["ruff>=0.6"]
 
-# tumult and TumultStudio locate libhop.so, dispatch.x and input/ relative to the
-# checkout, so install in editable mode: pip install -e ".[gui,test]"
+# tumult, TumultStudio and hopacity locate libhop.so, dispatch.x and input/ relative to
+# the checkout, so install in editable mode: pip install -e ".[gui,test]".  hopacity
+# (HOP/hopacity) also builds as a wheel of its own from HOP/pyproject.toml.
 [tool.setuptools.packages.find]
-include = ["tumult*", "TumultStudio*"]
+where = [".", "HOP"]
+include = ["tumult*", "TumultStudio*", "hopacity*"]
 
 [tool.setuptools.package-data]
 tumult = ["presets/*.nml", "*.mplstyle", "*.jl", "HOP.jl/**"]

@@ -6,7 +6,7 @@ Anstee-Barklem-O'Mara cross sections Turbospectrum would (anstee_mod), so the
 linelist_out it writes in the tumult layout must give the opacity the list itself gives.
 The Fe I records are from the Gaia-ESO NLTE list of Turbospectrum_NLTE (4 Sep 2026).
 
-Needs ``HOP/standalone/build/libhop.so``, the default HOP input data and
+Needs ``HOP/hopacity/libhop.so``, the default HOP input data and
 ``input/Anstee-1802-2014.dat``.
 """
 import os
@@ -48,7 +48,7 @@ def _wavelengths():
 
 
 def _opacities(lists, write=None):
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
     lam = _wavelengths()
     with HopEOS() as hop:
         hop.load_state([4500.0, 6000.0], rho=[1e-7, 3e-7])
@@ -109,7 +109,7 @@ def test_ragged_block_is_not_taken_for_fixed_width(tmp_path):
 
     script = f"""
 import numpy as np
-from tumult.hop import HopEOS
+from hopacity import HopEOS
 from tumult.physics import air2vac
 with HopEOS() as hop:
     hop.load_state([5000.0], rho=[1e-7])

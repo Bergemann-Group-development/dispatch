@@ -348,7 +348,7 @@ The build takes a few minutes. The compiler is \Code{gfortran} if it is on the \
 
 \begin{itemize}
     \item \File{dispatch.x}, the main program, in the experiment directory;
-    \item \File{HOP/standalone/build/libhop.so}, the library that the Python package uses to call HOP;
+    \item \File{HOP/standalone/build/libhop.so}, the library that the Python package uses to call HOP, copied to \File{HOP/hopacity/};
     \item \File{HOP/standalone/build/hop\_prune.x}, the tool that prunes line lists (Sec.~\ref{sec:hop}).
 \end{itemize}
 
@@ -1955,7 +1955,7 @@ HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled in
 
 \input{tabs/hop_modules}
 
-\Code{tumult.hop.HopEOS} calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
+\Code{hopacity.HopEOS} (\File{HOP/hopacity/}, also available as \Code{tumult.HopEOS}) calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \Code{hopacity} also builds as a wheel of its own, with the library and HOP's default input files, for users who need only these (\File{HOP/README.md}). \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
 
 \bibliography{ref}
 

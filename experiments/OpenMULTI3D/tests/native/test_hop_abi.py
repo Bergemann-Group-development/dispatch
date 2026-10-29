@@ -4,7 +4,7 @@
 ``BIND(c, name=...)`` declarations in ``hop_c_api.f90`` and committed (``make -C
 HOP/standalone bindings`` rewrites it after an interface change); the build does not
 regenerate it, so these tests do, and fail on a diff.
-The header is also what ``tumult.hop`` hands to ``ffi.cdef``, so every name and signature
+The header is also what ``hopacity`` hands to ``ffi.cdef``, so every name and signature
 the wrapper calls comes from here; the calls the other HOP tests make through cffi are
 what checks the generator's type mapping.
 """
@@ -19,6 +19,8 @@ from tests.native.hop_reference import HOP_LIB, PROJECT_DIR as ROOT
 STANDALONE = ROOT / "HOP" / "standalone"
 HEADER = STANDALONE / "libhop.h"
 SHIM_F90 = STANDALONE / "hop_c_api.f90"
+# the Python wrapper and the tumult modules that call libhop through it
+PY_HOSTS = sorted([*(ROOT / "HOP" / "hopacity").glob("*.py"), *(ROOT / "tumult").glob("*.py")])
 
 pytestmark = pytest.mark.skipif(
     not HOP_LIB.exists(),
@@ -110,14 +112,14 @@ def test_no_array_argument_is_passed_by_value():
 
 
 def test_python_wrapper_binds_only_exported_symbols():
-    """Every hop_* name a tumult module calls must exist in the library.
+    """Every hop_* name a hopacity or tumult module calls must exist in the library.
 
     Scans every module, since a module nothing imports can otherwise bind a name the
     library never exported.
     """
     exported = set(_header_names(HEADER.read_text()))
     used = {}
-    for path in (ROOT / "tumult").glob("*.py"):
+    for path in PY_HOSTS:
         used.setdefault(path, set()).update(
             re.findall(r"\b_?lib\.(hop_[a-z0-9_]+)", path.read_text()))
 
@@ -155,7 +157,7 @@ def test_hosts_cover_every_entry_point():
     """Every exported entry point is reached from a host wrapper - no silent gaps.
 
     This is what keeps an entry point from being added to the library and then never
-    wrapped.  There are three hosts: the Python wrapper (tumult/), the Julia one
+    wrapped.  There are three hosts: the Python wrapper (hopacity/), the Julia one
     (tumult/HOP.jl), which owns the threaded entry points HopEOS has no use for, and the
     hop_prune.x program next to the shim, which USEs the entry points it drives.
     INTERNAL_ONLY carries the documented exceptions.
@@ -166,7 +168,7 @@ def test_hosts_cover_every_entry_point():
     wrapped |= set(re.findall(r"\b(hop_[a-z0-9_]+)\b",
                               prune_src[prune_src.index("USE hop_c_api"):
                                         prune_src.index("USE hop_env_mod")]))
-    for path in (ROOT / "tumult").glob("*.py"):
+    for path in PY_HOSTS:
         src = path.read_text()
         # attribute access (lib.hop_x), or a quoted name - how set_option picks its setter
         wrapped |= set(re.findall(r"\b\w*lib\.(hop_[a-z0-9_]+)", src))

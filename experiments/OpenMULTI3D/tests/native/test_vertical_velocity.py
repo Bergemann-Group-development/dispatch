@@ -84,7 +84,7 @@ LTE = f"""&linelist_params     linelist_file='{LINELIST}' /
 
 
 def test_reader_stores_the_vz_column_in_cm_per_s(tmp_path):
-    from tumult.hop import read_atmosphere
+    from hopacity import read_atmosphere
     moving = read_atmosphere(_write_text_model(tmp_path / 'v.atmos', 1.5), atmos_format='text')
     static = read_atmosphere(_write_text_model(tmp_path / 's.atmos'), atmos_format='text')
     np.testing.assert_allclose(moving.vz, 1.5e5, rtol=1e-6)

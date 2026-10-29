@@ -336,7 +336,7 @@ def voigt_profile(xx, x0, a, sigma, amp):
 #=====================================================================
 def optical_depth_from_top(chi, path, axis=-1):
     """Trapezoidal optical depth along ``path`` (increasing outwards), zero at the
-    outermost point, as the formal solver integrates it. ``tumult.hop.optical_depth``
+    outermost point, as the formal solver integrates it. ``hopacity.optical_depth``
     instead gives the top cell a finite depth, which suits a continuum reference scale
     but not a strong line whose opacity is still large at the top."""
     #-----------------------------------------------------------------

@@ -2,7 +2,7 @@ import numpy as np
 from .const import BK, CC, UU
 from .auxfuncs import (atomic_weights, crop_inputs, interp_tau,
                        near_equal_split)
-from .hop import optical_depth
+from hopacity import optical_depth
 import pandas as pd
 from .plotting_scripts import scatter_density
 import pathlib
