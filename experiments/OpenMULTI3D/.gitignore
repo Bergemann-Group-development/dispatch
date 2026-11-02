@@ -103,5 +103,45 @@ benchmarks/*
 # Agents' scratch work, campaign scripts, reports and notes stay untracked
 # (scratch/, alpha_campaign/, docs/notes/); the parent rules already ignore them.
 
-# HOP's default data tables are source; the parent rules ignore every folder named data.
+# HOP's default data tables are source; the parent rules ignore every folder named data
+# and every .txt file.
 !HOP/hopacity/data/
+!HOP/hopacity/data/**
+# The line-list fixture of HOP's tests, which the parent's *.txt rule would hide.
+!HOP/tests/fixtures/**
+
+# input/ holds downloads (line lists, absmet tables, atmosphere grids, spectra) and
+# user files; only these are source: the links to HOP's default data, the sample
+# atmospheres and atoms, the line list the native tests use and the line masks.
+!input/
+input/*
+!input/Anstee-1802-2014.txt
+!input/absdat
+!input/abund
+!input/isotopes
+!input/molec
+!input/vcs
+!input/atmos/
+input/atmos/*
+!input/atmos/mdw.mod
+!input/atmos/metal_poor_rgb.mod
+!input/atmos/metal_poor_tos.mod
+!input/atmos/rsg.mod
+!input/atmos/sun.mod
+!input/atmos/p4000_g+4.5_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod
+!input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod
+!input/atmos/p6500_g+4.0_m0.0_t01_st_z-3.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00.mod
+!input/atmos/s4000_g+1.0_m15._t05_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod
+!input/atmos/s5000_g+2.0_m1.0_t02_st_z-3.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00.mod
+!input/atoms/
+input/atoms/*
+!input/atoms/atom.ba06
+!input/atoms/atom.fe607a
+!input/atoms/atom.mg86e
+!input/atoms/atom.mg86g
+!input/atoms/atom.o41f
+!input/linelists/
+input/linelists/*
+!input/linelists/master_line.txt
+!input/linemasks/
+!input/linemasks/**
