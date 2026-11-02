@@ -302,14 +302,14 @@ def test_long_data_paths(tmp_path):
 
     deep = tmp_path.joinpath(*[f"padding_directory_{i:02d}" for i in range(20)])
     deep.mkdir(parents=True)
-    (deep / "Anstee.dat").symlink_to(_DATA_DIR / "Anstee-1802-2014.dat")
+    (deep / "Anstee.txt").symlink_to(_DATA_DIR / "Anstee-1802-2014.txt")
     (deep / "vcs").symlink_to(_DATA_DIR / "vcs")
-    assert len(str(deep / "Anstee.dat")) > 400
+    assert len(str(deep / "Anstee.txt")) > 400
     linelist = tmp_path / "mgb.txt"
     linelist.write_text(MG_B)
     lam = np.linspace(5170.0, 5186.0, 40)
     chi = []
-    for paths in ({}, {"anstee_file": str(deep / "Anstee.dat"), "vcs_data_dir": str(deep / "vcs")}):
+    for paths in ({}, {"anstee_file": str(deep / "Anstee.txt"), "vcs_data_dir": str(deep / "vcs")}):
         with HopEOS(feh=0.0, **paths) as hop:
             hop.load_state([5000.0], rho=[1e-8])
             chi.append(hop.opacity(lam, linelist=linelist, dlam=10.0, vmic=1.0, nprocs=2)[0])

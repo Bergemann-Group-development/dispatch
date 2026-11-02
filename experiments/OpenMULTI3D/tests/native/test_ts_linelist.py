@@ -7,7 +7,7 @@ linelist_out it writes in the tumult layout must give the opacity the list itsel
 The Fe I records are from the Gaia-ESO NLTE list of Turbospectrum_NLTE (4 Sep 2026).
 
 Needs ``HOP/hopacity/libhop.so``, the default HOP input data and
-``input/Anstee-1802-2014.dat``.
+``input/Anstee-1802-2014.txt``.
 """
 import os
 import subprocess
