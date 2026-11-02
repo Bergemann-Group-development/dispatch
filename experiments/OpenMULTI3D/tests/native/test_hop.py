@@ -279,3 +279,49 @@ def test_linelist_numeric_reader_keeps_supported_and_fallback_syntax(tmp_path):
     inside = lines[(lines.lam0 >= 4999.9) & (lines.lam0 <= 5001.1)]
     np.testing.assert_allclose(inside.lam0, [5000.0, 5000.5, 5001.0], atol=2e-8)
     np.testing.assert_allclose(inside.loggf, 2.0)
+
+
+MG_B = """\
+'  12.000            '    1         2
+'Mg I '
+  5172.684  2.712 -0.393  8.00   3.0  1.0E+08 'x' 'x'  0.0  1.0 'Mg I'
+  5183.604  2.717 -0.167  8.00   5.0  1.0E+08 'x' 'x'  0.0  1.0 'Mg I'
+"""
+
+
+def test_long_data_paths(tmp_path):
+    """The bundled data files sit wherever the package is installed, and a virtual
+    environment in a deep directory gives paths beyond 256 characters.
+
+    The tables are read once per process, so both runs go to fresh worker processes.
+    """
+    from hopacity import HopEOS
+    from hopacity.core import _INPUT_DIR
+
+    deep = tmp_path.joinpath(*[f"padding_directory_{i:02d}" for i in range(20)])
+    deep.mkdir(parents=True)
+    (deep / "Anstee.dat").symlink_to(_INPUT_DIR / "Anstee-1802-2014.dat")
+    (deep / "vcs").symlink_to(_INPUT_DIR / "vcs")
+    assert len(str(deep / "Anstee.dat")) > 400
+    linelist = tmp_path / "mgb.txt"
+    linelist.write_text(MG_B)
+    lam = np.linspace(5170.0, 5186.0, 40)
+    chi = []
+    for paths in ({}, {"anstee_file": str(deep / "Anstee.dat"), "vcs_data_dir": str(deep / "vcs")}):
+        with HopEOS(feh=0.0, **paths) as hop:
+            hop.load_state([5000.0], rho=[1e-8])
+            chi.append(hop.opacity(lam, linelist=linelist, dlam=10.0, vmic=1.0, nprocs=2)[0])
+    np.testing.assert_array_equal(chi[1], chi[0])
+
+
+def test_a_dying_worker_raises(tmp_path):
+    """HOP's error stop ends a worker process; the parent must report it, not wait."""
+    from hopacity import HopEOS, HopError
+
+    linelist = tmp_path / "mgb.txt"
+    linelist.write_text(MG_B)
+    with HopEOS(feh=0.0, anstee_file=str(tmp_path / "missing.dat")) as hop:
+        hop.load_state([5000.0], rho=[1e-8])
+        with pytest.raises(HopError, match="worker process died"):
+            hop.opacity(np.linspace(5170.0, 5186.0, 40), linelist=linelist, dlam=10.0,
+                        nprocs=2)
