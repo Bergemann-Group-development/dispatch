@@ -52,6 +52,17 @@ def test_header_declares_every_bind_c_entry_point():
     assert _header_names(HEADER.read_text()) == declared
 
 
+def test_every_bind_c_entry_point_is_public():
+    """A private BIND(C) procedure is exported by gfortran 15 but not by gfortran 16, so
+    the export test above passes on one compiler and the wheel fails on the other."""
+    src = SHIM_F90.read_text()
+    declared = set(re.findall(r"BIND\(c,\s*name='([a-z0-9_]+)'\)", src))
+    public = set()
+    for stmt in re.findall(r"^\s*public\s*::((?:[^\n]*&[ \t]*\n)*[^\n]*)", src, re.M | re.I):
+        public |= set(re.findall(r"\bhop_[a-z0-9_]+", stmt))
+    assert not declared - public, f"not public in hop_c_api: {sorted(declared - public)}"
+
+
 def test_header_matches_the_exported_symbols():
     """Header names == what the built library actually exports."""
     out = subprocess.run(["nm", "-gU", str(HOP_LIB)], capture_output=True, text=True).stdout
