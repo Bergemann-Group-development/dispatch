@@ -1945,17 +1945,15 @@ contains
             call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
               build_deriv=.false.)
           else
-            if (include_absmet) then
-              tab_sp = self%sub_sp
-            else
-              call comp%get_table_sp(self%sub_sp, tab_sp)
-            endif
-            ! The background table is continuum-only. With sample_linelist the line
-            ! opacity lives in the separate ll_opac table (built below), not baked
-            ! into the background, so it can be interpolated with a per-cell Doppler
-            ! shift into the foreground rather than the velocity-blind background.
-            call self%generate_opacity_table(tab_sp, include_absmet, include_llist=.false., &
-              build_deriv=.true., disjoint=.true.)
+            ! The background table is continuum-only, so it needs only the nodes of
+            ! the background continua.  With sample_linelist the line opacity lives
+            ! in the separate ll_opac table (built below), not baked into the
+            ! background, so it can be interpolated with a per-cell Doppler shift
+            ! into the foreground rather than the velocity-blind background.  The
+            ! absmet opacity is added after the interpolation, from the osmet table.
+            call comp%get_table_sp(self%sub_sp, tab_sp)
+            call self%generate_opacity_table(tab_sp, include_absmet=.false., &
+              include_llist=.false., build_deriv=.true., disjoint=.true.)
           endif
         endif
         if (associated(self%opac_lock)) call self%opac_lock%unset('opac_table')
@@ -1968,6 +1966,7 @@ contains
     elseif (do_sample_opac) then
       call self%opac%interpolate(comp%temp, comp%ne, comp%chi500, &
         self%chi_cont, self%sigma, self%sp%lam, self%fs, self%fe)
+      if (include_absmet) call comp%add_absmet_extinction(self%sub_sp, self%chi_cont, self%sigma)
     else
       call comp%opacity(self%sub_sp, self%chi_cont, self%sigma, &
         include_absmet=include_absmet, include_llist=.false., &

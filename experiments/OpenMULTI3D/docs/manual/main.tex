@@ -1168,7 +1168,7 @@ Memory is held by the atmosphere and equation-of-state data of every slab, by th
 
 \subsection{Memory estimate}\label{sec:Memory}
 
-Before the dispatcher starts, the code prints the estimated peak memory (at console level 1 or higher). If it exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work; a negative value skips the check. Unless \fort{n_windows} is set, the code chooses it so that the estimate fits within 70\,\% of the limit. A run that does not fit needs fewer threads, atoms or windows, or a larger node. Sec.~\ref{sec:memdetail} describes the estimate in detail.
+Before the dispatcher starts, the code prints the estimated peak memory (at console level 1 or higher). If it exceeds \Code{\&run\_params\%mem\_limit\_gb} (default: the physical memory of the machine), the run stops before any heavy work; a negative value skips the check. The physical memory is the total memory of the machine (\texttt{MemTotal} in \File{/proc/meminfo} on Linux, \texttt{hw.memsize} on macOS): on a node of a batch system it is the memory of the whole node, not that of the job, and every run on a shared node counts all of it, so set \fort{mem_limit_gb} to the run's share there. Unless \fort{n_windows} is set, the code chooses it so that the estimate fits within 70\,\% of the limit; with a negative \fort{mem_limit_gb} it keeps twice the thread count. A run that does not fit needs fewer threads, atoms or windows, or a larger node. Sec.~\ref{sec:memdetail} describes the estimate in detail.
 
 \subsection{Saving time and memory}\label{sec:saving}
 
