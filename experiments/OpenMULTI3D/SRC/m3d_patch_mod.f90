@@ -84,9 +84,9 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: rotated_composition(:) => null()
       ! Sampled background-opacity tables, owned by the composition patch and
       ! shared by all its rt_patches.  Everything a table's content depends on is
-      ! a function of i_nu alone (the spectrum, the fs:fe slice, include_absmet),
-      ! so i_nu is the key; the rt_patches that differ only in i_mu would
-      ! otherwise each fill a byte-identical copy.  One lock per table lets
+      ! a function of i_nu alone (the spectrum and the fs:fe slice), so i_nu is
+      ! the key; the rt_patches that differ only in i_mu would otherwise each fill
+      ! a byte-identical copy.  One lock per table lets
       ! different i_nu build concurrently while twins wait for the first builder.
       type(sample_optab_type), pointer :: opac_tables(:) => null()   ! indexed by i_nu
       type(lock_t),            pointer :: opac_locks(:)  => null()   ! same bounds
