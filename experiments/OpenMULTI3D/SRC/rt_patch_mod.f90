@@ -1800,7 +1800,8 @@ contains
     character(len=*), intent(in) :: label
     integer, intent(in) :: i_set
     real(4), intent(out) :: mem(:,:,:,:)
-    character(len=256) :: filename, folder
+    character(len=256) :: filename
+    character(len=4096) :: folder
     integer :: lunit
     integer(8) :: pos
     integer, save :: itimer=0

@@ -4287,8 +4287,8 @@ SUBROUTINE get_meta_name(self, filename, folder, label, key, run_dir)
   class(patch_t), target :: self
   character(len=*) :: label
   integer, intent(in), optional, target :: key(:)
-  character(len=256), intent(in), optional :: run_dir
-  character(len=256), intent(out) :: filename, folder
+  character(len=*), intent(in), optional :: run_dir
+  character(len=*), intent(out) :: filename, folder
   character(len=256), pointer :: dir
   integer, dimension(:), pointer :: k
   ! ----------------------------------------------------------------------------
@@ -4315,7 +4315,7 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   integer, intent(inout) :: lunit
   logical, intent(in), optional :: add2meta
   integer, intent(in), optional, target :: key(:)
-  character(len=256) :: meta_file, folder
+  character(len=4096) :: meta_file, folder
   character(len=256) :: filename, fmt
   integer, dimension(:), pointer :: k
   integer :: i, ndim
@@ -4353,8 +4353,9 @@ SUBROUTINE load4 (self, label, key, run_dir, mem, alloc)
   real(4), intent(inout), dimension(:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
-  character(len=256), intent(in), optional :: run_dir
-  character(len=256) :: filename, folder
+  character(len=*), intent(in), optional :: run_dir
+  character(len=256) :: filename
+  character(len=4096) :: folder
   integer :: lunit, m(4)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
@@ -4381,8 +4382,9 @@ SUBROUTINE load5 (self, label, key, run_dir, mem, alloc)
   real(4), intent(inout), dimension(:,:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
-  character(len=256), intent(in), optional :: run_dir
-  character(len=256) :: filename, folder
+  character(len=*), intent(in), optional :: run_dir
+  character(len=256) :: filename
+  character(len=4096) :: folder
   integer :: lunit, m(5)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
@@ -4409,8 +4411,9 @@ SUBROUTINE load6 (self, label, key, run_dir, mem, alloc)
   real(4), intent(inout), dimension(:,:,:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
-  character(len=256), intent(in), optional :: run_dir
-  character(len=256) :: filename, folder
+  character(len=*), intent(in), optional :: run_dir
+  character(len=256) :: filename
+  character(len=4096) :: folder
   integer :: lunit, m(6)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
@@ -4458,7 +4461,8 @@ SUBROUTINE remove (self, label, key)
   class(patch_t), intent(inout), target :: self
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
-  character(len=256) :: filename, folder
+  character(len=256) :: filename
+  character(len=4096) :: folder
   integer, dimension(:), pointer :: k
   integer :: lunit
   integer, save :: itimer=0

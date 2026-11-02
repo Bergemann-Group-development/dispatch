@@ -74,7 +74,7 @@ SUBROUTINE write_record (new_state, ended_now)
   character(len=16):: state
   character(len=32):: started, ended
   character(len=256):: host
-  character(len=512):: cwd, input
+  character(len=4096):: cwd, input
   character(len=32):: slurm_job_id
   character(len=16):: dispatch_hash
   integer:: pid, mpi_size, omp_threads
@@ -146,7 +146,7 @@ END FUNCTION gethostname_
 
 !===============================================================================
 FUNCTION getcwd_ () result (buf)
-  character(kind=c_char, len=512):: buf
+  character(kind=c_char, len=4096):: buf
   type(c_ptr):: ptr
   !-----------------------------------------------------------------------------
   buf = repeat(c_null_char, len(buf))
