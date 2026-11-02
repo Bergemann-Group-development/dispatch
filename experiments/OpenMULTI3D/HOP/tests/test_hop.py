@@ -1,43 +1,43 @@
 """The standalone HOP library (libhop.so) through the hopacity wrapper.
 
-Needs ``HOP/hopacity/libhop.so`` (``make hop_standalone``). Chunking is only
+Needs the library of the imported hopacity: an installed wheel, or a source tree after
+``make -C standalone``. Chunking is only
 neutral within one process: a spawned worker reads only the lines within dlam of its own
 chunk, so a far Lorentz wing reaching in from outside that window is missing (as in a
 Dispatch run). Hence nprocs=1 here.
 
-References ``tests/golden/hop_eos.npz`` and ``hop_opacity.npz``
-------------------------------------------------------------------
+References ``golden/hop_eos.npz`` and ``hop_opacity.npz``
+------------------------------------------------------------
 Purpose: catch unintended changes to HOP's equation of state, continuum and line-list
 opacity on a 4 x 6 (T, rho) grid (3500-12000 K, 1e-10 to 1e-7 g/cm^3) over 5160-5170 AA
 (vacuum, R = 20000), vmic = 1 km/s. Densities are in 1/cm^3, opacities in 1/cm. There is
 no analytic answer for these states, so the reference records agreement with a reviewed
 result, not correctness.
 
-``hop_eos`` was generated at df4c20bf, ``hop_opacity`` at 6a71ff283, both with gfortran
-15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from (md5 prefix):
-input/absdat/TS_absdat.txt 5b921bc86ca0, input/abund/abund_magg22.txt abcd0926adda,
-input/isotopes/isotopes_blp.txt d63a83de4230, input/linelists/master_line.txt 2821ea404b92,
-and input/molec/molec_data_BC.txt a4e2d3274cda
-(``hop_eos``) or cfb2d3e18c35 (``hop_opacity``).
+``hop_eos`` was generated at df4c20bf, ``hop_opacity`` at 6a71ff283 of the Dispatch
+repository, both with gfortran 15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from (md5
+prefix): absdat/TS_absdat.txt 5b921bc86ca0, abund/abund_magg22.txt abcd0926adda,
+isotopes/isotopes_blp.txt d63a83de4230, OpenMULTI3D's master_line.txt 2821ea404b92 (of which
+``fixtures/master_line_5000_5170.txt`` is an exact cut, see ``hop_reference.py``), and
+molec/molec_data_BC.txt a4e2d3274cda (``hop_eos``) or cfb2d3e18c35 (``hop_opacity``).
 
 Tolerance rtol = 1e-5. The references are exact on the generating build. A change of the
 optimisation flags alone (-O1 to -O3) moved line-opacity cells by float32 roundoff of at
 most 5e-6 relative, so a tighter bound would fail on a different build without any change
 in the physics. Changes to the physics or input data below 1e-5 go undetected.
 
-Regenerate with ``python -m tests.support.golden hop_eos hop_opacity`` (review the
+Regenerate with ``python tests/hop_reference.py hop_eos hop_opacity`` (review the
 summary), then ``--write``, and give the reason in the commit message.
 """
 import numpy as np
 import pytest
 
-from tests.native.hop_reference import (HOP_DLAM, HOP_LIB, HOP_LINELIST, HOP_VMIC, PROJECT_DIR,
-                                        hop_eos_reference, hop_grid, hop_opacity_reference,
-                                        hop_wavelengths)
-from tests.support.golden import assert_matches_golden, load_golden
+from hop_reference import (HOP_DLAM, HOP_LINELIST, HOP_VMIC, TESTS_DIR, assert_matches_golden,
+                           hop_eos_reference, hop_grid, hop_library, hop_opacity_reference,
+                           hop_wavelengths, load_golden)
 
 pytestmark = pytest.mark.skipif(
-    not HOP_LIB.exists(),
+    hop_library() is None,
     reason="libhop.so not built - run 'make hop_standalone'")
 
 RTOL = 1e-5
@@ -61,7 +61,8 @@ def test_chunking_is_exact_without_a_linelist():
 
     temp, rho = hop_grid()
     lam = hop_wavelengths()
-    absmet = PROJECT_DIR / 'input' / 'absmet_files' / 'absmet'
+    # the solar table of the OpenMULTI3D checkout HOP sits in
+    absmet = TESTS_DIR.parents[1] / 'input' / 'absmet_files' / 'absmet'
     if not absmet.is_file():
         pytest.skip('solar absmet table not present')
     with HopEOS(feh=0.0, absmet_file=absmet) as hop:
@@ -73,7 +74,6 @@ def test_chunking_is_exact_without_a_linelist():
             np.testing.assert_array_equal(scat3, scat1)
 
 
-@pytest.mark.skipif(not HOP_LINELIST.exists(), reason="master line list not present")
 def test_chunking_perturbs_line_opacity():
     """Line opacity DOES depend on the wavelength grid it is handed - pinned here.
 
@@ -108,7 +108,6 @@ def test_chunking_perturbs_line_opacity():
     assert rel.max() < 1e-3, f"chunking artifact grew to {rel.max():.2e}"
 
 
-@pytest.mark.skipif(not HOP_LINELIST.exists(), reason="master line list not present")
 def test_linelist_rebuild_is_transparent():
     """Widening the line-list window silently rebuilds and re-solves - same answer.
 
@@ -163,11 +162,11 @@ def test_legacy_absdat_with_occupation_weighted_eos():
     Filling them without resizing the array corrupts the heap and aborts the process.
     """
     from hopacity import HopEOS
+    from hopacity.core import _DATA_DIR
 
-    inputs = PROJECT_DIR / "input"
-    with HopEOS(absdat_file=inputs / "absdat" / "MULTI_absdat.txt",
-                abund_file=inputs / "abund" / "legacy_abund.txt",
-                molec_file=inputs / "molec" / "molec_data.txt") as hop:
+    with HopEOS(absdat_file=_DATA_DIR / "absdat" / "MULTI_absdat.txt",
+                abund_file=_DATA_DIR / "abund" / "legacy_abund.txt",
+                molec_file=_DATA_DIR / "molec" / "molec_data.txt") as hop:
         hop.load_state(np.array([5000.0, 6000.0]), ne=np.array([1e13, 1e14]))
         chi, _ = hop.opacity(np.array([2000.0, 6563.0]))
     assert np.all(np.isfinite(chi)) and np.all(chi > 0)
@@ -226,8 +225,7 @@ def test_line_strengths_are_the_ranking_hop_itself_uses():
     proxy those same bands come out on top, so this is the assertion that would catch the
     accessor silently returning nothing useful.
     """
-    from hopacity import HopEOS
-    from tumult.physics import air2vac
+    from hopacity import HopEOS, air2vac
 
     lam = air2vac(np.arange(5000.0, 5002.0, 0.005))
     with HopEOS(feh=0.0) as hop:
@@ -262,8 +260,7 @@ def test_line_strengths_need_a_state():
 
 def test_linelist_numeric_reader_keeps_supported_and_fallback_syntax(tmp_path):
     """The fast reader covers normal decimals/exponents and preserves list-I/O fallback."""
-    from hopacity import HopEOS
-    from tumult.physics import air2vac
+    from hopacity import HopEOS, air2vac
 
     lines_path = tmp_path / "numeric-forms.txt"
     lines_path.write_text(

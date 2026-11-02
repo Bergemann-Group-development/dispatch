@@ -12,7 +12,7 @@ concern.
 | `execution/` | Scheduler, subprocess, daemon, cancellation, restart. | a POSIX process environment |
 | `studio/` | TumultStudio components and real Bokeh documents. | the `gui` extra |
 | `browser/` | Short journeys through the real TumultStudio app. | `node` with the `playwright` package and its Chromium |
-| `native/` | HOP ABI, EOS and opacity, small real Dispatch workflows, and tests of files in the local input bundle. | a built `libhop`/`dispatch.x`/`hop_prune.x`, and the input bundle (`input/linemasks/` comes from `input_data fetch linemasks`) |
+| `native/` | The hopacity atmosphere reader, small real Dispatch workflows, and tests of files in the local input bundle. | a built `libhop`/`dispatch.x`/`hop_prune.x`, and the input bundle (`input/linemasks/` comes from `input_data fetch linemasks`) |
 
 `support/` holds small factories used by more than one module; import them normally, as
 `from tests.support.<module> import ...`. `fixtures/` holds reviewed example inputs and
@@ -78,6 +78,4 @@ analytic solution exists, a small approved reference may be committed, and it ca
 Regenerating a reference from the current implementation is not validation. A change to a
 reference or an assertion needs a justification beyond making the test pass.
 
-References live in `golden/` and are written only by
-`python -m tests.support.golden <name>`, which prints a per-quantity summary of what would
-change; add `--write` once the summary has been reviewed.
+HOP's tests and references live in `HOP/tests` (run `python -m pytest HOP/tests`), so they travel with the hopacity mirror. Its references are written only by `python HOP/tests/hop_reference.py <name>`, which prints a per-quantity summary of what would change; add `--write` once the summary has been reviewed.

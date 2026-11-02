@@ -7,7 +7,8 @@ using FileWatching.Pidfile: mkpidlock
 
 export HopEOS, load_state!, load_linelist!, opacity, opacity_threaded, opacity_threaded!, wavelength_grid, logstep, freq_split, close!, meshgrid, compute_grid
 
-const _EXP_DIR = dirname(dirname(dirname(@__DIR__))) # …/OpenMULTI3D, up from tumult/HOP.jl/src/
+const _HOP_DIR = dirname(dirname(@__DIR__))   # …/HOP, up from HOP.jl/src/
+const _DATA_DIR = joinpath(_HOP_DIR, "hopacity", "data")
 const _LIB  = Ref{Ptr{Cvoid}}(C_NULL)
 const _PATH = Ref{String}("")
 const _SYMS = Dict{Symbol,Ptr{Cvoid}}()
@@ -54,7 +55,7 @@ end
            verbose=false, libpath=find_library(), options...)
 
 Allocate and initialise the HOP composition. Data-file paths default to the
-standard files under `<OpenMULTI3D>/input/`. `options` are module-level HOP
+standard files under `HOP/hopacity/data/`. `options` are module-level HOP
 settings applied *before* `hop_init` (the `case` labels of
 `hop_set_option_{str,real,int}`), e.g. `hydrogen_profiles="lemke"`,
 `vcs_data_dir="…"`, `abundances="…"`, `disable_stk=true`.
@@ -63,15 +64,16 @@ One live instance per process; use `close!` (or let the finalizer run).
 """
 function HopEOS(; 
                 feh=0.0,
-                absdat_file = joinpath(_EXP_DIR, "input", "absdat", "TS_absdat.txt"),
-                abund_file  = joinpath(_EXP_DIR, "input", "abund", "abund_magg22.txt"),
-                isotope_file = joinpath(_EXP_DIR, "input", "isotopes", "isotopes_blp.txt"),
-                molec_file   = joinpath(_EXP_DIR, "input", "molec", "molec_data_BC.txt"),
+                absdat_file = joinpath(_DATA_DIR, "absdat", "TS_absdat.txt"),
+                abund_file  = joinpath(_DATA_DIR, "abund", "abund_magg22.txt"),
+                isotope_file = joinpath(_DATA_DIR, "isotopes", "isotopes_blp.txt"),
+                molec_file   = joinpath(_DATA_DIR, "molec", "molec_data_BC.txt"),
                 tmolim = -99.0, alpha_enhancement = 0.0, r_process_enhancement = 0.0,
                 verbose = false, libpath = find_library(), options...)
     opts = Dict{String,Any}(String(k) => v for (k, v) in options)
 
-    get!(opts, "vcs_data_dir", joinpath(_EXP_DIR, "input", "vcs"))
+    get!(opts, "vcs_data_dir", joinpath(_DATA_DIR, "vcs"))
+    get!(opts, "anstee_file", joinpath(_DATA_DIR, "Anstee-1802-2014.txt"))
     for p in (absdat_file, abund_file, isotope_file, molec_file)
         isfile(p) || error("data file not found: $p")
     end
@@ -93,7 +95,7 @@ end
 # Library handle
 # ============================================================================
 
-standalone_dir() = joinpath(_EXP_DIR, "HOP", "standalone")
+standalone_dir() = joinpath(_HOP_DIR, "standalone")
 
 # Own build dir, so the Makefile's -O1 default (what other users get) and these
 # flags never share objects.

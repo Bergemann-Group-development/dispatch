@@ -1,8 +1,8 @@
 """Keep the generated libhop ABI in sync with the library and the Python wrapper.
 
-``HOP/standalone/libhop.h`` is written by ``HOP/standalone/gen_bindings.py`` from the
+``standalone/libhop.h`` is written by ``standalone/gen_bindings.py`` from the
 ``BIND(c, name=...)`` declarations in ``hop_c_api.f90`` and committed (``make -C
-HOP/standalone bindings`` rewrites it after an interface change); the build does not
+standalone bindings`` rewrites it after an interface change); the build does not
 regenerate it, so these tests do, and fail on a diff.
 The header is also what ``hopacity`` hands to ``ffi.cdef``, so every name and signature
 the wrapper calls comes from here; the calls the other HOP tests make through cffi are
@@ -14,17 +14,19 @@ import subprocess
 
 import pytest
 
-from tests.native.hop_reference import HOP_LIB, PROJECT_DIR as ROOT
+from hop_reference import TESTS_DIR, hop_library
 
-STANDALONE = ROOT / "HOP" / "standalone"
+HOP_DIR = TESTS_DIR.parent
+HOP_LIB = hop_library()
+STANDALONE = HOP_DIR / "standalone"
 HEADER = STANDALONE / "libhop.h"
 SHIM_F90 = STANDALONE / "hop_c_api.f90"
-# the Python wrapper and the tumult modules that call libhop through it
-PY_HOSTS = sorted([*(ROOT / "HOP" / "hopacity").glob("*.py"), *(ROOT / "tumult").glob("*.py")])
+# the Python wrapper, the only Python code that calls libhop
+PY_HOSTS = sorted((HOP_DIR / "hopacity").glob("*.py"))
 
 pytestmark = pytest.mark.skipif(
-    not HOP_LIB.exists(),
-    reason="libhop.so not built - run 'make -C HOP/standalone -j8'")
+    HOP_LIB is None,
+    reason="libhop.so not built - run 'make -C standalone -j8'")
 
 
 def _header_names(text):
@@ -42,8 +44,8 @@ def _regenerate_header():
 def test_header_matches_the_fortran():
     """The committed header is what the generator writes today."""
     assert HEADER.read_text() == _regenerate_header(), (
-        "HOP/standalone/libhop.h is stale - regenerate with "
-        "'make -C HOP/standalone bindings' and commit it")
+        "standalone/libhop.h is stale - regenerate with "
+        "'make -C standalone bindings' and commit it")
 
 
 def test_header_declares_every_bind_c_entry_point():
@@ -123,7 +125,7 @@ def test_no_array_argument_is_passed_by_value():
 
 
 def test_python_wrapper_binds_only_exported_symbols():
-    """Every hop_* name a hopacity or tumult module calls must exist in the library.
+    """Every hop_* name a hopacity module calls must exist in the library.
 
     Scans every module, since a module nothing imports can otherwise bind a name the
     library never exported.
@@ -169,7 +171,7 @@ def test_hosts_cover_every_entry_point():
 
     This is what keeps an entry point from being added to the library and then never
     wrapped.  There are three hosts: the Python wrapper (hopacity/), the Julia one
-    (tumult/HOP.jl), which owns the threaded entry points HopEOS has no use for, and the
+    (HOP.jl), which owns the threaded entry points HopEOS has no use for, and the
     hop_prune.x program next to the shim, which USEs the entry points it drives.
     INTERNAL_ONLY carries the documented exceptions.
     """
@@ -184,7 +186,7 @@ def test_hosts_cover_every_entry_point():
         # attribute access (lib.hop_x), or a quoted name - how set_option picks its setter
         wrapped |= set(re.findall(r"\b\w*lib\.(hop_[a-z0-9_]+)", src))
         wrapped |= set(re.findall(r"['\"](hop_[a-z0-9_]+)['\"]", src))
-    for path in (ROOT / "tumult" / "HOP.jl" / "src").glob("*.jl"):
+    for path in (HOP_DIR / "HOP.jl" / "src").glob("*.jl"):
         # ccall targets are symbols: _fp(:hop_x), or :hop_x straight
         wrapped |= set(re.findall(r":(hop_[a-z0-9_]+)", path.read_text()))
     assert not exported - wrapped, f"no host caller for: {sorted(exported - wrapped)}"

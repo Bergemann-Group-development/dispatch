@@ -24,7 +24,7 @@ import pytest
 from scipy.interpolate import CubicSpline
 
 import tumult
-from tests.native.hop_reference import HOP_LIB
+from tests.native.hop_lib import HOP_LIB
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'

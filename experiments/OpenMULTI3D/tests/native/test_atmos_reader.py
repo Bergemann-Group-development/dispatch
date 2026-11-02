@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.native.hop_reference import HOP_LIB
+from tests.native.hop_lib import HOP_LIB
 
 pytestmark = pytest.mark.skipif(
     not HOP_LIB.exists(),

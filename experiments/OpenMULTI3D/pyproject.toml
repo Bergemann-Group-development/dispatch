@@ -34,7 +34,7 @@ where = [".", "HOP"]
 include = ["tumult*", "TumultStudio*", "hopacity*"]
 
 [tool.setuptools.package-data]
-tumult = ["presets/*.nml", "*.mplstyle", "*.jl", "HOP.jl/**"]
+tumult = ["presets/*.nml", "*.mplstyle", "*.jl"]
 TumultStudio = ["static/**", "templates/**"]
 
 # Rules that find defects (pyflakes, bugbear, import placement, syntax). Style is left to
