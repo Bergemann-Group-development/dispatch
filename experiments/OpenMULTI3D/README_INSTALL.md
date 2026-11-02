@@ -205,3 +205,7 @@ install is not active. Activate `.venv` (section 2).
 
 **`OSError: ... Address already in use`** when starting TumultStudio: another server
 holds port 5006. Start with `--port N`.
+
+## License
+
+OpenMULTI3D is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation (`LICENSE`). It is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose. The copyright holders are listed in `AUTHORS`. The DISPATCH framework it builds on is distributed under the BSD-3-Clause license in `../../LICENSE`.
