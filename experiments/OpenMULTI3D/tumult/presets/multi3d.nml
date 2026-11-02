@@ -36,8 +36,8 @@
   mhd_eos = .false.
   helium_scattering = .false.
   irwin_dis = .false.
-  absdat_file = 'input/absdat'
-  abund_file = 'input/abund/legacy_abund'
-  molec_file = 'input/molec_data.txt'
+  absdat_file = 'input/absdat/MULTI_absdat.txt'
+  abund_file = 'input/abund/legacy_abund.txt'
+  molec_file = 'input/molec/molec_data.txt'
   molecule_damping_estimates = .false.
 /

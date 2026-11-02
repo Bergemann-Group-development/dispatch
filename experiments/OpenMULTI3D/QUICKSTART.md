@@ -111,7 +111,7 @@ the wavelength grid (`run.lam`), the emergent intensities and fluxes and the mod
 (`run.atoms[0]`). `run.mode` says whether the run solved NLTE or was an LTE run, which
 carries no separate LTE spectrum. The abundance is on the
 astronomical scale, A(Ba) = log10(N_Ba/N_H) + 12 = 2.11, set by `abundance=2.11` in
-`examples/sun_ba_1d.nml`; the standard composition `input/abund/abund_magg22` has 2.17.
+`examples/sun_ba_1d.nml`; the standard composition `input/abund/abund_magg22.txt` has 2.17.
 
 The 804 points are the four line windows, so the grid has gaps between them. Never read
 the binary files under `data/examples/sun_ba_1d/save/` yourself: `run` decodes their layout and unit
@@ -349,7 +349,7 @@ from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="quickstart_synth",
                      linelist="input/linelists/master_line.txt",
-                     abundances="input/abund/abund_magg22",
+                     abundances="input/abund/abund_magg22.txt",
                      R_sampling=200_000,
                      expert={"linelist_params": {"match_nlte_levels": True}})
 marcs = Atmosphere("input/atmos/sun.mod")

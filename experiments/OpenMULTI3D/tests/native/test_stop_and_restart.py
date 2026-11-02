@@ -39,7 +39,7 @@ def _namelist(work, atmos, extra=''):
 &io_params datadir='{work / 'data'}' do_trace=F /
 &atmos_params {atmos} /
 &atom_params atom_file='{ATOM}' relative_abundance=T /
-&composition_params abund_file='input/abund/abund_magg22' /
+&composition_params abund_file='input/abund/abund_magg22.txt' /
 &opac_table_params absmet_file='input/absmet_files/absmet' /
 &nlte_params convlim=1d-5 /
 &rt_iteration_params maxiter=400 /

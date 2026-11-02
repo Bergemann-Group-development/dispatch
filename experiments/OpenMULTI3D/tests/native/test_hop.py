@@ -14,9 +14,10 @@ no analytic answer for these states, so the reference records agreement with a r
 result, not correctness.
 
 ``hop_eos`` was generated at df4c20bf, ``hop_opacity`` at 6a71ff283, both with gfortran
-15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from (md5 prefix): input/TS_absdat.dat
-5b921bc86ca0, input/abund/abund_magg22 abcd0926adda, input/isotopes_blp d63a83de4230,
-input/linelists/master_line.txt 2821ea404b92, and input/molec_data_BC.txt a4e2d3274cda
+15.1.0, ``OPTS=hoppe`` (-O3 -mcpu=apple-m1), from (md5 prefix):
+input/absdat/TS_absdat.txt 5b921bc86ca0, input/abund/abund_magg22.txt abcd0926adda,
+input/isotopes/isotopes_blp.txt d63a83de4230, input/linelists/master_line.txt 2821ea404b92,
+and input/molec/molec_data_BC.txt a4e2d3274cda
 (``hop_eos``) or cfb2d3e18c35 (``hop_opacity``).
 
 Tolerance rtol = 1e-5. The references are exact on the generating build. A change of the
@@ -164,8 +165,9 @@ def test_legacy_absdat_with_occupation_weighted_eos():
     from hopacity import HopEOS
 
     inputs = PROJECT_DIR / "input"
-    with HopEOS(absdat_file=inputs / "absdat", abund_file=inputs / "abund" / "legacy_abund",
-                molec_file=inputs / "molec_data.txt") as hop:
+    with HopEOS(absdat_file=inputs / "absdat" / "MULTI_absdat.txt",
+                abund_file=inputs / "abund" / "legacy_abund.txt",
+                molec_file=inputs / "molec" / "molec_data.txt") as hop:
         hop.load_state(np.array([5000.0, 6000.0]), ne=np.array([1e13, 1e14]))
         chi, _ = hop.opacity(np.array([2000.0, 6563.0]))
     assert np.all(np.isfinite(chi)) and np.all(chi > 0)
@@ -296,12 +298,12 @@ def test_long_data_paths(tmp_path):
     The tables are read once per process, so both runs go to fresh worker processes.
     """
     from hopacity import HopEOS
-    from hopacity.core import _INPUT_DIR
+    from hopacity.core import _DATA_DIR
 
     deep = tmp_path.joinpath(*[f"padding_directory_{i:02d}" for i in range(20)])
     deep.mkdir(parents=True)
-    (deep / "Anstee.dat").symlink_to(_INPUT_DIR / "Anstee-1802-2014.dat")
-    (deep / "vcs").symlink_to(_INPUT_DIR / "vcs")
+    (deep / "Anstee.dat").symlink_to(_DATA_DIR / "Anstee-1802-2014.dat")
+    (deep / "vcs").symlink_to(_DATA_DIR / "vcs")
     assert len(str(deep / "Anstee.dat")) > 400
     linelist = tmp_path / "mgb.txt"
     linelist.write_text(MG_B)

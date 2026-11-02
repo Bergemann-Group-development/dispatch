@@ -1,9 +1,9 @@
 """The HOP EOS and opacity states the native references are computed on.
 
-Inputs are the tracked defaults of ``hopacity.HopEOS`` (``input/TS_absdat.dat``,
-``input/abund/abund_magg22``, ``input/isotopes_blp``, ``input/molec_data_BC.txt``) and
-``input/linelists/master_line.txt``, through the ``libhop.so`` that ``make -C
-HOP/standalone`` copies into ``HOP/hopacity/``.
+Inputs are the tracked defaults of ``hopacity.HopEOS`` (``input/absdat/TS_absdat.txt``,
+``input/abund/abund_magg22.txt``, ``input/isotopes/isotopes_blp.txt``,
+``input/molec/molec_data_BC.txt``) and ``input/linelists/master_line.txt``, through the
+``libhop.so`` that ``make -C HOP/standalone`` copies into ``HOP/hopacity/``.
 """
 from pathlib import Path
 

@@ -102,3 +102,6 @@ benchmarks/*
 
 # Agents' scratch work, campaign scripts, reports and notes stay untracked
 # (scratch/, alpha_campaign/, docs/notes/); the parent rules already ignore them.
+
+# HOP's default data tables are source; the parent rules ignore every folder named data.
+!HOP/hopacity/data/

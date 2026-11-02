@@ -2,10 +2,10 @@
 \toprule
 \fort{&composition_params} & Meaning\\
 \midrule
-\fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/TS\_absdat.dat}).\\
-\fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22}).\\
-\fort{isotope_file} & Isotope table (default \File{input/isotopes\_blp}); see Sec.~\ref{sec:linelist}.\\
-\fort{molec_file} & Molecular data (default \File{input/molec\_data\_BC.txt}).\\
+\fort{absdat_file} & Element data, partition functions and ionisation potentials (default \File{input/absdat/TS\_absdat.txt}).\\
+\fort{abund_file} & Solar abundance table, $\log\epsilon$ with $\log\epsilon_\mathrm{H}=12$ (default \File{input/abund/abund\_magg22.txt}).\\
+\fort{isotope_file} & Isotope table (default \File{input/isotopes/isotopes\_blp.txt}); see Sec.~\ref{sec:linelist}.\\
+\fort{molec_file} & Molecular data (default \File{input/molec/molec\_data\_BC.txt}).\\
 \fort{abundances} & Per-element overrides as a string, e.g. \fort{'Mg=7.6 Eu=0.5'}: $\log\epsilon$, or an offset when \fort{relative_abundances=T}.\\
 {\fort{alpha_enhancement},\\\fort{r_process_enhancement}} & Offsets in dex for the $\alpha$ elements (O, Ne, Mg, Si, S, Ar, Ca, Ti) and for the elements from Ga to U that have long-lived isotopes.\\
 \fort{hydrogen_BPO} & Barklem--Piskunov--O'Mara self-broadening for H$\alpha$, H$\beta$ and H$\gamma$ instead of Ali \& Griem resonance broadening, with any \fort{hydrogen_profiles} (default \fort{T}).\\

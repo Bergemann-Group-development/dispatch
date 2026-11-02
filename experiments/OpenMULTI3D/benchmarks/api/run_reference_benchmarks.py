@@ -313,7 +313,7 @@ def parser():
     p.add_argument("--atmosphere-grid", default="input/atmos/MARCS")
     p.add_argument("--atom", default="input/atoms/atom.mg86g")
     p.add_argument("--linelist", default="input/linelists/sun_3000-9000.txt")
-    p.add_argument("--abundances", default="input/abund/abund_magg22")
+    p.add_argument("--abundances", default="input/abund/abund_magg22.txt")
     p.add_argument("--absmet", default="input/absmet_files/absmet")
     p.add_argument("--abundance-masks", default="input/linemasks/Fe/fe-lmask.txt")
     p.add_argument("--balance-masks", default="input/linemasks/Fe/fe-balance-test.txt")

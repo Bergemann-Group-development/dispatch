@@ -63,10 +63,10 @@ One live instance per process; use `close!` (or let the finalizer run).
 """
 function HopEOS(; 
                 feh=0.0,
-                absdat_file = joinpath(_EXP_DIR, "input", "TS_absdat.dat"),
-                abund_file  = joinpath(_EXP_DIR, "input", "abund", "abund_magg22"),
-                isotope_file = joinpath(_EXP_DIR, "input", "isotopes_blp"),
-                molec_file   = joinpath(_EXP_DIR, "input", "molec_data_BC.txt"),
+                absdat_file = joinpath(_EXP_DIR, "input", "absdat", "TS_absdat.txt"),
+                abund_file  = joinpath(_EXP_DIR, "input", "abund", "abund_magg22.txt"),
+                isotope_file = joinpath(_EXP_DIR, "input", "isotopes", "isotopes_blp.txt"),
+                molec_file   = joinpath(_EXP_DIR, "input", "molec", "molec_data_BC.txt"),
                 tmolim = -99.0, alpha_enhancement = 0.0, r_process_enhancement = 0.0,
                 verbose = false, libpath = find_library(), options...)
     opts = Dict{String,Any}(String(k) => v for (k, v) in options)
