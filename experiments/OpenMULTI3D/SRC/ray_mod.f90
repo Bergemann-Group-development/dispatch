@@ -40,8 +40,9 @@ contains
     logical, optional :: Jnu_weights                         !< weights for the mean intensity, default .true.
     integer :: nro, nmu
     real(8), dimension(:), allocatable :: mux,  muy,  wmu
-    logical :: mirror=.true.
+    logical :: mirror
     ! ----------------------------------------------------------------------------
+    mirror = .true.
     if (present(Jnu_weights)) then
       mirror = Jnu_weights
     endif
@@ -334,9 +335,9 @@ contains
     if (nrays==1) then
       wmu = 1
     else
-      call sort_array(mu, mu, order)
+      call sort_array(mu, smus(2:nrays+1), order)
       smus(1) = 0.d0
-      smus(2:nrays+1) = mu
+      mu = smus(2:nrays+1)
 
       if (mod(size(smus), 2) == 1) then
         call simps_weights(smus, swts)
@@ -398,8 +399,9 @@ contains
     logical, optional :: Jnu_weights                         !< weights for the mean intensity, default .false.
     real(8) :: xphi, theta, xoff
     integer :: nrays, i, nt, np, nmuphi, n1, nphi
-    logical :: includes_mu1, mirror=.false.
+    logical :: includes_mu1, mirror
     ! -------------------------------------------------------------------
+    mirror = .false.
     if (present(Jnu_weights)) then
       mirror = Jnu_weights
     endif

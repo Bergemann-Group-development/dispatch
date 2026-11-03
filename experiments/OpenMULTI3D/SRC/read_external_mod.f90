@@ -157,8 +157,6 @@ contains
       endif
     endif
 
-    ia%kind = trim(atmos_format)
-
     if (atmos_format == 'save') then
       save_file = atmos_file
       read_departures_local = read_departures

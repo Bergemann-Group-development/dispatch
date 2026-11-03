@@ -40,14 +40,9 @@ MODULE ray_patch_mod
   !> Frequency window and boundary handling shared by the radiative-transfer patches.
   !===============================================================================
   type, public, extends(m3d_patch_t) :: ray_patch_t
-    real(8) :: vec(3)     !< unused
-    real(8) :: wmu        !< unused
-    integer :: fs         !< first frequency index of the window
-    integer :: fe         !< last frequency index of the window
-    integer :: nf         !< number of frequencies in the window
-    integer :: pre_pad_fs !< copy of fs, unused
-    integer :: pre_pad_fe !< copy of fe, unused
-    logical :: padded     !< unused
+    integer :: fs !< first frequency index of the window
+    integer :: fe !< last frequency index of the window
+    integer :: nf !< number of frequencies in the window
   contains
     procedure :: check_in_bounds
     procedure :: set_freq_indices
@@ -78,8 +73,6 @@ contains
 
     self%fs = fs
     self%fe = fe
-    self%pre_pad_fs = fs
-    self%pre_pad_fe = fe
     self%nf = self%fe - self%fs + 1
 
     if (self%do_out_sp) then

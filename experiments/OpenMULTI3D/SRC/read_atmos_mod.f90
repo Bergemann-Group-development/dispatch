@@ -31,7 +31,6 @@ MODULE read_atmos_mod
   !> The input snapshot as read, shared by all patches of a rank.
   !===============================================================================
   type, public :: input_atmos_t
-    character(64) :: kind !< unused
     integer :: n(3)       !< number of points (nx, ny, nz)
     integer :: nx         !< number of points in x
     integer :: ny         !< number of points in y
