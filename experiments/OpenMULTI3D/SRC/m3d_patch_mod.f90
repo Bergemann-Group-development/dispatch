@@ -1,4 +1,7 @@
 #include "../HOP/read_namelist.inc"
+!===============================================================================
+!> The base type of OpenMULTI3D's tasks, and the run parameters of nlte_params, output_params, m3d_debug_params and run_params.
+!===============================================================================
 MODULE m3d_patch_mod
     USE os_mod
     USE list_mod
@@ -50,38 +53,53 @@ MODULE m3d_patch_mod
     implicit none
     private
 
+    !===============================================================================
+    !> One entry in the list of hash keys of the tasks linked to a patch.
+    !===============================================================================
     type, public :: key_link_t
-      integer :: key(4)
-      class(key_link_t), pointer :: next => null()
+      integer :: key(4)                            !< hash key of the linked task
+      class(key_link_t), pointer :: next => null() !< next entry
     end type key_link_t
 
+    !===============================================================================
     !> Detailed line-list increments to (xhat, ehat) at one output patch's own
     !> points for one set, as add_linelist_opacities returns them, plus the
     !> physical chi_scat when line_scattering is on.  Shape (fs:fe,nx,ny,nz).
+    !===============================================================================
     type, public :: point_opac_set_t
-      real(4), dimension(:,:,:,:), allocatable :: chi, eta, scat
-      logical :: initialised=.false.
+      real(4), dimension(:,:,:,:), allocatable :: chi  !< increment to xhat
+      real(4), dimension(:,:,:,:), allocatable :: eta  !< increment to ehat
+      real(4), dimension(:,:,:,:), allocatable :: scat !< chi_scat, with line_scattering
+      logical :: initialised=.false.                   !< the arrays are filled
     end type point_opac_set_t
 
+    !===============================================================================
+    !> The stored line-list increments of one output window, per set.
+    !===============================================================================
     type, public :: point_opac_t
-      type(point_opac_set_t), allocatable :: set(:)   !< (n_set)
+      type(point_opac_set_t), allocatable :: set(:) !< (n_set)
     end type point_opac_t
 
+    !===============================================================================
     !> LTE background opacity (chi_cont, sigma) of one 1D rt_patch slice, as
     !> lte_background_opacities returns it.  Shape (fs:fe,nx,ny,nz).
+    !===============================================================================
     type, public :: bg_opac_t
-      real(4), dimension(:,:,:,:), allocatable :: chi, sigma
-      logical :: initialised=.false.
+      real(4), dimension(:,:,:,:), allocatable :: chi   !< continuum opacity chi_cont
+      real(4), dimension(:,:,:,:), allocatable :: sigma !< its scattering part
+      logical :: initialised=.false.                    !< the arrays are filled
     end type bg_opac_t
-  
-    !-----------------------------------------------------------------------------
-  
+
+    !===============================================================================
+    !> A task of OpenMULTI3D: a composition, NLTE or RT patch of one depth slab,
+    !> with its frequency window i_nu and direction i_mu.
+    !===============================================================================
     type, public, extends(gpatch_t) :: m3d_patch_t
-      class(gpatch_t),    pointer :: patch => null()      !< pointer to mhd patch
-      class(m3d_patch_t), pointer :: m3d_parent => null() !< pointer to parent patch
-      type(composition_type), pointer :: composition => null()
-      type(composition_type), pointer :: tab_comp => null()
-      type(composition_type), pointer :: rotated_composition(:) => null()
+      class(gpatch_t),    pointer :: patch => null()                      !< depth patch (experiment_t) of the slab
+      class(m3d_patch_t), pointer :: m3d_parent => null()                 !< patch that made this one with pre_init_and_link
+      type(composition_type), pointer :: composition => null()            !< composition of the unrotated atmosphere
+      type(composition_type), pointer :: tab_comp => null()               !< composition at the nodes of the opacity or EOS table
+      type(composition_type), pointer :: rotated_composition(:) => null() !< compositions along the output rays
       ! Sampled background-opacity tables, owned by the composition patch and
       ! shared by all its rt_patches.  Everything a table's content depends on is
       ! a function of i_nu alone (the spectrum and the fs:fe slice), so i_nu is
@@ -104,30 +122,52 @@ MODULE m3d_patch_mod
       !> later iterations; indexed like opac_tables, [-n_windows_out, 2*n_windows].
       type(bg_opac_t), pointer :: bg_point_tables(:) => null()
       type(lock_t),    pointer :: bg_point_locks(:)  => null()   !< same bounds
-      class(atomic_spectrum_type), pointer :: sp => null()
-      type(atom_type), dimension(:), pointer :: atoms => null()
-      class(key_link_t), pointer :: key_list => null()
-      type(departure_pointer_t), dimension(:,:), pointer :: departures
-      real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-      logical :: in_task_list = .false.
-      logical :: initialized  = .false.
-      real(8) :: t_offset=0
-      integer :: iter=0, maxiter, master_maxiter, dir=0
-      integer :: n_windows, n_out, zs, ze
-      integer :: fcheck, pcheck(3)
-      logical :: do_out_sp=.false., do_full_sp=.false., do_final=.false.
-      logical :: wait_for_nlte=.false.
-      logical :: compressed=.false., save_output=.false., saved=.false.
-      logical :: print_update_info, checked_bounds=.false.
-      logical :: has_atom=.false.
-      integer :: i_nu=0, i_mu=0
-      integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
-      !> remaining atmos-save slots: chi500, vmic, then the ln(T) and Pe
-      !> gradients (the Pe slots hold dPe/d, not dlnPe/d)
-      integer :: i_chi500=7, i_vmic=8
-      integer :: i_dlnt_x=9, i_dlnt_y=10, i_dlnt_z=11
-      integer :: i_dpe_x=12, i_dpe_y=13, i_dpe_z=14
-      logical :: prepend=.false.
+      class(atomic_spectrum_type), pointer :: sp => null()                !< spectrum of the task's frequencies
+      type(atom_type), dimension(:), pointer :: atoms => null()           !< atoms of that spectrum
+      class(key_link_t), pointer :: key_list => null()                    !< hash keys of the tasks linked to this one
+      type(departure_pointer_t), dimension(:,:), pointer :: departures    !< departure coefficients read with read_departures
+      real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null() !< mem without the guard cells
+
+      logical :: in_task_list = .false. !< unused
+      logical :: initialized  = .false. !< init has run
+      real(8) :: t_offset=0             !< start time offset, in units of dtime: 0.5 for RT tasks, else 0.1
+      integer :: iter=0                 !< updates done
+      integer :: maxiter                !< last update before the task finishes
+      integer :: master_maxiter         !< unused
+      integer :: dir=0                  !< sweep direction of an RT task, +1 or -1; 0 for other tasks
+      integer :: n_windows              !< number of internal windows when the RT slabs were made
+      integer :: n_out                  !< number of output directions
+      integer :: zs                     !< depth points of the mesh above the slab
+      integer :: ze                     !< last depth point of the slab in the global mesh
+      integer :: fcheck                 !< frequency index of the debug output (m3d_debug_params)
+      integer :: pcheck(3)              !< mesh point of the debug output, local to the patch
+      logical :: do_out_sp=.false.      !< works on the output spectrum
+      logical :: do_full_sp=.false.     !< works on the internal spectrum of the NLTE iteration
+      logical :: do_final=.false.       !< the final output ray, after the scattering iterations
+      logical :: wait_for_nlte=.false.  !< held back until every nlte_patch has converged
+      logical :: compressed=.false.     !< unused (never set)
+      logical :: save_output=.false.    !< writes its output (nlte_patch, save_patch_kind, save_id)
+      logical :: saved=.false.          !< unused
+      logical :: print_update_info      !< pcheck lies in the patch, so it prints after each update
+      logical :: checked_bounds=.false. !< print_update_info is set
+      logical :: has_atom=.false.       !< the task has atoms
+      integer :: i_nu=0                 !< window index: > 0 internal, < 0 output, 0 none
+      integer :: i_mu=0                 !< direction index: > 0 a direction, -1 the final output ray, 0 none
+      integer :: i_ne=1                 !< slot of the electron density in the saved atmosphere
+      integer :: i_rho=2                !< slot of the density
+      integer :: i_temp=3               !< slot of the temperature
+      integer :: i_vx=4                 !< slot of the x velocity
+      integer :: i_vy=5                 !< slot of the y velocity
+      integer :: i_vz=6                 !< slot of the z velocity
+      integer :: i_chi500=7             !< slot of the continuum opacity at 500 nm
+      integer :: i_vmic=8               !< slot of the microturbulence
+      integer :: i_dlnt_x=9             !< slot of d ln T/dx
+      integer :: i_dlnt_y=10            !< slot of d ln T/dy
+      integer :: i_dlnt_z=11            !< slot of d ln T/dz
+      integer :: i_dpe_x=12             !< slot of dPe/dx
+      integer :: i_dpe_y=13             !< slot of dPe/dy
+      integer :: i_dpe_z=14             !< slot of dPe/dz
+      logical :: prepend=.false.        !< unused (never set)
     contains
       procedure :: pre_init
       procedure :: post_pre_init
@@ -169,41 +209,45 @@ MODULE m3d_patch_mod
       procedure :: collect_line_diagnostics
     end type m3d_patch_t
   
-    !-----------------------------------------------------------------------------
-    integer, save, public:: verbose=console_inherit
-    integer, public :: nz_total
-    integer, public, save :: save_id=-1
-    integer, public, save :: n_windows=-1
+    integer, save, public:: verbose=console_inherit !< console level of the m3d channel
+    integer, public :: nz_total                     !< depth points of the whole mesh
+    integer, public, save :: save_id=-1             !< id of one more task that saves its output
+    integer, public, save :: n_windows=-1           !< number of internal windows; -1 chooses it from the threads and memory
     !> Largest memory estimate [GiB] the run may start with: 0 takes the physical
     !> memory of the machine, a negative value switches the check off
     real(8), public, save :: mem_limit_gb=0
-    integer, public, save :: n_windows_out=0   ! output frequency patch count, set by set_n_windows_out
+    integer, public, save :: n_windows_out=0 !< number of output windows, set by set_n_windows_out
     !> Output patches -(out_patch_offset(i)+1) .. -out_patch_offset(i+1) split output
     !> window i (the whole grid without a window_file); set with n_windows_out
     integer, public, save, allocatable :: out_patch_offset(:)
-    !> convlim <= 0 requests no NLTE iterations, and a negative convmax becomes
-    !> convlim/10 (see resolve_nlte_iterations); convmax=0 is never met
-    real(8), public:: convlim=0d0, convmax=-1d0
-    logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
-    !> Number of nlte_patches created on this rank, and whether all of them have
-    !> converged.  Defaults to "nothing to wait for", so that a run without atoms,
-    !> which creates no nlte_patch at all, is not held up (see is_ahead_of).
+    real(8), public:: convlim=0d0                    !< convergence limit of the relative population change (<= 0: LTE)
+    real(8), public:: convmax=-1d0                   !< the limit per depth patch; negative becomes convlim/10, 0 is never met
+    logical, public, save :: converged=.false.       !< the NLTE iteration has converged globally
+    logical, public, save :: use_vel(3)=.true.       !< use the model's velocity components x, y, z
+    logical, public, save :: premature_finish=.true. !< freeze the columns whose atoms have met convmax
+    !> Number of nlte_patches created on this rank (see nlte_finished)
     integer, public, save :: n_nlte_patches=0
+    !> Whether all nlte_patches of this rank have converged.  Defaults to "nothing
+    !> to wait for", so that a run without atoms, which creates no nlte_patch at all,
+    !> is not held up (see is_ahead_of).
     logical, public, save :: nlte_finished=.true.
     !> Largest relative population change of the last NLTE iteration reported in the
     !> iteration table, for the verdict printed at the end of the run
     real(8), public, save :: nlte_last_change=0d0
-    !> For the same verdict: the last iteration any nlte_patch of this rank performed,
-    !> and how many of them finished because every atom there changed by less than
-    !> convmax (premature_finish).  A run whose patches all finished that way never
-    !> completes the iteration that would give it a final global change.
-    integer, public, save :: nlte_last_iter=0, n_convmax_finished=0
-    !> A stop request (<run_dir>/stop_nlte.flag, see nlte_patch_t%execute) ends the
+    integer, public, save :: nlte_last_iter=0 !< for that verdict: the last iteration of any nlte_patch here
+    !> For the same verdict: how many nlte_patches of this rank finished because
+    !> every atom there changed by less than convmax (premature_finish).  A run whose
+    !> patches all finished that way never completes the iteration that would give
+    !> it a final global change.
+    integer, public, save :: n_convmax_finished=0
+    !> A stop request (`<run_dir>`/stop_nlte.flag, see nlte_patch_t%execute) ends the
     !> NLTE iterations as convergence would, so every depth patch writes its
-    !> departures.  With stop_exit the output pass is skipped as well.
-    logical, public, save :: stop_requested=.false., stop_exit=.false.
-    logical, public, save :: flux_convergence=.false.
-    logical, public, save :: preconditioning=.true., binned_opac=.false.
+    !> departures.
+    logical, public, save :: stop_requested=.false.
+    logical, public, save :: stop_exit=.false.        !< skip the output pass as well after a stop request
+    logical, public, save :: flux_convergence=.false. !< converge on the emergent flux instead of the populations
+    logical, public, save :: preconditioning=.true.   !< preconditioned rates (Rybicki & Hummer 1992)
+    logical, public, save :: binned_opac=.false.      !< opac_table gives a binned opacity table
     !> Which preconditioning the bound-bound rates use.  'original' subtracts the
     !> local source term from the rate after the frequency integral, which for a
     !> thermalised thick line leaves no significant digits and can stall the
@@ -215,98 +259,106 @@ MODULE m3d_patch_mod
     character(len=16), public, save :: rate_formulation='largest'
     !> Olson-Auer-Buchler local ALI on the continuum-scattering source term.
     !> Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
-    !> unaccelerated Lambda-iteration that converges at the scattering albedo per
-    !> iteration -- i.e. barely at all where the albedo approaches 1.  Off by
-    !> default so existing runs are bit-identical; see fe607_convergence.md.
+    !> unaccelerated Lambda iteration that converges by the scattering albedo per
+    !> iteration, that is barely at all where the albedo approaches 1.
     logical, public, save :: scattering_preconditioning=.false.
     !> Cap on the dimensionless self-coupling op = sigma_scat*PsiJ, which sets the
     !> amplification 1/(1-op) the OAB update applies.  op <= 1 holds by
-    !> construction now that sigma is carried as the scattering *part of*
-    !> chi_cont on both the exact and the sampled path (see composition_mod
-    !> opacity/disjoint and optab_mod sample_interpolate), and Lambda_diag <= 1.
-    !> op does legitimately approach 1 in the bound-free half of the internal
-    !> spectrum, where continuum scattering is nearly the whole opacity and
-    !> Psi_diag -> 1, so the local operator is genuinely near-singular there and
-    !> the cap bounds the amplification; it is not a roundoff guard.
-    !> 0.5 caps the amplification at 2.  It is an empirical setting from a 1x1
-    !> column sweep (converges at 0.2/0.5/0.7, diverges at 0.8/0.9), not a bound
-    !> derived from the scheme, and it has not been re-measured in 3D.
-    !> Irrelevant unless scattering_preconditioning=T.
+    !> construction, since sigma is carried as the scattering part of chi_cont on
+    !> both the exact and the sampled path (see composition_mod opacity/disjoint and
+    !> optab_mod sample_interpolate), and Lambda_diag <= 1.  op does approach 1 in
+    !> the bound-free half of the internal spectrum, where continuum scattering is
+    !> nearly the whole opacity and Psi_diag -> 1, so the local operator is near
+    !> singular there and the cap bounds the amplification; it is not a roundoff
+    !> guard.  0.5 caps the amplification at 2.  It is an empirical setting from a
+    !> 1x1 column sweep (converges at 0.2, 0.5 and 0.7, diverges at 0.8 and 0.9),
+    !> not a bound derived from the scheme, and it has not been measured in 3D.
+    !> Used only with scattering_preconditioning=T.
     real(8), public, save :: scat_op_max=0.5d0
     ! Handling of population inversions (negative line opacity).  In NLTE a line
     ! contributes phi*Rij*(bi - bj*beta) to chi, which is negative for an inverted
     ! population.  chi can then pass through zero (Snu=eta/chi diverges) and dtau
-    ! turns negative (exp(+|dtau|) amplification).  Both are physical -- Mg I does
-    ! invert its Rydberg levels -- but unbounded in real(4).  These parameters keep
+    ! turns negative (exp(+|dtau|) amplification).  Both are physical (Mg I does
+    ! invert its Rydberg levels) but unbounded in real(4).  These parameters keep
     ! the maser but bound it, so that the population feedback can quench it between
     ! iterations instead of the arithmetic overflowing first.
-    real(8), public, save :: maser_chi_floor=1d-4  ! |chi| floor, as a fraction of xhat
-    real(8), public, save :: maser_dtau_max=2d0    ! cap on the per-cell amplification
-    real(8), public, save :: maser_Inu_max=1d30    ! absolute cap on |Inu|
-    logical, public, save :: suppress_masers=.false. ! instead force chi>0 (kills the maser)
-    logical, public, save :: save_resolved=.false.
-    logical, public, save :: decouple_continuum=.true.
-    logical, public, save :: use_rho=.true., use_ne=.false.
-    logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
-    logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
-    logical, public, save :: column_by_column=.false.
-    logical, public, save :: print_start=.false., print_send=.false.
+    real(8), public, save :: maser_chi_floor=1d-4            !< |chi| floor, as a fraction of xhat
+    real(8), public, save :: maser_dtau_max=2d0              !< cap on the per-cell amplification
+    real(8), public, save :: maser_Inu_max=1d30              !< absolute cap on |Inu|
+    logical, public, save :: suppress_masers=.false.         !< instead force chi>0 (kills the maser)
+    logical, public, save :: save_resolved=.false.           !< write the intensity of each column at one wavelength
+    logical, public, save :: decouple_continuum=.true.       !< separate frequency sets for bound-bound and bound-free radiation
+    logical, public, save :: use_rho=.true.                  !< take the density from the model
+    logical, public, save :: use_ne=.false.                  !< take the electron density from the model
+    logical, public, save :: overlapping_bb=.true.           !< sort and merge the bound-bound frequencies of all transitions
+    logical, public, save :: overlapping_bf=.true.           !< the same for the bound-free frequencies
+    logical, public, save :: overlapping_bb_in_output=.true. !< the same for the output spectrum
+    logical, public, save :: detailed_absmet=.false.         !< add the metal-opacity table's wavelengths to the internal spectrum
+    logical, public, save :: column_by_column=.false.        !< treat each column as a 1D atmosphere (no rotation)
+    logical, public, save :: print_start=.false.             !< print when an update begins
+    logical, public, save :: print_send=.false.              !< print the boundary sends of the RT tasks
     !> Keep the RT arrays that outlive a slab sweep (Jnu, PsiJ, Jali and the exit
     !> planes of frozen slabs) in files under save/ rather than in memory
     logical, public, save :: rt_to_file=.true.
-    character, public, save :: amr='P'
+    character, public, save :: amr='P' !< grading of the depth slabs: 'P' in log Pe, 'Z' by index, ' ' none
     !---------------------------------------------------------------------------
     !> Optionally drop the outermost planes of a 3D snapshot before the AMR mesh
     !> is laid out.  The horizontal spread of the electron pressure grows very
     !> fast with height, and in the topmost planes a sizeable fraction of the
-    !> columns falls far below the plane's own mean -- those cells reach electron
+    !> columns falls far below the plane's own mean.  Those cells reach electron
     !> densities two orders of magnitude below anything a 1D model contains, and
     !> the statistical equilibrium there is radiatively controlled with almost no
     !> collisional damping.  prune_top removes every plane above the highest one
-    !> whose cells ALL exceed min_k <ln Pe>(k), i.e. the topmost plane's mean;
-    !> prune_tol is the fraction of cells per plane that may fall below it (0 =
-    !> strict).  The mesh keeps its full patch count, so the only cost is a
-    !> shorter -- and correspondingly slightly better resolved -- z range.
+    !> whose cells all exceed min_k `<ln Pe>`(k), the topmost plane's mean.  The
+    !> mesh keeps its full patch count, so the only cost is a shorter, and
+    !> correspondingly slightly better resolved, z range.
     !---------------------------------------------------------------------------
     logical, public, save :: prune_top=.false.
-    real, public, save :: prune_tol=0.0
-    character(len=6), public, save :: initial_Jnu='Planck'
-    logical, public, save :: rotate_atmos=.false.
-    logical, public, save :: make_eos=.false.
-    logical, public, save :: save_cntrbf=.false., depression_cntrbf=.true.
-    logical, public, save :: save_Inu=.false., save_chi=.false.
-    logical, public, save :: save_Snu=.false., save_Jnu=.false.
-    real(8), public, save :: dlam=100.
-    real(8), public, dimension(:), allocatable :: rank_lvlerr
-    character(len=128), save :: save_patch_kind=''
+    real, public, save :: prune_tol=0.0                       !< fraction of cells per plane that may fall below that mean
+    character(len=6), public, save :: initial_Jnu='Planck'    !< initial radiation field, 'Planck' or 'zero'
+    logical, public, save :: rotate_atmos=.false.             !< interpolate one copy of the atmosphere along each output ray
+    logical, public, save :: make_eos=.false.                 !< tabulate the equation of state of the model
+    logical, public, save :: save_cntrbf=.false.              !< write the contribution functions
+    logical, public, save :: depression_cntrbf=.true.         !< of the line depression; else of the intensity
+    logical, public, save :: save_Inu=.false.                 !< write the specific intensity
+    logical, public, save :: save_chi=.false.                 !< write the opacity
+    logical, public, save :: save_Snu=.false.                 !< write the source function
+    logical, public, save :: save_Jnu=.false.                 !< write the mean intensity
+    real(8), public, save :: dlam=100.                        !< distance from a window up to which line wings are followed [AA]
+    real(8), public, dimension(:), allocatable :: rank_lvlerr !< largest relative change of each level on this rank
+    character(len=128), save :: save_patch_kind=''            !< kinds of the tasks that save their output
     !> Optional input manifest for an extended output set axis (abundance ladder).
     !> It must live outside run_dir, whose text outputs are cleared at startup.
     character(len=4096), public, save :: set_file=''
-    real(4), public :: fixed_Jnu=-1.0
-    ! Output-content selection formerly read via &atom_params
-    logical, public, save :: save_populations=.true.
+    real(4), public :: fixed_Jnu=-1.0                !< mean intensity that replaces the formal solution, when > 0
+    logical, public, save :: save_populations=.true. !< write the level populations
     !> Write the populations every save_every iterations as well (0: only at the end)
     integer, public, save :: save_every=0
-    logical, public, save :: bound_free_in_output=.false.
-    integer, public, save :: save_rates=0
+    logical, public, save :: bound_free_in_output=.false. !< add the atoms' bound-free transitions to the output pass
+    integer, public, save :: save_rates=0                 !< atom whose radiative rate coefficients are written (0: none)
     !> Write per-transition radiative and collisional rates after every population
     !> update (atom_type%write_rates), for model-atom reduction studies in 1D
     logical, public, save :: save_net_rates=.false.
-    character(len=128), public :: atmos_format='unknown'
+    character(len=128), public :: atmos_format='unknown' !< format of the model; 'unknown' takes it from the file name
+    !> the model atmosphere file
     character(len=4096), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
-    type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
-    !> flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
-    !> flux has converged. rt_patch computes the flux AFTER nlte_patch has already
-    !> solved the populations against the previous radiation field, so rather than
-    !> stopping immediately we signal nlte_patch to perform one final population
-    !> solve against the converged field. flux_final_counter counts the nlte
-    !> patches that have done that final solve; the last one (== dims(3)) sets
-    !> the global `converged` flag, which then winds the run down as usual.
-    type(mpi_counter_t), public :: flux_conv_signal, flux_final_counter
-    type(composition_type), public, save, target :: composition
-    !> the output atoms whose line lists write_linelist_out exports, and whether any
-    !> final-pass patch has merged its diagnostics (set by collect_line_diagnostics)
+    type(mpi_counter_t), public :: flux_update_counter !< flux reports of the RT tasks, across ranks
+    type(mpi_counter_t), public :: global_flux_err     !< largest relative flux change of the current round
+    type(mpi_counter_t), public :: global_flux_pos     !< its window i_nu
+    type(mpi_counter_t), public :: global_flux_lambda  !< its wavelength [AA]
+    !> Raised (>0) by rt_patch, cross-rank, once the emergent flux has converged.
+    !> rt_patch computes the flux after nlte_patch has already solved the
+    !> populations against the previous radiation field, so rather than stopping
+    !> immediately it signals nlte_patch to perform one final population solve
+    !> against the converged field.
+    type(mpi_counter_t), public :: flux_conv_signal
+    !> The nlte_patches that have done that final solve; the last one (== dims(3))
+    !> sets the global `converged` flag, which then winds the run down as usual.
+    type(mpi_counter_t), public :: flux_final_counter
+    type(composition_type), public, save, target :: composition !< the global composition, which every patch copies
+    !> the output atoms whose line lists write_linelist_out exports
     type(atom_type), dimension(:), pointer, save :: linelist_atoms => null()
+    !> whether any final-pass patch has merged its diagnostics (set by collect_line_diagnostics)
     logical, save :: have_line_diagnostics = .false.
       
     public :: hash_string, pre_update, update, print_execution_history
@@ -338,6 +390,10 @@ MODULE m3d_patch_mod
 
   contains
   
+  !===============================================================================
+  !> Reads the namelists and sets up the ray quadratures on the first call. Then
+  !> copies the geometry of the depth patch, sets the task's role (do_out_sp,
+  !> do_full_sp, do_final), its hash key and its number of updates.
   !===============================================================================
   SUBROUTINE pre_init (self)
     class(m3d_patch_t), target:: self
@@ -471,6 +527,10 @@ MODULE m3d_patch_mod
   END SUBROUTINE pre_init
 
   !===============================================================================
+  !> Writes the namelists to params.nml on the first call, then sets the
+  !> authority and interest regions, the boundaries and the start time, and
+  !> appends the task to the task list.
+  !===============================================================================
   SUBROUTINE post_pre_init (self)
     class(m3d_patch_t) :: self
     logical, save :: first_time=.true.
@@ -507,11 +567,16 @@ MODULE m3d_patch_mod
   END SUBROUTINE post_pre_init
 
   !===============================================================================
+  !> Pre-initialises a task made by another patch, with its window, direction,
+  !> spectrum and atoms, and adds its hash key to that patch's key list.
+  !===============================================================================
   recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atoms)
-    class(m3d_patch_t), target :: self, m3d_parent
-    class(atomic_spectrum_type), pointer, optional :: sp
-    type(atom_type), pointer, optional :: atoms(:)
-    integer, optional :: i_mu, i_nu
+    class(m3d_patch_t), target :: self
+    class(m3d_patch_t), target :: m3d_parent             !< patch that makes this task
+    class(atomic_spectrum_type), pointer, optional :: sp !< spectrum of the task
+    type(atom_type), pointer, optional :: atoms(:)       !< atoms of that spectrum
+    integer, optional :: i_mu                            !< direction index
+    integer, optional :: i_nu                            !< window index
     !-----------------------------------------------------------------------------
     if (present(i_mu)) self%i_mu = i_mu
     if (present(i_nu)) self%i_nu = i_nu
@@ -526,9 +591,12 @@ MODULE m3d_patch_mod
   END SUBROUTINE pre_init_and_link
 
   !===============================================================================
+  !> Sets the number of variables and of atmosphere copies in mem.
+  !===============================================================================
   SUBROUTINE set_nv_and_nw (self, nv, nw)
     class(m3d_patch_t) :: self
-    integer :: nv, nw
+    integer :: nv !< variables per cell; 0 for a task without mem
+    integer :: nw !< atmosphere copies, 1 + output directions with rotate_atmos
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_nv_and_nw')
     self%nv = nv
@@ -537,6 +605,9 @@ MODULE m3d_patch_mod
     call trace%end()
   END SUBROUTINE set_nv_and_nw
   
+  !===============================================================================
+  !> Allocates mem through patch_t_init, keeping the status bits, and converts
+  !> pcheck to the patch's own mesh.
   !===============================================================================
   SUBROUTINE init (self)
     class(m3d_patch_t) :: self
@@ -572,6 +643,10 @@ MODULE m3d_patch_mod
     call trace%end(itimer)
   END SUBROUTINE init
 
+  !===============================================================================
+  !> Sets the start time: the output tasks start after the NLTE iterations, and
+  !> the final ray after the output scattering iterations as well. Every task
+  !> then starts t_offset*dtime later, which puts the RT tasks after the others.
   !===============================================================================
   SUBROUTINE set_initial_time (self)
     class(m3d_patch_t) :: self
@@ -622,6 +697,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE resolve_nlte_iterations
 
   !===============================================================================
+  !> Sets the last update of the task from its kind and pass.
+  !===============================================================================
   SUBROUTINE set_maxiter (self)
     class (m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
@@ -648,7 +725,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE set_maxiter
   
   !===============================================================================
-  !> Initialize boundary bits
+  !> Allocates the boundaries. The final ray of a run without NLTE iterations
+  !> has no upper z boundary.
   !===============================================================================
   SUBROUTINE init_bdries (self)
     class(m3d_patch_t):: self
@@ -662,6 +740,10 @@ MODULE m3d_patch_mod
     endif
   END SUBROUTINE init_bdries
 
+  !===============================================================================
+  !> Before an update: finishes the internal-spectrum tasks once the run has
+  !> converged, and the output tasks after a stop request with stop_exit;
+  !> otherwise initialises the task on its first update.
   !===============================================================================
   SUBROUTINE pre_update (self)
     class(m3d_patch_t), target :: self
@@ -695,6 +777,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE pre_update
 
   !===============================================================================
+  !> Runs execute and post_update under the memory lock, unless the task has finished.
+  !===============================================================================
   SUBROUTINE update (self)
     class(m3d_patch_t) :: self
     integer, save :: itimer=0
@@ -710,12 +794,14 @@ MODULE m3d_patch_mod
   END SUBROUTINE update
 
   !===============================================================================
+  !> Does nothing; the task kinds override it.
+  !===============================================================================
   SUBROUTINE execute (self)
     class(m3d_patch_t) :: self
-    !-----------------------------------------------------------------------------
-    ! fallback
   END SUBROUTINE execute
   
+  !===============================================================================
+  !> Logs the update and prints the debug output.
   !===============================================================================
   SUBROUTINE post_update (self)
     class(m3d_patch_t) :: self
@@ -736,6 +822,8 @@ MODULE m3d_patch_mod
     call trace%end(itimer)
   END SUBROUTINE post_update
 
+  !===============================================================================
+  !> Writes the output directions and their weights to angle_quadrature.txt, once.
   !===============================================================================
   SUBROUTINE save_angle_quadrature ()
     integer :: lunit, i, nmu
@@ -759,6 +847,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE save_angle_quadrature
 
   !===============================================================================
+  !> Counts the update and finishes the task after its last one.
+  !===============================================================================
   SUBROUTINE rotate (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
@@ -769,6 +859,9 @@ MODULE m3d_patch_mod
     call self%task_t%rotate
   END SUBROUTINE rotate
 
+  !===============================================================================
+  !> Kind, id, slab, i_nu and i_mu of the task, at console level 3 with the
+  !> thread place, the queue place and the time.
   !===============================================================================
   FUNCTION m3d_patch_info (self) result(text)
     class(m3d_patch_t) :: self
@@ -786,6 +879,8 @@ MODULE m3d_patch_mod
   END FUNCTION m3d_patch_info
 
   !===============================================================================
+  !> Kind and id of the task.
+  !===============================================================================
   FUNCTION m3d_patch_info2 (self) result(text)
     class(m3d_patch_t) :: self
     character(len=38) :: text
@@ -793,6 +888,9 @@ MODULE m3d_patch_mod
     write(text, '(A12, I8)') trim(self%kind), self%id
   END FUNCTION m3d_patch_info2
   
+  !===============================================================================
+  !> Moves the task to the end time and stops it from being downloaded or
+  !> scheduled again.
   !===============================================================================
   SUBROUTINE finish (self)
     class(m3d_patch_t):: self
@@ -807,6 +905,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE finish
 
   !===============================================================================
+  !> Whether the task has reached the end time.
+  !===============================================================================
   LOGICAL FUNCTION is_finished (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
@@ -814,11 +914,19 @@ MODULE m3d_patch_mod
   END FUNCTION is_finished
 
   !===============================================================================
+  !> How the task relates to another one. A frozen task is unrelated, and so are
+  !> two virtual tasks. Tasks of one kind are related within their slab, and across
+  !> slabs within one window and direction, where they also exchange data
+  !> (download). Tasks of different kinds are related only within their slab, and
+  !> not when both have a window, or both a direction, and these differ. Of the
+  !> other tasks, only the task's own depth patch is related, as one it needs.
+  !===============================================================================
   SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
     class(m3d_patch_t) :: self
-    class(task_t), pointer :: another     !< another task in the list
-    logical :: needed, needs_me, download !< Is the other task: needed,
-                                             !    does it need me, should I download?
+    class(task_t), pointer :: another !< another task in the list
+    logical :: needed                 !< whether this task needs the other one
+    logical :: needs_me               !< whether the other task needs this one
+    logical :: download               !< whether to download the other task
     class(task_t), pointer :: other
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%m3d_nbor_relations')
@@ -889,6 +997,9 @@ MODULE m3d_patch_mod
   END SUBROUTINE m3d_nbor_relations
   
   !===============================================================================
+  !> Appends the task to its task list and hash table, unless it runs no update
+  !> (maxiter < 0).
+  !===============================================================================
   SUBROUTINE append_to_task_list(self)
     class (m3d_patch_t), target :: self
     class (m3d_halo_t), pointer :: link
@@ -911,11 +1022,12 @@ MODULE m3d_patch_mod
   END SUBROUTINE append_to_task_list
   
   !===============================================================================
-  !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
+  !> Writes the kind, id, rank, level, window, direction, boundary and virtual
+  !> bits and position of the task, by default to the rank's log.
   !===============================================================================
   SUBROUTINE task_info (self, unit)
     class(m3d_patch_t):: self
-    integer, optional:: unit
+    integer, optional:: unit !< output unit
     integer:: unit_L
     !-----------------------------------------------------------------------------
     unit_L = shared%option (unit, io_unit%mpi)
@@ -926,6 +1038,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE task_info
   
   !===============================================================================
+  !> Takes the level of the depth patch.
+  !===============================================================================
   SUBROUTINE init_level (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
@@ -934,11 +1048,11 @@ MODULE m3d_patch_mod
   END SUBROUTINE init_level
   
   !===============================================================================
+  !> Does nothing: the tasks fill no guard cells.
+  !===============================================================================
   SUBROUTINE extrapolate_guards (self, target_mem)
     class(m3d_patch_t):: self
-    real(4), pointer, contiguous, optional:: target_mem(:,:,:,:)
-    !.............................................................................
-    ! do nothing
+    real(4), pointer, contiguous, optional:: target_mem(:,:,:,:) !< unused
   END SUBROUTINE
   
   !===============================================================================
@@ -949,7 +1063,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   LOGICAL FUNCTION is_ahead_of (self, target)
     class (m3d_patch_t) :: self
-    class (task_t), pointer :: target
+    class (task_t), pointer :: target !< the task that may become ready
     !.............................................................................
     real:: grace
     real(8):: nbtime, tgtime
@@ -1008,12 +1122,12 @@ MODULE m3d_patch_mod
   !===============================================================================
   !> Put the output-spectrum tasks back in play, once the last nlte_patch has
   !> converged.  This has to be done explicitly: check_ready() is normally called
-  !> on a task by its nbors, as they update, but the nbors of these tasks -- the
-  !> nlte_patches and compositions of their slabs -- may all have finished by
+  !> on a task by its nbors, as they update, but the nbors of these tasks (the
+  !> nlte_patches and compositions of their slabs) may all have finished by
   !> now, so no update that would check them is left.
   !===============================================================================
   SUBROUTINE release_output_tasks (task_list)
-    class(list_t), pointer :: task_list
+    class(list_t), pointer :: task_list !< the task list
     class(link_t), pointer :: link
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%release_output_tasks')
@@ -1037,7 +1151,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   FUNCTION comp_ptr (self, i) RESULT (comp)
     class(m3d_patch_t), target :: self
-    integer, intent(in) :: i
+    integer, intent(in) :: i !< copy index, 1 + output direction
     class(composition_type), pointer :: comp
     !-----------------------------------------------------------------------------
     if (i == 1) then
@@ -1048,9 +1162,12 @@ MODULE m3d_patch_mod
   END FUNCTION comp_ptr
 
   !===============================================================================
+  !> Allocates mem, unless the task has no variables (nv = 0), and points
+  !> authority_mem at its interior.
+  !===============================================================================
   SUBROUTINE allocate_mem (self, m_in)
     class(m3d_patch_t):: self
-    integer, intent(in), optional :: m_in(6)
+    integer, intent(in), optional :: m_in(6) !< shape of mem; by default the patch's own
     integer :: m(6), li(3), ui(3)
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -1121,7 +1238,7 @@ MODULE m3d_patch_mod
   !> composition and the model atoms that the final-pass patches merged their copies
   !> into. Called once by the main program after the task list has run, when every
   !> merge is complete; does nothing unless a patch collected diagnostics
-  !> (save_linelist). This driver only walks the composition and the model atoms -- it
+  !> (save_linelist). This driver only walks the composition and the model atoms; it
   !> stays here because linelist_mod sits below composition_mod/atom_mod in the module
   !> hierarchy and cannot see their types.
   !===============================================================================
@@ -1176,6 +1293,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE write_linelist_out
 
   !===============================================================================
+  !> With check_NaN, stops at the first NaN or infinity in mem.
+  !===============================================================================
   SUBROUTINE check_mem_NaN (self)
     class(m3d_patch_t):: self
     integer :: i,j,k,v,t,w
@@ -1214,10 +1333,12 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_mem_NaN
 
   !===============================================================================
+  !> Sets the queue place of another task, logged at console level 3.
+  !===============================================================================
   SUBROUTINE set_place (self, other, place)
     class(m3d_patch_t) :: self
-    class(task_t):: other
-    integer :: place
+    class(task_t):: other !< the task to place
+    integer :: place      !< its place
     !-----------------------------------------------------------------------------
     other%place = place
     if (self%id /= other%id .and. console_on(ch_m3d, 3)) then
@@ -1227,10 +1348,12 @@ MODULE m3d_patch_mod
   END SUBROUTINE set_place
 
   !===============================================================================
+  !> Prints the task's kind, slab, window and direction, followed by arr or text.
+  !===============================================================================
   SUBROUTINE print_to_stdout (self, arr, text)
     class(m3d_patch_t) :: self
-    real(8), dimension(:), optional :: arr
-    character(len=*), optional :: text
+    real(8), dimension(:), optional :: arr !< values to print, at most six
+    character(len=*), optional :: text     !< text to print
     !-----------------------------------------------------------------------------
     !$omp critical (cr_print_to_stdout)
     if (present(arr)) then
@@ -1257,6 +1380,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE print_to_stdout
 
   !===============================================================================
+  !> Prints the task at console level 2; the task kinds add their check values.
+  !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
@@ -1266,6 +1391,8 @@ MODULE m3d_patch_mod
   END SUBROUTINE print_post_update_info
 
   !===============================================================================
+  !> Whether pcheck lies in the patch.
+  !===============================================================================
   FUNCTION check_in_bounds (self) result (cib)
     class(m3d_patch_t) :: self
     logical :: cib
@@ -1274,9 +1401,11 @@ MODULE m3d_patch_mod
   END FUNCTION check_in_bounds
 
   !===============================================================================
+  !> Logs an event of a task, with time stamp, rank and thread, to the dispatcher log.
+  !===============================================================================
   SUBROUTINE print_execution_history (self, status)
-    class(task_t) :: self
-    character(len=3) :: status
+    class(task_t) :: self      !< the task
+    character(len=3) :: status !< the event: PRE, END, CON or SKP
     !-----------------------------------------------------------------------------
     !$omp critical (cr_print_execution_history)
     write(io_unit%dispatcher, &
@@ -1287,12 +1416,15 @@ MODULE m3d_patch_mod
   END SUBROUTINE print_execution_history
 
   !===============================================================================
-  !> Return a unique hash key for the patch
+  !> The hash key of the task: its slab, i_nu, i_mu and the hash of its kind.
   !===============================================================================
   FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
     class(m3d_patch_t):: self
-    real(8), dimension(3), optional:: position, origin, size, box
-    integer, optional:: level
+    real(8), dimension(3), optional:: position !< unused
+    real(8), dimension(3), optional:: origin   !< unused
+    real(8), dimension(3), optional:: size     !< unused
+    real(8), dimension(3), optional:: box      !< unused
+    integer, optional:: level                  !< unused
     integer:: key(4)
     !-----------------------------------------------------------------------------
     key(1) = self%ipos(3) + 1 
@@ -1302,11 +1434,12 @@ MODULE m3d_patch_mod
   END FUNCTION hash_key
 
   !===============================================================================
-  !> Fast method to generate nbor lists in cases with very long task lists
+  !> Builds the neighbour list from hash keys: the depth patch, the parent and the
+  !> tasks of the key list.
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
     class(m3d_patch_t):: self
-    class(nbor_t), pointer:: nbors
+    class(nbor_t), pointer:: nbors !< the new neighbour list
     !.............................................................................
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
@@ -1331,20 +1464,26 @@ MODULE m3d_patch_mod
   END SUBROUTINE init_nbors_hash
 
   !===============================================================================
+  !> Adds the task stored under key, if any, to nbors.
+  !===============================================================================
   SUBROUTINE check_nbor (self, key, nbors)
     class(m3d_patch_t):: self
-    class(nbor_t), pointer:: nbors
-    integer:: key(4)
+    integer:: key(4)               !< hash key of the neighbour
+    class(nbor_t), pointer:: nbors !< neighbour list
     !-----------------------------------------------------------------------------
     call add_nbor_by_key (self, key, nbors)
   END SUBROUTINE check_nbor
 
   !===============================================================================
+  !> Shears a cube of the patch along the direction vec about the plane pivot_z:
+  !> each horizontal plane is shifted periodically by its distance to the pivot,
+  !> with bilinear interpolation and the ray_offset added.
+  !===============================================================================
   SUBROUTINE rotate_cube4 (self, vec, cube, do_log)
     class(m3d_patch_t) :: self
-    real(8), intent(in) :: vec(3)
-    real(4), intent(inout), dimension(:,:,:) :: cube
-    logical, intent(in), optional :: do_log
+    real(8), intent(in) :: vec(3)                    !< the ray direction
+    real(4), intent(inout), dimension(:,:,:) :: cube !< the field, sheared in place
+    logical, intent(in), optional :: do_log          !< interpolate ln(cube)
     real(4), dimension(:,:), allocatable :: shifted
     real(4), dimension(2) :: delta, deltak
     real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
@@ -1406,8 +1545,11 @@ MODULE m3d_patch_mod
   END SUBROUTINE rotate_cube4
 
   !===============================================================================
+  !> Appends the hash key of another task to the key list.
+  !===============================================================================
   SUBROUTINE add_to_key_list (self, other)
-    class(m3d_patch_t), intent(inout) :: self, other
+    class(m3d_patch_t), intent(inout) :: self
+    class(m3d_patch_t), intent(inout) :: other !< the linked task
     class(key_link_t), pointer :: next, link, prev
     ! ----------------------------------------------------------------------------
     nullify(prev)
@@ -1426,9 +1568,11 @@ MODULE m3d_patch_mod
   END SUBROUTINE add_to_key_list
 
   !===============================================================================
+  !> Whether the task goes ahead of another in the ready queue.
+  !===============================================================================
   FUNCTION queue_before (self, other) result(queue)
     class(m3d_patch_t):: self
-    class(task_t):: other
+    class(task_t):: other !< the task already queued
     logical :: queue
     !-----------------------------------------------------------------------------
     if (self%prepend) then
@@ -1439,6 +1583,9 @@ MODULE m3d_patch_mod
     endif
   END FUNCTION queue_before
 
+  !===============================================================================
+  !> Sorts the neighbour list by the number of hash-key entries a neighbour
+  !> shares with the task, most first, and keeps each neighbour's level.
   !===============================================================================
   SUBROUTINE sort_nbors (self)
     class(m3d_patch_t) :: self
