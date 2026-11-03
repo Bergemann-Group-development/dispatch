@@ -24,7 +24,7 @@ MODULE experiment_mod
   private
   type, public, extends(gpatch_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
-    integer :: iter=0, maxiter, zs, ze
+    integer :: iter=0, zs, ze
     integer :: dims(3), nbox(3)
   contains
     procedure:: pre_init
