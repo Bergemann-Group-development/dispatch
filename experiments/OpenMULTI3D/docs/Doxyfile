@@ -12,6 +12,9 @@ RECURSIVE              = YES
 # The *.inc files are fragments included into other sources, not compilation units.
 FILE_PATTERNS          = *.f90 *.F90 *.f *.h
 EXCLUDE_SYMLINKS       = YES
+# Keep the '%' of derived-type components in the doc comments (see the filter).
+FILTER_PATTERNS        = "*.f90=perl docs/doxygen_filter.pl" "*.F90=perl docs/doxygen_filter.pl" \
+                         "*.f=perl docs/doxygen_filter.pl"
 OPTIMIZE_FOR_FORTRAN   = YES
 FULL_PATH_NAMES        = YES
 STRIP_FROM_PATH        = .
