@@ -5,8 +5,8 @@
 !> boundary buffer therefore exists only while the column runs, and at most one
 !> per busy thread.
 !>
-!> Within a slab the column runs the update sequence a slab task had
-!> (pre_update, update, rotate), so each slab keeps its own iteration count,
+!> Within a slab the column runs the update sequence of a task (pre_update,
+!> update, rotate), so each slab keeps its own iteration count,
 !> time and files.  With premature_finish, slabs freeze from the bottom once
 !> their atoms and those of all deeper slabs have converged.  In an up column
 !> the highest frozen slab retains its last exit plane, in memory or with
@@ -35,6 +35,9 @@ MODULE rt_column_mod
   implicit none
   private
 
+  !===============================================================================
+  !> The RT task of one frequency window and ray direction.
+  !===============================================================================
   type, public, extends(m3d_patch_t) :: rt_column_t
     type(rt_patch_ptr_t), allocatable :: slab(:)   !< in sweep order
   contains
@@ -45,21 +48,33 @@ MODULE rt_column_mod
     procedure :: init_nbors_hash
   end type rt_column_t
 
+  !===============================================================================
+  !> Pointer to a composition patch, for arrays of them.
+  !===============================================================================
   type :: composition_ptr_t
     class(composition_patch_t), pointer :: p => null()
   end type composition_ptr_t
 
+  !===============================================================================
   !> The memory terms of report_memory_estimate, in bytes.  The phases are the EOS
   !> setup, the NLTE iteration and the output pass; index 1 of the RT terms is the
   !> NLTE phase, index 2 the output phase.  trans_copies are the transition copies
   !> of slabs not made yet; those of existing slabs are part of os%gb.  The point
   !> tables of the internal windows (index 1) are kept to the end of the run, those
   !> of the output windows (index 2) exist in the output phase.
+  !===============================================================================
   type :: memory_terms_t
-    integer :: n_comp=0, n_column(2)=0
-    real(8) :: eos_work=0d0, eos_retained=0d0, atom(2)=0d0, trans_copies=0d0
-    real(8) :: max_work(2)=0d0, max_boundary(2)=0d0, sum_retained(2)=0d0, rt_persistent=0d0
-    real(8) :: point_tables(2)=0d0
+    integer :: n_comp=0            !< number of composition patches
+    integer :: n_column(2)=0       !< number of columns per RT phase
+    real(8) :: eos_work=0d0        !< largest EOS workspace of one composition patch
+    real(8) :: eos_retained=0d0    !< retained EOS species of all composition patches
+    real(8) :: atom(2)=0d0         !< atom arrays per RT phase
+    real(8) :: trans_copies=0d0    !< transition copies of the slabs not made yet
+    real(8) :: max_work(2)=0d0     !< largest slab workspace per RT phase
+    real(8) :: max_boundary(2)=0d0 !< largest column boundary buffer per RT phase
+    real(8) :: sum_retained(2)=0d0 !< retained RT fields of all slabs per RT phase
+    real(8) :: rt_persistent=0d0   !< u_phase of all slabs
+    real(8) :: point_tables(2)=0d0 !< point tables of the internal and the output windows
   end type memory_terms_t
 
   !> With n_windows left at its default, the estimated peak must stay within this
@@ -79,7 +94,7 @@ contains
 !> are built.
 !===============================================================================
 SUBROUTINE init_rt_columns (task_list)
-  class(list_t) :: task_list
+  class(list_t) :: task_list !< task list holding the composition patches
   class(link_t), pointer :: link
   type(rt_patch_ptr_t), allocatable :: slabs(:), grown(:)
   type(composition_ptr_t), allocatable :: comps(:), grown_comps(:)
@@ -150,7 +165,7 @@ END SUBROUTINE init_rt_columns
 !> (combine_twin_hemispheres), and the final pass reads the output pair.
 !===============================================================================
 SUBROUTINE set_twins (slabs)
-  type(rt_patch_ptr_t), intent(in) :: slabs(:)
+  type(rt_patch_ptr_t), intent(in) :: slabs(:) !< RT slabs of one depth slab
   class(rt_patch_t), pointer :: s, other
   integer :: i, j
   !-----------------------------------------------------------------------------
@@ -211,10 +226,15 @@ SUBROUTINE init_column (self)
 END SUBROUTINE init_column
 
 !===============================================================================
+!> The unique hash key of the column: its window i_nu and direction i_mu.
+!===============================================================================
 FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
   class(rt_column_t):: self
-  real(8), dimension(3), optional:: position, origin, size, box
-  integer, optional:: level
+  real(8), dimension(3), optional:: position !< unused
+  real(8), dimension(3), optional:: origin   !< unused
+  real(8), dimension(3), optional:: size     !< unused
+  real(8), dimension(3), optional:: box      !< unused
+  integer, optional:: level                  !< unused
   integer:: key(4)
   !-----------------------------------------------------------------------------
   key = [0, self%i_nu, self%i_mu, hash_string('rt_column')]
@@ -290,8 +310,8 @@ contains
   !> Free a plane that no slab reads any more, through the slab that made it.
   !=============================================================================
   subroutine free (plane, prev)
-    real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane
-    class(rt_patch_t), pointer :: prev
+    real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane !< plane to free, nullified
+    class(rt_patch_t), pointer :: prev                            !< slab that made it
     !---------------------------------------------------------------------------
     if (.not. associated(plane)) return
     prev%mem => plane
@@ -319,18 +339,20 @@ END SUBROUTINE finish
 
 !===============================================================================
 !> Dependencies of a column:
-!>   nlte_patch   needed and needs me: iteration k of an iteration column needs
-!>                update k of every slab's populations, and update k+1 needs the
-!>                rates of every column's iteration k.
-!>   composition  needed: the slab's composition must exist.
-!>   rt_column    the i_mu twin of a window, needed and needs me: iteration k+1
-!>                reads the hemisphere the twin combined at the end of k; the
-!>                final column needs the output scattering pair of its i_nu.
+!>  - nlte_patch, needed and needs me: iteration k of an iteration column needs
+!>    update k of every slab's populations, and update k+1 needs the rates of
+!>    every column's iteration k.
+!>  - composition, needed: the slab's composition must exist.
+!>  - rt_column, the i_mu twin of a window, needed and needs me: iteration k+1
+!>    reads the hemisphere the twin combined at the end of k; the final column
+!>    needs the output scattering pair of its i_nu.
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_column_t) :: self
-  class(task_t), pointer :: another
-  logical :: needed, needs_me, download
+  class(task_t), pointer :: another !< the other task
+  logical :: needed                 !< self needs another, set
+  logical :: needs_me               !< another needs self, set
+  logical :: download               !< self downloads data from another, set to .false.
   !-----------------------------------------------------------------------------
   needed = .false.; needs_me = .false.; download = .false.
   select case (another%kind)
@@ -355,9 +377,14 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
 END SUBROUTINE nbor_relations
 
 !===============================================================================
+!> Builds the neighbour list from the hash keys: the nlte and composition patches
+!> of every slab and the twin column of the window. A final column takes the
+!> output scattering pair instead of a twin, and an output column also the final
+!> column (i_mu = -1).
+!===============================================================================
 SUBROUTINE init_nbors_hash (self, nbors)
   class(rt_column_t):: self
-  class(nbor_t), pointer:: nbors
+  class(nbor_t), pointer:: nbors !< neighbour list, added to
   integer :: j, key(4)
   !-----------------------------------------------------------------------------
   do j=1, size(self%slab)
@@ -398,8 +425,8 @@ END SUBROUTINE init_nbors_hash
 !> window_memory_fraction covers the rest.
 !===============================================================================
 SUBROUTINE choose_n_windows (comps, list)
-  type(composition_ptr_t), intent(in) :: comps(:)
-  class(list_t), intent(in) :: list
+  type(composition_ptr_t), intent(in) :: comps(:) !< composition patches of the rank
+  class(list_t), intent(in) :: list               !< task list
   type(memory_terms_t) :: fixed, terms
   real(8) :: limit, estimate, best_estimate
   integer :: n, n_max, n_default, best
@@ -465,8 +492,8 @@ END SUBROUTINE choose_n_windows
 !> per i_nu.
 !===============================================================================
 SUBROUTINE predicted_rt_terms (comps, terms)
-  type(composition_ptr_t), intent(in) :: comps(:)
-  type(memory_terms_t), intent(inout) :: terms
+  type(composition_ptr_t), intent(in) :: comps(:) !< composition patches of the rank
+  type(memory_terms_t), intent(inout) :: terms    !< memory terms, RT terms added
   type(slab_group_t), allocatable :: groups(:)
   type(slab_shape_t) :: shape
   real(8) :: work, retained, boundary, persistent
@@ -504,8 +531,8 @@ END SUBROUTINE predicted_rt_terms
 !> on n_windows.
 !===============================================================================
 SUBROUTINE fixed_memory_terms (list, terms)
-  class(list_t), intent(in) :: list
-  type(memory_terms_t), intent(out) :: terms
+  class(list_t), intent(in) :: list          !< task list
+  type(memory_terms_t), intent(out) :: terms !< memory terms, EOS and atom terms set
   class(link_t), pointer :: link
   real(8) :: transient, retained, atom_nlte, atom_out
   !-----------------------------------------------------------------------------
@@ -539,8 +566,8 @@ END SUBROUTINE fixed_memory_terms
 !> windows, as a window frees its own only after its final pass.
 !===============================================================================
 FUNCTION peak_estimate (terms, phase) RESULT (estimate)
-  type(memory_terms_t), intent(in) :: terms
-  real(8), intent(out), optional :: phase(3)
+  type(memory_terms_t), intent(in) :: terms  !< memory terms
+  real(8), intent(out), optional :: phase(3) !< EOS, NLTE and output phase [bytes]
   real(8) :: estimate
   real(8), parameter :: gib=1024d0**3
   real(8) :: p(3)
@@ -561,8 +588,8 @@ END FUNCTION peak_estimate
 !> upper bound.
 !===============================================================================
 SUBROUTINE report_memory_estimate (list, estimate)
-  class(list_t), intent(in) :: list
-  real(8), intent(out) :: estimate
+  class(list_t), intent(in) :: list !< task list
+  real(8), intent(out) :: estimate  !< estimated peak [GiB]
   class(link_t), pointer :: link
   type(memory_terms_t) :: terms
   real(8), parameter :: gib=1024d0**3
@@ -636,7 +663,7 @@ END FUNCTION memory_limit
 !> still run out of memory, but one that fails would have.
 !===============================================================================
 SUBROUTINE check_memory_limit (estimate)
-  real(8), intent(in) :: estimate
+  real(8), intent(in) :: estimate !< estimated peak [GiB]
   real(8) :: limit
   character(len=160) :: msg
   !-----------------------------------------------------------------------------

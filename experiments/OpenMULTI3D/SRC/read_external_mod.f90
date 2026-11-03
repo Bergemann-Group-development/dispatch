@@ -1,6 +1,6 @@
 #include "../HOP/read_namelist.inc"
 !===============================================================================
-!> Reads a tabulated model atmosphere from a text file
+!> Reads the model atmosphere and builds the task list of the run.
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
@@ -42,10 +42,15 @@ MODULE read_external_mod
   USE console_mod
   implicit none
 
+  !===============================================================================
+  !> Reads the atmosphere and sets up the depth patches and RT columns.
+  !===============================================================================
   type, public:: read_external_t
-    class(task_list_t), pointer:: task_list
-    integer :: dims(3)=[1,1,1], n(3)
-    real(8) :: ds(3), size(3)
+    class(task_list_t), pointer:: task_list !< task list of the run
+    integer :: dims(3)=[1,1,1]              !< patch layout; dims(3) is the number of depth slabs
+    integer :: n(3)                         !< cells of the whole mesh
+    real(8) :: ds(3)                        !< cell size of the mesh [code units]
+    real(8) :: size(3)                      !< box size [code units]
   contains
     procedure:: init
     procedure:: init_exp
@@ -54,26 +59,34 @@ MODULE read_external_mod
     procedure:: read_original_snapshot
   end type read_external_t
 
+  !===============================================================================
+  !> Geometry of an MPI rank's domain (unused).
+  !===============================================================================
   type, public, extends(task_t):: rank_t
   end type
 
-  type(read_external_t), public:: read_external
-  type(rank_t) :: rank
-  real(4) :: origin(3) = [0., 0., 0.]
-  real(4), public :: vmic=-1
-  !> the model a saved atmosphere was computed from, as its params.nml names it
-  character(len=4096) :: saved_from_file=''
-  character(len=128) :: saved_from_format=''
-  integer :: saved_from_snap=0
+  type(read_external_t), public:: read_external !< the instance dispatch.f90 calls
+  type(rank_t) :: rank                          !< domain of this MPI rank (set, but unused)
+  real(4) :: origin(3) = [0., 0., 0.]           !< lower corner of the box [code units]
+  real(4), public :: vmic=-1                    !< microturbulence replacing the model's when >= 0 [km s^-1]
+  character(len=4096) :: saved_from_file=''     !< model file of a saved atmosphere, from its params.nml
+  character(len=128) :: saved_from_format=''    !< format of that model
+  integer :: saved_from_snap=0                  !< snapshot of that model
 
 contains
 
   !===============================================================================
+  !> Reads atmos_params and the atmosphere, then builds the task list: one depth
+  !> patch per depth slab, the RT columns, their neighbour lists and status bits.
+  !> Each OpenMP thread then initialises its share of the patches.
+  !> A saved atmosphere (atmos_format='save') supplies the mesh and the patches'
+  !> atmospheres; its params.nml names the model it came from.
+  !===============================================================================
   SUBROUTINE init(self, task_list, name)
     !-----------------------------------------------------------------------------
     class(read_external_t):: self
-    class(task_list_t),  pointer:: task_list
-    character(len=*),   optional:: name
+    class(task_list_t),  pointer:: task_list !< task list to allocate; nothing is done when associated
+    character(len=*),   optional:: name      !< unused
     !-----------------------------------------------------------------------------
     class(experiment_t), pointer:: patch
     class(link_t), pointer:: link, next
@@ -360,9 +373,10 @@ contains
   !> Read the model atmosphere file into ia with the reader of its format.
   !===============================================================================
   SUBROUTINE read_model (format, file, snap, use_abnd)
-    character(len=*), intent(in):: format, file
-    integer, intent(in):: snap
-    logical, intent(in):: use_abnd
+    character(len=*), intent(in):: format !< atmos_format, in lower case
+    character(len=*), intent(in):: file   !< model file or directory
+    integer, intent(in):: snap            !< snapshot number, for the Stagger format
+    logical, intent(in):: use_abnd        !< keep the abundances of a MARCS model
     !-----------------------------------------------------------------------------
     select case (format)
      case('stagger')
@@ -407,7 +421,7 @@ contains
   !> model's mean vmic, which sets opac_table_vmic when a model is read directly.
   !===============================================================================
   REAL(4) FUNCTION saved_mean_vmic (save_dir) result(vmic_mean)
-    character(len=*), intent(in):: save_dir
+    character(len=*), intent(in):: save_dir !< run directory of the saved atmosphere
     type(m3d_patch_t) :: layout                         ! for the atmos slot indices
     real(4), dimension(:,:,:,:,:), allocatable :: atmos
     character(len=512) :: name
@@ -456,8 +470,8 @@ contains
   !===============================================================================
   SUBROUTINE read_original_snapshot (self, save_dir, n_copies)
     class(read_external_t):: self
-    character(len=*), intent(in):: save_dir
-    integer, intent(in):: n_copies
+    character(len=*), intent(in):: save_dir !< run directory of the saved atmosphere
+    integer, intent(in):: n_copies          !< atmosphere copies the run needs, 1 + output directions
     character(len=512) :: line, name
     integer :: lunit, iostat, saved_copies, sizes(6)
     real(8) :: box(3)
@@ -487,10 +501,13 @@ contains
   END SUBROUTINE read_original_snapshot
 
   !===============================================================================
+  !> Reads the mesh of a saved atmosphere from its atmos_mesh.txt, one entry per
+  !> depth slab, and sets the box, the mesh and the slab heights in ia.
+  !===============================================================================
   SUBROUTINE read_saved_snapshot (self, atmos_file, dims)
     class(read_external_t):: self
-    character(len=*), intent(in):: atmos_file
-    integer, intent(in):: dims
+    character(len=*), intent(in):: atmos_file !< run directory of the saved atmosphere
+    integer, intent(in):: dims                !< number of depth slabs
     integer:: lunit, iostat, i, nz
     !-----------------------------------------------------------------------------
     save_atmos = .false.
@@ -516,12 +533,13 @@ contains
     close(lunit)
   END SUBROUTINE read_saved_snapshot
 
-!===============================================================================
-!> Initialize a minimum amount of patch information in a Cartesian arrangement
-!===============================================================================
+  !===============================================================================
+  !> Pre-initialises a depth patch with the box, mesh and slab layout of the
+  !> atmosphere. The caller has set its ipos, rank and ip.
+  !===============================================================================
   SUBROUTINE setup_patch (self, patch)
     class (read_external_t):: self
-    class (experiment_t), intent(inout), target :: patch
+    class (experiment_t), intent(inout), target :: patch !< depth patch of one slab
     !-----------------------------------------------------------------------------
     call trace%begin ('read_external_t%setup_patch')
     patch%task_list => self%task_list
@@ -537,6 +555,9 @@ contains
     call trace%end ()
   END SUBROUTINE setup_patch
 
+  !===============================================================================
+  !> Initialises the depth patches of the task list, dealt to the OpenMP threads
+  !> in turn. Call it inside a parallel region.
   !===============================================================================
   SUBROUTINE init_exp (self)
     class(read_external_t):: self
@@ -561,8 +582,11 @@ contains
   END SUBROUTINE init_exp
 
   !===============================================================================
+  !> Builds the neighbour list of every task, the tasks shared out between
+  !> the OpenMP threads in blocks, and sorts each list.
+  !===============================================================================
   SUBROUTINE init_all_nbors (self)
-    class(list_t):: self
+    class(list_t):: self !< task list
     class(link_t), pointer:: link
     integer:: i, i0, i1, i2, m, n=0
     real(8):: time
@@ -600,9 +624,13 @@ contains
   END SUBROUTINE init_all_nbors
 
   !===============================================================================
+  !> Replaces the neighbour list of one task, from the task's own hash-key
+  !> relations or, without hashing, by overlap with every task of the list, and
+  !> resets its status bits.
+  !===============================================================================
   SUBROUTINE init_nbors (self, link)
-    class(list_t):: self
-    class(link_t), pointer:: link
+    class(list_t):: self          !< task list
+    class(link_t), pointer:: link !< link of the task
     !.............................................................................
     class(nbor_t), pointer:: new_nbors, old_nbors
     integer, save:: itimer=0
@@ -647,10 +675,13 @@ contains
   END SUBROUTINE init_nbors
 
   !===============================================================================
+  !> Builds a neighbour list from the tasks whose authority the task's interest
+  !> region overlaps, considering only pairs with a task on this MPI rank.
+  !===============================================================================
   SUBROUTINE init_nbors_by_level (self, link, nbors)
-    class(list_t)          :: self
-    class(link_t)          :: link
-    class(nbor_t), pointer :: nbors
+    class(list_t)          :: self  !< task list
+    class(link_t)          :: link  !< link of the task
+    class(nbor_t), pointer :: nbors !< the new neighbour list
     !.............................................................................
     class(link_t), pointer :: scan
     class(task_t), pointer :: task, nbtask
@@ -692,13 +723,17 @@ contains
   END SUBROUTINE init_nbors_by_level
 
   !===============================================================================
+  !> Inserts the task of link into a neighbour list, ordered by level, when
+  !> the two tasks depend on each other in either direction.
+  !===============================================================================
   SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
-    class(link_t):: self
-    class(link_t), pointer:: link
-    class(nbor_t), pointer, optional:: nbors
-    class(nbor_t), pointer, optional:: nbor
-    logical,                optional:: added
-    logical,                optional:: by_quality, by_rank
+    class(link_t):: self                          !< link of the task the list belongs to
+    class(link_t), pointer:: link                 !< link of the candidate neighbour
+    class(nbor_t), pointer, optional:: nbors      !< list to insert into; self%nbor when absent
+    class(nbor_t), pointer, optional:: nbor       !< the new list entry
+    logical,                optional:: added      !< whether the neighbour was inserted
+    logical,                optional:: by_quality !< unused
+    logical,                optional:: by_rank    !< unused
     !.............................................................................
     logical:: ok
     class(nbor_t), pointer:: next, prev, nbor_l
@@ -785,8 +820,10 @@ contains
   END SUBROUTINE add_nbor
 
   !===============================================================================
+  !> Gives every task of the list a unique id.
+  !===============================================================================
   SUBROUTINE init_ids (list)
-    class(list_t):: list
+    class(list_t):: list !< task list
     class(link_t), pointer:: link
     class(task_t), pointer:: task
     !-----------------------------------------------------------------------------
@@ -801,8 +838,10 @@ contains
   END SUBROUTINE init_ids
 
   !===============================================================================
+  !> Removes and deallocates the tasks flagged external.
+  !===============================================================================
   SUBROUTINE remove_external (list)
-    class(list_t):: list
+    class(list_t):: list !< task list
     class(link_t), pointer:: link, next
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -823,8 +862,10 @@ contains
   END SUBROUTINE remove_external
 
   !===============================================================================
+  !> Writes the status bits and identity of every task to the queue log.
+  !===============================================================================
   SUBROUTINE print_list (list)
-    class(list_t):: list
+    class(list_t):: list !< task list
     class(link_t), pointer:: link
     class(task_t), pointer:: task
     integer, save :: itimer=0
