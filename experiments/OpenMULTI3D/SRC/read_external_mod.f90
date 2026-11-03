@@ -25,7 +25,6 @@ MODULE read_external_mod
   USE experiment_mod, only: experiment_t
   USE composition_mod, only: opac_table_vmic, read_departures
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
-  USE patch_mod
   USE const_mod, only:cc
   USE m3d_patch_mod, only: m3d_patch_t, nz_total, use_rho, use_ne, atmos_format, amr, rotate_atmos, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
@@ -54,11 +53,7 @@ MODULE read_external_mod
     procedure:: read_original_snapshot
   end type read_external_t
 
-  type, public, extends(task_t):: rank_t
-  end type
-
   type(read_external_t), public:: read_external
-  type(rank_t) :: rank
   real(4) :: origin(3) = [0., 0., 0.]
   real(4), public :: vmic=-1
   ! the model a saved atmosphere was computed from, as its params.nml names it
@@ -229,15 +224,6 @@ contains
     patches_per_mpi = self%dims(3)/mpi%size
     mpi_coords%npatch(3) = patches_per_mpi
     io%mpi_dims = mpi_coords%dims
-    !-----------------------------------------------------------------------------
-    ! Set attritbutes of the rank_t data type -- just enough to use distance().
-    !-----------------------------------------------------------------------------
-    rank%periodic = .true.
-    rank%box = self%size
-    rank%size = rank%box/mpi_coords%dims
-    rank%ds(1:2) = rank%size(1:2)
-    rank%ds(3) = rank%size(3)/patches_per_mpi
-    rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + origin
     !-----------------------------------------------------------------------------
     ! Begin on task list
     !-----------------------------------------------------------------------------
@@ -569,6 +555,10 @@ contains
     integer, save:: itimer=0
     !.............................................................................
     if (self%hands_off_nbor_lists) return
+    if (.not. self%use_hash) then
+      call console_error ('neighbour lists are built from hash keys; use_hash=F in TASK_LIST_PARAMS is not supported')
+      error stop
+    endif
     call trace%begin('read_external_mod%init_all_nbors', itimer=itimer)
     if (self%verbose > 0) &
       call timer%tic (time)
@@ -610,18 +600,14 @@ contains
     call trace%begin('read_external_mod%init_nbors', itimer=itimer)
     call link%task%log ('init_nbors')
     nullify (new_nbors)
-    if (self%use_hash) then
-      !$omp atomic write
-      link%task%n_nbors = 0
-      select type (task => link%task)
-       class is (m3d_patch_t)
-        call task%init_nbors_hash(new_nbors)
-       class is (experiment_t)
-        call task%init_nbors_hash(new_nbors)
-      end select
-    else
-      call init_nbors_by_level (self, link, new_nbors)
-    end if
+    !$omp atomic write
+    link%task%n_nbors = 0
+    select type (task => link%task)
+     class is (m3d_patch_t)
+      call task%init_nbors_hash(new_nbors)
+     class is (experiment_t)
+      call task%init_nbors_hash(new_nbors)
+    end select
     !-----------------------------------------------------------------------------
     ! Swap the link%nbor pointer under lock
     !-----------------------------------------------------------------------------
@@ -645,144 +631,6 @@ contains
       call link%info ('init_nbors')
     call trace%end (itimer)
   END SUBROUTINE init_nbors
-
-  !===============================================================================
-  SUBROUTINE init_nbors_by_level (self, link, nbors)
-    class(list_t)          :: self
-    class(link_t)          :: link
-    class(nbor_t), pointer :: nbors
-    !.............................................................................
-    class(link_t), pointer :: scan
-    class(task_t), pointer :: task, nbtask
-    class(nbor_t), pointer :: nbor, nbor2
-    real(8)                :: distance(3)
-    logical                :: added
-    integer, save          :: itimer=0
-    !-----------------------------------------------------------------------------
-    ! Save a pointer to the current nbor list, to remove after adding a new
-    ! (to ensure that task%n_needed does not touch zero prematurely)
-    !-----------------------------------------------------------------------------
-    call trace%begin ('read_external_mod%init_nbors_by_level', itimer=itimer)
-    nullify (nbors)
-    !-----------------------------------------------------------------------------
-    ! Run through (only) tasks at the relevant levels
-    !-----------------------------------------------------------------------------
-    task => link%task
-    scan => self%head
-    do while (associated(scan))
-      nbtask => scan%task
-      if (task%rank == mpi%rank .or. nbtask%rank == mpi%rank) then
-        !--- does it have a chance to overlap? ---
-        distance = task%distance_to (nbtask)
-        if (all(distance < huge(1.0))) then
-          select type (task)
-           class is (patch_t)
-            if (task%interest%overlaps (nbtask%authority, distance)) then
-              if (nbtask%id /= task%id) then
-                call add_nbor (link, scan, nbors, nbor, added)
-                if (added) nbor%distance = distance
-              end if
-            end if
-          end select
-        endif
-      endif
-      scan => scan%next
-    end do
-    call trace%end (itimer)
-  END SUBROUTINE init_nbors_by_level
-
-  !===============================================================================
-  SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
-    class(link_t):: self
-    class(link_t), pointer:: link
-    class(nbor_t), pointer, optional:: nbors
-    class(nbor_t), pointer, optional:: nbor
-    logical,                optional:: added
-    logical,                optional:: by_quality, by_rank
-    !.............................................................................
-    logical:: ok
-    class(nbor_t), pointer:: next, prev, nbor_l
-    !integer, save:: itimer=0
-    !.............................................................................
-    !call trace%begin ('read_external_mod%add_nbor', itimer=itimer)
-    call link%lock%set ('add_nbor')
-    !-----------------------------------------------------------------------------
-    ! Use a class method to overload the allocation
-    !-----------------------------------------------------------------------------
-    call self%alloc_nbor (link, nbor_l)
-    !-----------------------------------------------------------------------------
-    ! Consider this carefully!
-    ! From Andrius: please consult me before changing this.
-    !-----------------------------------------------------------------------------
-    !call self%task%nbor_relations (nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
-    !                               nbor_l%download)
-    call self%check_nbor_relations(nbor_l%task, nbor_l%needed, nbor_l%needs_me, &
-      nbor_l%download)
-    if (.not. nbor_l%needed   .and. &
-      .not. nbor_l%needs_me .and. &
-      .not. nbor_l%download) then
-      deallocate(nbor_l)
-      call link%lock%unset('add_nbor')
-      !call trace%end(itimer)
-      if (present(added)) added=.false.
-      return
-    end if
-    ok = .true.
-    nullify (prev)
-    if (present(nbors)) then
-      next => nbors
-    else
-      next => self%nbor
-    end if
-    do while (associated(next))
-      if (next%task%id == link%task%id) then
-        !-------------------------------------------------------------------------
-        ! Return if link task is already in the nbor list
-        !-------------------------------------------------------------------------
-        ok = .false.
-        exit
-      else
-        if (next%task%level > link%task%level) then
-          !-----------------------------------------------------------------------
-          ! Found a task we should be ahead of, so insert here
-          !-----------------------------------------------------------------------
-          nbor_l%next => next
-          exit
-        end if
-      end if
-      prev => next
-      next => next%next
-    end do
-    if (ok) then
-      !---------------------------------------------------------------------------
-      ! Found a place to insert, it link it in
-      !---------------------------------------------------------------------------
-      if (associated(prev)) then
-        prev%next => nbor_l
-      else
-        !-------------------------------------------------------------------------
-        ! If prev is not associated, this is the first nbor
-        !-------------------------------------------------------------------------
-        if (present(nbors)) then
-          nbors => nbor_l
-        else
-          self%nbor => nbor_l
-        end if
-      end if
-      if (present(added)) added = .true.
-      link%task%n_nbors = link%task%n_nbors + 1
-      !$omp atomic update
-      link%task%n_needed = link%task%n_needed + 1
-    else
-      if (present(added)) added = .false.
-      write (stderr,*) 'WARNING: trying to add existing nbor', next%task%id
-    end if
-    if (present(nbor)) then
-      nbor => nbor_l
-    end if
-    call link%lock%unset ('add_nbor')
-    !call trace%end (itimer)
-  END SUBROUTINE add_nbor
 
   !===============================================================================
   SUBROUTINE init_ids (list)
