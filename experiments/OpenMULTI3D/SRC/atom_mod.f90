@@ -734,10 +734,10 @@ MODULE atom_mod
       j = trans%j
       ! A cut transition takes a detailed-balance pair instead of its radiative
       ! rates, formed in real(8), where n*_j/n*_i ~ exp(-h nu0/kT) is representable.
-      ! The line coefficients carry a factor h/4pi (init_einstein_coefficients).
+      ! A line's downward rate is its Einstein coefficient Aji.
       if (radiative_cut(self%ev(j) - self%ev(i), e_kT)) then
         if (kr <= self%nline) then
-          cut_rate = self%trans%line(kr)%Aji / h_4pi
+          cut_rate = self%trans%line(kr)%Aji
         else
           cut_rate = bf_cut_rate
         endif
@@ -1662,7 +1662,7 @@ MODULE atom_mod
 
       call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
         dble(line%grad), dble(line%gw1), dble(line%gw2), dble(line%gstk), line%unsold, &
-        line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+        line%i, line%j, i, s, 1.d0, dej, line%iso, &
         loggf, line%gv_in, line%grad_in, line%gstk_in)
     end do
 
@@ -2004,7 +2004,7 @@ MODULE atom_mod
           allocate(lin%wnu(iblue:ired))
           call os%mem_register(storage_size(lin%wnu), lin%nnu, 'line%wnu')
           call set_weights(lin%wnu, lin%nu)
-          lin%wnu = lin%wnu / (h_4pi*lin%nu)
+          lin%wnu = lin%wnu / lin%nu
 
           allocate(lin%wq(iblue:ired))
           call os%mem_register(storage_size(lin%wq), nnu)
