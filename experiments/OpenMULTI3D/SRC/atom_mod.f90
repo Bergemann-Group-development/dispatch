@@ -105,18 +105,18 @@ MODULE atom_mod
   
     !---------------------------------------------------------------------
     type, public, extends(massive_type) :: atom_type
-      integer :: nrad   !< total number of radiative transitions
-      integer :: nrfix  !< number of fixed transitions
-      integer :: ncont  !< number of bound-free transitions
-      integer :: nline  !< number of bound-bound transitions
-      integer :: nlevel !< number of levels
-      integer :: idep=0 !< index of atom in departure coefficients array
+      integer :: nrad                  !< total number of radiative transitions
+      integer :: nrfix                 !< number of fixed transitions
+      integer :: ncont                 !< number of bound-free transitions
+      integer :: nline                 !< number of bound-bound transitions
+      integer :: nlevel                !< number of levels
+      integer :: idep=0                !< index of atom in departure coefficients array
       logical :: precomputed = .false. !< whether departure coeffs are precomputed
       
       character(len=128) :: name
-      character(len=4096) :: file=''  !< the run's table-format copy of the atom
-      character(len=3)   :: id    !< atom id string 
-      character(len=20)  :: crout !< which collisional SUBROUTINE to use 
+      character(len=4096) :: file='' !< the run's table-format copy of the atom
+      character(len=3)   :: id       !< atom id string
+      character(len=20)  :: crout    !< which collisional SUBROUTINE to use
   
       character(len=20), dimension(:), allocatable :: label !< level label
   
@@ -125,8 +125,8 @@ MODULE atom_mod
       real(8) :: abnd !< abundance ( in the [hydrogen]=12 scale)
       !real(8) :: awgt ! atomic weight [g]
   
-      real(8), dimension(:), allocatable :: ev !< energy of level above ground state [eV]
-      real(8), dimension(:), allocatable :: g !< multiplicity of level
+      real(8), dimension(:), allocatable :: ev         !< energy of level above ground state [eV]
+      real(8), dimension(:), allocatable :: g          !< multiplicity of level
       integer, dimension(:), allocatable :: irad, jrad !< indices of levels in radiative transition
 
       type(atom_trans_t), pointer :: trans => null()
@@ -178,9 +178,9 @@ MODULE atom_mod
 
     !---------------------------------------------------------------------
     type coll_type
-      character(len=16) :: key !< transition type 
-      integer :: nc !< size of coefficient grid
-      integer :: ll,ul !< lower/upper level for transition
+      character(len=16) :: key !< transition type
+      integer :: nc            !< size of coefficient grid
+      integer :: ll,ul         !< lower/upper level for transition
       integer :: itemp
       integer :: dir=0
       logical :: log = .false.
@@ -2371,8 +2371,8 @@ MODULE atom_mod
   SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
     class(atom_type):: self
     integer, intent(in) :: iter
-    real(8), intent(in) :: err                !< current convergence measure
-    real(8), intent(in) :: convlim            !< its target, for the headroom test
+    real(8), intent(in) :: err     !< current convergence measure
+    real(8), intent(in) :: convlim !< its target, for the headroom test
     real(8), intent(out) :: emax
     integer, intent(out) :: epos(4)
     logical :: fire, applied, apply_here

@@ -44,8 +44,8 @@ MODULE rt_params_mod
     logical :: sample_linelist=.false.  !< line list via sampled LTE table instead of detailed lines
     logical :: include_linelist=.false. !< detailed line-list opacity in this pass
     logical :: include_absmet=.false.   !< sampled metal background (absmet) opacity in this pass
-    real(8), allocatable :: vec(:,:)  !< ray directions (3,nmu), set by setup_quadrature
-    real(8), allocatable :: wmu(:)    !< integration weights,   set by setup_quadrature
+    real(8), allocatable :: vec(:,:)    !< ray directions (3,nmu), set by setup_quadrature
+    real(8), allocatable :: wmu(:)      !< integration weights,   set by setup_quadrature
   end type rt_params_t
 
   type(rt_params_t), public, save, target :: rt_iter, rt_out

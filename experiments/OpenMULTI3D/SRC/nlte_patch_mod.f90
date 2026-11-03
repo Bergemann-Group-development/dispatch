@@ -1399,8 +1399,8 @@ contains
   !===============================================================================
   SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     class(nlte_patch_t) :: self
-    class(task_t), pointer :: another         !< another task in the list
-    logical :: needed, needs_me, download    !< Is the other task: needed,
+    class(task_t), pointer :: another     !< another task in the list
+    logical :: needed, needs_me, download !< Is the other task: needed,
     !    does it need me, should I download?
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')

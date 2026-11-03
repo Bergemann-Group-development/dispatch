@@ -39,17 +39,17 @@ MODULE ng_mod
   ! less eager without recompiling; the defaults are the ones argued for in
   ! fe607_convergence.md.
   !-----------------------------------------------------------------------------
-  real(8), public, save :: ng_rate_min=0.5d0    !< don't bother below this contraction rate
-  real(8), public, save :: ng_rate_tol=0.15d0   !< |r - r_prev|/r must be under this
-  real(8), public, save :: ng_clamp_max=1d-3    !< max fraction of corrections at the limiter
+  real(8), public, save :: ng_rate_min=0.5d0  !< don't bother below this contraction rate
+  real(8), public, save :: ng_rate_tol=0.15d0 !< |r - r_prev|/r must be under this
+  real(8), public, save :: ng_clamp_max=1d-3  !< max fraction of corrections at the limiter
   !> Minimum iterations that must remain, at the measured rate, for the
   !> extrapolation to be worth its risk.  Expressing the headroom in iterations
   !> rather than as a bare multiple of convlim makes it adapt to the rate: a slow
   !> mode still has far to go even close to convlim, a fast one does not.
   integer, public, save :: ng_min_iters_left=3
-  real(8), public, save :: ng_cond_min=1d-6     !< scaled Gram determinant floor
-  real(8), public, save :: ng_max_change=1d1    !< reject a step moving a level by more
-  integer, public, save :: ng_min_gap=4         !< iterations between applications
+  real(8), public, save :: ng_cond_min=1d-6  !< scaled Gram determinant floor
+  real(8), public, save :: ng_max_change=1d1 !< reject a step moving a level by more
+  integer, public, save :: ng_min_gap=4      !< iterations between applications
 
   !-----------------------------------------------------------------------------
   !> State shared by every patch copy of one atom.  nlte_patch allocates a single
@@ -64,15 +64,15 @@ MODULE ng_mod
     !> and the only convergence signal here that is neither lagged (like the
     !> mpi_counter-reduced `global`) nor a single cell (like `local`)
     real(8) :: s_cur=0d0, s_done=0d0, s_prev=-1d0
-    real(8) :: r=-1d0, r_prev=-1d0          !< contraction rate and its predecessor
-    real(8) :: a=0d0, b=0d0                 !< extrapolation coefficients
+    real(8) :: r=-1d0, r_prev=-1d0 !< contraction rate and its predecessor
+    real(8) :: a=0d0, b=0d0        !< extrapolation coefficients
     !> corrections that hit the update limiter, counted over all patches; the
     !> iteration is not a linear map where this is a large fraction
     integer(8) :: nclamp_cur=0, ntot_cur=0, nclamp_done=0, ntot_done=0
-    integer :: iter_promoted=-1             !< last iteration the roll-over ran
-    integer :: iter_decided=-1              !< last iteration the gate was evaluated
-    integer :: iter_fired=-huge(1)/2        !< last iteration an extrapolation was applied
-    logical :: coeff_valid=.false.          !< are a,b usable this iteration
+    integer :: iter_promoted=-1      !< last iteration the roll-over ran
+    integer :: iter_decided=-1       !< last iteration the gate was evaluated
+    integer :: iter_fired=-huge(1)/2 !< last iteration an extrapolation was applied
+    logical :: coeff_valid=.false.   !< are a,b usable this iteration
   end type ng_state_t
 
   public :: ng_promote, ng_should_fire, ng_coefficients, ng_accumulate

@@ -11,8 +11,8 @@
 module m3d_debug_mod
   implicit none
 
-  real(8), public, dimension(6) :: memcheck  !< values at the probe, gathered for printing
-  integer, public :: pcheck(3)=[1,1,-1]  !< probe cell (x, y, z)
+  real(8), public, dimension(6) :: memcheck !< values at the probe, gathered for printing
+  integer, public :: pcheck(3)=[1,1,-1]     !< probe cell (x, y, z)
   integer, public :: fcheck=1, linecheck=1, lvlcheck=1, atomcheck=1
   logical, public :: check_NaN=.false.  !< check opacities, populations and intensities for NaN
   !> diagnose the statistical-equilibrium linear solve: per patch and iteration,

@@ -60,9 +60,9 @@ MODULE rt_patch_mod
   ! the kind is recorded per set and written to 'sets.txt'; the reader looks the
   ! layout up instead of inferring it from the set index or component count.
   !-----------------------------------------------------------------------------
-  integer, parameter, public :: set_continuum=0    !< background only; skips foreground
-  integer, parameter, public :: set_nlte=1         !< the main spectrum, with departures
-  integer, parameter, public :: set_lte=2          !< LTE: the main spectrum of an LTE
+  integer, parameter, public :: set_continuum=0 !< background only; skips foreground
+  integer, parameter, public :: set_nlte=1      !< the main spectrum, with departures
+  integer, parameter, public :: set_lte=2       !< LTE: the main spectrum of an LTE
                                                    ! run, or the forced-LTE companion
                                                    ! of an NLTE one
   character(len=9), dimension(0:2), parameter :: set_kind_name = &
@@ -70,7 +70,7 @@ MODULE rt_patch_mod
   integer, public, save :: output_n_set=0
   integer, public, save :: output_i_set_main=0, output_i_set_cnt=0
   integer, allocatable, public, save :: output_set_kind(:)
-  real(8), allocatable, public, save :: output_set_da(:,:) !< (atomic number, set)
+  real(8), allocatable, public, save :: output_set_da(:,:)      !< (atomic number, set)
   logical, allocatable, public, save :: output_set_element(:,:) !< explicit rows, including da=0
 
   !-----------------------------------------------------------------------------
@@ -173,10 +173,10 @@ MODULE rt_patch_mod
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
-    integer, dimension(:), allocatable :: set_kind   !< set_continuum / set_nlte / set_lte
-    integer :: i_set_main=1     !< the set the run's own spectrum comes from
-    integer :: i_set_cnt=0      !< the continuum set, or 0 where none is computed
-    logical :: has_nlte_set=.false.   !< is there a set carrying departures?
+    integer, dimension(:), allocatable :: set_kind !< set_continuum / set_nlte / set_lte
+    integer :: i_set_main=1                        !< the set the run's own spectrum comes from
+    integer :: i_set_cnt=0                         !< the continuum set, or 0 where none is computed
+    logical :: has_nlte_set=.false.                !< is there a set carrying departures?
     logical :: bound_bound, bound_free
     logical, dimension(:), allocatable :: get_rates
     integer :: nx, ny, nz
@@ -192,12 +192,12 @@ MODULE rt_patch_mod
     ! so xhat/ehat hold the emissivity eta in *physical* units until
     ! convert_to_work_units runs, and the working pair afterwards.  back_to_work
     ! then seeds work(...,1:2) from xhat/ehat for each direction.
-    real(4), dimension(:,:,:,:), allocatable :: chi_cont  !< continuum extinction, total
-    real(4), dimension(:,:,:,:), allocatable :: sigma     !< coherent-scattering part of chi_cont (<= it)
-    real(4), dimension(:,:,:,:), allocatable :: beta      !< LTE Boltzmann factor exp(-h*nu/kT)
-    real(4), dimension(:,:,:,:), allocatable :: Bnu       !< Planck function in transfer units, beta/(1-beta)
-    real(4), dimension(:,:,:,:), allocatable :: xhat      !< working extinction (see above)
-    real(4), dimension(:,:,:,:), allocatable :: ehat      !< emissivity / working source (see above)
+    real(4), dimension(:,:,:,:), allocatable :: chi_cont !< continuum extinction, total
+    real(4), dimension(:,:,:,:), allocatable :: sigma    !< coherent-scattering part of chi_cont (<= it)
+    real(4), dimension(:,:,:,:), allocatable :: beta     !< LTE Boltzmann factor exp(-h*nu/kT)
+    real(4), dimension(:,:,:,:), allocatable :: Bnu      !< Planck function in transfer units, beta/(1-beta)
+    real(4), dimension(:,:,:,:), allocatable :: xhat     !< working extinction (see above)
+    real(4), dimension(:,:,:,:), allocatable :: ehat     !< emissivity / working source (see above)
     ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
     ! line opacity built during foreground, and (direct path only) the per-stage
     ! scattering fraction 1-eps on the patch frequency grid (index 1=neutral,
@@ -211,9 +211,9 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:),   allocatable :: chi_scat, dJnu
     real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
-    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt   !< per-mu continuum stash
-    real(8), dimension(:), allocatable :: flux_prev       !< previous-iteration top emergent flux, per frequency (fs:fe)
-    real(8) :: flux_global=0.d0, flux_maxerr=0.d0          !< globally-agreed / local worst relative flux change this iteration
+    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt !< per-mu continuum stash
+    real(8), dimension(:), allocatable :: flux_prev            !< previous-iteration top emergent flux, per frequency (fs:fe)
+    real(8) :: flux_global=0.d0, flux_maxerr=0.d0              !< globally-agreed / local worst relative flux change this iteration
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans

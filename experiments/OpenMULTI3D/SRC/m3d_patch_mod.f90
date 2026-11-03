@@ -77,8 +77,8 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(gpatch_t) :: m3d_patch_t
-      class(gpatch_t),    pointer :: patch => null()         !< pointer to mhd patch
-      class(m3d_patch_t), pointer :: m3d_parent => null()    !< pointer to parent patch
+      class(gpatch_t),    pointer :: patch => null()      !< pointer to mhd patch
+      class(m3d_patch_t), pointer :: m3d_parent => null() !< pointer to parent patch
       type(composition_type), pointer :: composition => null()
       type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
@@ -88,12 +88,12 @@ MODULE m3d_patch_mod
       ! the key; the rt_patches that differ only in i_mu would otherwise each fill
       ! a byte-identical copy.  One lock per table lets
       ! different i_nu build concurrently while twins wait for the first builder.
-      type(sample_optab_type), pointer :: opac_tables(:) => null()   !< indexed by i_nu
-      type(lock_t),            pointer :: opac_locks(:)  => null()   !< same bounds
+      type(sample_optab_type), pointer :: opac_tables(:) => null() !< indexed by i_nu
+      type(lock_t),            pointer :: opac_locks(:)  => null() !< same bounds
       ! Separate sampled LTE line-list opacity table (sample_linelist), holding
       ! only non-departure species; same i_nu keying and lock pattern as opac.
-      type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   !< indexed by i_nu
-      type(lock_t),            pointer :: ll_opac_locks(:)  => null()   !< same bounds
+      type(sample_optab_type), pointer :: ll_opac_tables(:) => null() !< indexed by i_nu
+      type(lock_t),            pointer :: ll_opac_locks(:)  => null() !< same bounds
       !> Detailed line-list opacity of the 1D output pass, stored by the first
       !> foreground of each (i_nu, set) and copied back by the later scattering
       !> iterations and the final pass; indexed by the output i_nu in [-n_windows_out,-1].
@@ -816,8 +816,8 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
     class(m3d_patch_t) :: self
-    class(task_t), pointer :: another         !< another task in the list
-    logical :: needed, needs_me, download    !< Is the other task: needed, 
+    class(task_t), pointer :: another     !< another task in the list
+    logical :: needed, needs_me, download !< Is the other task: needed,
                                              !    does it need me, should I download?
     class(task_t), pointer :: other
     !-----------------------------------------------------------------------------
