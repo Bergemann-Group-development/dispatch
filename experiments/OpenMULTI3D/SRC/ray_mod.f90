@@ -23,11 +23,11 @@ MODULE ray_mod
 contains
 
   !===============================================================================
+  !---------------------------------------------------------------------
+  !>  Routine is modified from set_ang by AJG for output ray quadrature
+  !>  schemes
+  !---------------------------------------------------------------------
   SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, Jnu_weights)
-    !---------------------------------------------------------------------
-    !  Routine is modified from set_ang by AJG for output ray quadrature
-    !  schemes
-    !---------------------------------------------------------------------
     character(len=*), intent(in) :: quad_scheme
     integer :: nro, nmu
     real(8), dimension(:), allocatable :: mux,  muy,  wmu
@@ -200,11 +200,11 @@ contains
   END SUBROUTINE set_grid_quadratures
 
   !===============================================================================
+  ! -------------------------------------------------------------------
+  !> Computes Lobatto quadratures for a given number of theta and phi
+  !> angles. It then converts the spherical geometry into cartesian geometry
+  ! -------------------------------------------------------------------
   SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
-    ! -------------------------------------------------------------------
-    ! Computes Lobatto quadratures for a given number of theta and phi
-    ! angles. It then converts the spherical geometry into cartesian geometry
-    ! -------------------------------------------------------------------
     integer, intent(in) :: ntheta, nphi
     real(8), intent(out), dimension(:), allocatable :: wts
     real(8), intent(out), dimension(:,:), allocatable :: vec
@@ -252,11 +252,11 @@ contains
   END SUBROUTINE set_lobatto_quadratures
 
   !===============================================================================
+  ! -------------------------------------------------------------------
+  !> Computes Gauss-Legendre quadratures for a given number of theta and phi
+  !> angles. It then converts the spherical geometry into cartesian geometry
+  ! -------------------------------------------------------------------
   SUBROUTINE set_gauss_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
-    ! -------------------------------------------------------------------
-    ! Computes Gauss-Legendre quadratures for a given number of theta and phi
-    ! angles. It then converts the spherical geometry into cartesian geometry
-    ! -------------------------------------------------------------------
     integer, intent(in) :: ntheta, nphi
     real(8), intent(out), dimension(:), allocatable :: wts
     real(8), intent(out), dimension(:,:), allocatable :: vec
@@ -439,31 +439,31 @@ contains
   END SUBROUTINE nphi_copies
 
 !---------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  !>     Calculates the interpolation weights, the physical length of the
+  !>     ray, and the side the ray hits.
+  !>
+  !>     Positive angles point in the direction of increasing index
+  !>
+  !>     The upwind point is the point where the ray intersects
+  !>     the first grid plane, diagram below is for positive mux and muz
+  !>
+  !>                        downwind
+  !>                        xdn
+  !>z9   -------------------0----------
+  !>     |              |  /          |
+  !>     |              | /           |
+  !>     |              |/            |
+  !>z8   ---------------0--------------
+  !>     |            / |             |
+  !>     |           /  |             |
+  !>     |          /   |             |
+  !>z7   ----------0-------------------
+  !>     x3        xup  x4            x5
+  !>               upwind
+  !>
+  !---------------------------------------------------------------------
   SUBROUTINE set_stencil(ray, ds, vec)
-    !---------------------------------------------------------------------
-    !     Calculates the interpolation weights, the physical length of the
-    !     ray, and the side the ray hits.
-    !
-    !     Positive angles point in the direction of increasing index
-    !
-    !     The upwind point is the point where the ray intersects
-    !     the first grid plane, diagram below is for positive mux and muz
-    !
-    !                        downwind
-    !                        xdn
-    !z9   -------------------0----------
-    !     |              |  /          |
-    !     |              | /           |
-    !     |              |/            |
-    !z8   ---------------0--------------
-    !     |            / |             |
-    !     |           /  |             |
-    !     |          /   |             |
-    !z7   ----------0-------------------
-    !     x3        xup  x4            x5
-    !               upwind
-    !
-    !---------------------------------------------------------------------
     class(ray_type) :: ray
     real(8), intent(in) :: ds(3), vec(3)
     real(8) :: wt1, wt2, h1, h2
@@ -482,7 +482,7 @@ contains
 
 
 !===============================================================================
-! Returns simpson integration weights for odd numbered xx-grid.
+!> Returns simpson integration weights for odd numbered xx-grid.
   !===============================================================================
   SUBROUTINE simps_weights(xx, wts)
     real(8), intent(in), dimension(:) :: xx
@@ -544,16 +544,16 @@ contains
   END SUBROUTINE sort_array
 
   !---------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  !>
+  !>  Computes the 1D cubic convolution kernel. For an equidistant
+  !>  grid x_i (i={1,2,3,4}) with spacing h, a coordinate x_2<x<x_3
+  !>  where the function value is desired, and s= (x-x_2)/h, the
+  !>  kernel k is computed, so that y(x) approx sigma_1^4 k[i]*y_i
+  !>  for tabulated values y_i at position x_i
+  !>
+  !---------------------------------------------------------------------
   SUBROUTINE cc_kernel(s,k)
-    !---------------------------------------------------------------------
-    !
-    !  Computes the 1D cubic convolution kernel. For an equidistant
-    !  grid x_i (i={1,2,3,4}) with spacing h, a coordinate x_2<x<x_3
-    !  where the function value is desired, and s= (x-x_2)/h, the
-    !  kernel k is computed, so that y(x) approx sigma_1^4 k[i]*y_i
-    !  for tabulated values y_i at position x_i
-    !
-    !---------------------------------------------------------------------
     implicit none
 
     real(8),intent(in)               :: s

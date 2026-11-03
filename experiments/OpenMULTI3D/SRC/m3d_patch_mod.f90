@@ -55,20 +55,20 @@ MODULE m3d_patch_mod
       class(key_link_t), pointer :: next => null()
     end type key_link_t
 
-    ! Detailed line-list increments to (xhat, ehat) at one output patch's own
-    ! points for one set, as add_linelist_opacities returns them, plus the
-    ! physical chi_scat when line_scattering is on.  Shape (fs:fe,nx,ny,nz).
+    !> Detailed line-list increments to (xhat, ehat) at one output patch's own
+    !> points for one set, as add_linelist_opacities returns them, plus the
+    !> physical chi_scat when line_scattering is on.  Shape (fs:fe,nx,ny,nz).
     type, public :: point_opac_set_t
       real(4), dimension(:,:,:,:), allocatable :: chi, eta, scat
       logical :: initialised=.false.
     end type point_opac_set_t
 
     type, public :: point_opac_t
-      type(point_opac_set_t), allocatable :: set(:)   ! (n_set)
+      type(point_opac_set_t), allocatable :: set(:)   !< (n_set)
     end type point_opac_t
 
-    ! LTE background opacity (chi_cont, sigma) of one 1D rt_patch slice, as
-    ! lte_background_opacities returns it.  Shape (fs:fe,nx,ny,nz).
+    !> LTE background opacity (chi_cont, sigma) of one 1D rt_patch slice, as
+    !> lte_background_opacities returns it.  Shape (fs:fe,nx,ny,nz).
     type, public :: bg_opac_t
       real(4), dimension(:,:,:,:), allocatable :: chi, sigma
       logical :: initialised=.false.
@@ -77,8 +77,8 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(gpatch_t) :: m3d_patch_t
-      class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
-      class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
+      class(gpatch_t),    pointer :: patch => null()         !< pointer to mhd patch
+      class(m3d_patch_t), pointer :: m3d_parent => null()    !< pointer to parent patch
       type(composition_type), pointer :: composition => null()
       type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
@@ -88,22 +88,22 @@ MODULE m3d_patch_mod
       ! the key; the rt_patches that differ only in i_mu would otherwise each fill
       ! a byte-identical copy.  One lock per table lets
       ! different i_nu build concurrently while twins wait for the first builder.
-      type(sample_optab_type), pointer :: opac_tables(:) => null()   ! indexed by i_nu
-      type(lock_t),            pointer :: opac_locks(:)  => null()   ! same bounds
+      type(sample_optab_type), pointer :: opac_tables(:) => null()   !< indexed by i_nu
+      type(lock_t),            pointer :: opac_locks(:)  => null()   !< same bounds
       ! Separate sampled LTE line-list opacity table (sample_linelist), holding
       ! only non-departure species; same i_nu keying and lock pattern as opac.
-      type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   ! indexed by i_nu
-      type(lock_t),            pointer :: ll_opac_locks(:)  => null()   ! same bounds
+      type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   !< indexed by i_nu
+      type(lock_t),            pointer :: ll_opac_locks(:)  => null()   !< same bounds
       ! Detailed line-list opacity of the 1D output pass, stored by the first
       ! foreground of each (i_nu, set) and copied back by the later scattering
       ! iterations and the final pass; indexed by the output i_nu in [-n_windows_out,-1].
       type(point_opac_t), pointer :: ll_point_tables(:) => null()
-      type(lock_t),       pointer :: ll_point_locks(:)  => null()   ! same bounds
+      type(lock_t),       pointer :: ll_point_locks(:)  => null()   !< same bounds
       ! LTE background opacity of a 1D atmosphere, stored by the first
       ! lte_background_opacities of each i_nu and copied back by its twins and
       ! later iterations; indexed like opac_tables, [-n_windows_out, 2*n_windows].
       type(bg_opac_t), pointer :: bg_point_tables(:) => null()
-      type(lock_t),    pointer :: bg_point_locks(:)  => null()   ! same bounds
+      type(lock_t),    pointer :: bg_point_locks(:)  => null()   !< same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()
@@ -816,8 +816,8 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE m3d_nbor_relations(self, another, needed, needs_me, download)
     class(m3d_patch_t) :: self
-    class(task_t), pointer :: another         ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed, 
+    class(task_t), pointer :: another         !< another task in the list
+    logical :: needed, needs_me, download    !< Is the other task: needed, 
                                              !    does it need me, should I download?
     class(task_t), pointer :: other
     !-----------------------------------------------------------------------------
@@ -1081,11 +1081,11 @@ MODULE m3d_patch_mod
   END SUBROUTINE allocate_mem
 
   !===============================================================================
-  ! Merge the line-list diagnostics of this patch's composition copies (unrotated,
-  ! rotated and the sampled table's) into the global composition they were copied
-  ! from, which write_linelist_out exports. Called by every rt_patch after its final
-  ! pass when save_linelist is set, so every line strength and reach is the maximum
-  ! over all patches.
+  !> Merge the line-list diagnostics of this patch's composition copies (unrotated,
+  !> rotated and the sampled table's) into the global composition they were copied
+  !> from, which write_linelist_out exports. Called by every rt_patch after its final
+  !> pass when save_linelist is set, so every line strength and reach is the maximum
+  !> over all patches.
   !-------------------------------------------------------------------------------
   SUBROUTINE collect_line_diagnostics (self)
     class(m3d_patch_t), target :: self
@@ -1116,14 +1116,14 @@ MODULE m3d_patch_mod
   END SUBROUTINE collect_line_diagnostics
 
   !===============================================================================
-  ! Write linelist_out.txt in the same block format as the input linelists, via the
-  ! writers composition_type%write_linelists and linelist_mod%print_ll_atom, from the global
-  ! composition and the model atoms that the final-pass patches merged their copies
-  ! into. Called once by the main program after the task list has run, when every
-  ! merge is complete; does nothing unless a patch collected diagnostics
-  ! (save_linelist). This driver only walks the composition and the model atoms -- it
-  ! stays here because linelist_mod sits below composition_mod/atom_mod in the module
-  ! hierarchy and cannot see their types.
+  !> Write linelist_out.txt in the same block format as the input linelists, via the
+  !> writers composition_type%write_linelists and linelist_mod%print_ll_atom, from the global
+  !> composition and the model atoms that the final-pass patches merged their copies
+  !> into. Called once by the main program after the task list has run, when every
+  !> merge is complete; does nothing unless a patch collected diagnostics
+  !> (save_linelist). This driver only walks the composition and the model atoms -- it
+  !> stays here because linelist_mod sits below composition_mod/atom_mod in the module
+  !> hierarchy and cannot see their types.
   !-------------------------------------------------------------------------------
   SUBROUTINE write_linelist_out ()
     integer :: lunit
@@ -1137,8 +1137,8 @@ MODULE m3d_patch_mod
   contains
 
     !-----------------------------------------------------------------------------
-    ! model-atom SoA linelists; gather the per-stage species ids from the
-    ! composition, then let linelist_mod write the (stage, isotope) blocks
+    !> model-atom SoA linelists; gather the per-stage species ids from the
+    !> composition, then let linelist_mod write the (stage, isotope) blocks
     subroutine print_atoms ()
       class(atom_type), pointer :: atom
       class(element_type), pointer :: el

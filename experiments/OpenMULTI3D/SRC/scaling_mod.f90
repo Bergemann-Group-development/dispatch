@@ -11,7 +11,7 @@ MODULE scaling_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  ! Extend the units_t data typem which handles scaling metadata output
+  !> Extend the units_t data typem which handles scaling metadata output
   !-----------------------------------------------------------------------------
   type, public, extends(standard_scaling_t):: scaling_t
   contains

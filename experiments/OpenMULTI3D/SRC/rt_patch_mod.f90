@@ -52,7 +52,7 @@ MODULE rt_patch_mod
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   implicit none
   private
-  integer :: n_negative_chi = 0                 ! diagnostic: slabs that reported a floored chi in work_to_transfer_units
+  integer :: n_negative_chi = 0                 !< diagnostic: slabs that reported a floored chi in work_to_transfer_units
 
   !-----------------------------------------------------------------------------
   ! What a set *is*, as opposed to where it sits.  The set axis is variable-length
@@ -60,9 +60,9 @@ MODULE rt_patch_mod
   ! the kind is recorded per set and written to 'sets.txt'; the reader looks the
   ! layout up instead of inferring it from the set index or component count.
   !-----------------------------------------------------------------------------
-  integer, parameter, public :: set_continuum=0    ! background only; skips foreground
-  integer, parameter, public :: set_nlte=1         ! the main spectrum, with departures
-  integer, parameter, public :: set_lte=2          ! LTE: the main spectrum of an LTE
+  integer, parameter, public :: set_continuum=0    !< background only; skips foreground
+  integer, parameter, public :: set_nlte=1         !< the main spectrum, with departures
+  integer, parameter, public :: set_lte=2          !< LTE: the main spectrum of an LTE
                                                    ! run, or the forced-LTE companion
                                                    ! of an NLTE one
   character(len=9), dimension(0:2), parameter :: set_kind_name = &
@@ -70,8 +70,8 @@ MODULE rt_patch_mod
   integer, public, save :: output_n_set=0
   integer, public, save :: output_i_set_main=0, output_i_set_cnt=0
   integer, allocatable, public, save :: output_set_kind(:)
-  real(8), allocatable, public, save :: output_set_da(:,:) ! (atomic number, set)
-  logical, allocatable, public, save :: output_set_element(:,:) ! explicit rows, including da=0
+  real(8), allocatable, public, save :: output_set_da(:,:) !< (atomic number, set)
+  logical, allocatable, public, save :: output_set_element(:,:) !< explicit rows, including da=0
 
   !-----------------------------------------------------------------------------
   ! Output patches use IDs -n_windows_out:-1, internal patches use 1:n_windows.  n_windows_out
@@ -82,33 +82,33 @@ MODULE rt_patch_mod
             point_table_bytes
 
   !-----------------------------------------------------------------------------
-  ! What the memory of one slab depends on besides its cells: the frequency
-  ! points, directions and sets of its window and the transitions of each atom
-  ! that reach into it.  window_shape predicts it before the slab exists.
+  !> What the memory of one slab depends on besides its cells: the frequency
+  !> points, directions and sets of its window and the transitions of each atom
+  !> that reach into it.  window_shape predicts it before the slab exists.
   !-----------------------------------------------------------------------------
   type, public :: slab_shape_t
     integer :: nf=0, n_mu=0, n_set=1
     integer, allocatable :: nline(:), ncont(:)
-    integer, allocatable :: nhtab(:)     ! hydrogen lines with a tabulated profile
+    integer, allocatable :: nhtab(:)     !< hydrogen lines with a tabulated profile
     logical, allocatable :: get_rates(:)
     logical :: bound_bound=.false., bound_free=.false., do_final=.false., do_out_sp=.false.
   end type slab_shape_t
 
-  !-----------------------------------------------------------------------------
-  ! The state of one frequency window, ray direction and depth slab.  A slab is
-  ! not a task: the rt_column_t of its window and direction sweeps it in order
-  ! (rt_column_mod), sets upstream to the slab swept before it, hands it the
-  ! boundary buffer (mem) and marks the last slab of a complete sweep with
-  ! column_end.  up_twin and dn_twin are set there too.
-  !-----------------------------------------------------------------------------
-  ! The tabulated profiles of an atom's hydrogen lines (hcell_t%vcs), prepared once
-  ! per cell and line and shared by the directions, sets and passes of one execute.
-  ! slot(i) indexes line i in p, 0 for a line without a table.
+  !> The tabulated profiles of an atom's hydrogen lines (hcell_t%vcs), prepared once
+  !> per cell and line and shared by the directions, sets and passes of one execute.
+  !> slot(i) indexes line i in p, 0 for a line without a table.
   type :: hvcs_store_t
     integer, allocatable :: slot(:)
     type(vcs_profile_t), allocatable :: p(:,:,:,:)
   end type hvcs_store_t
 
+  !-----------------------------------------------------------------------------
+  !> The state of one frequency window, ray direction and depth slab.  A slab is
+  !> not a task: the rt_column_t of its window and direction sweeps it in order
+  !> (rt_column_mod), sets upstream to the slab swept before it, hands it the
+  !> boundary buffer (mem) and marks the last slab of a complete sweep with
+  !> column_end.  up_twin and dn_twin are set there too.
+  !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: rt_patch_t
     class(rt_patch_t), pointer :: upstream=>null()
     class(rt_patch_t), pointer :: up_twin=>null()
@@ -173,10 +173,10 @@ MODULE rt_patch_mod
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
-    integer, dimension(:), allocatable :: set_kind   ! set_continuum / set_nlte / set_lte
-    integer :: i_set_main=1     ! the set the run's own spectrum comes from
-    integer :: i_set_cnt=0      ! the continuum set, or 0 where none is computed
-    logical :: has_nlte_set=.false.   ! is there a set carrying departures?
+    integer, dimension(:), allocatable :: set_kind   !< set_continuum / set_nlte / set_lte
+    integer :: i_set_main=1     !< the set the run's own spectrum comes from
+    integer :: i_set_cnt=0      !< the continuum set, or 0 where none is computed
+    logical :: has_nlte_set=.false.   !< is there a set carrying departures?
     logical :: bound_bound, bound_free
     logical, dimension(:), allocatable :: get_rates
     integer :: nx, ny, nz
@@ -192,12 +192,12 @@ MODULE rt_patch_mod
     ! so xhat/ehat hold the emissivity eta in *physical* units until
     ! convert_to_work_units runs, and the working pair afterwards.  back_to_work
     ! then seeds work(...,1:2) from xhat/ehat for each direction.
-    real(4), dimension(:,:,:,:), allocatable :: chi_cont  ! continuum extinction, total
-    real(4), dimension(:,:,:,:), allocatable :: sigma     ! coherent-scattering part of chi_cont (<= it)
-    real(4), dimension(:,:,:,:), allocatable :: beta      ! LTE Boltzmann factor exp(-h*nu/kT)
-    real(4), dimension(:,:,:,:), allocatable :: Bnu       ! Planck function in transfer units, beta/(1-beta)
-    real(4), dimension(:,:,:,:), allocatable :: xhat      ! working extinction (see above)
-    real(4), dimension(:,:,:,:), allocatable :: ehat      ! emissivity / working source (see above)
+    real(4), dimension(:,:,:,:), allocatable :: chi_cont  !< continuum extinction, total
+    real(4), dimension(:,:,:,:), allocatable :: sigma     !< coherent-scattering part of chi_cont (<= it)
+    real(4), dimension(:,:,:,:), allocatable :: beta      !< LTE Boltzmann factor exp(-h*nu/kT)
+    real(4), dimension(:,:,:,:), allocatable :: Bnu       !< Planck function in transfer units, beta/(1-beta)
+    real(4), dimension(:,:,:,:), allocatable :: xhat      !< working extinction (see above)
+    real(4), dimension(:,:,:,:), allocatable :: ehat      !< emissivity / working source (see above)
     ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
     ! line opacity built during foreground, and (direct path only) the per-stage
     ! scattering fraction 1-eps on the patch frequency grid (index 1=neutral,
@@ -211,9 +211,9 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:),   allocatable :: chi_scat, dJnu
     real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
-    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt   ! per-mu continuum stash
-    real(8), dimension(:), allocatable :: flux_prev       ! previous-iteration top emergent flux, per frequency (fs:fe)
-    real(8) :: flux_global=0.d0, flux_maxerr=0.d0          ! globally-agreed / local worst relative flux change this iteration
+    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt   !< per-mu continuum stash
+    real(8), dimension(:), allocatable :: flux_prev       !< previous-iteration top emergent flux, per frequency (fs:fe)
+    real(8) :: flux_global=0.d0, flux_maxerr=0.d0          !< globally-agreed / local worst relative flux change this iteration
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
@@ -1412,9 +1412,9 @@ contains
   contains
 
     !-----------------------------------------------------------------------------
-    ! Full detailed line list (non-sampled mode): every species, with departures.
-    ! chi_lines/eta_lines, when present, receive the increments added to the work
-    ! arrays.
+    !> Full detailed line list (non-sampled mode): every species, with departures.
+    !> chi_lines/eta_lines, when present, receive the increments added to the work
+    !> arrays.
     subroutine detailed_linelist(chi_lines, eta_lines)
       real(4), dimension(:,:,:,:), optional :: chi_lines, eta_lines
       !---------------------------------------------------------------------------
@@ -1439,16 +1439,16 @@ contains
     end subroutine detailed_linelist
 
     !-----------------------------------------------------------------------------
-    ! The detailed line list of a 1D output patch, computed once per set and then
-    ! copied.  Without velocities it is isotropic, and temperature, densities and
-    ! departures stay fixed through the output scattering iterations and the final
-    ! pass, so every direction of every pass reuses it.  The one input that moves
-    ! is the kernels' wing-cutoff reference: work xhat carries sigma*(Jnu-Bnu), so later
-    ! passes would cut line wings against a slightly different continuum.  The store
-    ! keeps the cutoff of the first pass, where Jnu=Bnu; the difference is below
-    ! the kernel tolerance.  The first foreground of the (i_nu, set) fills the store
-    ! while its i_mu twins and the final patch wait on the lock.  Adding the stored
-    ! increments repeats the kernel's own last step.
+    !> The detailed line list of a 1D output patch, computed once per set and then
+    !> copied.  Without velocities it is isotropic, and temperature, densities and
+    !> departures stay fixed through the output scattering iterations and the final
+    !> pass, so every direction of every pass reuses it.  The one input that moves
+    !> is the kernels' wing-cutoff reference: work xhat carries sigma*(Jnu-Bnu), so later
+    !> passes would cut line wings against a slightly different continuum.  The store
+    !> keeps the cutoff of the first pass, where Jnu=Bnu; the difference is below
+    !> the kernel tolerance.  The first foreground of the (i_nu, set) fills the store
+    !> while its i_mu twins and the final patch wait on the lock.  Adding the stored
+    !> increments repeats the kernel's own last step.
     subroutine stored_linelist()
       type(point_opac_set_t), pointer :: store
       type(lock_t), pointer :: lock
@@ -2252,13 +2252,13 @@ contains
   END SUBROUTINE generate_opacity_table
 
   !===============================================================================
-  ! Build the separate sampled LTE line-list table (sample_linelist). tab_comp is
-  ! masked to the non-departure species (see mask_departure_species), so the line
-  ! opacity added here is pure LTE. In LTE the two working forms coincide
-  ! (xhat_line = ehat_line = chi_line/(1-beta)); we store that single quantity,
-  ! normalised by chi500, and at interpolation time add it to both work slots.
-  ! The pure line delta is isolated by subtracting the continuum working xhat that
-  ! add_linelist needs in place for its opacity-threshold reference.
+  !> Build the separate sampled LTE line-list table (sample_linelist). tab_comp is
+  !> masked to the non-departure species (see mask_departure_species), so the line
+  !> opacity added here is pure LTE. In LTE the two working forms coincide
+  !> (xhat_line = ehat_line = chi_line/(1-beta)); we store that single quantity,
+  !> normalised by chi500, and at interpolation time add it to both work slots.
+  !> The pure line delta is isolated by subtracting the continuum working xhat that
+  !> add_linelist needs in place for its opacity-threshold reference.
   !===============================================================================
   SUBROUTINE generate_ll_opacity_table (self, sp, include_absmet)
     class(rt_patch_t), target :: self
@@ -3234,9 +3234,9 @@ contains
   END SUBROUTINE set_downstream_boundary
 
   !===============================================================================
-  ! ehat enters holding the physical emissivity eta (from lte_background_emission)
-  ! and leaves holding the working form eta/beta.  xhat must therefore be formed
-  ! first, while ehat is still eta -- the two statements do not commute.
+  !> ehat enters holding the physical emissivity eta (from lte_background_emission)
+  !> and leaves holding the working form eta/beta.  xhat must therefore be formed
+  !> first, while ehat is still eta -- the two statements do not commute.
   SUBROUTINE convert_to_work_units(self)
     class(rt_patch_t) :: self
     integer :: fs, fe
@@ -3280,16 +3280,16 @@ contains
 
   !===============================================================================
   !===============================================================================
-  ! Close the accumulation: turn the working pair (xhat, ehat) into the (chi, Snu)
-  ! pair the formal solvers consume, and apply the line-scattering source on the
-  ! way.
-  !
-  !   chi = xhat - ehat*beta                    physical extinction, scattering
-  !                                             opacity included (the lines went
-  !                                             in as absorbers, so chi is whole)
-  !   eta = ehat*beta + chi_scat*(Jnu - Bnu)    redirect the (1-eps) fraction of
-  !                                             the line source from Bnu to Jnu
-  !   Snu = eta/chi
+  !> Close the accumulation: turn the working pair (xhat, ehat) into the (chi, Snu)
+  !> pair the formal solvers consume, and apply the line-scattering source on the
+  !> way.
+  !>
+  !>   chi = xhat - ehat*beta                    physical extinction, scattering
+  !>                                             opacity included (the lines went
+  !>                                             in as absorbers, so chi is whole)
+  !>   eta = ehat*beta + chi_scat*(Jnu - Bnu)    redirect the (1-eps) fraction of
+  !>                                             the line source from Bnu to Jnu
+  !>   Snu = eta/chi
   !===============================================================================
   SUBROUTINE work_to_transfer_units (self)
     class(rt_patch_t) :: self

@@ -22,7 +22,7 @@ MODULE read_atmos_mod
   type, public :: input_atmos_t
     character(64) :: kind
     integer :: n(3), nx, ny, nz
-    integer :: gz=0 ! ghost zones
+    integer :: gz=0 !< ghost zones
     logical :: is_3d=.false.
     ! The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
     ! slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
@@ -309,7 +309,7 @@ contains
   END SUBROUTINE scale_box
 
 !===============================================================================
-! This makes sure that the atmosphere is flipped properly
+!> This makes sure that the atmosphere is flipped properly
   !===============================================================================
   SUBROUTINE thick2thin(self)
     class(input_atmos_t), intent(inout) :: self

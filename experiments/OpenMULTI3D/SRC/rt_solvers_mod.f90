@@ -844,19 +844,19 @@ contains
             + t*(B3_C3(6) + t*(B3_C3(7) + t*(B3_C3(8) + t*B3_C3(9)))))))))
     end function b3_p3
     !---------------------------------------------------------------------------
-    !> One integrated interval [up, c] is herm_dtau, then bezier3_weights, then
-    !> herm_source, each called from the f-loop.  chi/Pe and Snu/Bnu are each
-    !> fitted by a PARABOLA through the upwind, central and third samples
-    !> (xx3/ss3/...); their derivatives set the product-rule chi slopes (-> dtau)
-    !> and source slopes (-> Bezier control points).  center_target picks which
-    !> end of [up,c] gets the centred 3-point estimate:
-    !>   .true.  -> parabola centred at the target c (interior sweep; third sample
-    !>              downwind), one-sided slope at up.
-    !>   .false. -> parabola centred at up (final plane z==ze; third sample two
-    !>              planes upwind), one-sided slope at c -- the quadratic end shift.
-    !> The step is split in three so that each piece stays under gfortran's
-    !> inlining limits and the f-loop can vectorise; as one routine it is not
-    !> inlined.
+    ! One integrated interval [up, c] is herm_dtau, then bezier3_weights, then
+    ! herm_source, each called from the f-loop.  chi/Pe and Snu/Bnu are each
+    ! fitted by a PARABOLA through the upwind, central and third samples
+    ! (xx3/ss3/...); their derivatives set the product-rule chi slopes (-> dtau)
+    ! and source slopes (-> Bezier control points).  center_target picks which
+    ! end of [up,c] gets the centred 3-point estimate:
+    !   .true.  -> parabola centred at the target c (interior sweep; third sample
+    !              downwind), one-sided slope at up.
+    !   .false. -> parabola centred at up (final plane z==ze; third sample two
+    !              planes upwind), one-sided slope at c -- the quadratic end shift.
+    ! The step is split in three so that each piece stays under gfortran's
+    ! inlining limits and the f-loop can vectorise; as one routine it is not
+    ! inlined.
     !---------------------------------------------------------------------------
     !> dtau over [up, c]: dchi/ds at both ends by the product rule
     !> chi = (chi/Pe)*Pe, clamped to the sign of the interval secant and twice its

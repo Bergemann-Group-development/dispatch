@@ -75,7 +75,7 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
 
-  ! The RT slabs of one spectrum: windows nu(1):nu(2) times directions mu(1):mu(2)
+  !> The RT slabs of one spectrum: windows nu(1):nu(2) times directions mu(1):mu(2)
   type, public :: slab_group_t
     integer :: nu(2), mu(2)
     class(atomic_spectrum_type), pointer :: sp => null()
@@ -432,10 +432,10 @@ SUBROUTINE create_rt_slabs (self)
 END SUBROUTINE create_rt_slabs
 
 !===============================================================================
-! Phase B: Build line-list intervals from output and internal spectra.
-! When the output spectrum has multiple segments (multi-window), use those
-! segment bounds as intervals. For non-segmented internal spectra, use the
-! full range as a single interval. Expand each interval by dlam.
+!> Phase B: Build line-list intervals from output and internal spectra.
+!> When the output spectrum has multiple segments (multi-window), use those
+!> segment bounds as intervals. For non-segmented internal spectra, use the
+!> full range as a single interval. Expand each interval by dlam.
 !===============================================================================
 SUBROUTINE build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, dlam, &
                                     intervals_out, n_intervals_out)
@@ -818,13 +818,13 @@ SUBROUTINE pe_gradients_from_grid (comp, ds, gpx, gpy, gpz, horizontal)
 END SUBROUTINE pe_gradients_from_grid
 
 !===============================================================================
+!> Sample the background opacity on a grid built in the orthogonal PCA basis of
+!> (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
+!> (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
+!> locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
+!> corners that crash the EOS and cutting the node count. ldtemp/ldne are the
+!> requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
 SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
-    ! Sample the background opacity on a grid built in the orthogonal PCA basis of
-    ! (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
-    ! (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
-    ! locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
-    ! corners that crash the EOS and cutting the node count. ldtemp/ldne are the
-    ! requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
     class(composition_patch_t), target :: self
     class(composition_type), pointer :: comp
     real(8), intent(in) :: ldtemp, ldne
@@ -1027,8 +1027,8 @@ END SUBROUTINE save_number_densities
 !===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)
   class(composition_patch_t) :: self
-  class(task_t), pointer :: another         ! another task in the list
-  logical :: needed, needs_me, download    ! Is the other task: needed, 
+  class(task_t), pointer :: another         !< another task in the list
+  logical :: needed, needs_me, download    !< Is the other task: needed, 
                                            !    does it need me, should I download?
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%nbor_relations')

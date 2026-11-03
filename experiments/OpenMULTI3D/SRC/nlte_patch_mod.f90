@@ -56,7 +56,7 @@ MODULE nlte_patch_mod
     real(8) :: local
     integer :: natom=0
     logical :: update_skipped=.false., atom_allocated=.false., molec
-    logical :: pop_meta_written=.false.   ! this patch has its rows in pop_<atom>_meta.txt
+    logical :: pop_meta_written=.false.   !< this patch has its rows in pop_<atom>_meta.txt
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -403,7 +403,7 @@ contains
   END FUNCTION run_atom_file
 
   !===============================================================================
-  ! A classical-recipe switch of &atom_params is off ('') or names its recipe.
+  !> A classical-recipe switch of &atom_params is off ('') or names its recipe.
   !===============================================================================
   SUBROUTINE check_recipe (key, value, recipe)
     character(len=*), intent(in) :: key, value, recipe
@@ -1327,14 +1327,14 @@ contains
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
-  ! Prevent a model atom's bound-bound transitions from being counted a second time
-  ! through the bulk line list.  exclude_from_line_list (the default) drops the atom's
-  ! species from the line list wholesale via in_linelist, which both the metal and
-  ! the hydrogen kernel honour.  Otherwise only the records that the atom
-  ! reproduces are deactivated, so line-list lines the atom does not carry survive; the
-  ! match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
-  ! output transitions in pre_init_atom) so both sides carry the same conventions --
-  ! isotope fraction divided out and fine-structure components split.
+  !> Prevent a model atom's bound-bound transitions from being counted a second time
+  !> through the bulk line list.  exclude_from_line_list (the default) drops the atom's
+  !> species from the line list wholesale via in_linelist, which both the metal and
+  !> the hydrogen kernel honour.  Otherwise only the records that the atom
+  !> reproduces are deactivated, so line-list lines the atom does not carry survive; the
+  !> match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
+  !> output transitions in pre_init_atom) so both sides carry the same conventions --
+  !> isotope fraction divided out and fine-structure components split.
   SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
     class(massive_type), pointer :: species
@@ -1370,7 +1370,7 @@ contains
     end do
   contains
     !---------------------------------------------------------------------------
-    ! Deactivate every line of ptc's bulk line list that atom_ll also carries.
+    !> Deactivate every line of ptc's bulk line list that atom_ll also carries.
     SUBROUTINE deactivate_duplicates (ptc, atom_ll)
       class(particle_type), intent(inout) :: ptc
       type(linelist_type), intent(in) :: atom_ll
@@ -1399,8 +1399,8 @@ contains
   !===============================================================================
   SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     class(nlte_patch_t) :: self
-    class(task_t), pointer :: another         ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed,
+    class(task_t), pointer :: another         !< another task in the list
+    logical :: needed, needs_me, download    !< Is the other task: needed,
     !    does it need me, should I download?
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')

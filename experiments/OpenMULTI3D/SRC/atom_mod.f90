@@ -105,29 +105,29 @@ MODULE atom_mod
   
     !---------------------------------------------------------------------
     type, public, extends(massive_type) :: atom_type
-      integer :: nrad   ! total number of radiative transitions
-      integer :: nrfix  ! number of fixed transitions
-      integer :: ncont  ! number of bound-free transitions
-      integer :: nline  ! number of bound-bound transitions
-      integer :: nlevel ! number of levels
-      integer :: idep=0 ! index of atom in departure coefficients array
-      logical :: precomputed = .false. ! whether departure coeffs are precomputed
+      integer :: nrad   !< total number of radiative transitions
+      integer :: nrfix  !< number of fixed transitions
+      integer :: ncont  !< number of bound-free transitions
+      integer :: nline  !< number of bound-bound transitions
+      integer :: nlevel !< number of levels
+      integer :: idep=0 !< index of atom in departure coefficients array
+      logical :: precomputed = .false. !< whether departure coeffs are precomputed
       
       character(len=128) :: name
-      character(len=4096) :: file=''  ! the run's table-format copy of the atom
-      character(len=3)   :: id    ! atom id string 
-      character(len=20)  :: crout ! which collisional SUBROUTINE to use 
+      character(len=4096) :: file=''  !< the run's table-format copy of the atom
+      character(len=3)   :: id    !< atom id string 
+      character(len=20)  :: crout !< which collisional SUBROUTINE to use 
   
-      character(len=20), dimension(:), allocatable :: label ! level label
+      character(len=20), dimension(:), allocatable :: label !< level label
   
-      integer, dimension(:), allocatable :: ion ! ionization stage of each level
+      integer, dimension(:), allocatable :: ion !< ionization stage of each level
   
-      real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
+      real(8) :: abnd !< abundance ( in the [hydrogen]=12 scale)
       !real(8) :: awgt ! atomic weight [g]
   
-      real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
-      real(8), dimension(:), allocatable :: g ! multiplicity of level
-      integer, dimension(:), allocatable :: irad, jrad ! indices of levels in radiative transition
+      real(8), dimension(:), allocatable :: ev !< energy of level above ground state [eV]
+      real(8), dimension(:), allocatable :: g !< multiplicity of level
+      integer, dimension(:), allocatable :: irad, jrad !< indices of levels in radiative transition
 
       type(atom_trans_t), pointer :: trans => null()
       type(atom_data_t), pointer :: data => null()
@@ -178,13 +178,13 @@ MODULE atom_mod
 
     !---------------------------------------------------------------------
     type coll_type
-      character(len=16) :: key ! transition type 
-      integer :: nc ! size of coefficient grid
-      integer :: ll,ul ! lower/upper level for transition
+      character(len=16) :: key !< transition type 
+      integer :: nc !< size of coefficient grid
+      integer :: ll,ul !< lower/upper level for transition
       integer :: itemp
       integer :: dir=0
       logical :: log = .false.
-      integer :: np=0, ion=0, mol=0 ! collider identification
+      integer :: np=0, ion=0, mol=0 !< collider identification
     end type coll_type
     !---------------------------------------------------------------------
 
@@ -808,13 +808,13 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  ! Rate coefficients R_ij and R_ji [1/s] of line kr in one cell, from the thermal and
-  ! deviation integrals th and dev that bound_bound_rates stores (see there):
-  !   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
-  ! n_ref = beta_ref/(1-beta_ref) with beta_ref = n*_j g_i/(n*_i g_j), the Planck
-  ! occupation number at the level energy difference.  Forming them here in real(8)
-  ! puts the thermal parts in detailed balance, n*_i R_ij = n*_j R_ji, to real(8)
-  ! rounding, while th and dev stay real(4).
+  !> Rate coefficients R_ij and R_ji [1/s] of line kr in one cell, from the thermal and
+  !> deviation integrals th and dev that bound_bound_rates stores (see there):
+  !>   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
+  !> n_ref = beta_ref/(1-beta_ref) with beta_ref = n*_j g_i/(n*_i g_j), the Planck
+  !> occupation number at the level energy difference.  Forming them here in real(8)
+  !> puts the thermal parts in detailed balance, n*_i R_ij = n*_j R_ji, to real(8)
+  !> rounding, while th and dev stay real(4).
   !====================================================================================
   pure SUBROUTINE line_rate_coefficients (self, kr, nstar, th, dev, r_up, r_down)
     class(atom_type), intent(in) :: self
@@ -839,7 +839,7 @@ MODULE atom_mod
   END SUBROUTINE line_rate_coefficients
 
   !====================================================================================
-  ! The rate coefficients of transition kr in every cell, in real(4), for output.
+  !> The rate coefficients of transition kr in every cell, in real(4), for output.
   !====================================================================================
   SUBROUTINE rate_coefficients (self, kr, rij, rji)
     class(atom_type), intent(in) :: self
@@ -866,8 +866,8 @@ MODULE atom_mod
   END SUBROUTINE rate_coefficients
 
   !====================================================================================
-  ! Collision rate coefficients of one cell into self%data%c, in the convention of the
-  ! rate matrix: c(j,i) is the coefficient [1/s] from level i to level j.
+  !> Collision rate coefficients of one cell into self%data%c, in the convention of the
+  !> rate matrix: c(j,i) is the coefficient [1/s] from level i to level j.
   !====================================================================================
   SUBROUTINE collision_rates (self, comp, x, y, z)
     class(atom_type), target :: self
@@ -881,24 +881,24 @@ MODULE atom_mod
   END SUBROUTINE collision_rates
 
   !====================================================================================
-  ! Rate diagnostics for model-atom reduction (&output_params save_net_rates).  Called
-  ! after each population update, it replaces rad_file with the state of this update:
-  !   int32  nlevel, nrad, nx, ny, nz, iter
-  !   int32  irad(nrad), jrad(nrad)           lower and upper level (1-based)
-  !   real64 n(nx,ny,nz,nlevel)               populations after the update [cm^-3]
-  !   real64 nstar(nx,ny,nz,nlevel)           LTE populations [cm^-3]
-  !   real32 rij(nx,ny,nz,nrad), rji(...)     radiative rate coefficients [1/s]
-  ! so that n_i*rij - n_j*rji is the net radiative rate of each transition.  Inactive
-  ! transitions have zero coefficients.  Where radiative_cut replaces a transition
-  ! by a detailed-balance pair, the file holds the radiative coefficients the matrix
-  ! does not use: zero for a continuum, the computed ones for a line.  col_file, written once,
-  ! holds the collision coefficients, which do not depend on the populations:
-  !   int32  nlevel, nx, ny, nz
-  !   real32 cup(nx,ny,nz,npair)              upward coefficient i->j [1/s] for every
-  !                                           pair i<j, ordered j-major (j=2..nk, i<j)
-  ! The downward coefficient follows from detailed balance, cup*nstar_i/nstar_j, which
-  ! is how gencol and classic_col form it.  The files grow with nlevel**2 per cell and
-  ! are meant for 1D models.
+  !> Rate diagnostics for model-atom reduction (&output_params save_net_rates).  Called
+  !> after each population update, it replaces rad_file with the state of this update:
+  !>   int32  nlevel, nrad, nx, ny, nz, iter
+  !>   int32  irad(nrad), jrad(nrad)           lower and upper level (1-based)
+  !>   real64 n(nx,ny,nz,nlevel)               populations after the update [cm^-3]
+  !>   real64 nstar(nx,ny,nz,nlevel)           LTE populations [cm^-3]
+  !>   real32 rij(nx,ny,nz,nrad), rji(...)     radiative rate coefficients [1/s]
+  !> so that n_i*rij - n_j*rji is the net radiative rate of each transition.  Inactive
+  !> transitions have zero coefficients.  Where radiative_cut replaces a transition
+  !> by a detailed-balance pair, the file holds the radiative coefficients the matrix
+  !> does not use: zero for a continuum, the computed ones for a line.  col_file, written once,
+  !> holds the collision coefficients, which do not depend on the populations:
+  !>   int32  nlevel, nx, ny, nz
+  !>   real32 cup(nx,ny,nz,npair)              upward coefficient i->j [1/s] for every
+  !>                                           pair i<j, ordered j-major (j=2..nk, i<j)
+  !> The downward coefficient follows from detailed balance, cup*nstar_i/nstar_j, which
+  !> is how gencol and classic_col form it.  The files grow with nlevel**2 per cell and
+  !> are meant for 1D models.
   !====================================================================================
   SUBROUTINE write_rates (self, comp, rad_file, col_file, iter)
     class(atom_type), target :: self
@@ -1085,10 +1085,10 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  ! Whether the radiative rates of a transition with threshold energy dev [eV] are cut
-  ! at e_kT = e/kT [1/eV] (see cut_x).  The rate and opacity routines must agree cell
-  ! by cell, so all call this with the level energy difference and the composition's
-  ! e_kT; the continuum lowering dxi is left out for that reason.
+  !> Whether the radiative rates of a transition with threshold energy dev [eV] are cut
+  !> at e_kT = e/kT [1/eV] (see cut_x).  The rate and opacity routines must agree cell
+  !> by cell, so all call this with the level energy difference and the composition's
+  !> e_kT; the continuum lowering dxi is left out for that reason.
   !====================================================================================
   elemental logical function radiative_cut(dev, e_kT)
     real(8), intent(in) :: dev, e_kT
@@ -1475,9 +1475,9 @@ MODULE atom_mod
   END SUBROUTINE read_pandas
 
   !====================================================================================
-  ! Number of frequency points of a bound-bound line: odd, scaled by nq_fac (and
-  ! doubled with legacy_freql), then clamped to nq_min/nq_max.  A negative nq_min
-  ! grows the count with log(gf).
+  !> Number of frequency points of a bound-bound line: odd, scaled by nq_fac (and
+  !> doubled with legacy_freql), then clamped to nq_min/nq_max.  A negative nq_min
+  !> grows the count with log(gf).
   !------------------------------------------------------------------------------------
   SUBROUTINE set_line_nnu (lin, loggf)
     class(line_type), intent(inout) :: lin
@@ -1499,8 +1499,8 @@ MODULE atom_mod
   END SUBROUTINE set_line_nnu
 
   !====================================================================================
-  ! Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
-  ! red/blue cuts remove it.
+  !> Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
+  !> red/blue cuts remove it.
   !------------------------------------------------------------------------------------
   LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
     class(atom_type), intent(in) :: self
@@ -1604,10 +1604,10 @@ MODULE atom_mod
   END SUBROUTINE prepare_damping
 
   !====================================================================================
-  ! Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
-  ! linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
-  ! prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
-  ! (lower_ev re-referenced to the stage ground level).
+  !> Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
+  !> linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
+  !> prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
+  !> (lower_ev re-referenced to the stage ground level).
   !------------------------------------------------------------------------------------
   SUBROUTINE build_ll (self, trans)
     class(atom_type), intent(in) :: self
@@ -1816,7 +1816,7 @@ MODULE atom_mod
   END SUBROUTINE classic_col
 
   !===============================================================================
-  ! initialises the spectrum structure
+  !> initialises the spectrum structure
   !===============================================================================
   SUBROUTINE append_transitions (self, sp, bb, bf, sort)
     class(atom_trans_t), target :: self
@@ -1880,8 +1880,8 @@ MODULE atom_mod
   END SUBROUTINE append_transitions
 
   !===============================================================================
-  ! Read line_grid_file into line_grid: one vacuum wavelength [AA] per record,
-  ! blank lines and lines starting with '#' or '!' skipped.
+  !> Read line_grid_file into line_grid: one vacuum wavelength [AA] per record,
+  !> blank lines and lines starting with '#' or '!' skipped.
   !===============================================================================
   SUBROUTINE read_line_grid
     character(len=256) :: text
@@ -2051,15 +2051,15 @@ MODULE atom_mod
   END SUBROUTINE set_active_transitions
 
   !===============================================================================
-  !     calculates partition function for ch
-  !     data from u.g. jorgensen et al. a&a 1996, 315, 204
-  !
-  !: qjorg  98-08-13  new routine: (rouppe van der voort)
-  !:        calculates partition functions for ch
-  !:
-  !:        00-10-25  modifications: (martin asplund)
-  !:        constant extrapolation for t<1000 and t>8000
-  !:        avoided exceeding array limits for t>8000
+  !>     calculates partition function for ch
+  !>     data from u.g. jorgensen et al. a&a 1996, 315, 204
+  !>
+  !>: qjorg  98-08-13  new routine: (rouppe van der voort)
+  !>:        calculates partition functions for ch
+  !>:
+  !>:        00-10-25  modifications: (martin asplund)
+  !>:        constant extrapolation for t<1000 and t>8000
+  !>:        avoided exceeding array limits for t>8000
   !===============================================================================
   PURE ELEMENTAL FUNCTION qjorg(temp)  
     !     data from jorgensen, table 1.
@@ -2354,25 +2354,25 @@ MODULE atom_mod
   END FUNCTION gaunt
 
   !===============================================================================
-  ! Ng acceleration driver.  Accumulation is unconditional and cheap (a handful
-  ! of inner products against an LU solve per cell), so the schedule is not what
-  ! decides whether to accelerate -- ng_should_fire is, from the quantities the
-  ! accumulation already produces.
-  !
-  ! ng_step > 0 keeps the fixed schedule: accumulate when mod(iter-ng_start,
-  ! ng_step)==0, apply on the iteration after.  ng_step == 0 selects automatic
-  ! mode, where every iteration accumulates and the gate decides.  ng_step < 0
-  ! disables Ng entirely and this is never reached.
-  !
-  ! In both modes application trails accumulation by one iteration, because a
-  ! patch cannot know when the other patches have finished contributing to the
-  ! Gram matrix.
+  !> Ng acceleration driver.  Accumulation is unconditional and cheap (a handful
+  !> of inner products against an LU solve per cell), so the schedule is not what
+  !> decides whether to accelerate -- ng_should_fire is, from the quantities the
+  !> accumulation already produces.
+  !>
+  !> ng_step > 0 keeps the fixed schedule: accumulate when mod(iter-ng_start,
+  !> ng_step)==0, apply on the iteration after.  ng_step == 0 selects automatic
+  !> mode, where every iteration accumulates and the gate decides.  ng_step < 0
+  !> disables Ng entirely and this is never reached.
+  !>
+  !> In both modes application trails accumulation by one iteration, because a
+  !> patch cannot know when the other patches have finished contributing to the
+  !> Gram matrix.
   !===============================================================================
   SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
     class(atom_type):: self
     integer, intent(in) :: iter
-    real(8), intent(in) :: err                ! current convergence measure
-    real(8), intent(in) :: convlim            ! its target, for the headroom test
+    real(8), intent(in) :: err                !< current convergence measure
+    real(8), intent(in) :: convlim            !< its target, for the headroom test
     real(8), intent(out) :: emax
     integer, intent(out) :: epos(4)
     logical :: fire, applied, apply_here

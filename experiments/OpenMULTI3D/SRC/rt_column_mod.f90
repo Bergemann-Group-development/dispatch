@@ -36,7 +36,7 @@ MODULE rt_column_mod
   private
 
   type, public, extends(m3d_patch_t) :: rt_column_t
-    type(rt_patch_ptr_t), allocatable :: slab(:)   ! in sweep order
+    type(rt_patch_ptr_t), allocatable :: slab(:)   !< in sweep order
   contains
     procedure :: hash_key
     procedure :: execute
@@ -49,12 +49,12 @@ MODULE rt_column_mod
     class(composition_patch_t), pointer :: p => null()
   end type composition_ptr_t
 
-  ! The memory terms of report_memory_estimate, in bytes.  The phases are the EOS
-  ! setup, the NLTE iteration and the output pass; index 1 of the RT terms is the
-  ! NLTE phase, index 2 the output phase.  trans_copies are the transition copies
-  ! of slabs not made yet; those of existing slabs are part of os%gb.  The point
-  ! tables of the internal windows (index 1) are kept to the end of the run, those
-  ! of the output windows (index 2) exist in the output phase.
+  !> The memory terms of report_memory_estimate, in bytes.  The phases are the EOS
+  !> setup, the NLTE iteration and the output pass; index 1 of the RT terms is the
+  !> NLTE phase, index 2 the output phase.  trans_copies are the transition copies
+  !> of slabs not made yet; those of existing slabs are part of os%gb.  The point
+  !> tables of the internal windows (index 1) are kept to the end of the run, those
+  !> of the output windows (index 2) exist in the output phase.
   type :: memory_terms_t
     integer :: n_comp=0, n_column(2)=0
     real(8) :: eos_work=0d0, eos_retained=0d0, atom(2)=0d0, trans_copies=0d0
