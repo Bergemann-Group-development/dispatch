@@ -285,8 +285,9 @@ MODULE rt_patch_mod
   ! TLS (pthread_getspecific).  One thread per patch makes instance/local data
   ! both race-free and TLS-free.
 
-  !-----------------------------------------------------------------------------
+  !===============================================================================
   !> Formal solvers, implemented in the rt_solvers_mod submodule (rt_solvers_mod.f90)
+  !===============================================================================
   interface
     module subroutine short_char (self, vec)
       class(rt_patch_t) :: self
