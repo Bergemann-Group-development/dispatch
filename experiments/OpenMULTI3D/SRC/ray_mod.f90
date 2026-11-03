@@ -1,39 +1,45 @@
+!===============================================================================
+!> Angular quadratures of the radiative-transfer passes and the stencil of a short
+!> characteristic.
+!===============================================================================
 MODULE ray_mod
   USE const_mod
   USE radau_mod
   USE console_mod
   implicit none
 
-  ! *******************************************************************
-
+  !===============================================================================
+  !> Upwind interpolation stencil of a short characteristic in one direction.
+  !===============================================================================
   type ray_type
-    !> cubic-convolution weights in x and y for the upwind intersection with the
-    !> first XY plane, and the offset of the first of the four points relative to
-    !> the middle point of the short characteristic
-    real(8), dimension(4) :: xkern, ykern
-    integer :: upo1, upo2
-    !> ray length to the upwind XY-plane intersection
-    real(8) :: dsup
+    real(8), dimension(4) :: xkern !< cubic-convolution weights in x at the upwind XY-plane intersection
+    real(8), dimension(4) :: ykern !< cubic-convolution weights in y at the upwind XY-plane intersection
+    integer :: upo1                !< x offset of the first of the four points from the characteristic's middle point
+    integer :: upo2                !< y offset of the first of the four points from the characteristic's middle point
+    real(8) :: dsup                !< ray length to the upwind XY-plane intersection
   contains
     procedure :: set_stencil
   end type ray_type
 
-  logical, public :: one_dimensional=.false.
+  logical, public :: one_dimensional=.false. !< plane-parallel atmosphere: one azimuth per inclination
 
 contains
 
   !===============================================================================
-  !=====================================================================
-  !>  Routine is modified from set_ang by AJG for output ray quadrature
-  !>  schemes
-  !=====================================================================
+  !> Carlson's ray sets A and B (set_a2 to set_a8, set_b4 to set_b8), or the single
+  !> vertical ray of disk_center. Each set is tabulated in one octant with weights
+  !> summing to 1 and reflected into the other three upward octants. With
+  !> Jnu_weights the set is mirrored to the downward hemisphere and the weights sum
+  !> to 1, for the mean intensity; otherwise only the upward rays are kept and their
+  !> weights are multiplied by mu, for the emergent flux.
+  !===============================================================================
   SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, Jnu_weights)
-    character(len=*), intent(in) :: quad_scheme
+    character(len=*), intent(in) :: quad_scheme              !< set name
+    real(8), dimension(:,:), allocatable, intent(out) :: vec !< ray directions (3, nray)
+    real(8), dimension(:), allocatable, intent(out) :: wts   !< ray weights (nray)
+    logical, optional :: Jnu_weights                         !< weights for the mean intensity, default .true.
     integer :: nro, nmu
     real(8), dimension(:), allocatable :: mux,  muy,  wmu
-    real(8), dimension(:), allocatable, intent(out) :: wts
-    real(8), dimension(:,:), allocatable, intent(out) :: vec
-    logical, optional :: Jnu_weights
     logical :: mirror=.true.
     ! ----------------------------------------------------------------------------
     if (present(Jnu_weights)) then
@@ -168,15 +174,19 @@ contains
       wts = wts * vec(:,3)
     endif
   END SUBROUTINE set_carlson_quadratures
-!---------------------------------------------------------------------
 
   !===============================================================================
+  !> Output rays along the mesh: the vertical, and inclined rays that reach the
+  !> neighbouring column after one cell in z, along x ('grid+'), along the xy
+  !> diagonal ('gridx') or both ('grid*'). Each inclination gets four azimuths and
+  !> the weights are flux weights (set_custom_quadratures).
+  !===============================================================================
   SUBROUTINE set_grid_quadratures (quad_scheme, ds, vec, wts)
-    character(len=*), intent(in) :: quad_scheme
-    real(8), intent(in) :: ds(3)
+    character(len=*), intent(in) :: quad_scheme              !< 'grid+', 'gridx' or 'grid*'
+    real(8), intent(in) :: ds(3)                             !< cell size
+    real(8), dimension(:,:), allocatable, intent(out) :: vec !< ray directions (3, nray)
+    real(8), dimension(:), allocatable, intent(out) :: wts   !< ray weights (nray)
     real(8), dimension(:), allocatable :: mu, zrot
-    real(8), dimension(:), allocatable, intent(out) :: wts
-    real(8), dimension(:,:), allocatable, intent(out) :: vec
     real(8) :: plus, cross
     ! ----------------------------------------------------------------------------
     plus = ds(1)/ds(3)
@@ -200,16 +210,16 @@ contains
   END SUBROUTINE set_grid_quadratures
 
   !===============================================================================
-  ! ===================================================================
-  !> Computes Lobatto quadratures for a given number of theta and phi
-  !> angles. It then converts the spherical geometry into cartesian geometry
-  ! ===================================================================
+  !> Lobatto quadrature in mu with ntheta <= 6 nodes, including mu = 1, and nphi
+  !> azimuths per inclination (nphi_copies).
+  !===============================================================================
   SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
-    integer, intent(in) :: ntheta, nphi
-    real(8), intent(out), dimension(:), allocatable :: wts
-    real(8), intent(out), dimension(:,:), allocatable :: vec
+    integer, intent(in) :: ntheta                            !< number of inclinations, at most 6
+    integer, intent(in) :: nphi                              !< number of azimuths per inclination
+    real(8), intent(out), dimension(:,:), allocatable :: vec !< ray directions (3, nray)
+    real(8), intent(out), dimension(:), allocatable :: wts   !< ray weights (nray)
+    logical, optional :: Jnu_weights                         !< weights for the mean intensity (see nphi_copies)
     real(8), dimension(:), allocatable :: mu, wmu
-    logical, optional :: Jnu_weights
     ! -------------------------------------------------------------------
     allocate(mu(ntheta))
     allocate(wmu(ntheta))
@@ -252,16 +262,16 @@ contains
   END SUBROUTINE set_lobatto_quadratures
 
   !===============================================================================
-  ! ===================================================================
-  !> Computes Gauss-Legendre quadratures for a given number of theta and phi
-  !> angles. It then converts the spherical geometry into cartesian geometry
-  ! ===================================================================
+  !> Gauss-Legendre quadrature in mu on (0, 1) with ntheta <= 6 nodes (ntheta = 1
+  !> gives mu = 1), and nphi azimuths per inclination (nphi_copies).
+  !===============================================================================
   SUBROUTINE set_gauss_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
-    integer, intent(in) :: ntheta, nphi
-    real(8), intent(out), dimension(:), allocatable :: wts
-    real(8), intent(out), dimension(:,:), allocatable :: vec
+    integer, intent(in) :: ntheta                            !< number of inclinations, at most 6
+    integer, intent(in) :: nphi                              !< number of azimuths per inclination
+    real(8), intent(out), dimension(:,:), allocatable :: vec !< ray directions (3, nray)
+    real(8), intent(out), dimension(:), allocatable :: wts   !< ray weights (nray)
+    logical, optional :: Jnu_weights                         !< weights for the mean intensity (see nphi_copies)
     real(8), dimension(:), allocatable :: mu, wmu
-    logical, optional :: Jnu_weights
     ! -------------------------------------------------------------------
     allocate(mu(ntheta))
     allocate(wmu(ntheta))
@@ -300,14 +310,19 @@ contains
   END SUBROUTINE set_gauss_quadratures
 
   !===============================================================================
+  !> Output rays at the given inclinations mu, each with nphi azimuths, and flux
+  !> weights. The mu weights are Simpson weights on the nodes 0 and mu, the node at
+  !> 0 getting no ray; for an even number of nodes they are the mean of two Simpson
+  !> rules, each closed by a trapezoid at one end.
+  !===============================================================================
   SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts, zrot)
-    real(8), intent(inout), dimension(:) :: mu
-    integer, intent(in) :: nphi
-    real(8), intent(out), dimension(:), allocatable :: wts
-    real(8), intent(out), dimension(:,:), allocatable :: vec
+    real(8), intent(inout), dimension(:) :: mu               !< inclinations, returned in decreasing order
+    integer, intent(in) :: nphi                              !< number of azimuths per inclination
+    real(8), intent(out), dimension(:,:), allocatable :: vec !< ray directions (3, nray)
+    real(8), intent(out), dimension(:), allocatable :: wts   !< ray weights (nray)
+    real(8), dimension(:), optional :: zrot                  !< azimuth offset per inclination [rad], reordered with mu
     real(8), dimension(:), allocatable :: wmu, smus, swts, swts2
     integer, dimension(:), allocatable :: order
-    real(8), dimension(:), optional :: zrot
     integer :: nrays
     ! -------------------------------------------------------------------
     nrays = size(mu)
@@ -343,11 +358,15 @@ contains
   END SUBROUTINE set_custom_quadratures
 
   !===============================================================================
+  !> Gauss-Radau quadrature in mu with ntheta nodes, including mu = 1, from
+  !> radau_mod, and nphi azimuths per inclination rotated by pi/4 (nphi_copies).
+  !===============================================================================
   SUBROUTINE set_radau_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
-    integer, intent(in) :: ntheta, nphi
-    real(8), intent(out), dimension(:), allocatable :: wts
-    real(8), intent(out), dimension(:,:), allocatable :: vec
-    logical, intent(in), optional :: Jnu_weights
+    integer, intent(in) :: ntheta                            !< number of inclinations, at most 10
+    integer, intent(in) :: nphi                              !< number of azimuths per inclination
+    real(8), intent(out), dimension(:,:), allocatable :: vec !< ray directions (3, nray)
+    real(8), intent(out), dimension(:), allocatable :: wts   !< ray weights (nray)
+    logical, intent(in), optional :: Jnu_weights             !< weights for the mean intensity (see nphi_copies)
     real(4), dimension(:), allocatable :: wmu2, mu2
     real(8), dimension(:), allocatable :: wmu, mu
     real(8), dimension(:), allocatable :: zrot
@@ -363,16 +382,23 @@ contains
   END SUBROUTINE set_radau_quadratures
 
   !===============================================================================
+  !> Spreads each inclination over nphi_in azimuths, offset by zrot, and returns the
+  !> ray directions and weights. A vertical ray (mu = 1) and every ray of a
+  !> plane-parallel atmosphere get a single azimuth. With Jnu_weights the set is
+  !> mirrored to the downward hemisphere and the weights halved, for the mean
+  !> intensity; otherwise the weights are multiplied by mu, for the emergent flux.
+  !===============================================================================
   SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot, Jnu_weights)
-    integer, intent(in) :: nphi_in
-    real(8), intent(inout), dimension(:) :: mu, wmu
-    real(8), intent(out), dimension(:), allocatable :: wts
-    real(8), intent(out), dimension(:,:), allocatable :: vec
-    real(8), intent(in), optional, dimension(:) :: zrot
+    integer, intent(in) :: nphi_in                           !< number of azimuths per inclination
+    real(8), intent(inout), dimension(:) :: mu               !< inclinations, decreasing
+    real(8), intent(inout), dimension(:) :: wmu              !< inclination weights, summing to 1
+    real(8), intent(out), dimension(:,:), allocatable :: vec !< ray directions (3, nray)
+    real(8), intent(out), dimension(:), allocatable :: wts   !< ray weights (nray)
+    real(8), intent(in), optional, dimension(:) :: zrot      !< azimuth offset per inclination [rad]
+    logical, optional :: Jnu_weights                         !< weights for the mean intensity, default .false.
     real(8) :: xphi, theta, xoff
     integer :: nrays, i, nt, np, nmuphi, n1, nphi
     logical :: includes_mu1, mirror=.false.
-    logical, optional :: Jnu_weights
     ! -------------------------------------------------------------------
     if (present(Jnu_weights)) then
       mirror = Jnu_weights
@@ -438,34 +464,34 @@ contains
     endif
   END SUBROUTINE nphi_copies
 
-!---------------------------------------------------------------------
-  !=====================================================================
-  !>     Calculates the interpolation weights, the physical length of the
-  !>     ray, and the side the ray hits.
+  !===============================================================================
+  !> Sets the stencil of a short characteristic in direction vec: the ray length
+  !> dsup to the upwind XY plane, and the offsets and cubic-convolution weights of
+  !> the four points in x and y around the upwind point.
   !>
-  !>     Positive angles point in the direction of increasing index
-  !>
-  !>     The upwind point is the point where the ray intersects
-  !>     the first grid plane, diagram below is for positive mux and muz
-  !>
+  !> Positive components of vec point in the direction of increasing index. The
+  !> upwind point is where the ray intersects the first grid plane; the diagram is
+  !> for positive mux and muz:
+  !> ```
   !>                        downwind
   !>                        xdn
-  !>z9   -------------------0----------
-  !>     |              |  /          |
-  !>     |              | /           |
-  !>     |              |/            |
-  !>z8   ---------------0--------------
-  !>     |            / |             |
-  !>     |           /  |             |
-  !>     |          /   |             |
-  !>z7   ----------0-------------------
-  !>     x3        xup  x4            x5
-  !>               upwind
-  !>
-  !=====================================================================
+  !> z9   -------------------0----------
+  !>      |              |  /          |
+  !>      |              | /           |
+  !>      |              |/            |
+  !> z8   ---------------0--------------
+  !>      |            / |             |
+  !>      |           /  |             |
+  !>      |          /   |             |
+  !> z7   ----------0-------------------
+  !>      x3        xup  x4            x5
+  !>                upwind
+  !> ```
+  !===============================================================================
   SUBROUTINE set_stencil(ray, ds, vec)
-    class(ray_type) :: ray
-    real(8), intent(in) :: ds(3), vec(3)
+    class(ray_type) :: ray        !< stencil, set
+    real(8), intent(in) :: ds(3)  !< cell size
+    real(8), intent(in) :: vec(3) !< ray direction
     real(8) :: wt1, wt2, h1, h2
     !---------------------------------------------------------------------
     ray%dsup = ds(3) / abs(vec(3))
@@ -478,15 +504,14 @@ contains
     call cc_kernel(h1,ray%xkern)
     call cc_kernel(h2,ray%ykern)
   END SUBROUTINE set_stencil
-!---------------------------------------------------------------------
 
-
-!===============================================================================
-!> Returns simpson integration weights for odd numbered xx-grid.
+  !===============================================================================
+  !> Composite Simpson weights for the nodes xx, which may be unequally spaced. The
+  !> number of nodes must be odd; a single node gets the weight 1.
   !===============================================================================
   SUBROUTINE simps_weights(xx, wts)
-    real(8), intent(in), dimension(:) :: xx
-    real(8), intent(out), dimension(:) :: wts
+    real(8), intent(in), dimension(:) :: xx   !< nodes, increasing
+    real(8), intent(out), dimension(:) :: wts !< weights, shaped like xx
     real(8), allocatable, target, dimension(:) :: h
     real(8), pointer, dimension(:) :: h0, h1
     integer :: n
@@ -513,10 +538,12 @@ contains
   END SUBROUTINE simps_weights
 
   !===============================================================================
+  !> Sorts array in increasing order and returns the permutation.
+  !===============================================================================
   SUBROUTINE sort_array(array, sorted_array, permutation_order)
-    real(kind=8), intent(in) :: array(:)
-    real(kind=8), intent(out) :: sorted_array(:)
-    integer, intent(out) :: permutation_order(:)
+    real(kind=8), intent(in) :: array(:)         !< values to sort
+    real(kind=8), intent(out) :: sorted_array(:) !< array in increasing order
+    integer, intent(out) :: permutation_order(:) !< sorted_array = array(permutation_order)
     real(kind=8), allocatable :: temp_array(:)
     integer :: n, i, j
     !-----------------------------------------------------------------------------
@@ -543,21 +570,17 @@ contains
     sorted_array = temp_array
   END SUBROUTINE sort_array
 
-  !---------------------------------------------------------------------
-  !=====================================================================
-  !>
-  !>  Computes the 1D cubic convolution kernel. For an equidistant
-  !>  grid x_i (i={1,2,3,4}) with spacing h, a coordinate x_2<x<x_3
-  !>  where the function value is desired, and s= (x-x_2)/h, the
-  !>  kernel k is computed, so that y(x) approx sigma_1^4 k[i]*y_i
-  !>  for tabulated values y_i at position x_i
-  !>
-  !=====================================================================
+  !===============================================================================
+  !> Computes the 1D cubic convolution kernel (Keys, with a = -1/2). For an
+  !> equidistant grid x_i (i = 1..4) with spacing h, a coordinate x_2 < x < x_3
+  !> where the function value is desired, and s = (x - x_2)/h, the kernel k is
+  !> computed so that y(x) ~ sum_i k(i)*y_i for tabulated values y_i at x_i.
+  !===============================================================================
   SUBROUTINE cc_kernel(s,k)
     implicit none
 
-    real(8),intent(in)               :: s
-    real(8),intent(out),dimension(4) :: k
+    real(8),intent(in)               :: s !< fractional position (x - x_2)/h
+    real(8),intent(out),dimension(4) :: k !< weights of y_1 to y_4
     real(8)                          :: s2,s3
 
     s2=s*s
@@ -569,6 +592,5 @@ contains
     k(4) = 0.5*(s3-s2)
 
   END SUBROUTINE cc_kernel
-  !---------------------------------------------------------------------
 
 END MODULE ray_mod

@@ -1,3 +1,6 @@
+!===============================================================================
+!> Frequency windows, boundaries and MPI messages of the radiative-transfer patches.
+!===============================================================================
 MODULE ray_patch_mod
   USE mpi_mesg_mod
   USE halo_mod
@@ -33,11 +36,18 @@ MODULE ray_patch_mod
 
   public :: output_patch_window, output_patch_range, window_range
 
+  !===============================================================================
+  !> Frequency window and boundary handling shared by the radiative-transfer patches.
+  !===============================================================================
   type, public, extends(m3d_patch_t) :: ray_patch_t
-    real(8) :: vec(3), wmu
-    integer :: fs, fe, nf
-    integer :: pre_pad_fs, pre_pad_fe
-    logical :: padded
+    real(8) :: vec(3)     !< unused
+    real(8) :: wmu        !< unused
+    integer :: fs         !< first frequency index of the window
+    integer :: fe         !< last frequency index of the window
+    integer :: nf         !< number of frequencies in the window
+    integer :: pre_pad_fs !< copy of fs, unused
+    integer :: pre_pad_fe !< copy of fe, unused
+    logical :: padded     !< unused
   contains
     procedure :: check_in_bounds
     procedure :: set_freq_indices
@@ -53,6 +63,9 @@ MODULE ray_patch_mod
 
 contains
 
+  !===============================================================================
+  !> Sets the window's frequency range from window_range and, at console level 2,
+  !> prints the range of each window once.
   !===============================================================================
   SUBROUTINE set_freq_indices (self)
     class(ray_patch_t) :: self
@@ -89,9 +102,10 @@ contains
   !> the grid split into n_windows near-equal parts.
   !===============================================================================
   SUBROUTINE window_range (sp, i_nu, fs, fe)
-    class(spectrum_type), intent(in) :: sp
-    integer, intent(in) :: i_nu
-    integer, intent(out) :: fs, fe
+    class(spectrum_type), intent(in) :: sp !< frequency grid
+    integer, intent(in) :: i_nu            !< window index, < 0 for an output patch
+    integer, intent(out) :: fs             !< first frequency index
+    integer, intent(out) :: fe             !< last frequency index
     !-----------------------------------------------------------------------------
     if (i_nu < 0) then
       call output_patch_range(sp, out_patch_offset, i_nu, fs, fe)
@@ -106,7 +120,8 @@ contains
   !> window_file grid, or the whole grid as window 1.
   !===============================================================================
   PURE INTEGER FUNCTION output_patch_window (offset, i_nu) result(i_seg)
-    integer, intent(in) :: offset(:), i_nu
+    integer, intent(in) :: offset(:) !< patches before each window, and the total last
+    integer, intent(in) :: i_nu      !< output patch index, < 0
     !-----------------------------------------------------------------------------
     i_seg = count(offset(2:) < abs(i_nu)) + 1
   END FUNCTION output_patch_window
@@ -117,9 +132,11 @@ contains
   !> between two windows.
   !===============================================================================
   SUBROUTINE output_patch_range (sp, offset, i_nu, fs, fe)
-    class(spectrum_type), intent(in) :: sp
-    integer, intent(in) :: offset(:), i_nu
-    integer, intent(out) :: fs, fe
+    class(spectrum_type), intent(in) :: sp !< frequency grid
+    integer, intent(in) :: offset(:)       !< patches before each window, and the total last
+    integer, intent(in) :: i_nu            !< output patch index, < 0
+    integer, intent(out) :: fs             !< first frequency index
+    integer, intent(out) :: fe             !< last frequency index
     integer :: i_seg, first, last
     !-----------------------------------------------------------------------------
     i_seg = output_patch_window(offset, i_nu)
@@ -136,10 +153,10 @@ contains
     fe = fe + first - 1
   END SUBROUTINE output_patch_range
 
-!===============================================================================
-!> Keep only the physical boundary bit of the face through which the rays
-!> enter; set_upstream_boundary reads it to find the start of a sweep.
-!===============================================================================
+  !===============================================================================
+  !> Keep only the physical boundary bit of the face through which the rays
+  !> enter; set_upstream_boundary reads it to find the start of a sweep.
+  !===============================================================================
   SUBROUTINE init_bdries (self)
     class(ray_patch_t):: self
     !-----------------------------------------------------------------------------
@@ -153,11 +170,12 @@ contains
     call trace%end()
   END SUBROUTINE init_bdries
 
-!===============================================================================
-!> Pack patch info into a buffer, for MPI communication
-!> FIXME: Consider replacing with mpi_buffer() calls
-!===============================================================================
+  !===============================================================================
+  !> Packs the header and, unless the run has converged (output patches always), the
+  !> window's downstream boundary plane into the MPI buffer.
+  !===============================================================================
   SUBROUTINE pack (self)
+    ! FIXME: Consider replacing with mpi_buffer() calls
     class(ray_patch_t):: self
     !.............................................................................
     class(mesg_t), pointer:: mesg
@@ -209,18 +227,18 @@ contains
     call trace%end (itimer)
   END SUBROUTINE pack
 
-!===============================================================================
-!> Unpack patch info from an MPI buffer.  To ensure consistency, the task meta-
-!> data should not be updated until after the time slot data are in place.
-!> Any task that has this task as virtual nbor and is waiting for the time slot
-!> will thus not be scheduled until both the meta-data and the time slot data
-!> are up-to-date.  This also reduces the chance of lock contention with respect
-!> to the new time slot.
-!> FIXME: Consider replacing with mpi_buffer() calls
+  !===============================================================================
+  !> Unpack patch info from an MPI buffer.  To ensure consistency, the task meta-
+  !> data should not be updated until after the time slot data are in place.
+  !> Any task that has this task as virtual nbor and is waiting for the time slot
+  !> will thus not be scheduled until both the meta-data and the time slot data
+  !> are up-to-date.  This also reduces the chance of lock contention with respect
+  !> to the new time slot.
   !===============================================================================
   SUBROUTINE unpack (self, buffer)
+    ! FIXME: Consider replacing with mpi_buffer() calls
     class(ray_patch_t):: self
-    integer, pointer:: buffer(:)
+    integer, pointer:: buffer(:) !< received message
     !.............................................................................
     type(header_t):: header
     type(lock_t), pointer:: lock
@@ -294,9 +312,9 @@ contains
     call trace%end (itimer)
   END SUBROUTINE unpack
 
-!===============================================================================
-!> Allocate a message structure, for communication
-!===============================================================================
+  !===============================================================================
+  !> Allocate a message structure, for communication
+  !===============================================================================
   SUBROUTINE allocate_mesg (self)
     class(ray_patch_t):: self
     class(mesg_t), pointer:: mesg
@@ -327,7 +345,10 @@ contains
     call trace%end ()
   END SUBROUTINE allocate_mesg
 
-!===============================================================================
+  !===============================================================================
+  !> Size of the message data in words: one XY plane of every variable and slot,
+  !> twice for real(8) memory.
+  !===============================================================================
   FUNCTION total_mesg_buffer_size(self) result(n_buf)
     class(ray_patch_t):: self
     integer :: n_buf
@@ -337,7 +358,10 @@ contains
     n_buf = n_buf * self%nw * self%nv
   END FUNCTION total_mesg_buffer_size
 
-!===============================================================================
+  !===============================================================================
+  !> True if the debug probe frequency fcheck lies in the window and the probe cell
+  !> in the patch.
+  !===============================================================================
   FUNCTION check_in_bounds (self) result (cib)
     class(ray_patch_t) :: self
     logical :: cib
@@ -346,6 +370,9 @@ contains
     cib = cib .and. self%m3d_patch_t%check_in_bounds()
   END FUNCTION check_in_bounds
 
+  !===============================================================================
+  !> Fills the ghost zones in z: zero above an upper boundary, and below a lower
+  !> boundary a monotone PCHIP extrapolation of the first three planes, clipped at 0.
   !===============================================================================
   SUBROUTINE bndries (self)
     class(ray_patch_t) :: self
