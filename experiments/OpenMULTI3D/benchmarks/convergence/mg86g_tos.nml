@@ -4,7 +4,7 @@
 &atmos_params        atmos_format='marcs'
                      atmos_file='input/atmos/p6500_g+4.0_m0.0_t01_st_z-3.00_a+0.40_c+0.00_n+0.00_o+0.40_r+0.00_s+0.00.mod' /
 &atom_params         atom_file='input/atoms/atom.mg86g' relative_abundance=T /
-&composition_params  abund_file='input/abund/abund_magg22' /
+&composition_params  abund_file='input/abund/abund_magg22.txt' /
 &opac_table_params   absmet_file='input/absmet_files/absmet' /
 &nlte_params         convlim=1d-5 ng_step=-1 /
 &rt_iteration_params maxiter=400 /

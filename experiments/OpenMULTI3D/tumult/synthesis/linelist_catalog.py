@@ -2,7 +2,8 @@
 
 The master line lists (one file per species, plus HOP's ``Hlinedata``) are hosted on the
 MPCDF Keeper share that also carries the other large inputs (``README_INSTALL.md``);
-:data:`SOURCE` names its ``linelists/master_linelists`` folder. A download is planned
+:data:`SOURCE` names its ``linelists/master_linelists`` folder, whose address
+:mod:`hopacity.linelists` holds for HOP users without tumult. A download is planned
 before any bytes move: :func:`list_files` reads the share's folder once through the
 Seafile share-link API, :func:`plan` takes the chosen files, checks what the destination
 already holds and totals the transfer, and :func:`fetch` carries the plan out, one
@@ -17,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import urllib.parse
+
+from hopacity import linelists as _hop_lists
 
 from .grid_catalog import human
 from . import remote
@@ -54,8 +57,7 @@ class ShareFolder:
 
 SOURCE = ShareFolder(
     id="keeper-master", name="Master line lists",
-    server="https://keeper.mpdl.mpg.de", token="3191475aebe340638422",
-    path="/linelists/master_linelists/",
+    server=_hop_lists.SERVER, token=_hop_lists.TOKEN, path=_hop_lists.FOLDER + "/",
     citation="OpenMULTI3D input data on MPCDF Keeper")
 
 

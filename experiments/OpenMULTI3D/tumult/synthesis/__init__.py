@@ -8,7 +8,7 @@ inputs of :mod:`.inputs` (:class:`SynthConfig`, :class:`Star`, :class:`Abundance
     from tumult.synthesis import AtmosphereGrid, Star, SynthConfig, SynthRequest
 
     config = SynthConfig(root=".", linelist="input/linelists/sun_3000-9000.txt",
-                         abundances="input/abund/abund_magg22")
+                         abundances="input/abund/abund_magg22.txt")
     request = SynthRequest(config=config, atmosphere=AtmosphereGrid("input/atmos/MARCS"),
                            star=Star(5777, 4.44, 0.0, 1.0), windows=(5160, 5190))
     spectrum = synthesis.synthesize(request).spectrum

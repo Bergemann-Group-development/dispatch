@@ -28,7 +28,7 @@ DOCS = (
     "docs/GLOSSARY.md",
     "docs/GUIWorkflow.md",
     "docs/manual/",
-    "HOP/standalone/README.md",
+    "HOP/README.md",
 )
 # Tracked inputs the documentation tells the reader to open.
 DATA = ("input/", "data/")

@@ -1,0 +1,17 @@
+OpenMULTI3D is Copyright (C) 2026 The OpenMULTI3D authors:
+
+Richard Hoppe
+Philipp Eitner
+
+It is distributed under the GNU General Public License version 3 only (LICENSE).
+
+It builds on the DISPATCH framework, Copyright (c) 2019 Åke Nordlund, Jon Ramsey,
+Andrius Popovas, Troels Haugbølle and Michael Kuffmeier, distributed under the
+BSD-3-Clause license in ../../LICENSE.
+
+HOP reads Turbospectrum line lists and adopts methods and data tables from
+Turbospectrum (Bertrand Plez and contributors), distributed under the GNU General
+Public License version 3.
+
+Parts of HOP derive from HLINOP, Copyright (c) 2020 Paul Barklem and Nikolai Piskunov,
+distributed under the BSD-3-Clause license in HOP/AUTHORS.

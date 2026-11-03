@@ -11,7 +11,7 @@ from benchmarks.api.intended_api import single_lte
 from tumult.synthesis import AtmosphereGrid, Star, SynthConfig
 
 config = SynthConfig(root=".", linelist="input/linelists/sun_3000-9000.txt",
-                     abundances="input/abund/abund_magg22", R_sampling=100_000)
+                     abundances="input/abund/abund_magg22.txt", R_sampling=100_000)
 result = single_lte(config, AtmosphereGrid("input/atmos/MARCS"),
                     Star(5777, 4.44, 0.0, 1.0), (5160, 5190))
 ```

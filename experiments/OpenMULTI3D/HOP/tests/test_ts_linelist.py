@@ -6,24 +6,19 @@ Anstee-Barklem-O'Mara cross sections Turbospectrum would (anstee_mod), so the
 linelist_out it writes in the tumult layout must give the opacity the list itself gives.
 The Fe I records are from the Gaia-ESO NLTE list of Turbospectrum_NLTE (4 Sep 2026).
 
-Needs ``HOP/standalone/build/libhop.so``, the default HOP input data and
-``input/Anstee-1802-2014.dat``.
+Needs the library of the imported hopacity and its default data, the ABO table included.
 """
-import os
 import subprocess
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from tests.native.hop_reference import HOP_LIB, HOP_VMIC
+from hop_reference import HOP_VMIC, hop_library
 
 pytestmark = pytest.mark.skipif(
-    not HOP_LIB.exists(),
-    reason="libhop.so not built - run 'make hop_standalone'")
-
-ROOT = Path(__file__).resolve().parents[2]
+    hop_library() is None,
+    reason="libhop.so not built - run 'make -C standalone'")
 
 FE_I = """'  26.000            '    1    4
 'Fe I    NLTE'
@@ -43,12 +38,12 @@ def _ch(code):
 
 
 def _wavelengths():
-    from tumult.physics import air2vac
+    from hopacity import air2vac
     return air2vac(np.arange(5160.0, 5166.0, 0.01))
 
 
 def _opacities(lists, write=None):
-    from tumult.hop import HopEOS
+    from hopacity import HopEOS
     lam = _wavelengths()
     with HopEOS() as hop:
         hop.load_state([4500.0, 6000.0], rho=[1e-7, 3e-7])
@@ -109,15 +104,13 @@ def test_ragged_block_is_not_taken_for_fixed_width(tmp_path):
 
     script = f"""
 import numpy as np
-from tumult.hop import HopEOS
-from tumult.physics import air2vac
+from hopacity import HopEOS, air2vac
 with HopEOS() as hop:
     hop.load_state([5000.0], rho=[1e-7])
     lines = hop.line_strengths(air2vac(np.arange(5161.45, 5161.6, 0.01)), {str(path)!r}, dlam=0.05)
 print(sorted(round(x, 3) for x in lines.lam0[lines.loggf == -2]))
 """
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT), os.environ.get('PYTHONPATH', '')]))
     result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
-                            cwd=ROOT, env=env, timeout=120)
+                            cwd=tmp_path, timeout=120)
     assert result.returncode == 0, result.stderr[-2000:] + result.stdout[-2000:]
     assert result.stdout.split('\n')[-2] == '[5161.5]'

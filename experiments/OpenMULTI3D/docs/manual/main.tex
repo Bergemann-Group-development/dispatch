@@ -348,7 +348,7 @@ The build takes a few minutes. The compiler is \Code{gfortran} if it is on the \
 
 \begin{itemize}
     \item \File{dispatch.x}, the main program, in the experiment directory;
-    \item \File{HOP/standalone/build/libhop.so}, the library that the Python package uses to call HOP;
+    \item \File{HOP/standalone/build/libhop.so}, the library that the Python package uses to call HOP, copied to \File{HOP/hopacity/};
     \item \File{HOP/standalone/build/hop\_prune.x}, the tool that prunes line lists (Sec.~\ref{sec:hop}).
 \end{itemize}
 
@@ -853,7 +853,7 @@ ladder = [launch(f"mg_sun_A{round(a*100)}", a) for a in abnds]
 obs = tm.load_spectrum("input/spectra/KPNO_4000_9000.txt")
 \end{minted}
 
-\py{run} is the reference run at $A(\mathrm{Mg})=7.58$, the value of the default abundance table \File{abund\_magg22}. \py{ladder} holds the runs for the curves of growth, from 7.28 to 7.88 in steps of 0.1\,dex; each solves its own statistical equilibrium. \py{obs} is the observed spectrum, read as in Sec.~\ref{sec:measure}.
+\py{run} is the reference run at $A(\mathrm{Mg})=7.58$, the value of the default abundance table \File{abund\_magg22.txt}. \py{ladder} holds the runs for the curves of growth, from 7.28 to 7.88 in steps of 0.1\,dex; each solves its own statistical equilibrium. \py{obs} is the observed spectrum, read as in Sec.~\ref{sec:measure}.
 
 The reference run converged in 16 iterations to a last change of 0.09\,\%, and its console table fell steadily after the first ten iterations (Sec.~\ref{sec:convergence}). A last change below \fort{convlim} does not prove the error is that small, so the reference run was repeated with one setting of Sec.~\ref{sec:convergence} refined at a time. Table~\ref{tab:mg_refine} compares the departure coefficients between $\log\tau_{500}=-4$ and 0.5, where the lines form, and the equivalent widths.
 
@@ -1069,7 +1069,7 @@ from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="synth",
                      linelist="input/linelists/master_line.txt",
-                     abundances="input/abund/abund_magg22",
+                     abundances="input/abund/abund_magg22.txt",
                      absmet="input/absmet_files",
                      R_sampling=200_000)
 atmosphere = Atmosphere("input/atmos/sun.mod")
@@ -1273,7 +1273,7 @@ Collision-induced absorption: H$+$He, H$_2+$H, H$_2+$H$_2$, H$_2+$He & \citet{Gu
 
 Continuous scattering is Thomson scattering by electrons and Rayleigh scattering by H\,\textsc{i} \citep{Gingerich1964} and H$_2$ \citep{DalgarnoWilliams1962}, and by He\,\textsc{i} \citep{BuesWehrse1976}. The source function of the background is $(\kappa B_\nu+\sigma J_\nu)/(\kappa+\sigma)$. In the iteration pass $J_\nu$ is the mean intensity of the previous iteration. In the output pass it is computed only with scattering iterations (\fort{maxiter}$>0$ in \fort{&rt_output_params}); with the default \fort{maxiter=0}, $J_\nu=B_\nu$ and the scattering acts as thermal absorption. The \File{nlte} and \File{read\_departures} presets set three scattering iterations. These are plain lambda iterations, which converge slowly where scattering dominates the opacity, as in the blue and ultraviolet continua of metal-poor stars and giants; there, check the spectrum against a run with more iterations, or switch on the approximate operator with \fort{scattering_preconditioning=T} in \fort{&nlte_params}. In the visible spectrum of the Sun three iterations suffice (Table~\ref{tab:mg_refine}). The metal lines enter through the opacity table in the iteration pass and through the line list in the output pass (Sec.~\ref{sec:absmet}).
 
-A model atom replaces the background tables of its own continua (\fort{exclude_trace_cont=T}), so that they are not counted twice in the iterations. A table is replaced when its species, atomic weight and ionisation stage are those of the atom and its lower level lies within 1\,\% of the excitation energy of the lower level of an active continuum of the atom. A table that covers a whole ion, such as \fort{FeI} in \fort{TS_absdat.dat}, counts as the ground state of that ion. By default the output pass does not add the atom's bound-free transitions back (\fort{bound_free_in_output=F} in \fort{&output_params}), so the output spectrum lacks the photo-ionisation opacity of these levels, for Mg the Mg\,\textsc{i} continua. In the optical spectrum of a solar-type star these are minor, but towards the ultraviolet, for example below the Mg\,\textsc{i} edges of 3p\,$^1$P$^\circ$ at 3757\,{\AA} and 3p\,$^3$P$^\circ$ at 2514\,{\AA}, they shape the continuum. \fort{bound_free_in_output=T} adds them with the NLTE populations.
+A model atom replaces the background tables of its own continua (\fort{exclude_trace_cont=T}), so that they are not counted twice in the iterations. A table is replaced when its species, atomic weight and ionisation stage are those of the atom and its lower level lies within 1\,\% of the excitation energy of the lower level of an active continuum of the atom. A table that covers a whole ion, such as \fort{FeI} in \fort{TS_absdat.txt}, counts as the ground state of that ion. By default the output pass does not add the atom's bound-free transitions back (\fort{bound_free_in_output=F} in \fort{&output_params}), so the output spectrum lacks the photo-ionisation opacity of these levels, for Mg the Mg\,\textsc{i} continua. In the optical spectrum of a solar-type star these are minor, but towards the ultraviolet, for example below the Mg\,\textsc{i} edges of 3p\,$^1$P$^\circ$ at 3757\,{\AA} and 3p\,$^3$P$^\circ$ at 2514\,{\AA}, they shape the continuum. \fort{bound_free_in_output=T} adds them with the NLTE populations.
 
 \subsection{Lines}
 
@@ -1307,7 +1307,7 @@ Choice & Default & Key & See\\
 \midrule
 Mesh & the model's own points, graded in $\log P_\mathrm{e}$ into z-slabs & \fort{nz}, \fort{amr} & \ref{sec:mesh}\\
 Microturbulence & from the model (1D); none in 3D & \fort{vmic} & \ref{sec:atmosformats}\\
-Composition & \File{abund\_magg22} scaled to the model's [Fe/H] \citep{MaggBergemann2022}; partition functions, molecules and isotopes from data files & \fort{abund_file} & \ref{sec:abundances}\\
+Composition & \File{abund\_magg22.txt} scaled to the model's [Fe/H] \citep{MaggBergemann2022}; partition functions, molecules and isotopes from data files & \fort{abund_file} & \ref{sec:abundances}\\
 NLTE$^\dagger$ & off (\fort{convlim=0}); preconditioned ALI with automatic Ng acceleration when on & \fort{convlim} & \ref{sec:numerics}\\
 Iteration-pass background$^\dagger$ & continuum only; name a table matched to the model's [Fe/H] & \fort{absmet_file} & \ref{sec:absmet}\\
 Collision rates & those of the atom file only; classical recipes off & \fort{e_excitation}, \dots & \ref{sec:atoms}\\
@@ -1379,7 +1379,7 @@ An NLTE run writes a second spectrum, the LTE set (\py{crop(LTE=True)}), compute
 %%%%%%%%%%%%%%%%%%%%%%
 
 \begin{description}
-    \item[Default.] The solar abundance table \File{abund\_magg22} scaled to the model's [Fe/H], and in the iteration pass the continuum opacity of HOP without line blanketing.
+    \item[Default.] The solar abundance table \File{abund\_magg22.txt} scaled to the model's [Fe/H], and in the iteration pass the continuum opacity of HOP without line blanketing.
     \item[Change when] the star has a non-solar mixture, single elements are to be perturbed, or the NLTE rates are to include line blanketing.
     \item[Keys.] \fort{&composition_params} (Sec.~\ref{nl:comp}), \fort{abundance} in \fort{&atom_params} (Sec.~\ref{nl:atom}), \fort{absmet_file} (Sec.~\ref{nl:opac}), \fort{include_absmet} and \fort{include_linelist} (Sec.~\ref{nl:rt}).
 \end{description}
@@ -1714,7 +1714,7 @@ Line lists in Turbospectrum's format are read as well, and a file may mix both f
   ...
 \end{minted}
 
-The species code is \texttt{Z.AAA} for an atom (\texttt{26.056} is $^{56}$Fe) and, for a molecule, the two-digit atomic numbers in ascending order followed by the mass part above (\texttt{0607.012014} is $^{12}$C$^{14}$N). A record holds the air wavelength, the lower-level energy, $\log gf$, the van der Waals parameter, the upper statistical weight (not used), the radiative damping and optionally the Stark parameter, then the orbital symbols of the two levels, two equivalent-width columns, a quoted comment and optionally the level indices. The damping columns are read as \fort{gvdw}, \fort{grad} and \fort{gstk}. As in Turbospectrum, an atomic line whose van der Waals parameter is below 20 takes the Anstee--Barklem--O'Mara cross section where one exists: interpolated in the tables for s--p, p--d and d--f transitions of neutral atoms, or taken from the individually computed lines (including Fe~II and Cr~II) within 0.05~{\AA} and 0.02~eV. The tables are read from \fort{anstee_file} (\File{input/Anstee-1802-2014.dat}, from Turbospectrum). The output line list \File{linelist\_out.txt} is always written in the format above and states the cross sections that were used. Level indices refer to the levels of the model atom the list was made for; a nonzero index is used as it stands, so they must match the levels of the model atom of the run (Sec.~\ref{sec:nlteoutput}). Hydrogen lines need a block \fort{'H I'} in the format above; a Turbospectrum block for H~I stops the run.
+The species code is \texttt{Z.AAA} for an atom (\texttt{26.056} is $^{56}$Fe) and, for a molecule, the two-digit atomic numbers in ascending order followed by the mass part above (\texttt{0607.012014} is $^{12}$C$^{14}$N). A record holds the air wavelength, the lower-level energy, $\log gf$, the van der Waals parameter, the upper statistical weight (not used), the radiative damping and optionally the Stark parameter, then the orbital symbols of the two levels, two equivalent-width columns, a quoted comment and optionally the level indices. The damping columns are read as \fort{gvdw}, \fort{grad} and \fort{gstk}. As in Turbospectrum, an atomic line whose van der Waals parameter is below 20 takes the Anstee--Barklem--O'Mara cross section where one exists: interpolated in the tables for s--p, p--d and d--f transitions of neutral atoms, or taken from the individually computed lines (including Fe~II and Cr~II) within 0.05~{\AA} and 0.02~eV. The tables are read from \fort{anstee_file} (\File{input/Anstee-1802-2014.txt}, from Turbospectrum). The output line list \File{linelist\_out.txt} is always written in the format above and states the cross sections that were used. Level indices refer to the levels of the model atom the list was made for; a nonzero index is used as it stands, so they must match the levels of the model atom of the run (Sec.~\ref{sec:nlteoutput}). Hydrogen lines need a block \fort{'H I'} in the format above; a Turbospectrum block for H~I stops the run.
 
 The isotope file starts each element with a line \fort{Symbol niso}, followed by \fort{niso} lines \fort{iso mass fraction}; lines starting with \texttt{!} are comments:
 
@@ -1955,7 +1955,7 @@ HOP (\File{HOP/}) is the equation-of-state and opacity engine. It is compiled in
 
 \input{tabs/hop_modules}
 
-\Code{tumult.hop.HopEOS} calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
+\Code{hopacity.HopEOS} (\File{HOP/hopacity/}, also available as \Code{tumult.HopEOS}) calls \File{libhop.so} to obtain equation of state, opacities and line strengths from Python without running \File{dispatch.x}. \Code{hopacity} also builds as a wheel of its own, with the library and HOP's default input files, for users who need only these (\File{HOP/README.md}). \File{hop\_prune.x} (driven by \Code{tumult.prune}) writes the subset of a line list that is not negligible on one atmosphere over given windows, with each transition's strength and reach.
 
 \bibliography{ref}
 

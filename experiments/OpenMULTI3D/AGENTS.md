@@ -94,6 +94,8 @@ resize). Code written this way needs no comment saying why. gfortran gives
 `allocate(a, source=b(idx))` with a vector subscript `idx` a lower bound of 0;
 allocate with explicit bounds and assign instead.
 
+`HOP/` is also published as the private repository `Bergemann-Group-development/hopacity`, a one-way mirror of HOP's history for users of the `hopacity` package. Develop HOP here, keep everything under `HOP/` working without the rest of the repository (its default data tables live in `HOP/hopacity/data`, one folder per kind, and `input/` links to those folders), and publish merged work from the Dispatch root with `git subtree push --prefix=experiments/OpenMULTI3D/HOP https://github.com/Bergemann-Group-development/hopacity.git main`. A release takes the version in `HOP/pyproject.toml` and a `v<version>` tag pushed to the mirror at the split commit (`git subtree split --prefix=experiments/OpenMULTI3D/HOP main`); its workflow then attaches the wheels.
+
 Use relative paths or user configuration for machine-dependent locations.
 Keep local settings and large datasets out of version control. Check ignore
 rules when adding source files: the parent repository ignores many new files

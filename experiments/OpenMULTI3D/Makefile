@@ -86,7 +86,7 @@ io_mod.o job_record_mod.o: $(HASH_STAMP)
 rt_solvers_mod.o bftrans_mod.o level_mod.o: HOP/exp_neg.inc
 # The standalone HOP package is built in its own directory with -DHOP_STANDALONE, so its
 # objects never mix with the framework-enabled ones above.  Its default target builds
-# what the Python layer runs: libhop.so (tumult.hop, through the committed libhop.h), the
+# what the Python layer runs: libhop.so (hopacity, through the committed libhop.h), the
 # hop_prune.x line-list pruner and the atom_convert.x model-atom converter.  Building them
 # here keeps a plain `make` sufficient for every entry point -- a build that produced only
 # some of them fails at run time in the others.  The package takes this build's compiler and option group.
@@ -97,8 +97,3 @@ clean:: clean_standalone
 clean_standalone:
 	@$(MAKE) --no-print-directory -C HOP/standalone clean
 .PHONY: hop_standalone clean_standalone
-
-# Input data that is tracked compressed, unpacked on first build to the path HOP reads
-default: input/Anstee-1802-2014.dat
-input/%.dat: input/%.dat.gz
-	gunzip -c $< > $@

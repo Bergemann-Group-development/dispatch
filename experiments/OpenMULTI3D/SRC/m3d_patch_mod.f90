@@ -281,7 +281,7 @@ MODULE m3d_patch_mod
     character(len=128), save :: save_patch_kind=''
     ! Optional input manifest for an extended output set axis (abundance ladder).
     ! It must live outside run_dir, whose text outputs are cleared at startup.
-    character(len=512), public, save :: set_file=''
+    character(len=4096), public, save :: set_file=''
     real(4), public :: fixed_Jnu=-1.0
     ! Output-content selection formerly read via &atom_params
     logical, public, save :: save_populations=.true.
@@ -293,7 +293,7 @@ MODULE m3d_patch_mod
     ! update (atom_type%write_rates), for model-atom reduction studies in 1D
     logical, public, save :: save_net_rates=.false.
     character(len=128), public :: atmos_format='unknown'
-    character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
+    character(len=4096), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
     ! flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
     ! flux has converged. rt_patch computes the flux AFTER nlte_patch has already
@@ -739,7 +739,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE save_angle_quadrature ()
     integer :: lunit, i, nmu
-    character(len=256) :: meta_file
+    character(len=4096) :: meta_file
     integer, save :: itimer=0
     logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------

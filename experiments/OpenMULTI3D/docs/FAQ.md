@@ -35,7 +35,7 @@ from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig, Synt
 
 config = SynthConfig(root=".", cache="synth", R_sampling=100_000,
                      linelist="input/linelists/sun_3000-9000.txt",
-                     abundances="input/abund/abund_magg22",
+                     abundances="input/abund/abund_magg22.txt",
                      absmet="input/absmet_files/absmet", threads=8)
 grid = AtmosphereGrid("input/atmos/MARCS")
 request = SynthRequest(config=config, atmosphere=grid, star=Star(5700, 4.3, -0.1, 1.2))
@@ -192,7 +192,7 @@ from tumult.synthesis import AtmosphereGrid, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="synth", R_sampling=300_000,
                      linelist="input/linelists/sun_3000-9000.txt",
-                     abundances="input/abund/abund_magg22", linelist_skirt=5.0)
+                     abundances="input/abund/abund_magg22.txt", linelist_skirt=5.0)
 mset = parse_linemask_file("input/linemasks/Mg/mg-lmask.txt")
 windows = [(m.smin, m.smax) for m in mset.masks if m.include]
 request = SynthRequest(config=config, atmosphere=AtmosphereGrid("input/atmos/MARCS"),

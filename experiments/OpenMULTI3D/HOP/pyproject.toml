@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hopacity"
+version = "0.1.0"
+description = "HOP equation of state and opacities (continuum, sampled metal lines, line lists) from Python, without DISPATCH"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "AUTHORS"]
+dependencies = [
+    "numpy>=2.0",
+    "cffi>=1.16",       # binds libhop.so against the bundled libhop.h
+    "pandas>=2.0",      # line_strengths returns a DataFrame
+]
+
+# setup.py compiles libhop.so with standalone/Makefile and bundles it, the header and
+# the default input files; the input files are listed there.
+[tool.setuptools]
+packages = ["hopacity"]
+include-package-data = false
+
+# Release wheels (.github/workflows/wheels.yml).  The wheel is py3-none, so one
+# interpreter builds it for all; the repair step bundles the compiler's Fortran and
+# OpenMP runtimes.  HW takes the architecture baselines of the Dispatch production build
+# (config/compiler/gfortran/hoppe.mkf).
+[tool.cibuildwheel]
+build = "cp312-*"
+skip = "*-musllinux*"
+test-requires = ["pytest"]
+test-command = "python {project}/tests/smoke.py && python -m pytest {project}/tests"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+environment = { OPT = "-O3", HW = "-march=sandybridge -mtune=generic" }
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+# Homebrew's gcc provides gfortran and its runtimes, built for the runner's macOS
+before-all = "brew install gcc"
+environment = { OPT = "-O3", HW = "-mcpu=apple-m1", MACOSX_DEPLOYMENT_TARGET = "14.0" }

@@ -62,7 +62,8 @@ MODULE read_external_mod
   real(4) :: origin(3) = [0., 0., 0.]
   real(4), public :: vmic=-1
   ! the model a saved atmosphere was computed from, as its params.nml names it
-  character(len=512) :: saved_from_file='', saved_from_format=''
+  character(len=4096) :: saved_from_file=''
+  character(len=128) :: saved_from_format=''
   integer :: saved_from_snap=0
 
 contains
@@ -82,9 +83,9 @@ contains
     integer :: dims=1, nx=-1, ny=-1, nz=-1, snap=0
     integer :: verbose=console_inherit, level=1
     logical :: use_abnd=.false., read_departures_local=.false.
-    character(len=512) :: command
-    character(len=512) :: save_file
-    character(len=512) :: atmos_root=''
+    character(len=4096) :: command
+    character(len=4096) :: save_file
+    character(len=4096) :: atmos_root=''
     namelist /atmos_params/ atmos_root, atmos_file, dims, verbose, patches_per_mpi, FeH, &
       save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, pchip_interpolation, &
       log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures, &

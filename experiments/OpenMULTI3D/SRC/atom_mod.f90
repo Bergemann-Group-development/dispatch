@@ -114,7 +114,7 @@ MODULE atom_mod
       logical :: precomputed = .false. ! whether departure coeffs are precomputed
       
       character(len=128) :: name
-      character(len=512) :: file=''  ! the run's table-format copy of the atom
+      character(len=4096) :: file=''  ! the run's table-format copy of the atom
       character(len=3)   :: id    ! atom id string 
       character(len=20)  :: crout ! which collisional SUBROUTINE to use 
   
@@ -258,7 +258,7 @@ MODULE atom_mod
     ! quadratures; those then only fix each line's lam_min/lam_max, i.e. the interval
     ! of the shared grid its rates are integrated over. tumult/line_quadrature.py
     ! writes the grid together with a matching atom copy.
-    character(len=256), public :: line_grid_file=''
+    character(len=4096), public :: line_grid_file=''
     real(8), dimension(:), allocatable, private, save :: line_grid
     integer, public :: cswitch=1
     ! Ng acceleration schedule:

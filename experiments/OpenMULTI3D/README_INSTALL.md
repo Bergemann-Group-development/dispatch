@@ -67,12 +67,10 @@ forces one, and everything below is built with it. About two minutes on eight co
 The build produces
 
 - `dispatch.x` in this directory;
-- `HOP/standalone/build/libhop.so`, the EOS and opacity library that `tumult.hop` loads
-  through the committed header `HOP/standalone/libhop.h`;
+- `HOP/standalone/build/libhop.so`, the EOS and opacity library, copied to `HOP/hopacity/libhop.so`, where the `hopacity` package (re-exported by tumult) loads it through the committed header `HOP/standalone/libhop.h`;
 - `HOP/standalone/build/hop_prune.x`, the line-list pruner the synthesis workflows run.
 
-`make clean && make -j` rebuilds everything from scratch; `make -C HOP/standalone`
-rebuilds the HOP library alone.
+`make clean && make -j` rebuilds everything from scratch; `make -C HOP/standalone` rebuilds the HOP library alone.
 
 ## 4. Input data
 
@@ -203,9 +201,11 @@ deactivate conda before activating `.venv`.
 **`ModuleNotFoundError: No module named 'tumult'`**: the environment with the editable
 install is not active. Activate `.venv` (section 2).
 
-**`libhop.so not found at HOP/standalone/build/libhop.so`**: the standalone library was
-not built, or was built into another directory. Run `make -C HOP/standalone`, or point
-`HOP_LIB` at an existing library.
+**`libhop.so not found at .../HOP/hopacity/libhop.so`**: the standalone library was not built. Run `make -C HOP/standalone`, or point `HOP_LIB` at an existing library.
 
 **`OSError: ... Address already in use`** when starting TumultStudio: another server
 holds port 5006. Start with `--port N`.
+
+## License
+
+OpenMULTI3D is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation (`LICENSE`). It is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose. The copyright holders are listed in `AUTHORS`. The DISPATCH framework it builds on is distributed under the BSD-3-Clause license in `../../LICENSE`.

@@ -24,7 +24,7 @@ import pytest
 from scipy.interpolate import CubicSpline
 
 import tumult
-from tests.native.hop_reference import HOP_LIB
+from tests.native.hop_lib import HOP_LIB
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
@@ -84,7 +84,7 @@ LTE = f"""&linelist_params     linelist_file='{LINELIST}' /
 
 
 def test_reader_stores_the_vz_column_in_cm_per_s(tmp_path):
-    from tumult.hop import read_atmosphere
+    from hopacity import read_atmosphere
     moving = read_atmosphere(_write_text_model(tmp_path / 'v.atmos', 1.5), atmos_format='text')
     static = read_atmosphere(_write_text_model(tmp_path / 's.atmos'), atmos_format='text')
     np.testing.assert_allclose(moving.vz, 1.5e5, rtol=1e-6)

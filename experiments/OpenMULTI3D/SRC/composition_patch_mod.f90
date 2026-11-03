@@ -88,14 +88,14 @@ MODULE composition_patch_mod
   real(4), public, dimension(:), allocatable :: external_abund
   real(4), public :: alpha_enhancement=0.0, r_process_enhancement=0.0
   character(len=256), save :: save_species=''
-  character(len=256), save :: absdat_file='./input/TS_absdat.dat'
-  character(len=256), save :: abund_file='./input/abund/abund_magg22'
-  character(len=256), save :: isotope_file='./input/isotopes_blp'
-  character(len=256), save :: molec_file='./input/molec_data_BC.txt'
-  character(len=256), save :: opac_table=''
-  character(len=256), save :: absmet_file=''
-  character(len=512), save :: linelist_folder=''
-  character(len=256), save, dimension(:), allocatable :: linelist_file
+  character(len=4096), save :: absdat_file='./input/absdat/TS_absdat.txt'
+  character(len=4096), save :: abund_file='./input/abund/abund_magg22.txt'
+  character(len=4096), save :: isotope_file='./input/isotopes/isotopes_blp.txt'
+  character(len=4096), save :: molec_file='./input/molec/molec_data_BC.txt'
+  character(len=4096), save :: opac_table=''
+  character(len=4096), save :: absmet_file=''
+  character(len=4096), save :: linelist_folder=''
+  character(len=4096), save, dimension(:), allocatable :: linelist_file
 
   public :: read_composition_params, max_n_windows, set_n_windows_out
 
@@ -104,6 +104,7 @@ contains
 !===============================================================================
 SUBROUTINE read_composition_params ()
   integer :: i
+  character(len=256), allocatable :: names(:)
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=console_inherit
   namelist /composition_params/ verbose, absdat_file, abund_file, &
@@ -137,10 +138,11 @@ SUBROUTINE read_composition_params ()
   call qlg_init
 
   if (linelist_folder /= '') then
+    call os%get_filenames(linelist_folder, names)
     deallocate(linelist_file)
-    call os%get_filenames(linelist_folder, linelist_file)
-    do i=1, size(linelist_file)
-      linelist_file(i) = trim(linelist_folder)//'/'//trim(linelist_file(i))
+    allocate(linelist_file(size(names)))
+    do i=1, size(names)
+      linelist_file(i) = trim(linelist_folder)//'/'//trim(names(i))
     end do
   else
     call truncate_array(linelist_file, count(linelist_file/=''))

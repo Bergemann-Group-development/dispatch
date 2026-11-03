@@ -38,7 +38,7 @@ import pandas as pd
 
 # The Anstee tables ship with the input data, which HOP reads too. The Irwin
 # ionisation energies come from a Turbospectrum checkout, named by TURBOSPECTRUM_PATH.
-ANSTEE_DAT = Path(__file__).resolve().parents[1] / 'input' / 'Anstee-1802-2014.dat'
+ANSTEE_FILE = Path(__file__).resolve().parents[1] / 'input' / 'Anstee-1802-2014.txt'
 IRWIN_DAT = Path(os.environ.get('TURBOSPECTRUM_PATH', '')) / 'DATA' / 'IRWIN_atoms_v07.3.dat'
 
 # anstee.f matching tolerances and its cm^-1 -> eV conversion
@@ -73,7 +73,7 @@ _RANGE = {'sp': ((1.0, 3.0), (1.3, 3.0)), 'pd': ((1.3, 3.0), (2.3, 4.0)),
           'df': ((2.3, 4.0), (3.3, 5.0))}
 
 
-def _read_grids(path=ANSTEE_DAT):
+def _read_grids(path=ANSTEE_FILE):
     """Parse the six n*-indexed tables from the head of the Anstee data file."""
     rows = open(path).readlines()
     nums = re.compile(r'^\s*[-+]?[\d.]')   # alpha tables start with a bare ".246"
@@ -94,7 +94,7 @@ def _read_grids(path=ANSTEE_DAT):
     return grids
 
 
-def _read_special(path=ANSTEE_DAT):
+def _read_special(path=ANSTEE_FILE):
     tabs = {}
     for name, (start, n) in _BLOCKS.items():
         df = pd.read_fwf(path, colspecs=_SPECIAL_COLS, names=_SPECIAL_NAMES,

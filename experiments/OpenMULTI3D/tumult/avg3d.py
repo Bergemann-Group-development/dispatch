@@ -1,10 +1,10 @@
 """<3D> averages of 3D snapshots at full resolution, without dispatch.x.
 
-A snapshot is read with :func:`tumult.hop.read_atmosphere` (dispatch.x's own reader).
+A snapshot is read with :func:`hopacity.read_atmosphere` (dispatch.x's own reader).
 Optical depth comes from HOP's continuum opacity, tabulated once per composition on a
 (ln T, ln rho) grid (:class:`OpacityTable`) and interpolated at every cell, then
 integrated along each column with dispatch.x's integrator
-(:func:`tumult.hop.optical_depth`).  The columns of several snapshots are pooled and
+(:func:`hopacity.optical_depth`).  The columns of several snapshots are pooled and
 averaged on surfaces of a reference variable:
 
 - ``'tau500'``: log tau at 500 nm, the surface of the Stagger <3D> models;
@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 from numba import njit, prange
 
-from .hop import HopEOS, optical_depth, read_atmosphere
+from hopacity import HopEOS, optical_depth, read_atmosphere
 
 __all__ = ['OpacityTable', 'Columns', 'columns', 'surface_average', 'write_text',
            'ROSS_LAM', 'RECIPES', 'SURFACES', 'TOPS']

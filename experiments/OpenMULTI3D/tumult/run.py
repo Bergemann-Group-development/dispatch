@@ -6,7 +6,7 @@ orchestration and analysis facade over them (lazy atmos/linelist/atom properties
 spectra, departures, contribution functions, plotting).
 """
 from .atom import Atom, Level
-from .hop import pchip_integral
+from hopacity import pchip_integral
 from .auxfuncs import (assign_group_indices, interp_tau, optical_depth_from_top,
                        rotate_array)
 from ._abundance_numerics import cog_invert
@@ -691,7 +691,7 @@ class Run(object):
         ``run.flux`` (no ray selection) or ``run.ie`` (``imu``/``ang``, averaged over the
         selected rays). Integrated over ``ltau`` it gives the line depression
         F_cnt - F (or I_cnt - I) under the default ``depression_cntrbf=T``, and the
-        emergent flux (intensity) otherwise, with :func:`tumult.hop.pchip_integral`, the
+        emergent flux (intensity) otherwise, with :func:`hopacity.pchip_integral`, the
         quadrature of the tau_500 scale.
 
         dispatch saves, per ray and point, the source term of that quantity per unit

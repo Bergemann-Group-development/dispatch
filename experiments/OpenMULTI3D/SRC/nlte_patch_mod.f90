@@ -143,8 +143,8 @@ contains
     class(molec_type), pointer :: molecule
     class(ion_type), pointer :: ion
     class(massive_type), pointer :: species
-    character(len=256), save, dimension(:), allocatable :: atom_file
-    character(len=512), save :: atom_root=''
+    character(len=4096), save, dimension(:), allocatable :: atom_file
+    character(len=4096), save :: atom_root=''
     real(8), dimension(:), allocatable :: abundance
     real(8), save :: qnorm=10.0
     integer, save :: itimer=0, natom=0, n_in_lines=0
@@ -153,7 +153,7 @@ contains
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
     type(classic_atom_t) :: classic
-    character(len=512) :: read_file
+    character(len=4096) :: read_file
     character(len=256) :: atom_name
     integer, allocatable :: atom_lines(:)
     logical, allocatable :: selected(:)
@@ -386,7 +386,7 @@ contains
   !===============================================================================
   FUNCTION run_atom_file (id) RESULT (file)
     character(len=*), intent(in) :: id
-    character(len=512) :: file
+    character(len=4096) :: file
     class(element_type), pointer :: element
     class(molec_type), pointer :: molecule
     character(len=len(id)) :: run_id
@@ -857,7 +857,7 @@ contains
     class(departure_pointer_t), pointer :: dep
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
-    character(len=256) :: run_dir, save_folder
+    character(len=4096) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
     integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, nzero
@@ -1041,7 +1041,7 @@ contains
   !===============================================================================
   SUBROUTINE check_stop_request (self)
     class(nlte_patch_t), intent(in) :: self
-    character(len=256) :: file
+    character(len=4096) :: file
     character(len=16) :: word, nit
     logical :: exists
     integer :: lunit, iostat
@@ -1155,7 +1155,7 @@ contains
   SUBROUTINE save_convergence_report (self)
     class(nlte_patch_t) :: self
     integer :: lunit, i
-    character(len=256) :: conv_file
+    character(len=4096) :: conv_file
     integer, save :: itimer=0
     logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------

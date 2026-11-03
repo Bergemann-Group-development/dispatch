@@ -58,7 +58,7 @@ PREF_PAGES = {
     "synthprefs": [   # "Synthesis" page — the science inputs
         ("interp_method", "Interpolation", "select", "NaturalNeighbor"),
         ("linelist", "Line list (file or folder)", "text", "./input/linelists/master_linelists/"),
-        ("abund_file", "Solar abundance file", "text", "./input/abund/abund_magg22"),
+        ("abund_file", "Solar abundance file", "text", "./input/abund/abund_magg22.txt"),
         ("absmet", "Absmet file or folder", "text", ""),
     ],
     "synthengine": [  # "Engine" page — paths + runtime knobs
