@@ -1,10 +1,20 @@
+!===============================================================================
+!> Debug probe indices and diagnostic switches, read from &m3d_debug_params by
+!> m3d_patch_mod.
+!>
+!> pcheck, fcheck, linecheck, lvlcheck and atomcheck pick the cell, frequency,
+!> transition, level and atom whose values the patch holding that cell prints.
+!> check_NaN adds NaN checks to the opacity, population and intensity arrays;
+!> diag_pops, diag_db and diag_no_scat_loop turn on single diagnostics of the
+!> statistical-equilibrium and scattering iterations.
+!===============================================================================
 module m3d_debug_mod
   implicit none
 
-  real(8), public, dimension(6) :: memcheck
-  integer, public :: pcheck(3)=[1,1,-1]
+  real(8), public, dimension(6) :: memcheck  !< values at the probe, gathered for printing
+  integer, public :: pcheck(3)=[1,1,-1]  !< probe cell (x, y, z)
   integer, public :: fcheck=1, linecheck=1, lvlcheck=1, atomcheck=1
-  logical, public :: check_NaN=.false.
+  logical, public :: check_NaN=.false.  !< check opacities, populations and intensities for NaN
   !> diagnose the statistical-equilibrium linear solve: per patch and iteration,
   !> report how many level corrections hit the exponential damping floor and how
   !> large the residual of the LU solve is at the worst cell
