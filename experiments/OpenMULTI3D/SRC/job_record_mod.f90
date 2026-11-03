@@ -3,7 +3,7 @@
 !> as soon as the run directory exists and rewritten on a normal exit.
 !>
 !> The record makes a run discoverable and attributable whoever started it (a
-!> shell, a notebook, the TumultStudio2 server, a Slurm batch script): the
+!> shell, a notebook, the workflow daemon, a Slurm batch script): the
 !> process id and host say whether it still runs, the input file and working
 !> directory say what it computes, the Slurm job id lets a scheduler-side tool
 !> poll or cancel it. A crash leaves `state='running'` behind; a reader then
@@ -17,13 +17,19 @@ MODULE job_record_mod
   USE mpi_mod
   implicit none
   private
+  !===============================================================================
+  !> Writer of the run's job.nml.
+  !===============================================================================
   type, public:: job_record_t
   contains
     procedure:: start
     procedure:: finish
   end type
   type(job_record_t), public:: job_record
-  character(len=*), parameter:: file_name = 'job.nml'
+  character(len=*), parameter:: file_name = 'job.nml' !< name of the record in the run directory
+  !=============================================================================
+  !> getpid, gethostname and getcwd of the C library.
+  !=============================================================================
   interface
     function c_getpid() bind(C, name='getpid')
       import c_int
@@ -70,7 +76,8 @@ END SUBROUTINE finish
 !===============================================================================
 SUBROUTINE write_record (new_state, ended_now)
   !$ use omp_lib
-  character(len=*), intent(in):: new_state, ended_now
+  character(len=*), intent(in):: new_state !< 'running' or 'finished'
+  character(len=*), intent(in):: ended_now !< end time stamp, '' while running
   character(len=16):: state
   character(len=32):: started, ended
   character(len=256):: host
@@ -123,6 +130,8 @@ SUBROUTINE write_record (new_state, ended_now)
 END SUBROUTINE write_record
 
 !===============================================================================
+!> The local time in ISO 8601 with the UTC offset, e.g. 2026-11-03T12:00:00+01:00.
+!===============================================================================
 FUNCTION timestamp () result (text)
   character(len=32):: text
   character(len=8):: date
@@ -135,6 +144,8 @@ FUNCTION timestamp () result (text)
 END FUNCTION timestamp
 
 !===============================================================================
+!> The host name as a NUL-terminated buffer, empty if gethostname fails.
+!===============================================================================
 FUNCTION gethostname_ () result (buf)
   character(kind=c_char, len=256):: buf
   integer(c_int):: status
@@ -144,6 +155,8 @@ FUNCTION gethostname_ () result (buf)
   if (status /= 0) buf = c_null_char
 END FUNCTION gethostname_
 
+!===============================================================================
+!> The working directory as a NUL-terminated buffer, empty if getcwd fails.
 !===============================================================================
 FUNCTION getcwd_ () result (buf)
   character(kind=c_char, len=4096):: buf
@@ -158,7 +171,7 @@ END FUNCTION getcwd_
 !> A NUL-terminated C buffer as a Fortran string.
 !===============================================================================
 FUNCTION c_string (buf) result (text)
-  character(kind=c_char, len=*), intent(in):: buf
+  character(kind=c_char, len=*), intent(in):: buf !< C string, up to its first NUL
   character(len=len(buf)):: text
   integer:: n
   !-----------------------------------------------------------------------------

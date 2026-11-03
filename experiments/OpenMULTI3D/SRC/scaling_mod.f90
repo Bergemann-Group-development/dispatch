@@ -1,7 +1,5 @@
 !===============================================================================
-!> Define code units, in terms of (here) CGS units.  Demonstrates how to pass
-!> on the three standard scaling values (l,t,m), and benefit from the standard
-!> metadata produced and passed on to Python by self%set (...)
+!> Code units of the run: CGS with fixed length, time and mass scales.
 !===============================================================================
 MODULE scaling_mod
   USE units_mod
@@ -10,9 +8,9 @@ MODULE scaling_mod
   USE standard_scaling_mod
   implicit none
   private
-  !-----------------------------------------------------------------------------
-  !> Extend the units_t data typem which handles scaling metadata output
-  !-----------------------------------------------------------------------------
+  !===============================================================================
+  !> standard_scaling_t with fixed scales and no output of its own.
+  !===============================================================================
   type, public, extends(standard_scaling_t):: scaling_t
   contains
     procedure:: init
@@ -22,7 +20,9 @@ MODULE scaling_mod
 CONTAINS
 
 !===============================================================================
-!> Default scaling module, optionally overloaded with local version.
+!> Sets the code units once per process: CGS with a length of 1e8 cm, a velocity
+!> of 1e6 cm s^-1 and a density of 1e-7 g cm^-3, which make the time unit 100 s
+!> and the mass unit 1e17 g.
 !===============================================================================
 SUBROUTINE init (self)
   class(scaling_t):: self
@@ -41,12 +41,12 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> overwrites standard_scaling output
+!> Writes nothing: the code units are constant, so the scaling output of
+!> standard_scaling_t is not needed.
 !===============================================================================
 SUBROUTINE output (self)
   class(scaling_t):: self
   !----------------------------------------------------------------------------
-  ! we don't need this extra output as the code units are constant
 END SUBROUTINE output
 
 END MODULE scaling_mod

@@ -1,4 +1,7 @@
 #include "../HOP/read_namelist.inc"
+!===============================================================================
+!> Per-rank process ids and an optional halt for attaching a debugger to MPI runs.
+!===============================================================================
 MODULE mpi_debug_mod
   USE io_mod
   USE namelist_check_mod, only: namelist_error
@@ -10,6 +13,11 @@ MODULE mpi_debug_mod
 
 contains
 
+  !===============================================================================
+  !> In a run with more than one MPI rank, writes each rank's process id to
+  !> `./data/rank_NNNNN.pid` and reads &mpi_debug_params. With debug set, all ranks
+  !> then wait after a barrier in an endless loop, until a debugger attached to the
+  !> process sets halt to a nonzero value.
   !===============================================================================
   SUBROUTINE check_mpi_debug()
     integer :: lunit

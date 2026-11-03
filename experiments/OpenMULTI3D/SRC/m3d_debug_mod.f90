@@ -13,8 +13,11 @@ module m3d_debug_mod
 
   real(8), public, dimension(6) :: memcheck !< values at the probe, gathered for printing
   integer, public :: pcheck(3)=[1,1,-1]     !< probe cell (x, y, z)
-  integer, public :: fcheck=1, linecheck=1, lvlcheck=1, atomcheck=1
-  logical, public :: check_NaN=.false.  !< check opacities, populations and intensities for NaN
+  integer, public :: fcheck=1               !< probe frequency index
+  integer, public :: linecheck=1            !< probe radiative transition index
+  integer, public :: lvlcheck=1             !< probe level index
+  integer, public :: atomcheck=1            !< probe atom index
+  logical, public :: check_NaN=.false.      !< check opacities, populations and intensities for NaN
   !> diagnose the statistical-equilibrium linear solve: per patch and iteration,
   !> report how many level corrections hit the exponential damping floor and how
   !> large the residual of the LU solve is at the worst cell
@@ -25,7 +28,7 @@ module m3d_debug_mod
   !> eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) becomes eta = chi_tot*Bnu, i.e.
   !> scattering is treated as pure absorption.  chi (which already contains
   !> sigma_scat) is untouched, so every optical depth, every Psi and every formal
-  !> solution keeps its geometry -- the ONLY thing removed is the dependence of
+  !> solution keeps its geometry; the only thing removed is the dependence of
   !> the source function on the previous iteration's mean intensity.  A model
   !> change, not a fix: use it to decide whether an instability is fed by the
   !> unaccelerated scattering iteration.

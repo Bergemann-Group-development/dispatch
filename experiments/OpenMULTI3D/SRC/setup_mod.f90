@@ -1,13 +1,8 @@
 !===============================================================================
-!> Dependence hierarchy of main service modules, initialize here:
+!> Start-up and shutdown of the run's service modules.
 !>
-!> io
-!>   mpi
-!>     trace
-!>       timer
-!>         omp_lock
-!>           omp_timer
-!>           omp
+!> The service modules form a chain of USE statements: io_mod uses mpi_mod, which
+!> uses trace_mod, then timer_mod, omp_lock_mod, and omp_timer_mod and omp_mod.
 !===============================================================================
 MODULE setup_mod
   USE io_mod
@@ -18,6 +13,9 @@ MODULE setup_mod
   USE job_record_mod
   implicit none
   private
+  !===============================================================================
+  !> Start-up and shutdown sequence of a run.
+  !===============================================================================
   type, public:: setup_t
     contains
     procedure:: init
@@ -27,9 +25,10 @@ MODULE setup_mod
 CONTAINS
 
 !===============================================================================
-!> Initialise basic components.  Note that since omp_lock_mod uses unit numbers
-!> and directory names defined by io_mod and stored in io_unit_mod, its init
-!> must called after io%init.
+!> Initialises the I/O system, the job record, MPI messaging, tracing and the code
+!> units, in that order. omp_lock_mod uses unit numbers and directory names that
+!> io_mod defines and stores in io_unit_mod, so its init must be called after
+!> io%init.
 !===============================================================================
 SUBROUTINE init (self)
   class(setup_t):: self
@@ -38,16 +37,12 @@ SUBROUTINE init (self)
   call mpi_mesg%init                    ! needs locks
   call trace%begin ('setup_t%init')     ! needs timer
   call scaling%init                     ! Scaling to code units
-  !call eos%init                         ! Equation-of-state
-  !call opacity%init                     ! Opacity
-  !call refine%init                      ! adaptive mesh refinement
   call trace%end ()
 END SUBROUTINE init
  
 !===============================================================================
-!> The run is finished; tidy up.
-!> For the moment, only MPI needs to ended; this would be a good place to put
-!> hooks for other finalisation tasks.
+!> Marks the job record finished and ends MPI. A crash never gets here, so its
+!> job.nml keeps state='running'.
 !===============================================================================
 SUBROUTINE end (self)
   class(setup_t):: self
