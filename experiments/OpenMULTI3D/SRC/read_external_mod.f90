@@ -61,7 +61,7 @@ MODULE read_external_mod
   type(rank_t) :: rank
   real(4) :: origin(3) = [0., 0., 0.]
   real(4), public :: vmic=-1
-  ! the model a saved atmosphere was computed from, as its params.nml names it
+  !> the model a saved atmosphere was computed from, as its params.nml names it
   character(len=4096) :: saved_from_file=''
   character(len=128) :: saved_from_format=''
   integer :: saved_from_snap=0

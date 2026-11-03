@@ -115,59 +115,59 @@ MODULE rt_patch_mod
     class(rt_patch_t), pointer :: dn_twin=>null()
     logical :: Jnu_freed=.false.
     logical :: column_end=.false.
-    ! settled: the atoms of this slab and of every deeper one have converged, as
-    ! the column finds at the start of its sweep (rt_patch_pre_update)
+    !> settled: the atoms of this slab and of every deeper one have converged, as
+    !> the column finds at the start of its sweep (rt_patch_pre_update)
     logical :: settled=.false.
-    ! The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
-    ! last iteration whose hemisphere this patch has completed.  combined_iter:
-    ! the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
-    ! patch now holds in place of its own hemisphere; -1 before the first.
+    !> The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
+    !> last iteration whose hemisphere this patch has completed.  combined_iter:
+    !> the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
+    !> patch now holds in place of its own hemisphere; -1 before the first.
     integer :: hemisphere_iter=-1, combined_iter=-1
     logical :: PsiJ_combined=.false.
     class(atom_trans_t), dimension(:), pointer :: trans=>null()
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi
-    ! Per ray, frequency and cell: the largest single contribution to the
-    ! emissivity and the sum of all the others, with the index of the largest.
-    ! Holding the largest apart is what lets a line's own contribution be taken
-    ! out of the local source term without a cancelling subtraction.  Index 0 is
-    ! the whole continuum, seeded as one contribution in foreground, since the
-    ! bound-free rates do not use this path.  split_chi and split_chi_id hold the
-    ! absorption (before stimulated emission) the same way, with a largest of
-    ! their own, so that chi - chi_t is never formed by subtraction.  Both are
-    ! stored without the stimulated-emission factor beta, which is common to all
-    ! contributions at a frequency and cell and is applied where they are read.
-    ! The line-scattering emissivity is not tracked: it is added to eta in
-    ! work_to_transfer_units and to the other contributions in the rates.
+    !> Per ray, frequency and cell: the largest single contribution to the
+    !> emissivity and the sum of all the others, with the index of the largest.
+    !> Holding the largest apart is what lets a line's own contribution be taken
+    !> out of the local source term without a cancelling subtraction.  Index 0 is
+    !> the whole continuum, seeded as one contribution in foreground, since the
+    !> bound-free rates do not use this path.  split_chi and split_chi_id hold the
+    !> absorption (before stimulated emission) the same way, with a largest of
+    !> their own, so that chi - chi_t is never formed by subtraction.  Both are
+    !> stored without the stimulated-emission factor beta, which is common to all
+    !> contributions at a frequency and cell and is applied where they are read.
+    !> The line-scattering emissivity is not tracked: it is added to eta in
+    !> work_to_transfer_units and to the other contributions in the rates.
     real(4), allocatable :: split_opac(:,:,:,:,:), split_chi(:,:,:,:,:)
     integer, allocatable :: split_id(:,:,:,:), split_chi_id(:,:,:,:)
     integer, allocatable :: split_offset(:)
     type(hvcs_store_t), allocatable :: hvcs(:)
-    ! The formal solution without its own local term, Inu - Psi*eta_total, and
-    ! the escape factor 1 - Psi*chi of the local term, both from the solver.
+    !> The formal solution without its own local term, Inu - Psi*eta_total, and
+    !> the escape factor 1 - Psi*chi of the local term, both from the solver.
     real(4), allocatable :: Irem(:,:,:,:), escape(:,:,:,:)
     logical :: split_rates=.false.
-    ! PsiJ is the angle-averaged diagonal operator and Jali the full-sphere
-    ! accelerated mean intensity of the continuum-scattering ALI.  Both carry a
-    ! set index (the output-spectrum path has n_set>1) and both are persisted
-    ! exactly like Jnu, because the OAB update is a two-term recurrence that
-    ! needs the previous iteration's values at the twin-combine point.
-    ! Jali_valid: per set, has a previous Jali been stored yet (else the
-    ! recurrence is seeded with the plain formal solution).
-    ! do_scat_precond: is the correction active for this patch.
-    ! compute_psi: must the formal solvers build Psi at all (rates OR ALI).
+    !> PsiJ is the angle-averaged diagonal operator and Jali the full-sphere
+    !> accelerated mean intensity of the continuum-scattering ALI.  Both carry a
+    !> set index (the output-spectrum path has n_set>1) and both are persisted
+    !> exactly like Jnu, because the OAB update is a two-term recurrence that
+    !> needs the previous iteration's values at the twin-combine point.
+    !> Jali_valid: per set, has a previous Jali been stored yet (else the
+    !> recurrence is seeded with the plain formal solution).
+    !> do_scat_precond: is the correction active for this patch.
+    !> compute_psi: must the formal solvers build Psi at all (rates OR ALI).
     real(4), dimension(:,:,:,:,:), allocatable :: PsiJ, Jali
     logical, allocatable :: Jali_valid(:)
     logical :: do_scat_precond = .false.
     logical :: compute_psi = .false.
-    ! points into the composition patch's shared table for this i_nu, or, on the
-    ! make_eos path, at a private table (save_opac_table overwrites it in place)
+    !> points into the composition patch's shared table for this i_nu, or, on the
+    !> make_eos path, at a private table (save_opac_table overwrites it in place)
     type(sample_optab_type), pointer :: opac => null()
     type(lock_t), pointer :: opac_lock => null()
-    ! Separate sampled LTE line-list table (sample_linelist): non-departure
-    ! species only, interpolated into the foreground work arrays with a per-cell
-    ! Doppler shift; shares one instance per i_nu across i_mu twins, like opac.
+    !> Separate sampled LTE line-list table (sample_linelist): non-departure
+    !> species only, interpolated into the foreground work arrays with a per-cell
+    !> Doppler shift; shares one instance per i_nu across i_mu twins, like opac.
     type(sample_optab_type), pointer :: ll_opac => null()
     type(lock_t), pointer :: ll_opac_lock => null()
     real(4), dimension(:), allocatable :: twohnu3_c2

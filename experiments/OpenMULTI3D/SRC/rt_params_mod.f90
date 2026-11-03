@@ -31,8 +31,8 @@ MODULE rt_params_mod
   ! sample_linelist only chooses the sampled LTE table over detailed lines for a
   ! pass that includes it, and is cleared in a pass that does not.
   !-----------------------------------------------------------------------------
-  ! Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
-  ! iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
+  !> Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
+  !> iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
   integer, parameter, public :: maxiter_unset = -1
 
   type, public :: rt_params_t
@@ -53,10 +53,10 @@ MODULE rt_params_mod
   ! Output-ray geometry (members of &rt_output_params only)
   character(len=512), public, save :: custom_mu=''
   real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
-  ! linelist_out.txt lists every transition the run kept, with its strength at the
-  ! run's own composition -- a diagnostic, never an input. A curve of growth repeats
-  ! one atmosphere at many abundances and only needs the dump once, so it can be
-  ! switched off for the rungs that would otherwise rewrite it.
+  !> linelist_out.txt lists every transition the run kept, with its strength at the
+  !> run's own composition -- a diagnostic, never an input. A curve of growth repeats
+  !> one atmosphere at many abundances and only needs the dump once, so it can be
+  !> switched off for the rungs that would otherwise rewrite it.
   logical, public, save :: save_linelist=.true.
 
   public :: read_rt_params, echo_rt_params, setup_quadrature

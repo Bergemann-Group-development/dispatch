@@ -7,12 +7,12 @@ MODULE ray_mod
   ! *******************************************************************
 
   type ray_type
-    ! cubic-convolution weights in x and y for the upwind intersection with the
-    ! first XY plane, and the offset of the first of the four points relative to
-    ! the middle point of the short characteristic
+    !> cubic-convolution weights in x and y for the upwind intersection with the
+    !> first XY plane, and the offset of the first of the four points relative to
+    !> the middle point of the short characteristic
     real(8), dimension(4) :: xkern, ykern
     integer :: upo1, upo2
-    ! ray length to the upwind XY-plane intersection
+    !> ray length to the upwind XY-plane intersection
     real(8) :: dsup
   contains
     procedure :: set_stencil

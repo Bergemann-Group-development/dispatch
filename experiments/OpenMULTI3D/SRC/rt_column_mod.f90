@@ -62,10 +62,10 @@ MODULE rt_column_mod
     real(8) :: point_tables(2)=0d0
   end type memory_terms_t
 
-  ! With n_windows left at its default, the estimated peak must stay within this
-  ! fraction of the memory limit.  The estimate leaves out the sampled opacity
-  ! tables and solver temporaries and has come out about 10 % below the measured
-  ! peak.
+  !> With n_windows left at its default, the estimated peak must stay within this
+  !> fraction of the memory limit.  The estimate leaves out the sampled opacity
+  !> tables and solver temporaries and has come out about 10 % below the measured
+  !> peak.
   real(8), parameter :: window_memory_fraction = 0.7d0
 
   public :: init_rt_columns, report_memory_estimate, check_memory_limit

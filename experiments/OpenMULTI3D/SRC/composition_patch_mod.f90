@@ -53,11 +53,11 @@ MODULE composition_patch_mod
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(nlte_patch_t), pointer :: nlte_patch => null()
-    ! the RT slab states of this depth slab, which init_rt_columns groups into
-    ! rt_column_t tasks
+    !> the RT slab states of this depth slab, which init_rt_columns groups into
+    !> rt_column_t tasks
     type(rt_patch_ptr_t), allocatable :: rt_slabs(:)
-    ! the spectra and atoms the RT slabs are made from, kept until create_rt_slabs;
-    ! the same object as nlte_patch when that is linked
+    !> the spectra and atoms the RT slabs are made from, kept until create_rt_slabs;
+    !> the same object as nlte_patch when that is linked
     class(nlte_patch_t), pointer :: spectra => null()
   contains
     procedure :: pre_init => composition_pre_init

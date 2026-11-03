@@ -83,27 +83,27 @@ MODULE nlte_patch_mod
 
   integer, save :: epos(3), elvl, eatom=1
   !-----------------------------------------------------------------------------
-  ! Population convergence is judged per iteration (see execute).  sweep_iter is
-  ! the iteration now under way, sweep_active the number of nlte_patches that
-  ! update in it, sweep_updates how many have, and sweep_maxerr the largest
-  ! change among them.  last_maxerr is the largest change of the previous,
-  ! complete iteration.  n_finished counts the finished nlte_patches.
+  !> Population convergence is judged per iteration (see execute).  sweep_iter is
+  !> the iteration now under way, sweep_active the number of nlte_patches that
+  !> update in it, sweep_updates how many have, and sweep_maxerr the largest
+  !> change among them.  last_maxerr is the largest change of the previous,
+  !> complete iteration.  n_finished counts the finished nlte_patches.
   !-----------------------------------------------------------------------------
   integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
-  ! with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
-  ! levels an H model atom carries; .false. keeps them alongside the atom's continua
+  !> with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
+  !> levels an H model atom carries; .false. keeps them alongside the atom's continua
   logical, save :: exclude_h_continua=.true.
   logical, save :: stale_stop_checked=.false.
   logical, save :: departures_reported=.false.
   logical, public, save :: external_sp=.false.
-  ! The output pass takes the lines of the atom's species from the line list, with the
-  ! atom's departure coefficients, instead of from the atom's own transitions:
-  ! output_from_line_list (the default) asks for it, output_grid_and_list says that the
-  ! run has both an explicit output grid and a line list (set by composition_pre_init),
-  ! and line_list_precedence is the decision.  Without an explicit grid the output
-  ! spectrum is built from the atom's own lines and these have to stay.
+  !> The output pass takes the lines of the atom's species from the line list, with the
+  !> atom's departure coefficients, instead of from the atom's own transitions:
+  !> output_from_line_list (the default) asks for it, output_grid_and_list says that the
+  !> run has both an explicit output grid and a line list (set by composition_pre_init),
+  !> and line_list_precedence is the decision.  Without an explicit grid the output
+  !> spectrum is built from the atom's own lines and these have to stay.
   logical, save :: output_from_line_list=.true.
   logical, public, save :: output_grid_and_list=.false., line_list_precedence=.false.
   !-----------------------------------------------------------------------------

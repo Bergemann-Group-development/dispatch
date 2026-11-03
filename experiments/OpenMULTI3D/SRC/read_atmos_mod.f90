@@ -24,16 +24,16 @@ MODULE read_atmos_mod
     integer :: n(3), nx, ny, nz
     integer :: gz=0 !< ghost zones
     logical :: is_3d=.false.
-    ! The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
-    ! slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
+    !> The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
+    !> slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
     logical :: has_pe=.false.
     real(4), dimension(:,:,:), allocatable :: ltemp, lpe, lrho
     real(4), dimension(:,:,:), allocatable :: vx, vy, vz, vmic
     real(4), dimension(:),     allocatable :: xx, yy, zz
     real(8), dimension(:),     allocatable :: sub_pos, sub_size
-    ! The snapshot is shared by every patch on this rank, and each interpolates
-    ! from it exactly once.  Patches announce themselves with acquire(), and the
-    ! last one to release() frees it.
+    !> The snapshot is shared by every patch on this rank, and each interpolates
+    !> from it exactly once.  Patches announce themselves with acquire(), and the
+    !> last one to release() frees it.
     integer :: n_users=0
   contains
     procedure :: allocate   => allocate_input_atmos

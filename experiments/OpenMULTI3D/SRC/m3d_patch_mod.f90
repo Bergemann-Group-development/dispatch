@@ -94,14 +94,14 @@ MODULE m3d_patch_mod
       ! only non-departure species; same i_nu keying and lock pattern as opac.
       type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   !< indexed by i_nu
       type(lock_t),            pointer :: ll_opac_locks(:)  => null()   !< same bounds
-      ! Detailed line-list opacity of the 1D output pass, stored by the first
-      ! foreground of each (i_nu, set) and copied back by the later scattering
-      ! iterations and the final pass; indexed by the output i_nu in [-n_windows_out,-1].
+      !> Detailed line-list opacity of the 1D output pass, stored by the first
+      !> foreground of each (i_nu, set) and copied back by the later scattering
+      !> iterations and the final pass; indexed by the output i_nu in [-n_windows_out,-1].
       type(point_opac_t), pointer :: ll_point_tables(:) => null()
       type(lock_t),       pointer :: ll_point_locks(:)  => null()   !< same bounds
-      ! LTE background opacity of a 1D atmosphere, stored by the first
-      ! lte_background_opacities of each i_nu and copied back by its twins and
-      ! later iterations; indexed like opac_tables, [-n_windows_out, 2*n_windows].
+      !> LTE background opacity of a 1D atmosphere, stored by the first
+      !> lte_background_opacities of each i_nu and copied back by its twins and
+      !> later iterations; indexed like opac_tables, [-n_windows_out, 2*n_windows].
       type(bg_opac_t), pointer :: bg_point_tables(:) => null()
       type(lock_t),    pointer :: bg_point_locks(:)  => null()   !< same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
@@ -122,8 +122,8 @@ MODULE m3d_patch_mod
       logical :: has_atom=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
-      ! remaining atmos-save slots: chi500, vmic, then the ln(T) and Pe
-      ! gradients (the Pe slots hold dPe/d, not dlnPe/d)
+      !> remaining atmos-save slots: chi500, vmic, then the ln(T) and Pe
+      !> gradients (the Pe slots hold dPe/d, not dlnPe/d)
       integer :: i_chi500=7, i_vmic=8
       integer :: i_dlnt_x=9, i_dlnt_y=10, i_dlnt_z=11
       integer :: i_dpe_x=12, i_dpe_y=13, i_dpe_z=14
@@ -174,64 +174,64 @@ MODULE m3d_patch_mod
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_windows=-1
-    ! Largest memory estimate [GiB] the run may start with: 0 takes the physical
-    ! memory of the machine, a negative value switches the check off
+    !> Largest memory estimate [GiB] the run may start with: 0 takes the physical
+    !> memory of the machine, a negative value switches the check off
     real(8), public, save :: mem_limit_gb=0
     integer, public, save :: n_windows_out=0   ! output frequency patch count, set by set_n_windows_out
-    ! Output patches -(out_patch_offset(i)+1) .. -out_patch_offset(i+1) split output
-    ! window i (the whole grid without a window_file); set with n_windows_out
+    !> Output patches -(out_patch_offset(i)+1) .. -out_patch_offset(i+1) split output
+    !> window i (the whole grid without a window_file); set with n_windows_out
     integer, public, save, allocatable :: out_patch_offset(:)
-    ! convlim <= 0 requests no NLTE iterations, and a negative convmax becomes
-    ! convlim/10 (see resolve_nlte_iterations); convmax=0 is never met
+    !> convlim <= 0 requests no NLTE iterations, and a negative convmax becomes
+    !> convlim/10 (see resolve_nlte_iterations); convmax=0 is never met
     real(8), public:: convlim=0d0, convmax=-1d0
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
-    ! Number of nlte_patches created on this rank, and whether all of them have
-    ! converged.  Defaults to "nothing to wait for", so that a run without atoms,
-    ! which creates no nlte_patch at all, is not held up (see is_ahead_of).
+    !> Number of nlte_patches created on this rank, and whether all of them have
+    !> converged.  Defaults to "nothing to wait for", so that a run without atoms,
+    !> which creates no nlte_patch at all, is not held up (see is_ahead_of).
     integer, public, save :: n_nlte_patches=0
     logical, public, save :: nlte_finished=.true.
-    ! Largest relative population change of the last NLTE iteration reported in the
-    ! iteration table, for the verdict printed at the end of the run
+    !> Largest relative population change of the last NLTE iteration reported in the
+    !> iteration table, for the verdict printed at the end of the run
     real(8), public, save :: nlte_last_change=0d0
-    ! For the same verdict: the last iteration any nlte_patch of this rank performed,
-    ! and how many of them finished because every atom there changed by less than
-    ! convmax (premature_finish).  A run whose patches all finished that way never
-    ! completes the iteration that would give it a final global change.
+    !> For the same verdict: the last iteration any nlte_patch of this rank performed,
+    !> and how many of them finished because every atom there changed by less than
+    !> convmax (premature_finish).  A run whose patches all finished that way never
+    !> completes the iteration that would give it a final global change.
     integer, public, save :: nlte_last_iter=0, n_convmax_finished=0
-    ! A stop request (<run_dir>/stop_nlte.flag, see nlte_patch_t%execute) ends the
-    ! NLTE iterations as convergence would, so every depth patch writes its
-    ! departures.  With stop_exit the output pass is skipped as well.
+    !> A stop request (<run_dir>/stop_nlte.flag, see nlte_patch_t%execute) ends the
+    !> NLTE iterations as convergence would, so every depth patch writes its
+    !> departures.  With stop_exit the output pass is skipped as well.
     logical, public, save :: stop_requested=.false., stop_exit=.false.
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
-    ! Which preconditioning the bound-bound rates use.  'original' subtracts the
-    ! local source term from the rate after the frequency integral, which for a
-    ! thermalised thick line leaves no significant digits and can stall the
-    ! iteration outright.  'largest' uses Rybicki & Hummer (1992) Sect. 2.4
-    ! instead, taking the line's own share out of the local source term rather
-    ! than out of the integrated rate.  Both have the same fixed point.  It needs
-    ! the linear iteration solver, which is the only one that keeps the formal
-    ! solution's non-local part; rt_patch falls back to 'original' otherwise.
+    !> Which preconditioning the bound-bound rates use.  'original' subtracts the
+    !> local source term from the rate after the frequency integral, which for a
+    !> thermalised thick line leaves no significant digits and can stall the
+    !> iteration outright.  'largest' uses Rybicki & Hummer (1992) Sect. 2.4
+    !> instead, taking the line's own share out of the local source term rather
+    !> than out of the integrated rate.  Both have the same fixed point.  It needs
+    !> the linear iteration solver, which is the only one that keeps the formal
+    !> solution's non-local part; rt_patch falls back to 'original' otherwise.
     character(len=16), public, save :: rate_formulation='largest'
-    ! Olson-Auer-Buchler local ALI on the continuum-scattering source term.
-    ! Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
-    ! unaccelerated Lambda-iteration that converges at the scattering albedo per
-    ! iteration -- i.e. barely at all where the albedo approaches 1.  Off by
-    ! default so existing runs are bit-identical; see fe607_convergence.md.
+    !> Olson-Auer-Buchler local ALI on the continuum-scattering source term.
+    !> Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
+    !> unaccelerated Lambda-iteration that converges at the scattering albedo per
+    !> iteration -- i.e. barely at all where the albedo approaches 1.  Off by
+    !> default so existing runs are bit-identical; see fe607_convergence.md.
     logical, public, save :: scattering_preconditioning=.false.
-    ! Cap on the dimensionless self-coupling op = sigma_scat*PsiJ, which sets the
-    ! amplification 1/(1-op) the OAB update applies.  op <= 1 holds by
-    ! construction now that sigma is carried as the scattering *part of*
-    ! chi_cont on both the exact and the sampled path (see composition_mod
-    ! opacity/disjoint and optab_mod sample_interpolate), and Lambda_diag <= 1.
-    ! op does legitimately approach 1 in the bound-free half of the internal
-    ! spectrum, where continuum scattering is nearly the whole opacity and
-    ! Psi_diag -> 1, so the local operator is genuinely near-singular there and
-    ! the cap bounds the amplification; it is not a roundoff guard.
-    ! 0.5 caps the amplification at 2.  It is an empirical setting from a 1x1
-    ! column sweep (converges at 0.2/0.5/0.7, diverges at 0.8/0.9), not a bound
-    ! derived from the scheme, and it has not been re-measured in 3D.
-    ! Irrelevant unless scattering_preconditioning=T.
+    !> Cap on the dimensionless self-coupling op = sigma_scat*PsiJ, which sets the
+    !> amplification 1/(1-op) the OAB update applies.  op <= 1 holds by
+    !> construction now that sigma is carried as the scattering *part of*
+    !> chi_cont on both the exact and the sampled path (see composition_mod
+    !> opacity/disjoint and optab_mod sample_interpolate), and Lambda_diag <= 1.
+    !> op does legitimately approach 1 in the bound-free half of the internal
+    !> spectrum, where continuum scattering is nearly the whole opacity and
+    !> Psi_diag -> 1, so the local operator is genuinely near-singular there and
+    !> the cap bounds the amplification; it is not a roundoff guard.
+    !> 0.5 caps the amplification at 2.  It is an empirical setting from a 1x1
+    !> column sweep (converges at 0.2/0.5/0.7, diverges at 0.8/0.9), not a bound
+    !> derived from the scheme, and it has not been re-measured in 3D.
+    !> Irrelevant unless scattering_preconditioning=T.
     real(8), public, save :: scat_op_max=0.5d0
     ! Handling of population inversions (negative line opacity).  In NLTE a line
     ! contributes phi*Rij*(bi - bj*beta) to chi, which is negative for an inverted
@@ -251,22 +251,22 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
     logical, public, save :: column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    ! Keep the RT arrays that outlive a slab sweep (Jnu, PsiJ, Jali and the exit
-    ! planes of frozen slabs) in files under save/ rather than in memory
+    !> Keep the RT arrays that outlive a slab sweep (Jnu, PsiJ, Jali and the exit
+    !> planes of frozen slabs) in files under save/ rather than in memory
     logical, public, save :: rt_to_file=.true.
     character, public, save :: amr='P'
     !---------------------------------------------------------------------------
-    ! Optionally drop the outermost planes of a 3D snapshot before the AMR mesh
-    ! is laid out.  The horizontal spread of the electron pressure grows very
-    ! fast with height, and in the topmost planes a sizeable fraction of the
-    ! columns falls far below the plane's own mean -- those cells reach electron
-    ! densities two orders of magnitude below anything a 1D model contains, and
-    ! the statistical equilibrium there is radiatively controlled with almost no
-    ! collisional damping.  prune_top removes every plane above the highest one
-    ! whose cells ALL exceed min_k <ln Pe>(k), i.e. the topmost plane's mean;
-    ! prune_tol is the fraction of cells per plane that may fall below it (0 =
-    ! strict).  The mesh keeps its full patch count, so the only cost is a
-    ! shorter -- and correspondingly slightly better resolved -- z range.
+    !> Optionally drop the outermost planes of a 3D snapshot before the AMR mesh
+    !> is laid out.  The horizontal spread of the electron pressure grows very
+    !> fast with height, and in the topmost planes a sizeable fraction of the
+    !> columns falls far below the plane's own mean -- those cells reach electron
+    !> densities two orders of magnitude below anything a 1D model contains, and
+    !> the statistical equilibrium there is radiatively controlled with almost no
+    !> collisional damping.  prune_top removes every plane above the highest one
+    !> whose cells ALL exceed min_k <ln Pe>(k), i.e. the topmost plane's mean;
+    !> prune_tol is the fraction of cells per plane that may fall below it (0 =
+    !> strict).  The mesh keeps its full patch count, so the only cost is a
+    !> shorter -- and correspondingly slightly better resolved -- z range.
     !---------------------------------------------------------------------------
     logical, public, save :: prune_top=.false.
     real, public, save :: prune_tol=0.0
@@ -279,33 +279,33 @@ MODULE m3d_patch_mod
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
-    ! Optional input manifest for an extended output set axis (abundance ladder).
-    ! It must live outside run_dir, whose text outputs are cleared at startup.
+    !> Optional input manifest for an extended output set axis (abundance ladder).
+    !> It must live outside run_dir, whose text outputs are cleared at startup.
     character(len=4096), public, save :: set_file=''
     real(4), public :: fixed_Jnu=-1.0
     ! Output-content selection formerly read via &atom_params
     logical, public, save :: save_populations=.true.
-    ! Write the populations every save_every iterations as well (0: only at the end)
+    !> Write the populations every save_every iterations as well (0: only at the end)
     integer, public, save :: save_every=0
     logical, public, save :: bound_free_in_output=.false.
     integer, public, save :: save_rates=0
-    ! Write per-transition radiative and collisional rates after every population
-    ! update (atom_type%write_rates), for model-atom reduction studies in 1D
+    !> Write per-transition radiative and collisional rates after every population
+    !> update (atom_type%write_rates), for model-atom reduction studies in 1D
     logical, public, save :: save_net_rates=.false.
     character(len=128), public :: atmos_format='unknown'
     character(len=4096), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
-    ! flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
-    ! flux has converged. rt_patch computes the flux AFTER nlte_patch has already
-    ! solved the populations against the previous radiation field, so rather than
-    ! stopping immediately we signal nlte_patch to perform one final population
-    ! solve against the converged field. flux_final_counter counts the nlte
-    ! patches that have done that final solve; the last one (== dims(3)) sets
-    ! the global `converged` flag, which then winds the run down as usual.
+    !> flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
+    !> flux has converged. rt_patch computes the flux AFTER nlte_patch has already
+    !> solved the populations against the previous radiation field, so rather than
+    !> stopping immediately we signal nlte_patch to perform one final population
+    !> solve against the converged field. flux_final_counter counts the nlte
+    !> patches that have done that final solve; the last one (== dims(3)) sets
+    !> the global `converged` flag, which then winds the run down as usual.
     type(mpi_counter_t), public :: flux_conv_signal, flux_final_counter
     type(composition_type), public, save, target :: composition
-    ! the output atoms whose line lists write_linelist_out exports, and whether any
-    ! final-pass patch has merged its diagnostics (set by collect_line_diagnostics)
+    !> the output atoms whose line lists write_linelist_out exports, and whether any
+    !> final-pass patch has merged its diagnostics (set by collect_line_diagnostics)
     type(atom_type), dimension(:), pointer, save :: linelist_atoms => null()
     logical, save :: have_line_diagnostics = .false.
       

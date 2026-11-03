@@ -36,13 +36,13 @@ MODULE atom_mod
 
     !---------------------------------------------------------------------
     type, public, extends(spectrum_type) :: atomic_spectrum_type
-      ! maximum number of active lines or continua at any given frequency
+      !> maximum number of active lines or continua at any given frequency
       integer :: nmax=0
-      ! which continua (ac) and lines (al) are active at each frequency
+      !> which continua (ac) and lines (al) are active at each frequency
       integer, dimension(:,:), contiguous, pointer :: ac,al
-      ! how many continua (nac) and lines (nal) are active at each frequency
+      !> how many continua (nac) and lines (nal) are active at each frequency
       integer, dimension(:), contiguous, pointer :: nac,nal
-      ! how many different atoms are active at each frequency
+      !> how many different atoms are active at each frequency
       integer, dimension(:), contiguous, pointer :: na
       ! has this frequency an active prd line
       !logical,dimension(:),allocatable :: hasPRDline
@@ -57,22 +57,22 @@ MODULE atom_mod
 
     !---------------------------------------------------------------------
     type, public :: atom_data_t
-      ! LTE, NLTE and total population of active atom
+      !> LTE, NLTE and total population of active atom
       real(8), dimension(:,:,:),   allocatable :: totn
       real(8), dimension(:,:,:,:), allocatable :: nstar
       real(8), dimension(:,:,:,:), allocatable :: b
       real(8), dimension(:,:,:,:,:), allocatable :: oldb
-      ! radiative rates, summed over frequency windows and directions.  real(4)
-      ! suffices: each window's contribution is already a real(4) sum.  For a
-      ! continuum they are the rate coefficients R_ij and R_ji.  For a line they are
-      ! the thermal and deviation integrals of bound_bound_rates, from which
-      ! line_rate_coefficients forms R_ij and R_ji.
+      !> radiative rates, summed over frequency windows and directions.  real(4)
+      !> suffices: each window's contribution is already a real(4) sum.  For a
+      !> continuum they are the rate coefficients R_ij and R_ji.  For a line they are
+      !> the thermal and deviation integrals of bound_bound_rates, from which
+      !> line_rate_coefficients forms R_ij and R_ji.
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
       real(4), dimension(:,:,:,:), allocatable :: gamma_ji
-      ! Profile integral of the lines that a wavelength window edge cuts, summed
-      ! over windows and directions in the first iteration.  It is allocated for
-      ! such a line when the first window reaches it.  Every other line lies
-      ! inside one window and is normalised per direction by bound_bound_rates.
+      !> Profile integral of the lines that a wavelength window edge cuts, summed
+      !> over windows and directions in the first iteration.  It is allocated for
+      !> such a line when the first window reaches it.  Every other line lies
+      !> inside one window and is normalised per direction by bound_bound_rates.
       type(profile_sum_t), dimension(:), allocatable :: wphi
       real(4), dimension(:,:,:),   allocatable :: inv_df
       real(8), dimension(:),   allocatable  :: e
@@ -88,9 +88,9 @@ MODULE atom_mod
     type, public :: atom_trans_t
       type(line_type), dimension(:), pointer, contiguous :: line => null()
       type(cont_type), dimension(:), pointer, contiguous :: cont => null()
-      ! SoA copy of the (non-hydrogen) bound-bound transitions, built by
-      ! atom_type%build_ll for the linelist_out.txt export and for deduplication
-      ! against the bulk line list
+      !> SoA copy of the (non-hydrogen) bound-bound transitions, built by
+      !> atom_type%build_ll for the linelist_out.txt export and for deduplication
+      !> against the bulk line list
       type(linelist_type) :: ll
       real(4), dimension(:,:,:,:), allocatable :: adamp
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
@@ -146,9 +146,9 @@ MODULE atom_mod
       real(8) :: drawin, mu_e
       logical :: check=.false.
 
-      ! Ng acceleration state, shared by every patch copy of this atom: the
-      ! target is allocated once on the master atom and the pointer survives the
-      ! copy, so all patches accumulate into one object.
+      !> Ng acceleration state, shared by every patch copy of this atom: the
+      !> target is allocated once on the master atom and the pointer survives the
+      !> copy, so all patches accumulate into one object.
       type(ng_state_t), pointer :: ng => null()
 
 
@@ -190,13 +190,13 @@ MODULE atom_mod
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: legacy_freql=.False.
-    ! classical recipes for transitions without collision data in the atom file, one
-    ! switch per process holding the name of its recipe ('' off): electron excitation
-    ! 'regemorter', electron ionisation 'seaton', hydrogen excitation and ionisation
-    ! 'drawin', and hydrogen excitation of pairs without a line 'takeda'
+    !> classical recipes for transitions without collision data in the atom file, one
+    !> switch per process holding the name of its recipe ('' off): electron excitation
+    !> 'regemorter', electron ionisation 'seaton', hydrogen excitation and ionisation
+    !> 'drawin', and hydrogen excitation of pairs without a line 'takeda'
     character(len=16), public :: e_excitation='', e_ionisation='', h_excitation='', &
       h_ionisation='', h_forbidden=''
-    ! lower bound on the effective collision strength of the CE recipe (Allen's form)
+    !> lower bound on the effective collision strength of the CE recipe (Allen's form)
     real(8), public :: upsilon_floor=0.
     logical, public :: kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
@@ -212,63 +212,63 @@ MODULE atom_mod
     real(8) :: tmax_update=1.0d7
     character(len=32), public :: lse_solver='lineq_no_pivot'
     !---------------------------------------------------------------------------
-    ! Guard rails on the statistical-equilibrium update (see update_populations).
-    ! max_update is the largest factor by which a level population may change in
-    ! one iteration, in either direction; min_pop_frac keeps a level's population
-    ! from ratcheting down into a range where its column of the rate matrix is
-    ! numerically empty; conv_pop_floor is the population fraction above which a
-    ! level carries full weight in the convergence decision, so that convlim and
-    ! convmax are not held hostage by levels with no effect on any opacity.
+    !> Guard rails on the statistical-equilibrium update (see update_populations).
+    !> max_update is the largest factor by which a level population may change in
+    !> one iteration, in either direction; min_pop_frac keeps a level's population
+    !> from ratcheting down into a range where its column of the rate matrix is
+    !> numerically empty; conv_pop_floor is the population fraction above which a
+    !> level carries full weight in the convergence decision, so that convlim and
+    !> convmax are not held hostage by levels with no effect on any opacity.
     !---------------------------------------------------------------------------
     real(8), public :: max_update=1d2, min_pop_frac=1d-30, conv_pop_floor=1d-8
     !---------------------------------------------------------------------------
-    ! A transition whose threshold lies above cut_x kT cannot be formed in
-    ! real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
-    ! a continuum the LTE ratio n*_i/n*_j ~ exp(h nu0/kT), which turns the stored
-    ! emission sum into the recombination rate, overflows.  Well before that, a
-    ! build that flushes subnormals to zero (ifort's default) loses the radiation
-    ! field in the formal solution: at 77 kT a continuum's mean intensity came out
-    ! exactly zero across its edge, which left a level whose only link was that
-    ! continuum without any outgoing rate and the rate matrix singular.  cut_x
-    ! keeps that margin below the clamp.  For a line the
-    ! upward and downward rates cancel to within real(4) rounding, which leaves
-    ! a manifold of levels connected only by such lines (the 2p5 nl levels of
-    ! Na II) free to drift by orders of magnitude per iteration.  In such a cell
-    ! n*_j/n*_i is below exp(-cut_x), and setup_transition_matrix replaces the
-    ! radiative rates by a pair in detailed balance: A_ji downward for a line,
-    ! bf_cut_rate [1/s] for a continuum, whose rates bound_free_rates leaves at
-    ! zero.  The pair ties the upper level to the lower one, which is all these
-    ! levels need: they hold less than exp(-cut_x) of the lower level's atoms.
+    !> A transition whose threshold lies above cut_x kT cannot be formed in
+    !> real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
+    !> a continuum the LTE ratio n*_i/n*_j ~ exp(h nu0/kT), which turns the stored
+    !> emission sum into the recombination rate, overflows.  Well before that, a
+    !> build that flushes subnormals to zero (ifort's default) loses the radiation
+    !> field in the formal solution: at 77 kT a continuum's mean intensity came out
+    !> exactly zero across its edge, which left a level whose only link was that
+    !> continuum without any outgoing rate and the rate matrix singular.  cut_x
+    !> keeps that margin below the clamp.  For a line the
+    !> upward and downward rates cancel to within real(4) rounding, which leaves
+    !> a manifold of levels connected only by such lines (the 2p5 nl levels of
+    !> Na II) free to drift by orders of magnitude per iteration.  In such a cell
+    !> n*_j/n*_i is below exp(-cut_x), and setup_transition_matrix replaces the
+    !> radiative rates by a pair in detailed balance: A_ji downward for a line,
+    !> bf_cut_rate [1/s] for a continuum, whose rates bound_free_rates leaves at
+    !> zero.  The pair ties the upper level to the lower one, which is all these
+    !> levels need: they hold less than exp(-cut_x) of the lower level's atoms.
     !---------------------------------------------------------------------------
     real(8), parameter :: cut_x=70d0, bf_cut_rate=1d0
     !---------------------------------------------------------------------------
-    ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
-    ! so the natural damping is geometric: e -> e**sor_w, which is exactly
-    ! ln b -> ln b + sor_w*correction and keeps b positive for any sor_w > 0.
-    ! If the undamped error map has eigenvalue lambda, the damped one has
-    ! mu = 1 + sor_w*(lambda - 1), so a mode that alternates sign and grows at
-    ! |lambda| = 1.85 (see fe607_convergence.md) needs sor_w < 2/2.85 = 0.70.
-    ! sor_w = 1 is the undamped scheme, i.e. bit-identical to before.
+    !> Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
+    !> so the natural damping is geometric: e -> e**sor_w, which is exactly
+    !> ln b -> ln b + sor_w*correction and keeps b positive for any sor_w > 0.
+    !> If the undamped error map has eigenvalue lambda, the damped one has
+    !> mu = 1 + sor_w*(lambda - 1), so a mode that alternates sign and grows at
+    !> |lambda| = 1.85 (see fe607_convergence.md) needs sor_w < 2/2.85 = 0.70.
+    !> sor_w = 1 is the undamped scheme, i.e. bit-identical to before.
     !---------------------------------------------------------------------------
     real(8), public :: sor_w=1d0
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
-    ! Bound-bound wavelength grid read from a file (vacuum AA, one value per record,
-    ! '#' or '!' comments) instead of being assembled from the per-line q0/qmax
-    ! quadratures; those then only fix each line's lam_min/lam_max, i.e. the interval
-    ! of the shared grid its rates are integrated over. tumult/line_quadrature.py
-    ! writes the grid together with a matching atom copy.
+    !> Bound-bound wavelength grid read from a file (vacuum AA, one value per record,
+    !> '#' or '!' comments) instead of being assembled from the per-line q0/qmax
+    !> quadratures; those then only fix each line's lam_min/lam_max, i.e. the interval
+    !> of the shared grid its rates are integrated over. tumult/line_quadrature.py
+    !> writes the grid together with a matching atom copy.
     character(len=4096), public :: line_grid_file=''
     real(8), dimension(:), allocatable, private, save :: line_grid
     integer, public :: cswitch=1
-    ! Ng acceleration schedule:
-    !   < 0  off
-    !   = 0  automatic (default) -- accumulate every iteration and let the gate in ng_mod
-    !        decide, using the contraction rate, its stationarity, the fraction
-    !        of corrections at the update limiter, and the conditioning of the
-    !        least-squares fit.  ng_start is then unused.
-    !   > 0  fixed schedule, applying on the iteration after each
-    !        mod(iter-ng_start, ng_step)==0.
+    !> Ng acceleration schedule:
+    !>   < 0  off
+    !>   = 0  automatic (default) -- accumulate every iteration and let the gate in ng_mod
+    !>        decide, using the contraction rate, its stationarity, the fraction
+    !>        of corrections at the update limiter, and the conditioning of the
+    !>        least-squares fit.  ng_start is then unused.
+    !>   > 0  fixed schedule, applying on the iteration after each
+    !>        mod(iter-ng_start, ng_step)==0.
     integer, public :: ng_step=0, ng_start=8
     logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
