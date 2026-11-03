@@ -1,6 +1,6 @@
 !===============================================================================
-!> Top level MHD task definition -- can either rely entirely on lower levels,
-!> including extras_t%initial_conditions, or can optionally do such things here
+!> Depth patches of the atmosphere: geometry and task-list placeholders that own
+!> the composition patches.
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
@@ -22,10 +22,18 @@ MODULE experiment_mod
   USE read_atmos_mod, only: ia
   implicit none
   private
+  !===============================================================================
+  !> One depth slab of the atmosphere, spanning the whole horizontal box; it holds
+  !> no data and owns the slab's composition patch.
+  !===============================================================================
   type, public, extends(gpatch_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
-    integer :: iter=0, maxiter, zs, ze
-    integer :: dims(3), nbox(3)
+    integer :: iter=0  !< number of rotations
+    integer :: maxiter !< unused
+    integer :: zs      !< first depth point of the slab in the global mesh
+    integer :: ze      !< last depth point of the slab in the global mesh
+    integer :: dims(3) !< number of patches along each axis
+    integer :: nbox(3) !< number of mesh points of the whole box
   contains
     procedure:: pre_init
     procedure:: init
@@ -48,9 +56,13 @@ MODULE experiment_mod
 
 CONTAINS
 
-!===============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
-!===============================================================================
+  !===============================================================================
+  !> Sets the slab's geometry: periodic in x and y, the whole horizontal box, and
+  !> its share zs:ze of the nbox(3) depth points (or, with amr set, the sub-domain
+  !> of read_atmos). Then adds the patch to the task list and creates its
+  !> composition patch. Holding no data (nv=0), the patch is marked no_density and
+  !> no_filled.
+  !===============================================================================
   SUBROUTINE pre_init (self)
     class(experiment_t), target :: self
     integer, save:: itimer=0
@@ -119,9 +131,9 @@ CONTAINS
   END SUBROUTINE pre_init
 
 
-!===============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
-!===============================================================================
+  !===============================================================================
+  !> Initialises the patch, its filled map, its boundaries and its data I/O.
+  !===============================================================================
   SUBROUTINE init (self)
     class(experiment_t):: self
     integer, save:: itimer=0
@@ -139,9 +151,9 @@ CONTAINS
     call trace%end (itimer=itimer)
   END SUBROUTINE init
 
-!===============================================================================
-!> Setup initial states in the patches
-!===============================================================================
+  !===============================================================================
+  !> Does nothing: the patch holds no data to set boundary values on.
+  !===============================================================================
   SUBROUTINE bndries (self)
     class(experiment_t):: self
     integer, save:: itimer=0
@@ -151,6 +163,9 @@ CONTAINS
   END SUBROUTINE bndries
 
   !===============================================================================
+  !> Prepares the update like any task, without downloading neighbour data, and
+  !> logs it in the execution history.
+  !===============================================================================
   SUBROUTINE pre_update (self)
     class(experiment_t), target:: self
     !----------------------------------------------------------------------------
@@ -159,9 +174,9 @@ CONTAINS
     call print_execution_history(self, 'PRE')
   END SUBROUTINE pre_update
 
-!===============================================================================
-!> This update only concerns the MHD task; the RT tasks are called directly
-!===============================================================================
+  !===============================================================================
+  !> Only calls post_update; the composition, NLTE and RT patches do the work.
+  !===============================================================================
   SUBROUTINE update (self)
     class(experiment_t):: self
     integer, save:: itimer=0
@@ -171,6 +186,8 @@ CONTAINS
     call trace%end (itimer)
   END SUBROUTINE update
 
+  !===============================================================================
+  !> Counts the rotation; the first one finishes the patch.
   !===============================================================================
   SUBROUTINE rotate (self)
     class(experiment_t):: self
@@ -183,6 +200,8 @@ CONTAINS
   END SUBROUTINE rotate
 
   !===============================================================================
+  !> Logs the end of the update in the execution history.
+  !===============================================================================
   SUBROUTINE post_update (self)
     class(experiment_t):: self
     !----------------------------------------------------------------------------
@@ -190,20 +209,23 @@ CONTAINS
   END SUBROUTINE post_update
 
   !===============================================================================
+  !> Does nothing.
+  !===============================================================================
   SUBROUTINE info (self, nq, ntask, experiment_name)
     class(experiment_t)    :: self
-    integer            :: nq, ntask
-    character(len=64)  :: experiment_name
+    integer            :: nq              !< unused
+    integer            :: ntask           !< unused
+    character(len=64)  :: experiment_name !< unused
     optional           :: nq, ntask, experiment_name
     !-----------------------------------------------------------------------------
   END SUBROUTINE info
 
-!===============================================================================
-!> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
-!===============================================================================
+  !===============================================================================
+  !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
+  !===============================================================================
   SUBROUTINE task_info (self, unit)
     class(experiment_t):: self
-    integer, optional:: unit
+    integer, optional:: unit !< output unit, default io_unit%mpi
     integer:: unit_L
     !-----------------------------------------------------------------------------
     unit_L = shared%option (unit, io_unit%mpi)
@@ -214,6 +236,8 @@ CONTAINS
   END SUBROUTINE task_info
 
   !===============================================================================
+  !> Freezes the patch at the end time, so the dispatcher stops scheduling it.
+  !===============================================================================
   SUBROUTINE finish (self)
     class(experiment_t):: self
     !-----------------------------------------------------------------------------
@@ -223,6 +247,8 @@ CONTAINS
   END SUBROUTINE finish
 
   !===============================================================================
+  !> Sets level 1 on every patch.
+  !===============================================================================
   SUBROUTINE init_level (self)
     class(experiment_t):: self
     !-----------------------------------------------------------------------------
@@ -231,9 +257,12 @@ CONTAINS
   END SUBROUTINE init_level
 
   !===============================================================================
+  !> Appends the patch to list through an m3d_halo_t link and adds it to the list's
+  !> hash table.
+  !===============================================================================
   SUBROUTINE append_to(self, list)
     class(experiment_t), target :: self
-    class(list_t),  pointer :: list
+    class(list_t),  pointer :: list !< task list
     class(m3d_halo_t),  pointer :: link
     !-----------------------------------------------------------------------------
     allocate (link)
@@ -247,19 +276,24 @@ CONTAINS
   END SUBROUTINE append_to
 
   !===============================================================================
+  !> Does nothing.
+  !===============================================================================
   SUBROUTINE statistics (self)
     class(experiment_t):: self
     !-----------------------------------------------------------------------------
     ! do nothing!
   END SUBROUTINE statistics
 
-!===============================================================================
-!> Return a unique hash key for the patch
-!===============================================================================
+  !===============================================================================
+  !> The unique hash key of the patch: its slab number and the hash of its kind.
+  !===============================================================================
   FUNCTION hash_key (self, position, size, level, box, origin) RESULT (key)
     class(experiment_t):: self
-    real(8), dimension(3), optional:: position, origin, size, box
-    integer, optional:: level
+    real(8), dimension(3), optional:: position !< unused
+    real(8), dimension(3), optional:: origin   !< unused
+    real(8), dimension(3), optional:: size     !< unused
+    real(8), dimension(3), optional:: box      !< unused
+    integer, optional:: level                  !< unused
     integer:: key(4)
     !-----------------------------------------------------------------------------
     key(1) = self%ipos(3) + 1
@@ -268,14 +302,17 @@ CONTAINS
     key(4) = hash_string(self%kind)
   END FUNCTION hash_key
 
-!===============================================================================
-!> Set default nbor relations, and allow underlings to modify them.  This is
-!> called from list_t%init_nbors and from list_t%reset_status()
-!===============================================================================
+  !===============================================================================
+  !> Sets the neighbour relations: the patch needs no neighbour, and only its own
+  !> composition patch keeps the default needs_me. Called from list_t%init_nbors and
+  !> list_t%reset_status.
+  !===============================================================================
   SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     class(experiment_t):: self
-    class(task_t), pointer:: another
-    logical:: needed, needs_me, download
+    class(task_t), pointer:: another !< the other task
+    logical:: needed                 !< self needs another, set
+    logical:: needs_me               !< another needs self, set
+    logical:: download               !< self downloads data from another, set
     !-----------------------------------------------------------------------------
     call trace%begin ('experiment_t%nbor_relations')
     if (another%kind == self%kind .or. another%kind == 'composition') then
@@ -296,12 +333,13 @@ CONTAINS
     call trace%end()
   END SUBROUTINE nbor_relations
 
-!===============================================================================
-!> Fast method to generate nbor lists in cases with very long task lists
-!===============================================================================
+  !===============================================================================
+  !> Fast method to generate nbor lists in cases with very long task lists: the
+  !> patch's only neighbour is its composition patch, found by its hash key.
+  !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
     class(experiment_t):: self
-    class(nbor_t), pointer:: nbors
+    class(nbor_t), pointer:: nbors !< neighbour list, set
     !.............................................................................
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
@@ -319,10 +357,12 @@ CONTAINS
   END SUBROUTINE init_nbors_hash
 
   !===============================================================================
+  !> Adds the task with the hash key to nbors.
+  !===============================================================================
   SUBROUTINE check_nbor (self, key, nbors)
     class(experiment_t):: self
-    class(nbor_t), pointer:: nbors
-    integer:: key(4)
+    class(nbor_t), pointer:: nbors !< neighbour list
+    integer:: key(4)               !< hash key of the task to add
     !-----------------------------------------------------------------------------
     call add_nbor_by_key (self, key, nbors)
   END SUBROUTINE check_nbor
