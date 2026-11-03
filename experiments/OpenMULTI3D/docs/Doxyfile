@@ -1,0 +1,37 @@
+# Doxygen configuration for the Fortran and C sources of OpenMULTI3D (SRC/ and HOP/).
+# Run from experiments/OpenMULTI3D:  doxygen docs/Doxyfile
+# The HTML goes to build/doxygen/html; .github/workflows/openmulti3d-docs.yml publishes it
+# to GitHub Pages. Only settings that differ from Doxygen's defaults are listed.
+
+PROJECT_NAME           = OpenMULTI3D
+PROJECT_BRIEF          = "Spectrum synthesis and NLTE radiative transfer in 3D model atmospheres"
+OUTPUT_DIRECTORY       = build/doxygen
+
+INPUT                  = SRC HOP
+RECURSIVE              = YES
+# The *.inc files are fragments included into other sources, not compilation units.
+FILE_PATTERNS          = *.f90 *.F90 *.f *.h
+EXCLUDE_SYMLINKS       = YES
+OPTIMIZE_FOR_FORTRAN   = YES
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+
+# Most procedures carry no !> block yet; list them anyway, with their signatures,
+# call relations and source.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+SOURCE_BROWSER         = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_LOGFILE           = build/doxygen/warnings.log
+QUIET                  = YES
+
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+HTML_COLORSTYLE        = TOGGLE
+
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+DOT_GRAPH_MAX_NODES    = 50
