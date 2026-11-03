@@ -23,10 +23,10 @@ MODULE ray_mod
 contains
 
   !===============================================================================
-  !---------------------------------------------------------------------
+  !=====================================================================
   !>  Routine is modified from set_ang by AJG for output ray quadrature
   !>  schemes
-  !---------------------------------------------------------------------
+  !=====================================================================
   SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, Jnu_weights)
     character(len=*), intent(in) :: quad_scheme
     integer :: nro, nmu
@@ -200,10 +200,10 @@ contains
   END SUBROUTINE set_grid_quadratures
 
   !===============================================================================
-  ! -------------------------------------------------------------------
+  ! ===================================================================
   !> Computes Lobatto quadratures for a given number of theta and phi
   !> angles. It then converts the spherical geometry into cartesian geometry
-  ! -------------------------------------------------------------------
+  ! ===================================================================
   SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
     integer, intent(in) :: ntheta, nphi
     real(8), intent(out), dimension(:), allocatable :: wts
@@ -252,10 +252,10 @@ contains
   END SUBROUTINE set_lobatto_quadratures
 
   !===============================================================================
-  ! -------------------------------------------------------------------
+  ! ===================================================================
   !> Computes Gauss-Legendre quadratures for a given number of theta and phi
   !> angles. It then converts the spherical geometry into cartesian geometry
-  ! -------------------------------------------------------------------
+  ! ===================================================================
   SUBROUTINE set_gauss_quadratures(ntheta, nphi, vec, wts, Jnu_weights)
     integer, intent(in) :: ntheta, nphi
     real(8), intent(out), dimension(:), allocatable :: wts
@@ -439,7 +439,7 @@ contains
   END SUBROUTINE nphi_copies
 
 !---------------------------------------------------------------------
-  !---------------------------------------------------------------------
+  !=====================================================================
   !>     Calculates the interpolation weights, the physical length of the
   !>     ray, and the side the ray hits.
   !>
@@ -462,7 +462,7 @@ contains
   !>     x3        xup  x4            x5
   !>               upwind
   !>
-  !---------------------------------------------------------------------
+  !=====================================================================
   SUBROUTINE set_stencil(ray, ds, vec)
     class(ray_type) :: ray
     real(8), intent(in) :: ds(3), vec(3)
@@ -544,7 +544,7 @@ contains
   END SUBROUTINE sort_array
 
   !---------------------------------------------------------------------
-  !---------------------------------------------------------------------
+  !=====================================================================
   !>
   !>  Computes the 1D cubic convolution kernel. For an equidistant
   !>  grid x_i (i={1,2,3,4}) with spacing h, a coordinate x_2<x<x_3
@@ -552,7 +552,7 @@ contains
   !>  kernel k is computed, so that y(x) approx sigma_1^4 k[i]*y_i
   !>  for tabulated values y_i at position x_i
   !>
-  !---------------------------------------------------------------------
+  !=====================================================================
   SUBROUTINE cc_kernel(s,k)
     implicit none
 

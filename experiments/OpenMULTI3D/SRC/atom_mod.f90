@@ -1478,7 +1478,7 @@ MODULE atom_mod
   !> Number of frequency points of a bound-bound line: odd, scaled by nq_fac (and
   !> doubled with legacy_freql), then clamped to nq_min/nq_max.  A negative nq_min
   !> grows the count with log(gf).
-  !------------------------------------------------------------------------------------
+  !====================================================================================
   SUBROUTINE set_line_nnu (lin, loggf)
     class(line_type), intent(inout) :: lin
     real(8), intent(in) :: loggf
@@ -1501,7 +1501,7 @@ MODULE atom_mod
   !====================================================================================
   !> Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
   !> red/blue cuts remove it.
-  !------------------------------------------------------------------------------------
+  !====================================================================================
   LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
     class(atom_type), intent(in) :: self
     class(line_type), intent(inout) :: lin
@@ -1608,7 +1608,7 @@ MODULE atom_mod
   !> linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
   !> prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
   !> (lower_ev re-referenced to the stage ground level).
-  !------------------------------------------------------------------------------------
+  !====================================================================================
   SUBROUTINE build_ll (self, trans)
     class(atom_type), intent(in) :: self
     class(atom_trans_t), target :: trans

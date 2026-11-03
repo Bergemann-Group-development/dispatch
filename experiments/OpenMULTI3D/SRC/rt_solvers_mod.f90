@@ -455,12 +455,12 @@ contains
     end do
     call trace%end(itimer)
   contains
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> One cell of the sweep, on the stencil (up, c, dn) centred at c.  With
     !> at_target the interval integrated is up -> c; otherwise it is c -> dn, with
     !> dS/dtau taken at c (then the upwind end).  Either way Inu comes out at the
     !> downwind end of the interval and plam is the Lambda diagonal there.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine quad_step (xxup, xxc, xxdn, ssup, ssc, ssdn, Inuup, at_target, Inu, plam)
       real(4), intent(in) :: xxup, xxc, xxdn, ssup, ssc, ssdn, Inuup
       logical, intent(in) :: at_target
@@ -654,7 +654,7 @@ contains
     call herm_plane (ze, ze-2*dir, .false.)
     call trace%end(itimer)
   contains
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> One plane z, integrated over [zup, z] with zup = z - dir.  zt is the third
     !> parabola sample: downwind with center_target, two planes upwind without.
     !> Every plane that takes the full step goes through here, so herm_dtau,
@@ -668,7 +668,7 @@ contains
     !> beta.  The third sample is the ghost only on the last plane of a patch with
     !> nz == 2: from the neighbour, or at the zeroed top ghost the target's
     !> beta/Pe, which need only be finite since chi/Pe and Snu/Bnu vanish there.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     subroutine herm_plane (z, zt, center_target)
       integer, intent(in) :: z, zt
       logical, intent(in) :: center_target
@@ -742,13 +742,13 @@ contains
         end do
       end do
     end subroutine herm_plane
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> Ghost-plane thermodynamics at a deep (bottom) domain boundary, where there
     !> is no upstream neighbour.  set_upstream_boundary fills the ghost chi/Snu by
     !> monotone extrapolation of the three innermost planes; this does the same
     !> for Pe and T (and their d/dz gradients), returning the exact quantities the
     !> upstream branch reads from a real neighbour, so herm_plane uses it unchanged.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     subroutine ghost_thermo (x, y, pe_g, rpe_g, gp_g, rT_g, aT_g)
       integer, intent(in) :: x, y
       real(4), intent(out) :: pe_g, rpe_g, gp_g, rT_g, aT_g
@@ -772,7 +772,7 @@ contains
       rT_g  = 1.0 / T_g
       aT_g  = gfac * dlnt_g * rT_g
     end subroutine ghost_thermo
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> Cubic-Bezier weights over an interval of optical depth t, in fp32 and
     !> branch-free: integrals of the Bernstein basis against exp(-tau), tau
     !> measured backward from the target.  w0 multiplies S_up, w1/w2 the upwind-/
@@ -793,7 +793,7 @@ contains
     !> 8 fp32 ulp of the exact value over -3 <= t <= 87.  The moment arm is formed
     !> at max(t, 3) so that it stays finite where it is not selected, and the arms
     !> are combined by lw_select (see linear_weights).
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine bezier3_weights (t, E, w0, w1, w2, w3)
       real(4), intent(in) :: t
       real(4), intent(out) :: E, w0, w1, w2, w3
@@ -894,7 +894,7 @@ contains
       dt = dsup1*(xxup + xxc) + dsup2*(mup - mc)
       dt = max(sign(max(abs(dt), dtmin), dt), -real(maser_dtau_max))
     end function herm_dtau
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> Inu and the Lambda diagonal at c from the Bezier weights over [up, c].
     !> dSnu/dtau at both ends by the product rule S = rho*Bnu (rho = S/Bnu):
     !>   dS/dtau = rho*(dBnu/dtau) + Bnu*(drho/dtau)
@@ -902,7 +902,7 @@ contains
     !> (= S*(dBnu/dtau)/B) or as (dBnu/dtau)/B in the Lambda term, so its B factor
     !> cancels rho's 1/B: gu/gc hold (dBnu/dtau)/Bnu = hk*r1mb*aT/chi.  The
     !> departure part is the parabola's d(rho)/ds divided by chi.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine herm_source (xxup, xxc, ssup, ssc, ss3, betau, betac, beta3, hk, &
                                  Inuup, aTu, aTc, center_target, dt, ex, w0, w1, w2, w3, &
                                  Inu, plam)
@@ -958,11 +958,11 @@ contains
       d2 = min(max(2.0*real(one_third,4) - dt3*gc, 0.0), 1.0)
       plam = lw_select((w1*d1 + w2*d2 + w3) * rxxc, 0.0, get_rates .and. dt > 0 .and. xxc > 0)
     end subroutine herm_source
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> The boundary interval [ghost, zs]: state-space slopes from the adjacent
     !> interior interval [zs, zs+dir] (the ghost plane has no beta/lnPe), and
     !> the upwind-end source slope degrades to the interval secant.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine herm_first (xxup, xxc, xxdn, ssup, ssc, ssdn, betac, betadn, &
                                 hk, Inuup, pec, rpec, pedn, rpedn, gpc, aTc, Inu, plam)
       real(4), intent(in) :: xxup, xxc, xxdn, ssup, ssc, ssdn, betac, betadn, hk, Inuup
@@ -1242,12 +1242,12 @@ contains
     endif
     call trace%end(itimer)
   contains
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> Ghost-plane Pe (and its d/dz) at a deep (bottom) domain boundary, where
     !> there is no upstream neighbour: monotone extrapolation of the three
     !> innermost planes, mirroring long_char_hermite's ghost_thermo but
     !> without the T/beta part that herm2_step never needs.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     subroutine ghost_pe (x, y, pe_g, rpe_g, gp_g)
       integer, intent(in) :: x, y
       real(4), intent(out) :: pe_g, rpe_g, gp_g
@@ -1263,7 +1263,7 @@ contains
       rpe_g = 1.0 / pe_g
       gp_g  = gfac * dpe_g
     end subroutine ghost_pe
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> One integrated interval [up, c].  chi/Pe slopes as in herm_dtau: a
     !> parabola through (up, c, 3) gives the product-rule dchi/ds at up
     !> (one-sided) and at c (centred when center_target, one-sided otherwise),
@@ -1278,7 +1278,7 @@ contains
     !> at_target branch.  Otherwise (outermost plane: no data beyond the
     !> target) dS/dtau degrades to the plain [up,c] secant, and the
     !> third-sample Pe/gradient arguments (pe3, rpe3, gp3) are unused.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine herm2_step (xxup, xxc, xx3, ssup, ssc, ss3, Inuup, &
                                 peu, rpeu, gpu, pec, rpec, gpc, pe3, rpe3, gp3, &
                                 center_target, Inu, plam, src_onesided)
@@ -1378,12 +1378,12 @@ contains
       if (get_rates .and. dt > 0 .and. xxc > 0) &
         plam = real(B,4) / xxc    ! diagonal of the Lambda operator
     end subroutine herm2_step
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> The boundary interval [ghost, zs], zeroed-top case.  As herm_first, the
     !> target-end chi/Pe slope has no ghost Pe to centre on, so it falls back
     !> to the one-sided estimate from the adjacent DOWN interval; Snu is the
     !> plain interval secant, as herm2_step's outermost-plane branch.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     pure subroutine herm2_first (xxup, xxc, xxdn, ssup, ssc, Inuup, &
                                  pec, rpec, rpedn, gpc, Inu, plam)
       real(4), intent(in) :: xxup, xxc, xxdn, ssup, ssc, Inuup

@@ -1086,7 +1086,7 @@ MODULE m3d_patch_mod
   !> from, which write_linelist_out exports. Called by every rt_patch after its final
   !> pass when save_linelist is set, so every line strength and reach is the maximum
   !> over all patches.
-  !-------------------------------------------------------------------------------
+  !===============================================================================
   SUBROUTINE collect_line_diagnostics (self)
     class(m3d_patch_t), target :: self
     integer :: i
@@ -1124,7 +1124,7 @@ MODULE m3d_patch_mod
   !> (save_linelist). This driver only walks the composition and the model atoms -- it
   !> stays here because linelist_mod sits below composition_mod/atom_mod in the module
   !> hierarchy and cannot see their types.
-  !-------------------------------------------------------------------------------
+  !===============================================================================
   SUBROUTINE write_linelist_out ()
     integer :: lunit
     ! ----------------------------------------------------------------------------

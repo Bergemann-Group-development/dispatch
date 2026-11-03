@@ -286,9 +286,9 @@ SUBROUTINE execute (self)
   if (all([(self%slab(j)%p%is_finished(), j=1, n)])) call self%finish()
   call trace%end (itimer)
 contains
-  !-----------------------------------------------------------------------------
+  !=============================================================================
   !> Free a plane that no slab reads any more, through the slab that made it.
-  !-----------------------------------------------------------------------------
+  !=============================================================================
   subroutine free (plane, prev)
     real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: plane
     class(rt_patch_t), pointer :: prev
