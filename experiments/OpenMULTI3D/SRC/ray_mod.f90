@@ -34,8 +34,9 @@ contains
     real(8), dimension(:), allocatable, intent(out) :: wts
     real(8), dimension(:,:), allocatable, intent(out) :: vec
     logical, optional :: Jnu_weights
-    logical :: mirror=.true.
+    logical :: mirror
     ! ----------------------------------------------------------------------------
+    mirror = .true.
     if (present(Jnu_weights)) then
       mirror = Jnu_weights
     endif
@@ -319,9 +320,9 @@ contains
     if (nrays==1) then
       wmu = 1
     else
-      call sort_array(mu, mu, order)
+      call sort_array(mu, smus(2:nrays+1), order)
       smus(1) = 0.d0
-      smus(2:nrays+1) = mu
+      mu = smus(2:nrays+1)
 
       if (mod(size(smus), 2) == 1) then
         call simps_weights(smus, swts)
@@ -371,9 +372,10 @@ contains
     real(8), intent(in), optional, dimension(:) :: zrot
     real(8) :: xphi, theta, xoff
     integer :: nrays, i, nt, np, nmuphi, n1, nphi
-    logical :: includes_mu1, mirror=.false.
+    logical :: includes_mu1, mirror
     logical, optional :: Jnu_weights
     ! -------------------------------------------------------------------
+    mirror = .false.
     if (present(Jnu_weights)) then
       mirror = Jnu_weights
     endif
