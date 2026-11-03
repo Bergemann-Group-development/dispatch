@@ -20,7 +20,6 @@ MODULE read_atmos_mod
   private
 
   type, public :: input_atmos_t
-    character(64) :: kind
     integer :: n(3), nx, ny, nz
     integer :: gz=0 ! ghost zones
     logical :: is_3d=.false.

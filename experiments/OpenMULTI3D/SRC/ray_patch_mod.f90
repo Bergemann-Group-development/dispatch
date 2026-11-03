@@ -34,10 +34,7 @@ MODULE ray_patch_mod
   public :: output_patch_window, output_patch_range, window_range
 
   type, public, extends(m3d_patch_t) :: ray_patch_t
-    real(8) :: vec(3), wmu
     integer :: fs, fe, nf
-    integer :: pre_pad_fs, pre_pad_fe
-    logical :: padded
   contains
     procedure :: check_in_bounds
     procedure :: set_freq_indices
@@ -65,8 +62,6 @@ contains
 
     self%fs = fs
     self%fe = fe
-    self%pre_pad_fs = fs
-    self%pre_pad_fe = fe
     self%nf = self%fe - self%fs + 1
 
     if (self%do_out_sp) then
