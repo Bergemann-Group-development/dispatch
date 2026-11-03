@@ -247,8 +247,7 @@ SUBROUTINE composition_pre_init (self)
       integer :: n_intervals
 
       ll_lam = [huge(1d0), -huge(1d0)]
-      call build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, dlam, &
-                                    ll_intervals, n_intervals)
+      call build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, ll_intervals, n_intervals)
 
       if (ll_lam(1) <= ll_lam(2)) then
         do i=1, size(linelist_file)
@@ -459,9 +458,7 @@ END SUBROUTINE create_rt_slabs
 !> and the range of each internal spectrum when the iteration pass does. The
 !> intervals are widened by dlam and overlapping ones merged.
 !===============================================================================
-SUBROUTINE build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, dlam, &
-                                    intervals_out, n_intervals_out)
-  class(composition_type), intent(in) :: composition             !< unused
+SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, intervals_out, n_intervals_out)
   class(atomic_spectrum_type), intent(in), pointer :: output_sp  !< the output spectrum
   type(nlte_patch_t), intent(in) :: nlte_patch                   !< holds the internal spectra
   real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without dlam
