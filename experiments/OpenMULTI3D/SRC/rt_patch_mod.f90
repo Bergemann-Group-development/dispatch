@@ -1411,10 +1411,11 @@ contains
 
   contains
 
-    !-----------------------------------------------------------------------------
+    !=============================================================================
     !> Full detailed line list (non-sampled mode): every species, with departures.
     !> chi_lines/eta_lines, when present, receive the increments added to the work
     !> arrays.
+    !=============================================================================
     subroutine detailed_linelist(chi_lines, eta_lines)
       real(4), dimension(:,:,:,:), optional :: chi_lines, eta_lines
       !---------------------------------------------------------------------------
@@ -1438,7 +1439,7 @@ contains
       end associate
     end subroutine detailed_linelist
 
-    !-----------------------------------------------------------------------------
+    !=============================================================================
     !> The detailed line list of a 1D output patch, computed once per set and then
     !> copied.  Without velocities it is isotropic, and temperature, densities and
     !> departures stay fixed through the output scattering iterations and the final
@@ -1449,6 +1450,7 @@ contains
     !> the kernel tolerance.  The first foreground of the (i_nu, set) fills the store
     !> while its i_mu twins and the final patch wait on the lock.  Adding the stored
     !> increments repeats the kernel's own last step.
+    !=============================================================================
     subroutine stored_linelist()
       type(point_opac_set_t), pointer :: store
       type(lock_t), pointer :: lock
@@ -3237,6 +3239,7 @@ contains
   !> ehat enters holding the physical emissivity eta (from lte_background_emission)
   !> and leaves holding the working form eta/beta.  xhat must therefore be formed
   !> first, while ehat is still eta -- the two statements do not commute.
+  !===============================================================================
   SUBROUTINE convert_to_work_units(self)
     class(rt_patch_t) :: self
     integer :: fs, fe

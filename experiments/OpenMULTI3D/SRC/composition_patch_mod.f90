@@ -824,6 +824,7 @@ END SUBROUTINE pe_gradients_from_grid
 !> locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
 !> corners that crash the EOS and cutting the node count. ldtemp/ldne are the
 !> requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
+!===============================================================================
 SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
     class(composition_patch_t), target :: self
     class(composition_type), pointer :: comp

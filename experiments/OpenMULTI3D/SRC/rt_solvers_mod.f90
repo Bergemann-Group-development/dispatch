@@ -318,6 +318,7 @@ contains
 
   !===============================================================================
   !> Psi = t*P(t), the series form of linear_weights for |t| <= 1.
+  !===============================================================================
   pure real(4) function lw_series (t)
     real(4), intent(in) :: t
     ! LW_P is P, lowest order first
@@ -331,6 +332,7 @@ contains
   !===============================================================================
   !> a where first, else b, by bit mask: both are already evaluated, so there is no
   !> floating-point arm for gfortran to guard (see linear_weights).
+  !===============================================================================
   pure real(4) function lw_select (a, b, first)
     real(4), intent(in) :: a, b
     logical, intent(in) :: first
@@ -817,8 +819,9 @@ contains
       w2 = lw_select(t*b3_p2(t), b2, ser)
       w3 = lw_select(t*b3_p3(t), M0 - b0 - b1 - b2, ser)
     end subroutine bezier3_weights
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> P2 = w2/t of bezier3_weights, for |t| <= 3.
+    !===========================================================================
     pure real(4) function b3_p2 (t)
       real(4), intent(in) :: t
       ! B3_C2 is P2, lowest order first
@@ -830,8 +833,9 @@ contains
       b3_p2 = B3_C2(0) + t*(B3_C2(1) + t*(B3_C2(2) + t*(B3_C2(3) + t*(B3_C2(4) + t*(B3_C2(5) &
             + t*(B3_C2(6) + t*(B3_C2(7) + t*(B3_C2(8) + t*(B3_C2(9) + t*B3_C2(10))))))))))
     end function b3_p2
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> P3 = w3/t of bezier3_weights, for |t| <= 3.
+    !===========================================================================
     pure real(4) function b3_p3 (t)
       real(4), intent(in) :: t
       ! B3_C3 is P3, lowest order first
@@ -857,10 +861,11 @@ contains
     ! The step is split in three so that each piece stays under gfortran's
     ! inlining limits and the f-loop can vectorise; as one routine it is not
     ! inlined.
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> dtau over [up, c]: dchi/ds at both ends by the product rule
     !> chi = (chi/Pe)*Pe, clamped to the sign of the interval secant and twice its
     !> magnitude (MC envelope), then the Euler-Maclaurin trapezoid.
+    !===========================================================================
     pure real(4) function herm_dtau (xxup, xxc, xx3, peu, rpeu, gpu, pec, rpec, gpc, rpe3, &
                                      center_target) result (dt)
       real(4), intent(in) :: xxup, xxc, xx3, peu, rpeu, gpu, pec, rpec, gpc, rpe3

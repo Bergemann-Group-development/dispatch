@@ -993,6 +993,7 @@ contains
   !> populations only; the ray-aligned slots keep 1 until the final write, which
   !> follows project_populations.  Each write replaces the patch's file, and the
   !> meta row is added once.
+  !===============================================================================
   SUBROUTINE write_populations (self, intermediate)
     class(nlte_patch_t), intent(inout), target :: self
     logical, intent(in), optional :: intermediate
@@ -1335,6 +1336,7 @@ contains
   !> match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
   !> output transitions in pre_init_atom) so both sides carry the same conventions --
   !> isotope fraction divided out and fine-structure components split.
+  !===============================================================================
   SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
     class(massive_type), pointer :: species
@@ -1369,8 +1371,9 @@ contains
       end associate
     end do
   contains
-    !---------------------------------------------------------------------------
+    !===========================================================================
     !> Deactivate every line of ptc's bulk line list that atom_ll also carries.
+    !===========================================================================
     SUBROUTINE deactivate_duplicates (ptc, atom_ll)
       class(particle_type), intent(inout) :: ptc
       type(linelist_type), intent(in) :: atom_ll

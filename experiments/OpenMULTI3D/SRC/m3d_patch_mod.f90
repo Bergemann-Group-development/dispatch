@@ -1136,9 +1136,10 @@ MODULE m3d_patch_mod
 
   contains
 
-    !-----------------------------------------------------------------------------
+    !=============================================================================
     !> model-atom SoA linelists; gather the per-stage species ids from the
     !> composition, then let linelist_mod write the (stage, isotope) blocks
+    !=============================================================================
     subroutine print_atoms ()
       class(atom_type), pointer :: atom
       class(element_type), pointer :: el
