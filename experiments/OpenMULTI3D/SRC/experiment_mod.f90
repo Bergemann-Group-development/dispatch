@@ -29,7 +29,6 @@ MODULE experiment_mod
   type, public, extends(gpatch_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
     integer :: iter=0  !< number of rotations
-    integer :: maxiter !< unused
     integer :: zs      !< first depth point of the slab in the global mesh
     integer :: ze      !< last depth point of the slab in the global mesh
     integer :: dims(3) !< number of patches along each axis
