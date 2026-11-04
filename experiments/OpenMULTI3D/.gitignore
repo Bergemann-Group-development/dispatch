@@ -13,6 +13,8 @@ docs/*
 !docs/FAQ.md
 !docs/GLOSSARY.md
 !docs/GUIWorkflow.md
+!docs/Doxyfile
+!docs/doxygen_filter.pl
 !docs/manual/
 docs/manual/*
 !docs/manual/main.tex

@@ -2,15 +2,17 @@
 !> OpenMULTI3D main program.
 !>
 !> The call hierarchy is
+!>  - setup%init: MPI, I/O, job record and code units
+!>  - dispatcher%init: select and initialise the dispatcher
+!>  - check_mpi_debug: rank process ids and the optional debugger halt
+!>  - read_external%init: read the atmosphere and build the task list
+!>  - report_memory_estimate, check_memory_limit: estimate the peak memory and stop if it
+!>    exceeds the limit
+!>  - dispatcher%execute: run the task list
+!>  - write_linelist_out: line-list diagnostics, if collected
+!>  - setup%end: shut down
 !>
-!> dispatch
-!>   setup%init                 ! MPI, I/O and log files
-!>   dispatcher%init            ! select and initialize the dispatcher
-!>   read_external%init         ! read the atmosphere and build the task list
-!>   dispatcher%execute         ! run the task list
-!>   write_linelist_out         ! line-list diagnostics, if collected
-!>   setup%end                  ! shut down
-!>
+!> Before shutting down it reports the peak memory and whether the NLTE iterations converged.
 !===============================================================================
 PROGRAM dispatch
   USE mpi_mod

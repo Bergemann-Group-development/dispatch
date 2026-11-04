@@ -13,6 +13,10 @@ MODULE boundaries_mod
   USE shared_mod
   implicit none
   private
+  !===============================================================================
+  !> Boundary flags of a patch: the faces on a non-periodic domain edge and its
+  !> relation to a spherical boundary.
+  !===============================================================================
   type, extends(has_bits_t), public:: boundaries_t
     integer:: id = 0
     logical:: unset1 = .true., unset2 = .true.
@@ -28,11 +32,13 @@ MODULE boundaries_mod
   end type
 CONTAINS
 
-!===============================================================================
-!===============================================================================
+  !===============================================================================
+  !> Attaches the patch and sets its boundary bits from its position, before the
+  !> patch meshes exist.
+  !===============================================================================
   SUBROUTINE pre_init (self, patch)
     class(boundaries_t) :: self
-    class(patch_t), target       :: patch
+    class(patch_t), target :: patch !< patch the boundaries belong to
     !-----------------------------------------------------------------------------
     call trace%begin ('standard_boundaries_t%init')
     self%patch => patch
@@ -41,17 +47,17 @@ CONTAINS
     call trace%end ()
   END SUBROUTINE pre_init
 
-!===============================================================================
-!> Setting BC bits requires (only) that the patch position, origin, and box
-!> are set (at the pre_init stage we cannot assume that patch%ds is correct)
-!===============================================================================
+  !===============================================================================
+  !> Setting BC bits requires (only) that the patch position, origin, and box
+  !> are set (at the pre_init stage we cannot assume that patch%ds is correct)
+  !===============================================================================
   SUBROUTINE init_bc_bits (self)
     class(boundaries_t) :: self
     class(patch_t), pointer:: patch
     real(8)                      :: position(3), lower(3), upper(3)
     !-----------------------------------------------------------------------------
     ! Some non-cartesian setups might already set the boundary bits by some other
-    ! recipe, so the bits should not touched
+    ! recipe, so the bits should not be touched
     !-----------------------------------------------------------------------------
     if (self%set_bc_bits) then
       patch => self%patch
@@ -91,10 +97,10 @@ CONTAINS
     end if
   END SUBROUTINE init_bc_bits
 
-!===============================================================================
-!> Initialize the boundary data type, while testing also if the patch contains
-!> a spherical boundary, or possibly is completely immersed in such a boundary.
-!===============================================================================
+  !===============================================================================
+  !> Initialize the boundary data type, while testing also if the patch contains
+  !> a spherical boundary, or possibly is completely immersed in such a boundary.
+  !===============================================================================
   SUBROUTINE init (self)
     class(boundaries_t) :: self
     !.............................................................................
@@ -157,12 +163,14 @@ CONTAINS
     call trace%end()
   END SUBROUTINE init
 
-!===============================================================================
-!> Check bits in the status word
-!===============================================================================
+  !===============================================================================
+  !> Mask of the interior points li:ui of the meshes m, false in the guard zones.
+  !> On a spherical patch the points within the boundary radius of position are
+  !> false too.
+  !===============================================================================
   FUNCTION mask (self, m) RESULT (out)
     class(boundaries_t)      :: self
-    class(mesh_t), pointer   :: m(:)
+    class(mesh_t), pointer   :: m(:) !< meshes of the patch, one per axis
     logical                  :: out(m(1)%gn,m(2)%gn,m(3)%gn)
     !............................................................................
     integer                  :: ix, iy, iz

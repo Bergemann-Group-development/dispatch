@@ -1,4 +1,7 @@
 #include "../HOP/read_namelist.inc"
+!===============================================================================
+!> Radiative-transfer settings of the NLTE iteration pass and the output pass.
+!===============================================================================
 MODULE rt_params_mod
   USE io_mod
   USE namelist_check_mod, only: namelist_error
@@ -11,52 +14,56 @@ MODULE rt_params_mod
   implicit none
   private
 
-  !-----------------------------------------------------------------------------
-  ! Configuration of one radiative-transfer pass.  Two instances exist:
-  !   rt_iter -- the NLTE iteration pass (short characteristics in 3D, column
-  !              long-characteristics solves in 1D), read from &rt_iteration_params
-  !   rt_out  -- the final output-spectrum pass (long characteristics), read
-  !              from &rt_output_params
-  ! Both groups share the same member names (solver, angle_quad, ntheta, nphi,
-  ! maxiter, sample_back_opac, sample_linelist, include_linelist, include_absmet);
-  ! &rt_output_params additionally has custom_mu, ray_offset and pivot_z, which
-  ! only apply to the inclined output rays, and save_linelist, which controls the
-  ! linelist_out.txt dump written at the end of the output pass.
-  ! For the iteration pass, maxiter is the NLTE iteration limit and is unset by default.
-  ! For the output pass, maxiter is the number of fixed-population ("Lambda")
-  ! iterations appended after the rt_iter%maxiter NLTE iterations (was ilambd).
-  ! Defaults differ per pass: include_linelist is F/T and include_absmet T/F
-  ! for rt_iter/rt_out (see rt_params_nml).
-  ! include_linelist decides whether a pass has line-list opacity at all;
-  ! sample_linelist only chooses the sampled LTE table over detailed lines for a
-  ! pass that includes it, and is cleared in a pass that does not.
-  !-----------------------------------------------------------------------------
-  ! Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
-  ! iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
+  !> Value of rt_iter%maxiter when &rt_iteration_params does not set it.  The NLTE
+  !> iteration limit then follows from nlte_params%convlim (resolve_nlte_iterations).
   integer, parameter, public :: maxiter_unset = -1
 
+  !=============================================================================
+  !> Configuration of one radiative-transfer pass. Two instances exist: rt_iter,
+  !> the NLTE iteration pass (short characteristics in 3D, column
+  !> long-characteristics solves in 1D), read from &rt_iteration_params, and rt_out,
+  !> the final output-spectrum pass (long characteristics), read from
+  !> &rt_output_params.
+  !>
+  !> Both groups share the same member names (solver, angle_quad, ntheta, nphi,
+  !> maxiter, sample_back_opac, sample_linelist, include_linelist, include_absmet);
+  !> &rt_output_params additionally has custom_mu, ray_offset and pivot_z, which
+  !> only apply to the inclined output rays, and save_linelist, which controls the
+  !> linelist_out.txt dump written at the end of the output pass.
+  !> For the iteration pass, maxiter is the NLTE iteration limit and is unset by default.
+  !> For the output pass, maxiter is the number of fixed-population ("Lambda")
+  !> iterations appended after the rt_iter%maxiter NLTE iterations.
+  !> Defaults differ per pass: include_linelist is F/T and include_absmet T/F
+  !> for rt_iter/rt_out (see rt_params_nml).
+  !> include_linelist decides whether a pass has line-list opacity at all;
+  !> sample_linelist only chooses the sampled LTE table over detailed lines for a
+  !> pass that includes it, and is cleared in a pass that does not.
+  !=============================================================================
   type, public :: rt_params_t
-    character(len=128) :: solver = 'linear'
-    character(len=32)  :: angle_quad = ''
-    integer :: ntheta=0, nphi=0
-    integer :: maxiter=0
-    logical :: sample_back_opac=.false.
-    logical :: sample_linelist=.false.  ! line list via sampled LTE table instead of detailed lines
-    logical :: include_linelist=.false. ! detailed line-list opacity in this pass
-    logical :: include_absmet=.false.   ! sampled metal background (absmet) opacity in this pass
-    real(8), allocatable :: vec(:,:)  ! ray directions (3,nmu), set by setup_quadrature
-    real(8), allocatable :: wmu(:)    ! integration weights,   set by setup_quadrature
+    character(len=128) :: solver = 'linear' !< formal solver; 'none' skips the output pass
+    character(len=32)  :: angle_quad = ''   !< angular quadrature scheme (see setup_quadrature)
+    integer :: ntheta=0                     !< number of polar angles
+    integer :: nphi=0                       !< number of azimuths
+    integer :: maxiter=0                    !< NLTE iteration limit (rt_iter) or number of Lambda iterations (rt_out)
+    logical :: sample_back_opac=.false.     !< background opacity via the sampled table
+    logical :: sample_linelist=.false.      !< line list via sampled LTE table instead of detailed lines
+    logical :: include_linelist=.false.     !< detailed line-list opacity in this pass
+    logical :: include_absmet=.false.       !< sampled metal background (absmet) opacity in this pass
+    real(8), allocatable :: vec(:,:)        !< ray directions (3,nmu), set by setup_quadrature
+    real(8), allocatable :: wmu(:)          !< integration weights, set by setup_quadrature
   end type rt_params_t
 
-  type(rt_params_t), public, save, target :: rt_iter, rt_out
+  type(rt_params_t), public, save, target :: rt_iter !< NLTE iteration pass
+  type(rt_params_t), public, save, target :: rt_out  !< output-spectrum pass
 
   ! Output-ray geometry (members of &rt_output_params only)
-  character(len=512), public, save :: custom_mu=''
-  real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
-  ! linelist_out.txt lists every transition the run kept, with its strength at the
-  ! run's own composition -- a diagnostic, never an input. A curve of growth repeats
-  ! one atmosphere at many abundances and only needs the dump once, so it can be
-  ! switched off for the rungs that would otherwise rewrite it.
+  character(len=512), public, save :: custom_mu='' !< output mu values for angle_quad='custom'
+  real(8), public :: ray_offset(2)=[0.,0.]         !< horizontal shift of the output rays [cells]
+  real(8), public :: pivot_z=-1                    !< height [1e8 cm] where inclined rays cross the columns; < 0: top
+  !> linelist_out.txt lists every transition the run kept, with its strength at the
+  !> run's own composition, as a diagnostic, never an input. A curve of growth repeats
+  !> one atmosphere at many abundances and only needs the dump once, so it can be
+  !> switched off for the rungs that would otherwise rewrite it.
   logical, public, save :: save_linelist=.true.
 
   public :: read_rt_params, echo_rt_params, setup_quadrature
@@ -64,10 +71,14 @@ MODULE rt_params_mod
 CONTAINS
 
   !===============================================================================
+  !> Reads &rt_iteration_params into rt_iter and &rt_output_params into rt_out.
+  !===============================================================================
   SUBROUTINE read_rt_params ()
     call rt_params_nml (do_echo=.false.)
   END SUBROUTINE read_rt_params
 
+  !===============================================================================
+  !> Writes rt_iter and rt_out to the namelist log.
   !===============================================================================
   SUBROUTINE echo_rt_params ()
     call rt_params_nml (do_echo=.true.)
@@ -79,7 +90,7 @@ CONTAINS
   !> rt_iter and rt_out instances around the transfer.
   !===============================================================================
   SUBROUTINE rt_params_nml (do_echo)
-    logical, intent(in) :: do_echo
+    logical, intent(in) :: do_echo !< write the groups instead of reading them
     character(len=128) :: solver
     character(len=32)  :: angle_quad
     integer :: ntheta, nphi, maxiter
@@ -143,9 +154,9 @@ CONTAINS
   !> The custom/grid/none schemes only exist for the output pass.
   !===============================================================================
   SUBROUTINE setup_quadrature (p, is_output, ds)
-    type(rt_params_t), intent(inout), target :: p
-    logical, intent(in) :: is_output
-    real(8), intent(in) :: ds(3)
+    type(rt_params_t), intent(inout), target :: p !< pass whose vec and wmu are set
+    logical, intent(in) :: is_output              !< p is the output pass
+    real(8), intent(in) :: ds(3)                  !< cell size, for the grid schemes
     real(8), dimension(:), allocatable :: cust_mu
     character(len=32) :: quad
     logical :: Jnu_weights
@@ -153,7 +164,7 @@ CONTAINS
     ! solver='none' disables the whole output pass: route it through the empty
     ! 'none' quadrature below (regardless of angle_quad, which is left at its
     ! default) so size(rt_out%vec,2)==0 and every downstream "n_mu > 0" guard
-    ! short-circuits -- no output RT patches are created.
+    ! short-circuits, and no output RT patches are created.
     quad = p%angle_quad
     if (p%solver == 'none') quad = 'none'
     Jnu_weights = .not. is_output

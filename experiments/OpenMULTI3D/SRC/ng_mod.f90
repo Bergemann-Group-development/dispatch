@@ -1,33 +1,28 @@
-! *******************************************************************
+!=============================================================================
+!> Ng acceleration of the statistical-equilibrium iteration.
+!>
+!> The extrapolation is the standard three-difference Ng in log-population
+!> space. With n1..n4 the last four iterates of ln b, d0 = n4 - n3,
+!> d1 = d0 - (n3 - n2) and d2 = d0 - (n2 - n1), the coefficients (a,b) minimise
+!> |d0 - a*d1 - b*d2| in the least-squares sense, and the accelerated iterate is
+!> n_new = (1 - a - b)*n4 + a*n3 + b*n2.
+!>
+!> Working in ln b is what makes this safe for a multiplicative update: the
+!> extrapolated population is strictly positive for any (a,b).
+!>
+!> The normal equations are built from inner products of the difference
+!> vectors, so each patch contributes a partial sum and the coefficients are
+!> formed once from the total.  A patch cannot know when the total is complete,
+!> so accumulation and application are one iteration apart: every iteration
+!> fills a *current* Gram matrix, and at the start of the next one the filled
+!> matrix is promoted to *done* and becomes eligible to be used.
+!>
+!> Whether it is actually used is the job of ng_should_fire.  Ng extrapolates a
+!> linear fixed-point map, and the iteration is only that map in its asymptotic
+!> regime; applying it elsewhere is at best wasted work and at worst a large
+!> step in the wrong direction.  See the gate conditions there.
+!=============================================================================
 MODULE ng_mod
-  !=============================================================================
-  ! Ng acceleration of the statistical-equilibrium iteration.
-  !
-  ! The extrapolation is the standard three-difference Ng in log-population
-  ! space.  With n1..n4 the last four iterates of ln b and
-  !
-  !   d0 = n4 - n3,   d1 = d0 - (n3 - n2),   d2 = d0 - (n2 - n1)
-  !
-  ! the coefficients (a,b) minimise |d0 - a*d1 - b*d2| in the least-squares
-  ! sense, and the accelerated iterate is
-  !
-  !   n_new = (1 - a - b)*n4 + a*n3 + b*n2.
-  !
-  ! Working in ln b is what makes this safe for a multiplicative update: the
-  ! extrapolated population is strictly positive for any (a,b).
-  !
-  ! The normal equations are built from inner products of the difference
-  ! vectors, so each patch contributes a partial sum and the coefficients are
-  ! formed once from the total.  A patch cannot know when the total is complete,
-  ! so accumulation and application are one iteration apart: every iteration
-  ! fills a *current* Gram matrix, and at the start of the next one the filled
-  ! matrix is promoted to *done* and becomes eligible to be used.
-  !
-  ! Whether it is actually used is the job of ng_should_fire.  Ng extrapolates a
-  ! linear fixed-point map, and the iteration is only that map in its asymptotic
-  ! regime; applying it elsewhere is at best wasted work and at worst a large
-  ! step in the wrong direction.  See the gate conditions there.
-  !=============================================================================
   USE io_mod
   USE trace_mod
   USE console_mod
@@ -36,43 +31,50 @@ MODULE ng_mod
 
   !-----------------------------------------------------------------------------
   ! Gate tunables.  Exposed through &nlte_params so a run can be made more or
-  ! less eager without recompiling; the defaults are the ones argued for in
-  ! fe607_convergence.md.
+  ! less eager without recompiling.
   !-----------------------------------------------------------------------------
-  real(8), public, save :: ng_rate_min=0.5d0    ! don't bother below this contraction rate
-  real(8), public, save :: ng_rate_tol=0.15d0   ! |r - r_prev|/r must be under this
-  real(8), public, save :: ng_clamp_max=1d-3    ! max fraction of corrections at the limiter
-  ! Minimum iterations that must remain, at the measured rate, for the
-  ! extrapolation to be worth its risk.  Expressing the headroom in iterations
-  ! rather than as a bare multiple of convlim makes it adapt to the rate: a slow
-  ! mode still has far to go even close to convlim, a fast one does not.
+  real(8), public, save :: ng_rate_min=0.5d0  !< don't bother below this contraction rate
+  real(8), public, save :: ng_rate_tol=0.15d0 !< |r - r_prev|/r must be under this
+  real(8), public, save :: ng_clamp_max=1d-3  !< max fraction of corrections at the limiter
+  !> Minimum iterations that must remain, at the measured rate, for the
+  !> extrapolation to be worth its risk.  Expressing the headroom in iterations
+  !> rather than as a bare multiple of convlim makes it adapt to the rate: a slow
+  !> mode still has far to go even close to convlim, a fast one does not.
   integer, public, save :: ng_min_iters_left=3
-  real(8), public, save :: ng_cond_min=1d-6     ! scaled Gram determinant floor
-  real(8), public, save :: ng_max_change=1d1    ! reject a step moving a level by more
-  integer, public, save :: ng_min_gap=4         ! iterations between applications
+  real(8), public, save :: ng_cond_min=1d-6  !< scaled Gram determinant floor
+  real(8), public, save :: ng_max_change=1d1 !< reject a step moving a level by more
+  integer, public, save :: ng_min_gap=4      !< iterations between applications
 
-  !-----------------------------------------------------------------------------
-  ! State shared by every patch copy of one atom.  nlte_patch allocates a single
-  ! target on the master atom; the pointer component survives the atom copy, so
-  ! all patches accumulate into the same object (as the three separate pointers
-  ! this replaces did).
-  !-----------------------------------------------------------------------------
+  !===============================================================================
+  !> State shared by every patch copy of one atom.  nlte_patch allocates a single
+  !> target on the master atom; the pointer component survives the atom copy, so
+  !> all patches accumulate into the same object.
+  !>
+  !> s_cur, s_done and s_prev hold |d0|^2 over all patches: a true global norm of
+  !> the last population change, and the only convergence signal here that is
+  !> neither lagged (like the mpi_counter-reduced `global`) nor a single cell (like
+  !> `local`). The nclamp and ntot counts are the corrections that hit the update
+  !> limiter, over all patches; the iteration is not a linear map where they are a
+  !> large fraction.
+  !===============================================================================
   type, public :: ng_state_t
-    ! Gram matrix being filled this iteration, and the completed one from last
-    real(8) :: d_cur(0:2,1:2) = 0d0, d_done(0:2,1:2) = 0d0
-    ! |d0|^2 over all patches: a true global norm of the last population change,
-    ! and the only convergence signal here that is neither lagged (like the
-    ! mpi_counter-reduced `global`) nor a single cell (like `local`)
-    real(8) :: s_cur=0d0, s_done=0d0, s_prev=-1d0
-    real(8) :: r=-1d0, r_prev=-1d0          ! contraction rate and its predecessor
-    real(8) :: a=0d0, b=0d0                 ! extrapolation coefficients
-    ! corrections that hit the update limiter, counted over all patches; the
-    ! iteration is not a linear map where this is a large fraction
-    integer(8) :: nclamp_cur=0, ntot_cur=0, nclamp_done=0, ntot_done=0
-    integer :: iter_promoted=-1             ! last iteration the roll-over ran
-    integer :: iter_decided=-1              ! last iteration the gate was evaluated
-    integer :: iter_fired=-huge(1)/2        ! last iteration an extrapolation was applied
-    logical :: coeff_valid=.false.          ! are a,b usable this iteration
+    real(8) :: d_cur(0:2,1:2) = 0d0  !< Gram matrix being filled this iteration
+    real(8) :: d_done(0:2,1:2) = 0d0 !< Gram matrix completed in the last iteration
+    real(8) :: s_cur=0d0             !< |d0|^2 being filled this iteration
+    real(8) :: s_done=0d0            !< |d0|^2 completed in the last iteration
+    real(8) :: s_prev=-1d0           !< last nonzero s_done before the current one
+    real(8) :: r=-1d0                !< contraction rate
+    real(8) :: r_prev=-1d0           !< contraction rate of the iteration before
+    real(8) :: a=0d0                 !< extrapolation coefficient of n3
+    real(8) :: b=0d0                 !< extrapolation coefficient of n2
+    integer(8) :: nclamp_cur=0       !< limited corrections this iteration
+    integer(8) :: ntot_cur=0         !< all corrections this iteration
+    integer(8) :: nclamp_done=0      !< limited corrections in the last iteration
+    integer(8) :: ntot_done=0        !< all corrections in the last iteration
+    integer :: iter_promoted=-1      !< last iteration the roll-over ran
+    integer :: iter_decided=-1       !< last iteration the gate was evaluated
+    integer :: iter_fired=-huge(1)/2 !< last iteration an extrapolation was applied
+    logical :: coeff_valid=.false.   !< are a,b usable this iteration
   end type ng_state_t
 
   public :: ng_promote, ng_should_fire, ng_coefficients, ng_accumulate
@@ -84,11 +86,11 @@ CONTAINS
 !> Conditioning of the least-squares fit: the Gram determinant of (d1,d2)
 !> normalised by the product of their squared norms, i.e. 1 - cos^2 of the angle
 !> between them.  It is >= 0 by Cauchy-Schwarz and approaches 0 as the two
-!> difference vectors become parallel -- a single dominant mode, where the
+!> difference vectors become parallel: a single dominant mode, where the
 !> two-parameter fit is degenerate and the 2x2 solve amplifies roundoff.
 !===============================================================================
 REAL(8) FUNCTION ng_condition (self) RESULT(cond)
-  type(ng_state_t), intent(in) :: self
+  type(ng_state_t), intent(in) :: self !< shared state
   real(8) :: den, scale
   !-----------------------------------------------------------------------------
   associate (d => self%d_done)
@@ -109,8 +111,8 @@ END FUNCTION ng_condition
 !> under a lock.
 !===============================================================================
 SUBROUTINE ng_promote (self, iter)
-  type(ng_state_t), intent(inout) :: self
-  integer, intent(in) :: iter
+  type(ng_state_t), intent(inout) :: self !< shared state
+  integer, intent(in) :: iter             !< iteration of the calling patch
   !-----------------------------------------------------------------------------
   ! Patches run their own iteration counts and reach this at different times, so
   ! the roll has to be monotone: a patch arriving late, still on an earlier
@@ -130,7 +132,7 @@ SUBROUTINE ng_promote (self, iter)
   ! |d0| falls at the contraction rate, so the ratio of successive norms is the
   ! rate itself.  An iteration that extrapolated contributes nothing (the
   ! differences would span two different sequences), and its empty accumulation
-  ! must not be written into the history as a zero -- leave the rate stale and
+  ! must not be written into the history as a zero; leave the rate stale and
   ! let the next real accumulation resume from the last genuine norm.
   if (self%s_done > 0d0) then
     self%r_prev = self%r
@@ -149,11 +151,11 @@ END SUBROUTINE ng_promote
 !> the Ng model applies, not about how well the run is going.
 !===============================================================================
 LOGICAL FUNCTION ng_should_fire (self, iter, err, convlim, reason) RESULT(fire)
-  type(ng_state_t), intent(in) :: self
-  integer, intent(in) :: iter
-  real(8), intent(in) :: err, convlim
-  ! which condition declined, for the DIAGNG trace; 0 = fired
-  character(len=*), intent(out), optional :: reason
+  type(ng_state_t), intent(in) :: self              !< shared state
+  integer, intent(in) :: iter                       !< iteration of the calling patch
+  real(8), intent(in) :: err                        !< current convergence measure
+  real(8), intent(in) :: convlim                    !< its target, for the headroom test
+  character(len=*), intent(out), optional :: reason !< declining condition for DIAGNG, 'FIRE' if fired
   real(8) :: clamp_frac
   !-----------------------------------------------------------------------------
   fire = .false.
@@ -217,7 +219,7 @@ END FUNCTION ng_should_fire
 !> called once ng_should_fire has established that den is safely non-degenerate.
 !===============================================================================
 SUBROUTINE ng_coefficients (self)
-  type(ng_state_t), intent(inout) :: self
+  type(ng_state_t), intent(inout) :: self !< shared state, a and b set
   real(8) :: den
   !-----------------------------------------------------------------------------
   associate (d => self%d_done)
@@ -232,15 +234,15 @@ END SUBROUTINE ng_coefficients
 !> Add this patch's contribution to the Gram matrix and to |d0|^2.
 !>
 !> d(1,2) and d(2,1) are the same inner product; both are kept so the solve
-!> above reads as the textbook 2x2 system.  Must be called under a lock: several
-!> patches reach this concurrently and every line is a read-modify-write on
-!> shared state.
+!> above reads as the textbook 2x2 system.  The sums are added in the ng_shared
+!> critical section: several patches reach this concurrently and every line is a
+!> read-modify-write on shared state.
 !===============================================================================
 SUBROUTINE ng_accumulate (self, bpop, oldb, nlevel)
-  type(ng_state_t), intent(inout) :: self
-  real(8), dimension(:,:,:,:), intent(in) :: bpop
-  real(8), dimension(:,:,:,:,:), intent(in) :: oldb
-  integer, intent(in) :: nlevel
+  type(ng_state_t), intent(inout) :: self           !< shared state
+  real(8), dimension(:,:,:,:), intent(in) :: bpop   !< departure coefficients (x, y, z, level), n4
+  real(8), dimension(:,:,:,:,:), intent(in) :: oldb !< previous iterates n1, n2, n3 of bpop
+  integer, intent(in) :: nlevel                     !< number of levels
   real(8), dimension(:), allocatable :: d0, d1, d2
   real(8) :: n1, n2, n3, n4
   integer :: i, x, y, z, k, nvec, m(3)
@@ -288,8 +290,9 @@ END SUBROUTINE ng_accumulate
 !> Record how many level corrections this patch had cut by the update limiter.
 !===============================================================================
 SUBROUTINE ng_count_clamped (self, nclamp, ntot)
-  type(ng_state_t), intent(inout) :: self
-  integer(8), intent(in) :: nclamp, ntot
+  type(ng_state_t), intent(inout) :: self !< shared state
+  integer(8), intent(in) :: nclamp        !< corrections cut by the limiter
+  integer(8), intent(in) :: ntot          !< all corrections
   !-----------------------------------------------------------------------------
   !$omp critical (ng_shared)
   self%nclamp_cur = self%nclamp_cur + nclamp
@@ -304,20 +307,20 @@ END SUBROUTINE ng_count_clamped
 !> would move by more than ng_max_change.  A converging sequence does not need
 !> an order-of-magnitude correction; if the fit asks for one, the linear model
 !> behind it does not hold and the honest response is to keep the unaccelerated
-!> populations.  This is a local veto -- it can leave one patch unaccelerated
-!> while its neighbours are -- which is deliberate: the alternative is
+!> populations.  This is a local veto, which can leave one patch unaccelerated
+!> while its neighbours are accelerated.  That is deliberate: the alternative is
 !> propagating a step already known to be unphysical.
 !===============================================================================
 SUBROUTINE ng_extrapolate (self, bpop, oldb, nstar, totn, nlevel, emax, epos, applied)
-  type(ng_state_t), intent(in) :: self
-  real(8), dimension(:,:,:,:), intent(inout) :: bpop
-  real(8), dimension(:,:,:,:,:), intent(in) :: oldb
-  real(8), dimension(:,:,:,:), intent(in) :: nstar
-  real(8), dimension(:,:,:), intent(in) :: totn
-  integer, intent(in) :: nlevel
-  real(8), intent(out) :: emax
-  integer, intent(out) :: epos(4)
-  logical, intent(out) :: applied
+  type(ng_state_t), intent(in) :: self               !< shared state
+  real(8), dimension(:,:,:,:), intent(inout) :: bpop !< departure coefficients (x, y, z, level), n4
+  real(8), dimension(:,:,:,:,:), intent(in) :: oldb  !< previous iterates n1, n2, n3 of bpop
+  real(8), dimension(:,:,:,:), intent(in) :: nstar   !< LTE populations (x, y, z, level) [cm^-3]
+  real(8), dimension(:,:,:), intent(in) :: totn      !< total number density of the atom [cm^-3]
+  integer, intent(in) :: nlevel                      !< number of levels
+  real(8), intent(out) :: emax                       !< largest relative change of bpop
+  integer, intent(out) :: epos(4)                    !< its (level, x, y, z)
+  logical, intent(out) :: applied                    !< the step was applied, not vetoed
   real(8) :: n2, n3, n4, e, enew, worst
   integer :: x, y, z, k, m(3)
   integer, save :: itimer=0

@@ -1,3 +1,11 @@
+!===============================================================================
+!> The model atmosphere of the run: the snapshot ia read from the model file, and
+!> its interpolation onto the patch meshes.
+!>
+!> The model formats are parsed by atmos_reader_mod (shared with hop_prune.x and
+!> libhop); the read routines here apply the namelist overrides and move the result
+!> into ia.
+!===============================================================================
 MODULE read_atmos_mod
   USE, intrinsic :: ieee_arithmetic
   USE io_mod
@@ -19,20 +27,34 @@ MODULE read_atmos_mod
   implicit none
   private
 
+  !===============================================================================
+  !> The input snapshot as read, shared by all patches of a rank.
+  !===============================================================================
   type, public :: input_atmos_t
-    integer :: n(3), nx, ny, nz
-    integer :: gz=0 ! ghost zones
+    integer :: n(3)       !< number of points (nx, ny, nz)
+    integer :: nx         !< number of points in x
+    integer :: ny         !< number of points in y
+    integer :: nz         !< number of points in z, ghost zones included
+    integer :: gz=0       !< ghost zones
     logical :: is_3d=.false.
-    ! The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
-    ! slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
+    !> The snapshot carries an electron pressure in lpe.  The mesh geometry (AMR
+    !> slabs, top pruning) may use it even when use_ne=F takes ne from the EOS.
     logical :: has_pe=.false.
-    real(4), dimension(:,:,:), allocatable :: ltemp, lpe, lrho
-    real(4), dimension(:,:,:), allocatable :: vx, vy, vz, vmic
-    real(4), dimension(:),     allocatable :: xx, yy, zz
-    real(8), dimension(:),     allocatable :: sub_pos, sub_size
-    ! The snapshot is shared by every patch on this rank, and each interpolates
-    ! from it exactly once.  Patches announce themselves with acquire(), and the
-    ! last one to release() frees it.
+    real(4), dimension(:,:,:), allocatable :: ltemp    !< ln T [K]
+    real(4), dimension(:,:,:), allocatable :: lpe      !< ln Pe [dyn cm^-2]
+    real(4), dimension(:,:,:), allocatable :: lrho     !< ln rho [g cm^-3]
+    real(4), dimension(:,:,:), allocatable :: vx       !< velocity in x [cm s^-1]
+    real(4), dimension(:,:,:), allocatable :: vy       !< velocity in y [cm s^-1]
+    real(4), dimension(:,:,:), allocatable :: vz       !< velocity in z, outward positive [cm s^-1]
+    real(4), dimension(:,:,:), allocatable :: vmic     !< microturbulence [km s^-1]
+    real(4), dimension(:),     allocatable :: xx       !< x axis
+    real(4), dimension(:),     allocatable :: yy       !< y axis
+    real(4), dimension(:),     allocatable :: zz       !< z axis, up after thick2thin
+    real(8), dimension(:),     allocatable :: sub_pos  !< centre heights of the depth slabs
+    real(8), dimension(:),     allocatable :: sub_size !< heights of the depth slabs
+    !> The snapshot is shared by every patch on this rank, and each interpolates
+    !> from it exactly once.  Patches announce themselves with acquire(), and the
+    !> last one to release() frees it.
     integer :: n_users=0
   contains
     procedure :: allocate   => allocate_input_atmos
@@ -45,10 +67,10 @@ MODULE read_atmos_mod
     procedure :: setup_amr_mesh
   end type input_atmos_t
 
-  real(4), public :: timestamp=-1.0
-  logical, public, save :: log_interpolation=.true.
-  logical, public, save :: pchip_interpolation=.true.
-  type(input_atmos_t), public, save, target :: ia
+  real(4), public :: timestamp=-1.0                   !< snapshot time of a CO5BOLD model
+  logical, public, save :: log_interpolation=.true.   !< interpolate ln T, ln Pe and ln rho
+  logical, public, save :: pchip_interpolation=.true. !< monotone cubic interpolation, else linear
+  type(input_atmos_t), public, save, target :: ia     !< the snapshot of this rank
 
   public :: read_stagger
   public :: read_stagger2
@@ -63,12 +85,10 @@ MODULE read_atmos_mod
 contains
 
   !===============================================================================
-  !> The model formats are parsed by atmos_reader_mod (shared with hop_prune.x and
-  !> libhop); the routines below apply the namelist overrides and move the result
-  !> into ia.
+  !> Reads a CO5BOLD snapshot into ia and keeps its time stamp.
   !===============================================================================
   SUBROUTINE read_co5bold(atmos_file)
-    character(len=*), intent(in) :: atmos_file
+    character(len=*), intent(in) :: atmos_file !< model file
     type(atmos_data_t) :: atmos
     integer :: ierr
     character(len=512) :: msg
@@ -79,14 +99,14 @@ contains
   END SUBROUTINE read_co5bold
 
   !===============================================================================
-  !> The .aux file is read whenever it exists, so that the mesh grading can use
-  !> its electron pressure; use_ne leaves true only where it was requested and
-  !> the snapshot has one.
+  !> Reads snapshot snap of a Stagger model into ia. The .aux file is read whenever
+  !> it exists, so that the mesh grading can use its electron pressure; use_ne
+  !> leaves true only where it was requested and the snapshot has one.
   !===============================================================================
   SUBROUTINE read_stagger(stagger_file, snap, use_ne)
-    character(len=*), intent(in) :: stagger_file
-    integer, intent(in) :: snap
-    logical, intent(inout) :: use_ne
+    character(len=*), intent(in) :: stagger_file !< model file
+    integer, intent(in) :: snap                  !< snapshot number
+    logical, intent(inout) :: use_ne             !< use the model's electron pressure
     type(atmos_data_t) :: atmos
     integer :: ierr, itimer=0
     character(len=512) :: msg
@@ -99,8 +119,10 @@ contains
   END SUBROUTINE read_stagger
 
   !===============================================================================
+  !> Reads a MULTI3D snapshot into ia.
+  !===============================================================================
   SUBROUTINE read_multi_snapshot(atmos_file)
-    character(len=*) :: atmos_file
+    character(len=*) :: atmos_file !< model file
     type(atmos_data_t) :: atmos
     integer :: ierr
     character(len=512) :: msg
@@ -110,8 +132,10 @@ contains
   END SUBROUTINE read_multi_snapshot
 
   !===============================================================================
+  !> Reads a Stagger2 snapshot into ia.
+  !===============================================================================
   SUBROUTINE read_stagger2(atmos_file)
-    character(len=*) :: atmos_file
+    character(len=*) :: atmos_file !< model file
     type(atmos_data_t) :: atmos
     integer :: ierr
     character(len=512) :: msg
@@ -121,10 +145,13 @@ contains
   END SUBROUTINE read_stagger2
 
   !===============================================================================
+  !> Reads a MARCS model into ia and returns its abundances; an FeH below -99 is
+  !> replaced by the model's [Fe/H].
+  !===============================================================================
   SUBROUTINE read_marcs (file, FeH, abund)
-    character(len=*), intent(in) :: file
-    real(8), intent(out) :: FeH
-    real(4), intent(inout), dimension(:), allocatable :: abund
+    character(len=*), intent(in) :: file                       !< model file
+    real(8), intent(out) :: FeH                                !< [Fe/H], replaced if below -99
+    real(4), intent(inout), dimension(:), allocatable :: abund !< log eps of Z = 1..92, allocated
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_marcs_file, file, atmos)
@@ -136,12 +163,14 @@ contains
     endif
   END SUBROUTINE read_marcs
 
-!===============================================================================
-!> Reads the actual text files and stores variables under self
-!===============================================================================
+  !===============================================================================
+  !> Reads a 1D text model into ia. An FeH below -99 is replaced by the model's
+  !> [Fe/H] if it states one, and use_ne and use_rho are cleared when the model has
+  !> no electron pressure or density.
+  !===============================================================================
   SUBROUTINE read_text_1d(atmos_file, FeH)
-    character(len=*) :: atmos_file
-    real(8), intent(out) :: FeH
+    character(len=*) :: atmos_file !< model file
+    real(8), intent(out) :: FeH    !< [Fe/H], replaced if below -99
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_text_1d_file, atmos_file, atmos)
@@ -154,11 +183,12 @@ contains
     use_rho = use_rho .and. atmos%has_rho
   END SUBROUTINE read_text_1d
 
-!===============================================================================
-!> Reads the actual text files and stores variables under ia
-!===============================================================================
+  !===============================================================================
+  !> Reads a MULTI 1D model into ia. Its electron densities are used and its
+  !> densities are not, so ia%lrho is set to a signalling NaN.
+  !===============================================================================
   SUBROUTINE read_multi_1d(atmos_file)
-    character(len=*) :: atmos_file
+    character(len=*) :: atmos_file !< model file
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_multi_1d_file, atmos_file, atmos)
@@ -169,8 +199,8 @@ contains
   END SUBROUTINE read_multi_1d
 
   !===============================================================================
-  !> Run one atmos_reader_mod parser of a single-file format and move the result
-  !> into ia.
+  !> Runs reader, one atmos_reader_mod parser of a single-file format, and moves the
+  !> result into ia.
   !===============================================================================
   SUBROUTINE read_parsed(reader, atmos_file, atmos)
     interface
@@ -182,8 +212,8 @@ contains
         character(len=*), intent(out) :: msg
       end subroutine reader
     end interface
-    character(len=*), intent(in) :: atmos_file
-    type(atmos_data_t), intent(out) :: atmos
+    character(len=*), intent(in) :: atmos_file !< model file
+    type(atmos_data_t), intent(out) :: atmos   !< parsed model
     integer :: ierr
     character(len=512) :: msg
     !-----------------------------------------------------------------------------
@@ -192,13 +222,12 @@ contains
   END SUBROUTINE read_parsed
 
   !===============================================================================
-  !> Stop on a parse failure the way the readers always have, else copy the parsed
-  !> columns and mesh into ia.
+  !> Stops on a parse failure, else copies the parsed columns and mesh into ia.
   !===============================================================================
   SUBROUTINE adopt(atmos, ierr, msg)
-    type(atmos_data_t), intent(in) :: atmos
-    integer, intent(in) :: ierr
-    character(len=*), intent(in) :: msg
+    type(atmos_data_t), intent(in) :: atmos !< parsed model
+    integer, intent(in) :: ierr             !< parser status, nonzero on failure
+    character(len=*), intent(in) :: msg     !< parser error message
     !-----------------------------------------------------------------------------
     if (ierr /= 0) then
       call console_error (trim(msg))
@@ -220,8 +249,10 @@ contains
   END SUBROUTINE adopt
 
   !===============================================================================
+  !> Reads a SIU binary model into ia.
+  !===============================================================================
   SUBROUTINE read_siu_bin(atmos_file)
-    character(len=*) :: atmos_file
+    character(len=*) :: atmos_file !< model file
     type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
     call read_parsed(read_siu_bin_file, atmos_file, atmos)
@@ -229,9 +260,13 @@ contains
 
 
   !===============================================================================
+  !> Allocates the snapshot for nx*ny*nz points; axes and velocities start at zero.
+  !===============================================================================
   SUBROUTINE allocate_input_atmos(self, nx, ny, nz)
     class(input_atmos_t), intent(inout) :: self
-    integer, intent(in) :: nx, ny, nz
+    integer, intent(in) :: nx !< number of points in x
+    integer, intent(in) :: ny !< number of points in y
+    integer, intent(in) :: nz !< number of points in z
     !-----------------------------------------------------------------------------
     self%n  = [nx, ny, nz]
     self%nx = nx
@@ -250,6 +285,8 @@ contains
     allocate(self%lpe  (nx,ny,nz))
   END SUBROUTINE allocate_input_atmos
 
+  !===============================================================================
+  !> Frees the snapshot fields; the axes stay.
   !===============================================================================
   SUBROUTINE deallocate_input_atmos(self)
     class(input_atmos_t), intent(inout) :: self
@@ -289,10 +326,14 @@ contains
   END SUBROUTINE release_input_atmos
 
   !===============================================================================
+  !> Divides the axes by scale and returns the box size: the horizontal extent of a
+  !> periodic grid, whose n points span n intervals, and the height above the lower
+  !> ghost zone. A direction with a single point gets 0.01.
+  !===============================================================================
   SUBROUTINE scale_box(self, box, scale)
     class(input_atmos_t), intent(inout) :: self
-    real(8), intent(out) :: box(3)
-    real(8), intent(in) :: scale
+    real(8), intent(out) :: box(3) !< box size [scale]
+    real(8), intent(in) :: scale   !< length unit [cm]
     integer :: n(3)
     !-----------------------------------------------------------------------------
     n = [self%nx, self%ny, self%nz-2*self%gz]
@@ -307,8 +348,10 @@ contains
     if (self%ny == 1) box(2) = 0.01
   END SUBROUTINE scale_box
 
-!===============================================================================
-! This makes sure that the atmosphere is flipped properly
+  !===============================================================================
+  !> Puts the snapshot bottom first with z pointing up, and the origin at the first
+  !> horizontal point and at the lowest plane above the ghost zone. A 1D model on
+  !> a log tau scale gets heights from its 500 nm opacity (heights_from_tau).
   !===============================================================================
   SUBROUTINE thick2thin(self)
     class(input_atmos_t), intent(inout) :: self
@@ -383,10 +426,15 @@ contains
   END SUBROUTINE thick2thin
 
   !===============================================================================
+  !> Splits the depth into nsub slabs for the patches and sets sub_pos and sub_size:
+  !> equal numbers of points (amr='Z'), or equal steps in the accumulated change of
+  !> the horizontally averaged ln Pe (amr='P'), which makes slabs thin where Pe
+  !> changes fast. 'P' falls back to 'Z' for a model without electron pressure.
+  !===============================================================================
   SUBROUTINE setup_amr_mesh(self, amr, nsub)
     class(input_atmos_t), intent(inout), target :: self
-    character(len=*), intent(in) :: amr
-    integer, intent(in) :: nsub
+    character(len=*), intent(in) :: amr !< 'P' or 'Z', in either case
+    integer, intent(in) :: nsub         !< number of slabs
     integer :: i, j, k, nx, ny, nz
     real(4), dimension(nsub+1) :: sub_edge, var_edge
     real(4), dimension(:), allocatable :: amr_ref, tmp
@@ -462,7 +510,7 @@ contains
 
   !===============================================================================
   !> Lower the top of the box to the highest plane whose columns all carry an
-  !> electron pressure above min_k <ln Pe>(k) -- the topmost plane's own
+  !> electron pressure above min_k `<ln Pe>`(k), the topmost plane's own
   !> horizontal mean. Above that height the spread of ln Pe across a plane grows
   !> much faster than the mean falls, so a large fraction of the columns sit
   !> orders of magnitude below it; those cells have no counterpart in any 1D
@@ -471,7 +519,7 @@ contains
   !> fraction".
   !>
   !> This lowers self%nz, and must therefore run after thick2thin (which decides
-  !> which end is the top) but BEFORE scale_box, which takes the box height from
+  !> which end is the top) but before scale_box, which takes the box height from
   !> zz(nz). The snapshot arrays are left at their full length; only the box
   !> shrinks, so the interpolation simply stops sampling the planes above it.
   !===============================================================================
@@ -522,32 +570,43 @@ contains
   END SUBROUTINE prune_top_planes
 
   !===============================================================================
-  !=============================================================================
   !> Interpolate the input snapshot onto a patch mesh, in the units and variables
   !> the composition expects: temperature, electron density, mass density, the
   !> three velocity components in units of c, and the microturbulence.  The
   !> electron pressure that the readers store in ia%lpe is a scratch quantity
-  !> here -- it is interpolated, then inverted to n_e and dropped.
+  !> here: it is interpolated, then inverted to n_e and dropped.
   !>
   !> The optional gradient arguments return the partial derivatives of ln(T)
-  !> and of Pe (linear, not log -- the hermite solvers assume chi/Pe linear
+  !> and of Pe (linear, not log, because the hermite solvers assume chi/Pe linear
   !> along the ray) evaluated on the PCHIP interpolant of the snapshot, per
   !> code length unit; for a rotated call (vec present) the z-derivative is the
   !> along-ray derivative parameterized by z, and the horizontal partials are
   !> unavailable.  With use_ne=.false. there is no Pe field, and the Pe
-  !> gradient outputs are zeroed -- the caller is expected to rebuild them from
+  !> gradient outputs are zeroed; the caller is expected to rebuild them from
   !> Pe = n_e*k_B*T after the thermal equilibrium is solved.
-  !=============================================================================
+  !===============================================================================
   SUBROUTINE interpolate_atmos(n, sub, pos, temp, ne, rho, vx, vy, vz, vmic, vec, bot2pivot, &
                                dlnt_dx, dlnt_dy, dlnt_dz, dpe_dx, dpe_dy, dpe_dz)
-    integer, intent(in) :: n(3)
-    real(8), intent(in) :: sub(3), pos(3)
-    real(4), intent(out), dimension(:,:,:) :: temp, ne, rho, vx, vy, vz, vmic
-    real(4), intent(out), dimension(:,:,:), optional :: dlnt_dx, dlnt_dy, dlnt_dz
-    real(4), intent(out), dimension(:,:,:), optional :: dpe_dx, dpe_dy, dpe_dz
+    integer, intent(in) :: n(3)                                 !< patch mesh points
+    real(8), intent(in) :: sub(3)                               !< patch size
+    real(8), intent(in) :: pos(3)                               !< patch centre
+    real(4), intent(out), dimension(:,:,:) :: temp              !< temperature [K]
+    real(4), intent(out), dimension(:,:,:) :: ne                !< electron number density [cm^-3]
+    real(4), intent(out), dimension(:,:,:) :: rho               !< mass density [g cm^-3]
+    real(4), intent(out), dimension(:,:,:) :: vx                !< velocity in x [c]
+    real(4), intent(out), dimension(:,:,:) :: vy                !< velocity in y [c]
+    real(4), intent(out), dimension(:,:,:) :: vz                !< velocity in z [c]
+    real(4), intent(out), dimension(:,:,:) :: vmic              !< microturbulence [km s^-1]
+    real(8), intent(in), optional :: vec(3)                     !< ray direction of a rotated patch
+    real(8), intent(in), optional :: bot2pivot                  !< height of the pivot plane above the patch bottom
+    real(4), intent(out), dimension(:,:,:), optional :: dlnt_dx !< d ln T/dx
+    real(4), intent(out), dimension(:,:,:), optional :: dlnt_dy !< d ln T/dy
+    real(4), intent(out), dimension(:,:,:), optional :: dlnt_dz !< d ln T/dz
+    real(4), intent(out), dimension(:,:,:), optional :: dpe_dx  !< dPe/dx [dyn cm^-2]
+    real(4), intent(out), dimension(:,:,:), optional :: dpe_dy  !< dPe/dy [dyn cm^-2]
+    real(4), intent(out), dimension(:,:,:), optional :: dpe_dz  !< dPe/dz [dyn cm^-2]
     real(4), dimension(:,:,:), pointer, contiguous :: rho_in, pe_in, temp_in
     real(4), dimension(:,:,:), allocatable :: pe
-    real(8), intent(in), optional :: vec(3), bot2pivot
     real(4), dimension(:), allocatable :: newz
     real(8) :: lower(3), ds(3)
     real(8) :: dx, dy
@@ -653,7 +712,7 @@ contains
       if (use_rho) rho = exp(rho)
       if (use_ne ) pe  = exp(pe)
       ! the interpolant ran on the log fields: dlnT is already what the callers
-      ! expect, but the Pe convention is linear -- convert dlnPe -> dPe
+      ! expect, but the Pe convention is linear: convert dlnPe -> dPe
       if (get_grad_pe) then
         if (present(dpe_dx)) dpe_dx = dpe_dx * pe
         if (present(dpe_dy)) dpe_dy = dpe_dy * pe

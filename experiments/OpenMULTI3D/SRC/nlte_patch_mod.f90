@@ -56,7 +56,7 @@ MODULE nlte_patch_mod
     real(8) :: local
     integer :: natom=0
     logical :: update_skipped=.false., atom_allocated=.false., molec
-    logical :: pop_meta_written=.false.   ! this patch has its rows in pop_<atom>_meta.txt
+    logical :: pop_meta_written=.false.   !< this patch has its rows in pop_<atom>_meta.txt
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -83,27 +83,27 @@ MODULE nlte_patch_mod
 
   integer, save :: epos(3), elvl, eatom=1
   !-----------------------------------------------------------------------------
-  ! Population convergence is judged per iteration (see execute).  sweep_iter is
-  ! the iteration now under way, sweep_active the number of nlte_patches that
-  ! update in it, sweep_updates how many have, and sweep_maxerr the largest
-  ! change among them.  last_maxerr is the largest change of the previous,
-  ! complete iteration.  n_finished counts the finished nlte_patches.
+  !> Population convergence is judged per iteration (see execute).  sweep_iter is
+  !> the iteration now under way, sweep_active the number of nlte_patches that
+  !> update in it, sweep_updates how many have, and sweep_maxerr the largest
+  !> change among them.  last_maxerr is the largest change of the previous,
+  !> complete iteration.  n_finished counts the finished nlte_patches.
   !-----------------------------------------------------------------------------
   integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
   real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
   logical, save :: exclude_from_line_list=.true.
-  ! with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
-  ! levels an H model atom carries; .false. keeps them alongside the atom's continua
+  !> with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
+  !> levels an H model atom carries; .false. keeps them alongside the atom's continua
   logical, save :: exclude_h_continua=.true.
   logical, save :: stale_stop_checked=.false.
   logical, save :: departures_reported=.false.
   logical, public, save :: external_sp=.false.
-  ! The output pass takes the lines of the atom's species from the line list, with the
-  ! atom's departure coefficients, instead of from the atom's own transitions:
-  ! output_from_line_list (the default) asks for it, output_grid_and_list says that the
-  ! run has both an explicit output grid and a line list (set by composition_pre_init),
-  ! and line_list_precedence is the decision.  Without an explicit grid the output
-  ! spectrum is built from the atom's own lines and these have to stay.
+  !> The output pass takes the lines of the atom's species from the line list, with the
+  !> atom's departure coefficients, instead of from the atom's own transitions:
+  !> output_from_line_list (the default) asks for it, output_grid_and_list says that the
+  !> run has both an explicit output grid and a line list (set by composition_pre_init),
+  !> and line_list_precedence is the decision.  Without an explicit grid the output
+  !> spectrum is built from the atom's own lines and these have to stay.
   logical, save :: output_from_line_list=.true.
   logical, public, save :: output_grid_and_list=.false., line_list_precedence=.false.
   !-----------------------------------------------------------------------------
@@ -403,7 +403,7 @@ contains
   END FUNCTION run_atom_file
 
   !===============================================================================
-  ! A classical-recipe switch of &atom_params is off ('') or names its recipe.
+  !> A classical-recipe switch of &atom_params is off ('') or names its recipe.
   !===============================================================================
   SUBROUTINE check_recipe (key, value, recipe)
     character(len=*), intent(in) :: key, value, recipe
@@ -993,6 +993,7 @@ contains
   !> populations only; the ray-aligned slots keep 1 until the final write, which
   !> follows project_populations.  Each write replaces the patch's file, and the
   !> meta row is added once.
+  !===============================================================================
   SUBROUTINE write_populations (self, intermediate)
     class(nlte_patch_t), intent(inout), target :: self
     logical, intent(in), optional :: intermediate
@@ -1327,14 +1328,15 @@ contains
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
-  ! Prevent a model atom's bound-bound transitions from being counted a second time
-  ! through the bulk line list.  exclude_from_line_list (the default) drops the atom's
-  ! species from the line list wholesale via in_linelist, which both the metal and
-  ! the hydrogen kernel honour.  Otherwise only the records that the atom
-  ! reproduces are deactivated, so line-list lines the atom does not carry survive; the
-  ! match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
-  ! output transitions in pre_init_atom) so both sides carry the same conventions --
-  ! isotope fraction divided out and fine-structure components split.
+  !> Prevent a model atom's bound-bound transitions from being counted a second time
+  !> through the bulk line list.  exclude_from_line_list (the default) drops the atom's
+  !> species from the line list wholesale via in_linelist, which both the metal and
+  !> the hydrogen kernel honour.  Otherwise only the records that the atom
+  !> reproduces are deactivated, so line-list lines the atom does not carry survive; the
+  !> match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
+  !> output transitions in pre_init_atom) so both sides carry the same conventions --
+  !> isotope fraction divided out and fine-structure components split.
+  !===============================================================================
   SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
     class(massive_type), pointer :: species
@@ -1369,8 +1371,9 @@ contains
       end associate
     end do
   contains
-    !---------------------------------------------------------------------------
-    ! Deactivate every line of ptc's bulk line list that atom_ll also carries.
+    !===========================================================================
+    !> Deactivate every line of ptc's bulk line list that atom_ll also carries.
+    !===========================================================================
     SUBROUTINE deactivate_duplicates (ptc, atom_ll)
       class(particle_type), intent(inout) :: ptc
       type(linelist_type), intent(in) :: atom_ll
@@ -1399,8 +1402,8 @@ contains
   !===============================================================================
   SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     class(nlte_patch_t) :: self
-    class(task_t), pointer :: another         ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed,
+    class(task_t), pointer :: another     !< another task in the list
+    logical :: needed, needs_me, download !< Is the other task: needed,
     !    does it need me, should I download?
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')

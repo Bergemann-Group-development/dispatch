@@ -1,4 +1,7 @@
 #include "../HOP/read_namelist.inc"
+!===============================================================================
+!> The composition patch of a depth slab: its equation of state, opacity tables and RT slabs.
+!===============================================================================
 MODULE composition_patch_mod
   USE io_mod
   USE namelist_check_mod, only: namelist_error
@@ -50,14 +53,16 @@ MODULE composition_patch_mod
   implicit none
   private
   
-  !-----------------------------------------------------------------------------
+  !===============================================================================
+  !> One depth slab's atmosphere and equation of state, from which its RT slabs are made.
+  !===============================================================================
   type, public, extends(m3d_patch_t) :: composition_patch_t
-    class(nlte_patch_t), pointer :: nlte_patch => null()
-    ! the RT slab states of this depth slab, which init_rt_columns groups into
-    ! rt_column_t tasks
+    class(nlte_patch_t), pointer :: nlte_patch => null() !< NLTE patch of the slab, when it has atoms or reads departures
+    !> the RT slab states of this depth slab, which init_rt_columns groups into
+    !> rt_column_t tasks
     type(rt_patch_ptr_t), allocatable :: rt_slabs(:)
-    ! the spectra and atoms the RT slabs are made from, kept until create_rt_slabs;
-    ! the same object as nlte_patch when that is linked
+    !> the spectra and atoms the RT slabs are made from, kept until create_rt_slabs;
+    !> the same object as nlte_patch when that is linked
     class(nlte_patch_t), pointer :: spectra => null()
   contains
     procedure :: pre_init => composition_pre_init
@@ -75,32 +80,45 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
 
-  ! The RT slabs of one spectrum: windows nu(1):nu(2) times directions mu(1):mu(2)
+  !===============================================================================
+  !> The RT slabs of one spectrum: windows nu(1):nu(2) times directions mu(1):mu(2).
+  !===============================================================================
   type, public :: slab_group_t
-    integer :: nu(2), mu(2)
-    class(atomic_spectrum_type), pointer :: sp => null()
-    type(atom_type), pointer :: atoms(:) => null()
+    integer :: nu(2)                                     !< first and last window index i_nu
+    integer :: mu(2)                                     !< first and last direction index i_mu
+    class(atomic_spectrum_type), pointer :: sp => null() !< the spectrum
+    type(atom_type), pointer :: atoms(:) => null()       !< the atoms of that spectrum
   end type slab_group_t
   
-  real(8), public :: FeH=-99.9, ldne=0.25, ldrho=0.25, ldtemp=0.05
-  logical, public :: save_atmos=.true., save_eos=.false.
-  logical, public :: pca_opac=.true.       ! .false. -> axis-aligned (lnT,lnNe) sampling grid
-  real(4), public, dimension(:), allocatable :: external_abund
-  real(4), public :: alpha_enhancement=0.0, r_process_enhancement=0.0
-  character(len=256), save :: save_species=''
-  character(len=4096), save :: absdat_file='./input/absdat/TS_absdat.txt'
-  character(len=4096), save :: abund_file='./input/abund/abund_magg22.txt'
-  character(len=4096), save :: isotope_file='./input/isotopes/isotopes_blp.txt'
-  character(len=4096), save :: molec_file='./input/molec/molec_data_BC.txt'
-  character(len=4096), save :: opac_table=''
-  character(len=4096), save :: absmet_file=''
-  character(len=4096), save :: linelist_folder=''
-  character(len=4096), save, dimension(:), allocatable :: linelist_file
+  real(8), public :: FeH=-99.9                                 !< [Fe/H] that scales the abundances; ignored at -99 and below
+  real(8), public :: ldne=0.25                                 !< ln ne step of the sampled opacity table
+  real(8), public :: ldrho=0.25                                !< ln rho step of the make_eos table
+  real(8), public :: ldtemp=0.05                               !< ln T step of both tables
+  logical, public :: save_atmos=.true.                         !< write the patch atmospheres to save/atmos_*.bin
+  logical, public :: save_eos=.false.                          !< write the gas pressure and internal energy to save/eos_*.bin
+  logical, public :: pca_opac=.true.                           !< sample the opacity table along PCA axes of (ln T, ln ne)
+  real(4), public, dimension(:), allocatable :: external_abund !< log eps of the model atmosphere, by atomic number
+  real(4), public :: alpha_enhancement=0.0                     !< [alpha/Fe] added to the alpha elements
+  real(4), public :: r_process_enhancement=0.0                 !< [r/Fe] added to the r-process elements
+  character(len=256), save :: save_species=''                  !< comma-separated species whose number densities are saved
+
+  character(len=4096), save :: absdat_file='./input/absdat/TS_absdat.txt'       !< atomic data of the ions
+  character(len=4096), save :: abund_file='./input/abund/abund_magg22.txt'      !< solar abundances
+  character(len=4096), save :: isotope_file='./input/isotopes/isotopes_blp.txt' !< isotope fractions
+  character(len=4096), save :: molec_file='./input/molec/molec_data_BC.txt'     !< molecular data
+  character(len=4096), save :: opac_table=''                                    !< binned opacity table; sets the output spectrum
+  character(len=4096), save :: absmet_file=''                                   !< metal-opacity table for the NLTE iterations
+  character(len=4096), save :: linelist_folder=''                               !< folder whose files are all read as line lists
+  character(len=4096), save, dimension(:), allocatable :: linelist_file         !< line-list files
 
   public :: read_composition_params, max_n_windows, set_n_windows_out
 
 contains
 
+!===============================================================================
+!> Reads composition_params, opac_table_params and linelist_params, builds the
+!> QLG kernel tables and initialises the global composition from the input data
+!> files.
 !===============================================================================
 SUBROUTINE read_composition_params ()
   integer :: i
@@ -163,6 +181,11 @@ SUBROUTINE read_composition_params ()
 END SUBROUTINE read_composition_params
 
 !===============================================================================
+!> Pre-initialises the patch and its NLTE patch, which holds the spectra and
+!> atoms the RT slabs are made from. The first call also sets up the output
+!> spectrum (from opac_table or spectrum_params) and reads the line lists for the
+!> union of the wavelength windows that use them.
+!===============================================================================
 SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   class(nlte_patch_t), pointer :: nlte_patch
@@ -217,9 +240,8 @@ SUBROUTINE composition_pre_init (self)
     ! it, or when make_eos bakes it into the tables; the internal iteration
     ! spectra when the iteration pass does.
     !
-    ! Phase B: build intervals from spectrum segments instead of min/max range.
-    ! For output spectrum with multiple segments, use those segment bounds.
-    ! For non-segmented internal spectra, use full range as single interval.
+    ! Each window is a segment of the output spectrum or the whole range of an
+    ! internal spectrum.
     block
       type(interval_t), allocatable :: ll_intervals(:)
       integer :: n_intervals
@@ -270,7 +292,7 @@ END SUBROUTINE composition_pre_init
 !> may be empty.
 !===============================================================================
 INTEGER FUNCTION max_n_windows (spectra) RESULT (n)
-  class(nlte_patch_t), intent(in) :: spectra
+  class(nlte_patch_t), intent(in) :: spectra !< the spectra of a composition patch
   !-----------------------------------------------------------------------------
   n = huge(1)
   if (spectra%output_sp%nnu > 0) n = min(n, spectra%output_sp%nnu)
@@ -296,7 +318,7 @@ END FUNCTION max_n_windows
 !> its window it visits) as a large one.
 !===============================================================================
 SUBROUTINE set_n_windows_out (output_sp)
-  class(atomic_spectrum_type), intent(in) :: output_sp
+  class(atomic_spectrum_type), intent(in) :: output_sp !< the output spectrum
   integer, parameter :: min_out_patch = 16
   integer, allocatable :: npts(:)
   integer :: i
@@ -344,8 +366,8 @@ FUNCTION slab_groups (self) RESULT (groups)
       n = n + 1; g(n) = slab_group_t([1, n_windows], [1,2], spectra%sp, spectra%atoms)
     endif
   endif
-  ! rt_out%solver='none' disables the output pass entirely -- create no output
-  ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
+  ! rt_out%solver='none' disables the output pass: no output RT slabs, neither
+  ! the final i_mu=-1 ray nor the Lambda-iteration i_mu=[1,2] ones.
   if (spectra%output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
     if (size(rt_out%vec,2) > 0 .or. (make_eos .and. self%key(1)==1)) then
       if (rt_out%maxiter > 0) then
@@ -431,18 +453,18 @@ SUBROUTINE create_rt_slabs (self)
 END SUBROUTINE create_rt_slabs
 
 !===============================================================================
-! Phase B: Build line-list intervals from output and internal spectra.
-! When the output spectrum has multiple segments (multi-window), use those
-! segment bounds as intervals. For non-segmented internal spectra, use the
-! full range as a single interval. Expand each interval by dlam.
+!> The wavelength intervals the line list is read for: each segment of the
+!> output spectrum (or its whole range) when the output pass uses the line list,
+!> and the range of each internal spectrum when the iteration pass does. The
+!> intervals are widened by dlam and overlapping ones merged.
 !===============================================================================
 SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, intervals_out, n_intervals_out)
-  class(atomic_spectrum_type), intent(in), pointer :: output_sp
-  type(nlte_patch_t), intent(in) :: nlte_patch
-  real(dp), intent(out) :: ll_lam(2)
-  real(dp), intent(in) :: dlam
-  type(interval_t), intent(out), allocatable :: intervals_out(:)
-  integer, intent(out) :: n_intervals_out
+  class(atomic_spectrum_type), intent(in), pointer :: output_sp  !< the output spectrum
+  type(nlte_patch_t), intent(in) :: nlte_patch                   !< holds the internal spectra
+  real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without dlam
+  real(dp), intent(in) :: dlam                                   !< widening of each window
+  type(interval_t), intent(out), allocatable :: intervals_out(:) !< merged intervals
+  integer, intent(out) :: n_intervals_out                        !< number of merged intervals
   real(dp), allocatable :: windows(:,:)
   real(dp) :: sp_min, sp_max
   integer :: i, n_windows
@@ -470,7 +492,7 @@ SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, interva
           windows(i, 2) = output_sp%segment_red_vac(i)
         end do
       else
-        ! Single-segment or legacy output: use full range
+        ! Unsegmented output: use full range
         if (allocated(windows)) deallocate(windows)
         allocate(windows(1, 2))
         windows(1, 1) = minval(output_sp%lam)
@@ -525,7 +547,7 @@ SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, interva
     ! Call merge_intervals to build the union of windows with dlam expansion
     call merge_intervals(windows, n_windows, dlam, intervals_out, n_intervals_out)
 
-    ! Also compute min/max for backward compatibility (passed as ll_lam)
+    ! The span of all windows
     ll_lam(1) = minval(windows(:, 1))
     ll_lam(2) = maxval(windows(:, 2))
   end if
@@ -548,11 +570,15 @@ contains
 END SUBROUTINE build_linelist_intervals
 
 !===============================================================================
+!> Makes an RT slab for each window nu(1):nu(2) and direction mu(1):mu(2) of a
+!> spectrum and appends them to rt_slabs. An empty spectrum makes none.
+!===============================================================================
 SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   class(composition_patch_t) :: self
-  integer, intent(in) :: nu(2), mu(2)
-  class(atomic_spectrum_type), intent(in), pointer :: sp
-  type(atom_type), intent(in), pointer, optional :: atoms(:)
+  integer, intent(in) :: nu(2)                               !< first and last window index i_nu
+  integer, intent(in) :: mu(2)                               !< first and last direction index i_mu
+  class(atomic_spectrum_type), intent(in), pointer :: sp     !< the spectrum
+  type(atom_type), intent(in), pointer, optional :: atoms(:) !< the atoms of that spectrum
   class(rt_patch_t), pointer :: rt_patch
   type(rt_patch_ptr_t), allocatable :: grown(:)
   integer :: n, m
@@ -570,6 +596,12 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   end do
 END SUBROUTINE create_sub_patches
 
+!===============================================================================
+!> On the first call, sets up the compositions of the slab: the unrotated one
+!> and, with rotate_atmos, one per output direction along that ray. Each is
+!> interpolated from the model (or read from a saved atmosphere), solved for the
+!> ionisation and molecular equilibrium and optionally saved. The opacity or
+!> EOS table follows. Later calls only advance the time.
 !===============================================================================
 SUBROUTINE execute (self)
   class(composition_patch_t) :: self
@@ -613,9 +645,7 @@ SUBROUTINE execute (self)
     gpx = 0.; gpy = 0.; gpz = 0.
 
     ! a previously computed atmosphere is read back in the same 14-slot layout
-    ! it was written in.  NOTE: the Pe-gradient slots now hold dPe/d (linear),
-    ! not dlnPe/d -- files written before that convention change load without
-    ! error but carry wrong gradients, so they must be regenerated too.
+    ! it was written in; the Pe-gradient slots hold dPe/dx, not dlnPe/dx.
     ! a run that rotates reads the unrotated copy from a save without rotated
     ! ones, and interpolates the ray-aligned copies from the original snapshot,
     ! which read_external has loaded into ia for that case
@@ -772,18 +802,20 @@ SUBROUTINE execute (self)
 END SUBROUTINE execute
 
 !===============================================================================
-!> Rebuild the ln(Pe) gradients from the composition's own Pe = ne*kB*T on the
+!> Rebuild the Pe gradients from the composition's own Pe = ne*kB*T on the
 !> patch grid, for paths where no interpolation-time gradients exist
-!> (use_ne=.false.).  Vertical slopes use the canonical monotone pchip node
-!> slopes; horizontal partials (unrotated composition only) use centered FDs
+!> (use_ne=.false.).  Vertical slopes use the monotone pchip node slopes;
+!> horizontal partials (unrotated composition only) use centred differences
 !> with one-sided edges.  Grid-node slopes lose the sub-grid structure of the
-!> snapshot interpolant, but keep the hermite solver working identically.
+!> snapshot interpolant, but give the hermite solvers the gradients they need.
 !===============================================================================
 SUBROUTINE pe_gradients_from_grid (comp, ds, gpx, gpy, gpz, horizontal)
-  class(composition_type) :: comp
-  real(8), intent(in) :: ds(3)
-  real(4), dimension(:,:,:), intent(out) :: gpx, gpy, gpz
-  logical, intent(in) :: horizontal
+  class(composition_type) :: comp               !< the solved composition
+  real(8), intent(in) :: ds(3)                  !< cell size [code units]
+  real(4), dimension(:,:,:), intent(out) :: gpx !< dPe/dx; zero without horizontal
+  real(4), dimension(:,:,:), intent(out) :: gpy !< dPe/dy; zero without horizontal
+  real(4), dimension(:,:,:), intent(out) :: gpz !< dPe/dz
+  logical, intent(in) :: horizontal             !< also compute the horizontal gradients
   real(4), dimension(:,:,:), allocatable :: pe
   real(4), dimension(:), allocatable :: zz, dxw, dyw
   integer :: i, x, y, nx, ny, nz
@@ -815,16 +847,18 @@ SUBROUTINE pe_gradients_from_grid (comp, ds, gpx, gpy, gpz, horizontal)
 END SUBROUTINE pe_gradients_from_grid
 
 !===============================================================================
+!> Sample the background opacity on a grid built in the orthogonal PCA basis of
+!> (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
+!> (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
+!> locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
+!> corners that crash the EOS and cutting the node count. pca_opac=.false.
+!> samples the axis-aligned (lnT, lnNe) box instead.
+!===============================================================================
 SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
-    ! Sample the background opacity on a grid built in the orthogonal PCA basis of
-    ! (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
-    ! (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
-    ! locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
-    ! corners that crash the EOS and cutting the node count. ldtemp/ldne are the
-    ! requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
     class(composition_patch_t), target :: self
+    real(8), intent(in) :: ldtemp !< ln T resolution, projected onto the PC axes for spacing
+    real(8), intent(in) :: ldne   !< ln ne resolution, projected onto the PC axes for spacing
     class(composition_type), pointer :: comp
-    real(8), intent(in) :: ldtemp, ldne
     integer :: i, n(3), n1, n2
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
     real(4), dimension(:,:,:), allocatable :: tab_vmic
@@ -868,10 +902,15 @@ SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
 END SUBROUTINE init_tabulated_comp
 
 !===============================================================================
+!> For make_eos: solves the EOS on a regular (ln T, ln rho) grid spanning the
+!> patch and saves T, rho, ne, pg, E and chi500 at each node to save/eos_*.bin.
+!===============================================================================
 SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   class(composition_patch_t), target :: self
-  real(8), dimension(:,:,:), intent(in) :: temp, rho
-  real(8), intent(in) :: ldtemp, ldrho
+  real(8), dimension(:,:,:), intent(in) :: temp !< temperature of the patch [K]
+  real(8), dimension(:,:,:), intent(in) :: rho  !< density of the patch [g cm^-3]
+  real(8), intent(in) :: ldtemp                 !< ln T step
+  real(8), intent(in) :: ldrho                  !< ln rho step
   real(8) :: minTemp, maxTemp, minRho, maxRho
   integer :: i, j, ntemp, nrho
   real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
@@ -930,6 +969,8 @@ contains
 END SUBROUTINE init_eos_comp
 
 !===============================================================================
+!> Saves the gas pressure and internal energy of the patch to save/eos_*.bin.
+!===============================================================================
 SUBROUTINE save_eos_variables (self)
   class(composition_patch_t), target :: self
   class(composition_type), pointer :: comp
@@ -950,6 +991,8 @@ SUBROUTINE save_eos_variables (self)
 END SUBROUTINE save_eos_variables
 
 !===============================================================================
+!> Prints T, rho and ne at the patch's check point, at console level 2.
+!===============================================================================
 SUBROUTINE print_post_update_info (self)
   class(composition_patch_t):: self
   class(composition_type), pointer :: comp
@@ -967,6 +1010,9 @@ SUBROUTINE print_post_update_info (self)
   endif
 END SUBROUTINE print_post_update_info
 
+!===============================================================================
+!> The first depth patch (ipos(3) = 0) writes abund.txt: log eps =
+!> log10(N/N_H) + 12 of every element, floored at -99.9.
 !===============================================================================
 SUBROUTINE save_abundances_to_file (self)
   class(composition_patch_t), target :: self
@@ -987,14 +1033,17 @@ SUBROUTINE save_abundances_to_file (self)
 END SUBROUTINE save_abundances_to_file
 
 !===============================================================================
+!> Saves the number density of each of the save_species, under its id. During
+!> pre-init it instead marks those species, so their number densities are kept.
+!===============================================================================
 SUBROUTINE save_number_densities (self, comp, pre_init)
   class(composition_patch_t), target :: self
-  class(composition_type) :: comp
+  class(composition_type) :: comp !< the composition
+  logical, intent(in) :: pre_init !< mark the species instead of saving them
   class(ion_type), pointer :: ion
   class(molec_type), pointer :: mol
   class(particle_type), pointer :: particle
   integer :: i, nspecies
-  logical, intent(in) :: pre_init
   character(len=256) :: local_text
   character(len=6), dimension(:), allocatable :: species
   character(len=6) :: key
@@ -1022,11 +1071,15 @@ SUBROUTINE save_number_densities (self, comp, pre_init)
 END SUBROUTINE save_number_densities
 
 !===============================================================================
+!> The RT columns and the slab's own NLTE patch need the composition patch; it
+!> needs no other task.
+!===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)
   class(composition_patch_t) :: self
-  class(task_t), pointer :: another         ! another task in the list
-  logical :: needed, needs_me, download    ! Is the other task: needed, 
-                                           !    does it need me, should I download?
+  class(task_t), pointer :: another !< another task in the list
+  logical :: needed                 !< whether this patch needs the other task
+  logical :: needs_me               !< whether the other task needs this patch
+  logical :: download               !< whether to download the other task
   !-----------------------------------------------------------------------------
   call trace%begin ('composition_patch_t%nbor_relations')
 
@@ -1063,7 +1116,8 @@ END SUBROUTINE composition_patch_nbor_relations
 !===============================================================================
 SUBROUTINE estimate_eos_memory (self, transient, retained)
   class(composition_patch_t), intent(in) :: self
-  real(8), intent(out) :: transient, retained
+  real(8), intent(out) :: transient !< allocations freed after load_state_variables [bytes]
+  real(8), intent(out) :: retained  !< allocations kept for the run [bytes]
   class(ion_type), pointer :: HI
   real(8) :: field
   integer :: i, n_all, n_kept, n_comp, n_level

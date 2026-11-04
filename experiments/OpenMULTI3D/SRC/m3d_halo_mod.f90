@@ -1,3 +1,7 @@
+!===============================================================================
+!> Task links of OpenMULTI3D: neighbour lists, the time-ordered ready queue and the
+!> copy of neighbour data into a task.
+!===============================================================================
 MODULE m3d_halo_mod
   USE os_mod
   USE list_mod
@@ -22,6 +26,9 @@ MODULE m3d_halo_mod
   implicit none
   private
 
+  !===============================================================================
+  !> A halo_t link whose download copies whole neighbour patches (patch_t%copy_to).
+  !===============================================================================
   type, public, extends(halo_t):: m3d_halo_t
   contains
     procedure:: info
@@ -32,8 +39,8 @@ MODULE m3d_halo_mod
     procedure:: check_status
   end type
 
-  logical, public, save :: print_finished=.false.
-  logical, public, save :: print_lock=.false.
+  logical, public, save :: print_finished=.false. !< report each task when it finishes
+  logical, public, save :: print_lock=.false.     !< report every lock and unlock of a patch's memory
 
   public :: lock_mem, unlock_mem, add_nbor_by_key
 
@@ -44,9 +51,9 @@ CONTAINS
 !> nbor list nbors of task, and count it
 !===============================================================================
 SUBROUTINE add_nbor_by_key (task, key, nbors)
-  class(gpatch_t):: task
-  integer:: key(4)
-  class(nbor_t), pointer:: nbors
+  class(gpatch_t):: task         !< task whose nbor list grows
+  integer:: key(4)               !< hash key of the neighbour
+  class(nbor_t), pointer:: nbors !< nbor list
   class(link_t), pointer:: nblink
   logical:: added
   !-----------------------------------------------------------------------------
@@ -64,9 +71,12 @@ SUBROUTINE add_nbor_by_key (task, key, nbors)
 END SUBROUTINE add_nbor_by_key
 
   !===============================================================================
+  !> Inserts the link into list, which is ordered by task time, after the links of
+  !> equal time.
+  !===============================================================================
   SUBROUTINE append_to(self, list)
     class (m3d_halo_t), target :: self
-    class (list_t), pointer :: list
+    class (list_t), pointer :: list !< list to insert into
     class (link_t), pointer :: next, prev
     class (task_t), pointer :: task
     integer, save :: itimer=0
@@ -102,11 +112,14 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE append_to
 
   !===============================================================================
+  !> Calls the task's pre_update and then halo_t's update.
+  !===============================================================================
   SUBROUTINE update (self, all_tgt, all_src, only)
     class(m3d_halo_t)       :: self
     class(nbor_t), pointer  :: nbor
-    logical, optional       :: all_tgt, all_src
-    integer, optional       :: only
+    logical, optional       :: all_tgt !< passed to halo_t's update
+    logical, optional       :: all_src !< passed to halo_t's update
+    integer, optional       :: only    !< passed to halo_t's update
     !-----------------------------------------------------------------------------
     call self%task%pre_update()
     !call self%halo_t%update(all_tgt, all_src, only)
@@ -114,10 +127,12 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE update
 
   !===============================================================================
+  !> Locks the patch's memory, for reading only with read.
+  !===============================================================================
   SUBROUTINE lock_mem (self, label, read)
     class(patch_t) :: self
-    character(len=*) :: label
-    logical, optional :: read
+    character(len=*) :: label !< label of the lock, for diagnostics
+    logical, optional :: read !< read lock (default .false.)
     !-----------------------------------------------------------------------------
     if (option(read, .false.)) then
       call self%mem_lock(1)%set_read (label)
@@ -128,10 +143,12 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE lock_mem
 
   !===============================================================================
+  !> Releases a lock_mem lock of the patch's memory.
+  !===============================================================================
   SUBROUTINE unlock_mem (self, label, read)
     class(patch_t) :: self
-    character(len=*) :: label
-    logical, optional :: read
+    character(len=*) :: label !< label of the lock, for diagnostics
+    logical, optional :: read !< read lock (default .false.)
     !-----------------------------------------------------------------------------
     if (option(read, .false.)) then
       call self%mem_lock(1)%unset_read (label)
@@ -142,13 +159,15 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE unlock_mem
 
   !===============================================================================
-  !> Comprehensive entry point
+  !> Copies the data of every neighbour in nbors that is marked for download, under a
+  !> read lock of its memory, into the task.
   !===============================================================================
   SUBROUTINE download (self, nbors, only, all_tgt, all_src)
     class(m3d_halo_t)      :: self
-    class(nbor_t), pointer :: nbors
-    integer,      optional :: only
-    logical,      optional :: all_tgt, all_src
+    class(nbor_t), pointer :: nbors   !< nbor list
+    integer,      optional :: only    !< unused, part of the halo_t interface
+    logical,      optional :: all_tgt !< unused, part of the halo_t interface
+    logical,      optional :: all_src !< unused, part of the halo_t interface
     !.............................................................................
     class(nbor_t), pointer :: tnbors
     integer                :: unit, tid
@@ -214,13 +233,15 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE download
 
   !===============================================================================
+  !> Writes the task's info and one line per neighbour to unit.
+  !===============================================================================
   SUBROUTINE info (self, label, unit)
     class(m3d_halo_t):: self
-    character(*), optional:: label
+    character(*), optional:: label !< unused, part of the halo_t interface
+    integer, optional:: unit       !< unit to write to (default io_unit%mpi)
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nt
     real(8):: distance(3)
-    integer, optional:: unit
     integer:: unit_L
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%info')
@@ -242,9 +263,11 @@ END SUBROUTINE add_nbor_by_key
   END SUBROUTINE info
 
   !===============================================================================
+  !> halo_t's check_status, which also reports a finished task with print_finished.
+  !===============================================================================
   SUBROUTINE check_status (self, label)
     class(m3d_halo_t):: self
-    character(*):: label
+    character(*):: label !< passed to halo_t's check_status
     !.............................................................................
     class(task_t), pointer:: task
     !-----------------------------------------------------------------------------
@@ -266,8 +289,8 @@ END SUBROUTINE add_nbor_by_key
   SUBROUTINE reset_status (self, nbor_list, check)
     class(m3d_halo_t):: self
     class(link_t), pointer:: nblink
-    class(nbor_t), pointer:: nbor_list
-    logical, optional:: check
+    class(nbor_t), pointer:: nbor_list !< nbor list of the task
+    logical, optional:: check          !< unused, part of the halo_t interface
     !.............................................................................
     class(nbor_t), pointer:: nb
     class(task_t), pointer:: task

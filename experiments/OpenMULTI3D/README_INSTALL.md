@@ -175,6 +175,7 @@ three lines print with these values.
   its preferences, recent files and saved workspaces in `.tumultstudio.json` in the
   directory it was started from (`TUMULT_CONFIG` names another file); the file is
   git-ignored. [docs/GUIWorkflow.md](docs/GUIWorkflow.md) describes the tools.
+- The source reference of the Fortran and C code in `SRC/` and `HOP/` (modules, types, procedures, call relations) is built with [Doxygen](https://www.doxygen.nl) and Graphviz by `doxygen docs/Doxyfile`, which writes `build/doxygen/html/index.html`. Each push to `main` publishes it to the repository's GitHub Pages site.
 
 ## 7. Troubleshooting
 
