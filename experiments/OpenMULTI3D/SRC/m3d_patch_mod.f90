@@ -128,12 +128,10 @@ MODULE m3d_patch_mod
       type(departure_pointer_t), dimension(:,:), pointer :: departures    !< departure coefficients read with read_departures
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null() !< mem without the guard cells
 
-      logical :: in_task_list = .false. !< unused
       logical :: initialized  = .false. !< init has run
       real(8) :: t_offset=0             !< start time offset, in units of dtime: 0.5 for RT tasks, else 0.1
       integer :: iter=0                 !< updates done
       integer :: maxiter                !< last update before the task finishes
-      integer :: master_maxiter         !< unused
       integer :: dir=0                  !< sweep direction of an RT task, +1 or -1; 0 for other tasks
       integer :: n_windows              !< number of internal windows when the RT slabs were made
       integer :: n_out                  !< number of output directions
@@ -145,9 +143,7 @@ MODULE m3d_patch_mod
       logical :: do_full_sp=.false.     !< works on the internal spectrum of the NLTE iteration
       logical :: do_final=.false.       !< the final output ray, after the scattering iterations
       logical :: wait_for_nlte=.false.  !< held back until every nlte_patch has converged
-      logical :: compressed=.false.     !< unused (never set)
       logical :: save_output=.false.    !< writes its output (nlte_patch, save_patch_kind, save_id)
-      logical :: saved=.false.          !< unused
       logical :: print_update_info      !< pcheck lies in the patch, so it prints after each update
       logical :: checked_bounds=.false. !< print_update_info is set
       logical :: has_atom=.false.       !< the task has atoms
@@ -167,7 +163,6 @@ MODULE m3d_patch_mod
       integer :: i_dpe_x=12             !< slot of dPe/dx
       integer :: i_dpe_y=13             !< slot of dPe/dy
       integer :: i_dpe_z=14             !< slot of dPe/dz
-      logical :: prepend=.false.        !< unused (never set)
     contains
       procedure :: pre_init
       procedure :: post_pre_init
@@ -203,7 +198,6 @@ MODULE m3d_patch_mod
       procedure :: check_nbor
       procedure :: hash_key
       procedure :: set_place
-      procedure :: queue_before
       procedure :: sort_nbors
       procedure :: rotate_cube4
       procedure :: collect_line_diagnostics
@@ -462,7 +456,6 @@ MODULE m3d_patch_mod
     call self%patch_t%pre_init()
 
     self%id = 0 ! this is assigned later
-    self%in_task_list = .false.
   
     ! ----------------------------------------------------------------------------
     ! relevant synchronization items for cartesian setup
@@ -703,8 +696,6 @@ MODULE m3d_patch_mod
     class (m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_maxiter')
-    self%master_maxiter = rt_iter%maxiter + rt_out%maxiter
-
     select case (self%kind)
     case ('composition')
       self%maxiter = 1
@@ -1180,7 +1171,6 @@ MODULE m3d_patch_mod
         m = m_in
       else
         m = [self%gn, self%nv, self%nt, self%nw]
-        self%compressed = .false.
       endif
       call self%patch_t%allocate_mem(m)
       if (check_NaN) then
@@ -1188,10 +1178,6 @@ MODULE m3d_patch_mod
       endif
       li = self%li
       ui = self%ui
-      if (self%compressed) then
-        li(3) = 1
-        ui(3) = 1 
-      endif
       self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
       call trace%end (itimer)
     endif
@@ -1566,22 +1552,6 @@ MODULE m3d_patch_mod
       self%key_list => link
     endif
   END SUBROUTINE add_to_key_list
-
-  !===============================================================================
-  !> Whether the task goes ahead of another in the ready queue.
-  !===============================================================================
-  FUNCTION queue_before (self, other) result(queue)
-    class(m3d_patch_t):: self
-    class(task_t):: other !< the task already queued
-    logical :: queue
-    !-----------------------------------------------------------------------------
-    if (self%prepend) then
-      queue = other%time >= self%time
-      !self%prepend = .false.
-    else
-      queue = self%task_t%queue_before(other)
-    endif
-  END FUNCTION queue_before
 
   !===============================================================================
   !> Sorts the neighbour list by the number of hash-key entries a neighbour
