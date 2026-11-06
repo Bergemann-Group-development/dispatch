@@ -1,3 +1,6 @@
+!===============================================================================
+!> The RT slabs, which compute the opacities, formal solution, mean intensity and rates of one window, direction and depth slab.
+!===============================================================================
 MODULE rt_patch_mod
   USE os_mod
   USE halo_mod
@@ -55,23 +58,22 @@ MODULE rt_patch_mod
   integer :: n_negative_chi = 0                 !< diagnostic: slabs that reported a floored chi in work_to_transfer_units
 
   !-----------------------------------------------------------------------------
-  ! What a set *is*, as opposed to where it sits.  The set axis is variable-length
-  ! (the ALI branch below has a single main set and no continuum companion), so
-  ! the kind is recorded per set and written to 'sets.txt'; the reader looks the
-  ! layout up instead of inferring it from the set index or component count.
+  ! The kind of a set, as opposed to its position.  The set axis has a variable
+  ! length (an iteration slab has a single main set and no continuum set), so the
+  ! kind is recorded per set and written to 'sets.txt'; readers look the layout
+  ! up instead of inferring it from the set index or the number of sets.
   !-----------------------------------------------------------------------------
   integer, parameter, public :: set_continuum=0 !< background only; skips foreground
   integer, parameter, public :: set_nlte=1      !< the main spectrum, with departures
-  integer, parameter, public :: set_lte=2       !< LTE: the main spectrum of an LTE
-                                                   ! run, or the forced-LTE companion
-                                                   ! of an NLTE one
+  integer, parameter, public :: set_lte=2       !< LTE: the main spectrum of an LTE run, or the LTE companion of an NLTE one
   character(len=9), dimension(0:2), parameter :: set_kind_name = &
-    ['continuum', 'nlte     ', 'lte      ']
-  integer, public, save :: output_n_set=0
-  integer, public, save :: output_i_set_main=0, output_i_set_cnt=0
-  integer, allocatable, public, save :: output_set_kind(:)
-  real(8), allocatable, public, save :: output_set_da(:,:)      !< (atomic number, set)
-  logical, allocatable, public, save :: output_set_element(:,:) !< explicit rows, including da=0
+    ['continuum', 'nlte     ', 'lte      ']                     !< names of the set kinds in 'sets.txt'
+  integer, public, save :: output_n_set=0                       !< number of output sets
+  integer, public, save :: output_i_set_main=0                  !< the output set the run's own spectrum comes from
+  integer, public, save :: output_i_set_cnt=0                   !< the unperturbed continuum output set
+  integer, allocatable, public, save :: output_set_kind(:)      !< kind of each output set
+  real(8), allocatable, public, save :: output_set_da(:,:)      !< abundance offset [dex] per (atomic number, set)
+  logical, allocatable, public, save :: output_set_element(:,:) !< set_file names the element for the set, including da=0
 
   !-----------------------------------------------------------------------------
   ! Output patches use IDs -n_windows_out:-1, internal patches use 1:n_windows.  n_windows_out
@@ -81,106 +83,117 @@ MODULE rt_patch_mod
   public :: verify_output_patch_coverage, window_shape, slab_memory, trans_copy_bytes, &
             point_table_bytes
 
-  !-----------------------------------------------------------------------------
+  !===============================================================================
   !> What the memory of one slab depends on besides its cells: the frequency
   !> points, directions and sets of its window and the transitions of each atom
   !> that reach into it.  window_shape predicts it before the slab exists.
-  !-----------------------------------------------------------------------------
+  !===============================================================================
   type, public :: slab_shape_t
-    integer :: nf=0, n_mu=0, n_set=1
-    integer, allocatable :: nline(:), ncont(:)
+    integer :: nf=0                      !< frequency points of the window
+    integer :: n_mu=0                    !< directions of the slab
+    integer :: n_set=1                   !< sets of the slab
+    integer, allocatable :: nline(:)     !< lines of each atom that reach into the window
+    integer, allocatable :: ncont(:)     !< continua of each atom that reach into the window
     integer, allocatable :: nhtab(:)     !< hydrogen lines with a tabulated profile
-    logical, allocatable :: get_rates(:)
-    logical :: bound_bound=.false., bound_free=.false., do_final=.false., do_out_sp=.false.
+    logical, allocatable :: get_rates(:) !< the slab accumulates the rates of each atom
+    logical :: bound_bound=.false.       !< some atom has lines
+    logical :: bound_free=.false.        !< some atom has continua
+    logical :: do_final=.false.          !< a slab of the final output pass
+    logical :: do_out_sp=.false.         !< a slab working on the output spectrum
   end type slab_shape_t
 
+  !===============================================================================
   !> The tabulated profiles of an atom's hydrogen lines (hcell_t%vcs), prepared once
   !> per cell and line and shared by the directions, sets and passes of one execute.
-  !> slot(i) indexes line i in p, 0 for a line without a table.
+  !===============================================================================
   type :: hvcs_store_t
-    integer, allocatable :: slot(:)
-    type(vcs_profile_t), allocatable :: p(:,:,:,:)
+    integer, allocatable :: slot(:)                !< index of each line in p, 0 for a line without a table
+    type(vcs_profile_t), allocatable :: p(:,:,:,:) !< prepared profiles per (x, y, z, slot)
   end type hvcs_store_t
 
-  !-----------------------------------------------------------------------------
+  !===============================================================================
   !> The state of one frequency window, ray direction and depth slab.  A slab is
   !> not a task: the rt_column_t of its window and direction sweeps it in order
   !> (rt_column_mod), sets upstream to the slab swept before it, hands it the
   !> boundary buffer (mem) and marks the last slab of a complete sweep with
   !> column_end.  up_twin and dn_twin are set there too.
-  !-----------------------------------------------------------------------------
+  !===============================================================================
   type, public, extends(ray_patch_t) :: rt_patch_t
-    class(rt_patch_t), pointer :: upstream=>null()
-    class(rt_patch_t), pointer :: up_twin=>null()
-    class(rt_patch_t), pointer :: dn_twin=>null()
-    logical :: Jnu_freed=.false.
-    logical :: column_end=.false.
-    !> settled: the atoms of this slab and of every deeper one have converged, as
-    !> the column finds at the start of its sweep (rt_patch_pre_update)
-    logical :: settled=.false.
-    !> The twin exchange (see combine_twin_hemispheres).  hemisphere_iter: the
-    !> last iteration whose hemisphere this patch has completed.  combined_iter:
-    !> the iteration whose full-sphere Jnu, and with PsiJ_combined also PsiJ, the
-    !> patch now holds in place of its own hemisphere; -1 before the first.
-    integer :: hemisphere_iter=-1, combined_iter=-1
-    logical :: PsiJ_combined=.false.
-    class(atom_trans_t), dimension(:), pointer :: trans=>null()
-    type(spectrum_type) :: sub_sp
-    real(4), dimension(:,:,:,:,:), allocatable :: Jnu
-    real(4), dimension(:,:,:,:), allocatable :: Psi
-    !> Per ray, frequency and cell: the largest single contribution to the
-    !> emissivity and the sum of all the others, with the index of the largest.
-    !> Holding the largest apart is what lets a line's own contribution be taken
-    !> out of the local source term without a cancelling subtraction.  Index 0 is
-    !> the whole continuum, seeded as one contribution in foreground, since the
-    !> bound-free rates do not use this path.  split_chi and split_chi_id hold the
-    !> absorption (before stimulated emission) the same way, with a largest of
-    !> their own, so that chi - chi_t is never formed by subtraction.  Both are
-    !> stored without the stimulated-emission factor beta, which is common to all
-    !> contributions at a frequency and cell and is applied where they are read.
-    !> The line-scattering emissivity is not tracked: it is added to eta in
-    !> work_to_transfer_units and to the other contributions in the rates.
-    real(4), allocatable :: split_opac(:,:,:,:,:), split_chi(:,:,:,:,:)
-    integer, allocatable :: split_id(:,:,:,:), split_chi_id(:,:,:,:)
-    integer, allocatable :: split_offset(:)
-    type(hvcs_store_t), allocatable :: hvcs(:)
-    !> The formal solution without its own local term, Inu - Psi*eta_total, and
-    !> the escape factor 1 - Psi*chi of the local term, both from the solver.
-    real(4), allocatable :: Irem(:,:,:,:), escape(:,:,:,:)
-    logical :: split_rates=.false.
-    !> PsiJ is the angle-averaged diagonal operator and Jali the full-sphere
-    !> accelerated mean intensity of the continuum-scattering ALI.  Both carry a
-    !> set index (the output-spectrum path has n_set>1) and both are persisted
-    !> exactly like Jnu, because the OAB update is a two-term recurrence that
-    !> needs the previous iteration's values at the twin-combine point.
-    !> Jali_valid: per set, has a previous Jali been stored yet (else the
-    !> recurrence is seeded with the plain formal solution).
-    !> do_scat_precond: is the correction active for this patch.
-    !> compute_psi: must the formal solvers build Psi at all (rates OR ALI).
-    real(4), dimension(:,:,:,:,:), allocatable :: PsiJ, Jali
-    logical, allocatable :: Jali_valid(:)
-    logical :: do_scat_precond = .false.
-    logical :: compute_psi = .false.
-    !> points into the composition patch's shared table for this i_nu, or, on the
-    !> make_eos path, at a private table (save_opac_table overwrites it in place)
+    class(rt_patch_t), pointer :: upstream=>null()              !< the slab swept before this one
+    class(rt_patch_t), pointer :: up_twin=>null()               !< itself if twinned; final pass: the output pair's i_mu=1 slab
+    class(rt_patch_t), pointer :: dn_twin=>null()               !< its twin; final pass: the output pair's i_mu=2 slab
+    logical :: Jnu_freed=.false.                                !< finish has freed the twins' Jnu
+    logical :: column_end=.false.                               !< the last slab of a complete sweep of its column
+    logical :: settled=.false.                                  !< atoms converged here and below (rt_patch_pre_update)
+    integer :: hemisphere_iter=-1                               !< last iteration whose hemisphere this slab has completed
+    integer :: combined_iter=-1                                 !< iteration of the full-sphere Jnu held here; -1 before the first
+    logical :: PsiJ_combined=.false.                            !< the last twin combine averaged PsiJ too
+    class(atom_trans_t), dimension(:), pointer :: trans=>null() !< lines and continua of each atom that reach into the window
+
+    type(spectrum_type) :: sub_sp                     !< frequencies of the window
+    real(4), dimension(:,:,:,:,:), allocatable :: Jnu !< mean intensity (occupation number) per (f, x, y, z, set)
+    real(4), dimension(:,:,:,:), allocatable :: Psi   !< diagonal of the approximate operator of the current direction
+
+    !> Per frequency and cell: the largest single contribution to the emissivity
+    !> (index 1) and the sum of all the others (index 2).  Holding the largest
+    !> apart is what lets a line's own contribution be taken out of the local
+    !> source term without a cancelling subtraction.  Contribution 0 is everything
+    !> that is not a model-atom line (continuum, bound-free and line list), seeded
+    !> as one contribution in foreground.  It is stored without the
+    !> stimulated-emission factor beta, which is common to all contributions at a
+    !> frequency and cell and is applied where they are read.  The line-scattering
+    !> emissivity is not tracked: it is added to eta in work_to_transfer_units and
+    !> to the other contributions in the rates.
+    real(4), allocatable :: split_opac(:,:,:,:,:)
+    real(4), allocatable :: split_chi(:,:,:,:,:)  !< absorption held the same way, so chi - chi_t is never a subtraction
+    integer, allocatable :: split_id(:,:,:,:)     !< contribution index of the largest emissivity
+    integer, allocatable :: split_chi_id(:,:,:,:) !< contribution index of the largest absorption
+    integer, allocatable :: split_offset(:)       !< offset of each atom's line indices among the contributions
+    type(hvcs_store_t), allocatable :: hvcs(:)    !< prepared tabulated hydrogen profiles of each atom
+    real(4), allocatable :: Irem(:,:,:,:)         !< formal solution without its own local term, Inu - Psi*eta_total
+    real(4), allocatable :: escape(:,:,:,:)       !< escape factor 1 - Psi*chi of the local term
+    logical :: split_rates=.false.                !< the contributions are tracked (rate_formulation='largest')
+
+    !> Angle-averaged diagonal operator per (f, x, y, z, set).  Like Jali it
+    !> persists between iterations as Jnu does, because the Olson-Auer-Buchler
+    !> update of the continuum-scattering ALI is a two-term recurrence that needs
+    !> the previous iteration's values at the twin combine.
+    real(4), dimension(:,:,:,:,:), allocatable :: PsiJ
+    real(4), dimension(:,:,:,:,:), allocatable :: Jali !< accelerated full-sphere mean intensity of the scattering ALI
+    logical, allocatable :: Jali_valid(:)              !< per set, a previous Jali is stored (else the recurrence starts from Jnu)
+    logical :: do_scat_precond = .false.               !< the continuum-scattering ALI is active for this slab
+    logical :: compute_psi = .false.                   !< the formal solvers build Psi (for the rates or the ALI)
+
+    !> Sampled background opacity table: the composition patch's shared table for
+    !> this i_nu or, on the make_eos path, a private one (save_opac_table
+    !> overwrites it in place).
     type(sample_optab_type), pointer :: opac => null()
-    type(lock_t), pointer :: opac_lock => null()
-    !> Separate sampled LTE line-list table (sample_linelist): non-departure
-    !> species only, interpolated into the foreground work arrays with a per-cell
-    !> Doppler shift; shares one instance per i_nu across i_mu twins, like opac.
+    type(lock_t), pointer :: opac_lock => null() !< lock of the shared opac table
+    !> Sampled LTE line-list table (sample_linelist): non-departure species only,
+    !> interpolated into the foreground work arrays with a per-cell Doppler shift;
+    !> the i_mu twins share one instance per i_nu, like opac.
     type(sample_optab_type), pointer :: ll_opac => null()
-    type(lock_t), pointer :: ll_opac_lock => null()
-    real(4), dimension(:), allocatable :: twohnu3_c2
-    real(8), dimension(:), pointer :: nu
-    integer :: mus, mue, n_set, n_mu, natom
-    integer, dimension(:), allocatable :: set_kind !< set_continuum / set_nlte / set_lte
-    integer :: i_set_main=1                        !< the set the run's own spectrum comes from
-    integer :: i_set_cnt=0                         !< the continuum set, or 0 where none is computed
-    logical :: has_nlte_set=.false.                !< is there a set carrying departures?
-    logical :: bound_bound, bound_free
-    logical, dimension(:), allocatable :: get_rates
-    integer :: nx, ny, nz
-    real(4), dimension(:,:,:,:,:), allocatable :: work
+    type(lock_t), pointer :: ll_opac_lock => null() !< lock of the shared ll_opac table
+
+    real(4), dimension(:), allocatable :: twohnu3_c2   !< 2 h nu^3/c^2 per frequency [erg/cm^2]
+    real(8), dimension(:), pointer :: nu               !< frequencies of the window [Hz]
+    integer :: mus                                     !< first direction of the slab
+    integer :: mue                                     !< last direction of the slab
+    integer :: n_set                                   !< number of sets
+    integer :: n_mu                                    !< number of directions
+    integer :: natom                                   !< number of model atoms
+    integer, dimension(:), allocatable :: set_kind     !< set_continuum, set_nlte or set_lte
+    integer :: i_set_main=1                            !< the set the run's own spectrum comes from
+    integer :: i_set_cnt=0                             !< the continuum set, or 0 where none is computed
+    logical :: has_nlte_set=.false.                    !< there is a set carrying departures
+    logical :: bound_bound                             !< some atom has lines
+    logical :: bound_free                              !< some atom has continua
+    logical, dimension(:), allocatable :: get_rates    !< per atom, this slab accumulates its rates
+    integer :: nx                                      !< cells in x
+    integer :: ny                                      !< cells in y
+    integer :: nz                                      !< cells in z
+    real(4), dimension(:,:,:,:,:), allocatable :: work !< (f, x, y, z, k): k=1 extinction, 2 source, 3 intensity
+
     ! Direction-independent background, per (f,x,y,z), rebuilt once per i_set in
     ! background().  Filled in this order:
     !   lte_background_opacities  chi_cont, sigma  (from the table or comp%opacity)
@@ -195,25 +208,19 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: chi_cont !< continuum extinction, total
     real(4), dimension(:,:,:,:), allocatable :: sigma    !< coherent-scattering part of chi_cont (<= it)
     real(4), dimension(:,:,:,:), allocatable :: beta     !< LTE Boltzmann factor exp(-h*nu/kT)
-    real(4), dimension(:,:,:,:), allocatable :: Bnu      !< Planck function in transfer units, beta/(1-beta)
-    real(4), dimension(:,:,:,:), allocatable :: xhat     !< working extinction (see above)
-    real(4), dimension(:,:,:,:), allocatable :: ehat     !< emissivity / working source (see above)
-    ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
-    ! line opacity built during foreground, and (direct path only) the per-stage
-    ! scattering fraction 1-eps on the patch frequency grid (index 1=neutral,
-    ! 2=ionized), refreshed per nu-chunk
-    ! line_scattering scratch: chi_scat is the (1-eps)-weighted line opacity for
-    ! the current direction, dJnu the (Jnu - Bnu) the background left behind, and
-    ! do_line_scat says whether this pass filled them (it follows the per-pass
-    ! include_linelist / sample_linelist, so it can differ between rt_iter and
-    ! rt_out while the buffers stay allocated)
-    logical :: do_line_scat=.false.
-    real(4), dimension(:,:,:,:),   allocatable :: chi_scat, dJnu
-    real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
-    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
-    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt !< per-mu continuum stash
-    real(8), dimension(:), allocatable :: flux_prev            !< previous-iteration top emergent flux, per frequency (fs:fe)
-    real(8) :: flux_global=0.d0, flux_maxerr=0.d0              !< globally-agreed / local worst relative flux change this iteration
+    real(4), dimension(:,:,:,:), allocatable :: Bnu      !< Planck function as occupation number, beta/(1-beta)
+    real(4), dimension(:,:,:,:), allocatable :: xhat     !< working extinction, chi_cont + eta plus the bound-free terms
+    real(4), dimension(:,:,:,:), allocatable :: ehat     !< emissivity eta, then eta/beta (working source)
+
+    logical :: do_line_scat=.false.                             !< this pass filled chi_scat and dJnu
+    real(4), dimension(:,:,:,:), allocatable :: chi_scat        !< (1-eps)-weighted LTE line opacity of the current direction
+    real(4), dimension(:,:,:,:), allocatable :: dJnu            !< Jnu - Bnu as the background left it
+    real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps     !< scattering fraction 1-eps per stage (1 neutral, 2 ionised)
+    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data !< contribution function and extinction per direction
+    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt  !< chi, eta and Inu of the continuum set per direction
+    real(8), dimension(:), allocatable :: flux_prev             !< previous iteration's emergent flux per frequency
+    real(8) :: flux_global=0.d0                                 !< largest relative flux change so far in this round
+    real(8) :: flux_maxerr=0.d0                                 !< unused
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
@@ -273,8 +280,11 @@ MODULE rt_patch_mod
     procedure :: release_exit_plane
   end type rt_patch_t
 
+  !===============================================================================
+  !> A pointer to an RT slab, for arrays of slabs.
+  !===============================================================================
   type, public :: rt_patch_ptr_t
-    class(rt_patch_t), pointer :: p => null()
+    class(rt_patch_t), pointer :: p => null() !< the slab
   end type rt_patch_ptr_t
 
   !-----------------------------------------------------------------------------
@@ -289,44 +299,73 @@ MODULE rt_patch_mod
   !> Formal solvers, implemented in the rt_solvers_mod submodule (rt_solvers_mod.f90)
   !===============================================================================
   interface
+    !=============================================================================
+    !> Linear formal solution by short characteristics in a 3D slab, which builds
+    !> Psi for the iteration pass.
+    !=============================================================================
     module subroutine short_char (self, vec)
       class(rt_patch_t) :: self
-      real(8), intent(in) :: vec(3)
+      real(8), intent(in) :: vec(3) !< direction of the ray
     end subroutine short_char
 
+    !=============================================================================
+    !> Linear formal solution along the vertical columns of the slab (1D,
+    !> column_by_column or a ray-aligned atmosphere), which builds Psi.
+    !=============================================================================
     module subroutine long_char_linear (self, vec)
       class(rt_patch_t) :: self
-      real(8) :: vec(3)
+      real(8) :: vec(3) !< direction of the ray
     end subroutine long_char_linear
 
+    !=============================================================================
+    !> Parabolic transfer moments over an interval of optical depth t.
+    !=============================================================================
     pure module subroutine parab_moments (t, E, U0, U1, q)
-      real(4), intent(in)  :: t
-      real(4), intent(out) :: E, U0, U1, q
+      real(4), intent(in)  :: t  !< optical depth of the interval
+      real(4), intent(out) :: E  !< exp(-t)
+      real(4), intent(out) :: U0 !< 1 - E
+      real(4), intent(out) :: U1 !< t - U0
+      real(4), intent(out) :: q  !< (t^2 - 2*U1)/t
     end subroutine parab_moments
 
+    !=============================================================================
+    !> Quadratic formal solution along the vertical columns, with a limited
+    !> source slope.
+    !=============================================================================
     module subroutine long_char_quadratic (self, vec)
       class(rt_patch_t), target :: self
-      real(8) :: vec(3)
+      real(8) :: vec(3) !< direction of the ray
     end subroutine long_char_quadratic
 
+    !=============================================================================
+    !> Cubic Hermite formal solution along the vertical columns, with the slopes of
+    !> chi and Snu from the composition gradients by the chain rule.
+    !=============================================================================
     module subroutine long_char_hermite (self, comp, vec, comp_up)
       class(rt_patch_t), target :: self
-      class(composition_type) :: comp
-      class(composition_type), pointer :: comp_up
-      real(8), intent(in) :: vec(3)
+      class(composition_type) :: comp             !< composition of the slab
+      class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
+      real(8), intent(in) :: vec(3)               !< direction of the ray
     end subroutine long_char_hermite
 
+    !=============================================================================
+    !> long_char_hermite's optical depth with long_char_quadratic's source
+    !> treatment, which needs only the Pe gradients.
+    !=============================================================================
     module subroutine long_char_hermite2 (self, comp, vec, comp_up)
       class(rt_patch_t), target :: self
-      class(composition_type) :: comp
-      class(composition_type), pointer :: comp_up
-      real(8), intent(in) :: vec(3)
+      class(composition_type) :: comp             !< composition of the slab
+      class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
+      real(8), intent(in) :: vec(3)               !< direction of the ray
     end subroutine long_char_hermite2
 
+    !=============================================================================
+    !> short_char with long_char_hermite's chain-rule slopes, which builds Psi.
+    !=============================================================================
     module subroutine short_char_hermite (self, comp, vec)
       class(rt_patch_t) :: self
-      class(composition_type) :: comp
-      real(8), intent(in) :: vec(3)
+      class(composition_type) :: comp !< composition of the slab
+      real(8), intent(in) :: vec(3)   !< direction of the ray
     end subroutine short_char_hermite
   end interface
 
@@ -339,7 +378,11 @@ contains
   !===============================================================================
   SUBROUTINE estimate_memory (self, work, retained, boundary, persistent, tables)
     class(rt_patch_t), intent(in) :: self
-    real(8), intent(out) :: work, retained, boundary, persistent, tables
+    real(8), intent(out) :: work       !< execution-local bytes
+    real(8), intent(out) :: retained   !< bytes kept between executions
+    real(8), intent(out) :: boundary   !< bytes of the boundary buffer
+    real(8), intent(out) :: persistent !< bytes of u_phase, 0 once it is allocated
+    real(8), intent(out) :: tables     !< bytes of the point tables
     type(slab_shape_t) :: shape
     integer :: i
     !-----------------------------------------------------------------------------
@@ -369,9 +412,10 @@ contains
   !> must be set.
   !===============================================================================
   FUNCTION window_shape (sp, atoms, i_nu, i_mu) RESULT (shape)
-    class(atomic_spectrum_type), intent(in) :: sp
-    type(atom_type), pointer, intent(in) :: atoms(:)
-    integer, intent(in) :: i_nu, i_mu
+    class(atomic_spectrum_type), intent(in) :: sp    !< the spectrum the windows divide
+    type(atom_type), pointer, intent(in) :: atoms(:) !< model atoms, may be unassociated
+    integer, intent(in) :: i_nu                      !< window, negative for an output window
+    integer, intent(in) :: i_mu                      !< direction, negative for the final pass
     type(slab_shape_t) :: shape
     logical :: is_nlte
     integer :: i, natom, fs, fe
@@ -406,7 +450,7 @@ contains
   !> so its copies grow with n_windows.
   !===============================================================================
   FUNCTION trans_copy_bytes (shape) RESULT (bytes)
-    type(slab_shape_t), intent(in) :: shape
+    type(slab_shape_t), intent(in) :: shape !< shape of the slab
     real(8) :: bytes
     type(line_type) :: line
     type(cont_type) :: cont
@@ -427,8 +471,8 @@ contains
   !> all the same.
   !===============================================================================
   FUNCTION point_table_bytes (shape, n) RESULT (bytes)
-    type(slab_shape_t), intent(in) :: shape
-    integer, intent(in) :: n(3)
+    type(slab_shape_t), intent(in) :: shape !< shape of the slab
+    integer, intent(in) :: n(3)             !< cells of the depth slab
     real(8) :: bytes, field
     !-----------------------------------------------------------------------------
     bytes = 0.d0
@@ -450,9 +494,13 @@ contains
   !> and solver temporaries are excluded.
   !===============================================================================
   SUBROUTINE slab_memory (shape, n, ng, work, retained, boundary, persistent)
-    type(slab_shape_t), intent(in) :: shape
-    integer, intent(in) :: n(3), ng(3)
-    real(8), intent(out) :: work, retained, boundary, persistent
+    type(slab_shape_t), intent(in) :: shape !< shape of the slab
+    integer, intent(in) :: n(3)             !< cells of the slab
+    integer, intent(in) :: ng(3)            !< ghost cells of the slab
+    real(8), intent(out) :: work            !< execution-local bytes
+    real(8), intent(out) :: retained        !< bytes kept between executions
+    real(8), intent(out) :: boundary        !< bytes of the boundary buffer
+    real(8), intent(out) :: persistent      !< bytes of u_phase
     real(8) :: word, cell, field, sets
     logical :: scat_ali, psi, rates
     type(vcs_profile_t) :: hvcs_sample
@@ -510,7 +558,10 @@ contains
     if (shape%do_final .and. save_cntrbf) work = work + 5*field*shape%n_mu
   END SUBROUTINE slab_memory
 
-
+  !===============================================================================
+  !> Sets the slab up before its first execution: its directions and sets, the
+  !> layout of its boundary buffer, the frequencies and transitions of its window
+  !> and the atoms whose rates it accumulates.
   !===============================================================================
   SUBROUTINE rt_patch_pre_init (self)
     class(rt_patch_t), target:: self
@@ -564,7 +615,7 @@ contains
   !===============================================================================
   SUBROUTINE init_set_layout (self, is_nlte)
     class(rt_patch_t) :: self
-    logical, intent(in) :: is_nlte
+    logical, intent(in) :: is_nlte !< the run has departure coefficients
     !-----------------------------------------------------------------------------
     call init_output_sets(is_nlte)
     self%n_set = output_n_set
@@ -578,12 +629,13 @@ contains
   END SUBROUTINE init_set_layout
 
   !===============================================================================
-  !> Derive the historical base layout, or read an abundance-ladder manifest,
-  !> once per process.  The process-global copy is also consumed once by each
-  !> composition instance.
+  !> Sets up the output set layout once per process: a continuum set, the main
+  !> set and, with departures, an LTE set or, with set_file, the sets of an
+  !> abundance-ladder manifest.  Each composition instance also reads the
+  !> process-global layout once.
   !===============================================================================
   SUBROUTINE init_output_sets (is_nlte)
-    logical, intent(in) :: is_nlte
+    logical, intent(in) :: is_nlte !< the run has departure coefficients
     integer :: unit, ios, number, max_set, z, i, ncnt, nmain
     character(len=1024) :: line
     character(len=16) :: kind, element, da_word
@@ -688,10 +740,9 @@ contains
 
   !===============================================================================
   !> Write 'sets.txt': one row per (set, element), naming what each slot on the
-  !> saved set axis of 'ie' and 'flux' actually contains.  The element and offset
-  !> columns are placeholders until per-set abundance offsets exist; a set with no
-  !> offsets is one row with '-' in both.  Written once per run, by the first
-  !> output patch to reach pre_init.
+  !> saved set axis of 'ie' and 'flux' contains, with the element's abundance
+  !> offset; a set without offsets is one row with '-' in both columns.  Written
+  !> once per run, by the first output slab to execute.
   !===============================================================================
   SUBROUTINE save_set_manifest (self)
     class(rt_patch_t) :: self
@@ -729,6 +780,9 @@ contains
     !$omp end critical (cr_save_set_manifest)
   END SUBROUTINE save_set_manifest
 
+  !===============================================================================
+  !> Copies the active lines and continua of each atom that reach into the window
+  !> to trans, with their frequency ranges clipped to the window.
   !===============================================================================
   SUBROUTINE init_patch_trans (self)
     class(rt_patch_t) :: self
@@ -786,11 +840,14 @@ contains
   !> Number of active lines and continua of atom that reach into [fs_in, fe_in].
   !===============================================================================
   SUBROUTINE count_window_trans (atom, bound_bound, bound_free, fs_in, fe_in, nline, ncont, nhtab)
-    type(atom_type), intent(in) :: atom
-    logical, intent(in) :: bound_bound, bound_free
-    integer, intent(in) :: fs_in, fe_in
-    integer, intent(out) :: nline, ncont
-    integer, intent(out), optional :: nhtab
+    type(atom_type), intent(in) :: atom     !< model atom
+    logical, intent(in) :: bound_bound      !< count the lines
+    logical, intent(in) :: bound_free       !< count the continua
+    integer, intent(in) :: fs_in            !< first frequency of the window
+    integer, intent(in) :: fe_in            !< last frequency of the window
+    integer, intent(out) :: nline           !< number of lines
+    integer, intent(out) :: ncont           !< number of continua
+    integer, intent(out), optional :: nhtab !< number of hydrogen lines with a tabulated profile
     integer :: i, fs, fe, nh
     logical :: skip
     !-----------------------------------------------------------------------------
@@ -828,7 +885,7 @@ contains
   !> line are its principal quantum numbers.
   !===============================================================================
   FUNCTION table_line_slots (lines) RESULT (slot)
-    type(line_type), intent(in) :: lines(:)
+    type(line_type), intent(in) :: lines(:) !< lines of the window
     integer :: slot(size(lines))
     integer :: i, k
     !-----------------------------------------------------------------------------
@@ -860,6 +917,13 @@ contains
       .and. self%iter > rt_out%maxiter-1
   END SUBROUTINE rt_patch_pre_update
 
+  !===============================================================================
+  !> One sweep step of the slab.  For each set and direction it adds the
+  !> background and foreground opacities, solves the transfer and hands the exit
+  !> plane downstream, then integrates Jnu and the rates over the directions.  The
+  !> final pass solves each direction once, with rotate_atmos from the ray-aligned
+  !> atmosphere; the iteration and output-scattering passes cover their hemisphere
+  !> and combine it with their twin's.
   !===============================================================================
   SUBROUTINE execute (self)
     class(rt_patch_t) :: self
@@ -1101,8 +1165,8 @@ contains
       if (get_cntrbf) then
         allocate(self%cntrbf_data(fs:fe,self%nx,self%ny,self%nz,2,self%mus:self%mue))
         call mem_register(self%cntrbf_data, 'self%cntrbf_data')
-        ! (chi, eta, Inu) of the continuum set, per mu.  Its predecessor carried no
-        ! mu axis, which was a latent bug: see save_contribution_function.
+        ! (chi, eta, Inu) of the continuum set, per direction (see
+        ! save_contribution_function)
         allocate(self%cntrbf_cnt(fs:fe,self%nx,self%ny,self%nz,3,self%mus:self%mue))
         call mem_register(self%cntrbf_cnt, 'self%cntrbf_cnt')
       endif
@@ -1159,7 +1223,7 @@ contains
         ! PsiJ and Jali mirror the Jnu lifecycle: when the scattering ALI carries
         ! them to the next iteration's twin combine through memory they must stay
         ! alive across the execute; with rt_to_file persistence goes through the
-        ! file instead, and without the ALI they are freed exactly as before.
+        ! file instead, and without the ALI they are freed after each execute.
         if (allocated(self%PsiJ) .and. .not. (self%do_scat_precond .and. .not. rt_to_file)) then
           call mem_unregister(self%PsiJ, label='PsiJ')
           deallocate(self%PsiJ)
@@ -1194,12 +1258,18 @@ contains
   END FUNCTION pass_params
 
   !===============================================================================
+  !> The direction-independent opacity and emissivity of set i_set: the LTE
+  !> background (computed for the first set and reused), its scattering source
+  !> from the previous Jnu, the bound-free opacities of the atoms and the damping
+  !> of their lines.  Also resets the angle sums of Jnu and PsiJ.
+  !===============================================================================
   SUBROUTINE background(self, comp, i_mu, i_set, do_rotate_atmos)
     class(rt_patch_t) :: self
-    class(composition_type), pointer :: comp
+    class(composition_type), pointer :: comp !< composition, ray-aligned with do_rotate_atmos
+    integer, intent(in) :: i_mu              !< direction of a ray-aligned atmosphere, else 0
+    integer, intent(in) :: i_set             !< set
+    logical, intent(in) :: do_rotate_atmos   !< the composition is ray-aligned
     class(atom_data_t), pointer :: adata
-    integer, intent(in) :: i_mu, i_set
-    logical, intent(in) :: do_rotate_atmos
     type(rt_params_t), pointer :: rtp
     real(8) :: vec(3)
     logical :: include_absmet, do_sample_opac, do_make_eos
@@ -1225,9 +1295,9 @@ contains
     call self%lte_background_emission(comp, i_set, vec, do_rotate_atmos)
     call self%convert_to_work_units()
     call self%reset_array(self%Jnu(:,:,:,:,i_set:i_set))
-    ! PsiJ now persists across iterations for the scattering ALI, so zero it for a
-    ! fresh angle accumulation here -- after lte_background_emission has already
-    ! read the previous iteration's combined PsiJ for the OAB correction.
+    ! PsiJ persists across iterations for the scattering ALI, so zero it for a
+    ! fresh angle accumulation here, after lte_background_emission has read the
+    ! previous iteration's combined PsiJ for the OAB correction.
     if (allocated(self%PsiJ)) self%PsiJ(:,:,:,:,i_set) = 0.
     call self%reset_array(self%work)
     
@@ -1241,9 +1311,7 @@ contains
         if (self%bound_free) then
           call self%add_bound_free_opacities(comp, atom, trans, adata, i_set)
         endif
-        ! adamp is only allocated where the old-formalism loops still need it
-        ! (atoms with hydrogen lines)
-        ! i_set==1: computed once on the first set and reused (see above)
+        ! the line damping is computed for the first set and reused (see above)
         if (self%bound_bound .and. i_set==1 .and. allocated(trans%adamp)) then
           call self%bound_bound_damping(comp, atom, trans, adata)
         endif
@@ -1252,15 +1320,20 @@ contains
   END SUBROUTINE background
 
   !===============================================================================
+  !> Adds the direction-dependent line opacities of set i_set to the work arrays:
+  !> the line list (detailed, stored or sampled) and the lines of the model atoms,
+  !> Doppler-shifted by vproj.  A continuum set has none.
+  !===============================================================================
   SUBROUTINE foreground(self, comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
     class(rt_patch_t) :: self
-    class(composition_type), pointer :: comp
+    class(composition_type), pointer :: comp       !< composition, ray-aligned with do_rotate_atmos
+    integer, intent(in) :: i_mu                    !< direction
+    integer, intent(in) :: i_set                   !< set
+    logical, intent(in) :: do_rotate_atmos         !< the composition is ray-aligned
+    real(4), intent(in) :: wmu                     !< quadrature weight of the direction
+    real(4), intent(in), dimension(:,:,:) :: vproj !< velocity along the ray [c]
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: departures(:)
-    integer, intent(in) :: i_mu, i_set
-    logical, intent(in) :: do_rotate_atmos
-    real(4), intent(in) :: wmu
-    real(4), intent(in), dimension(:,:,:) :: vproj
     type(rt_params_t), pointer :: rtp
     logical :: use_linelist, sample_ll, do_scat, use_store
     integer :: i, i_seg, x, y, z, f
@@ -1363,7 +1436,7 @@ contains
     ! rate_formulation='largest' tracks each model-atom line's share of the
     ! emissivity separately, so that a line's own contribution can be taken back
     ! out of the source term exactly rather than by subtraction.  Everything that
-    ! is not such a line -- continuum, bound-free and the line list -- enters as
+    ! is not such a line (continuum, bound-free and the line list) enters as
     ! one contribution with index 0, which is why the line list is accumulated
     ! first and the model atoms only afterwards.  Seeding the contribution from
     ! the finished non-atom emissivity keeps it a single exactly stored float.
@@ -1406,8 +1479,8 @@ contains
     ! redirected from Bnu to the mean intensity, Snu_line = eps*Bnu + (1-eps)*Jnu,
     ! by adding Delta_eta = chi_scat*(Jnu - Bnu) to the emissivity without
     ! altering chi.  That is done in work_to_transfer_units, which already forms
-    ! eta and so absorbs the whole correction into two extra flops per point --
-    ! no separate pass over the work arrays, and no division by beta.
+    ! eta and so absorbs the whole correction into two extra flops per point,
+    ! with no separate pass over the work arrays and no division by beta.
     self%do_line_scat = do_scat
 
   contains
@@ -1539,16 +1612,20 @@ contains
   END SUBROUTINE free_point_tables
 
   !===============================================================================
+  !> Formal solution of the current direction with the solver of the pass
+  !> (rt_output_params or rt_iteration_params solver).  The iteration pass admits
+  !> only the solvers that build Psi.
+  !===============================================================================
   SUBROUTINE radiative_transfer(self, comp, vec, do_rotate_atmos, i_mu)
     class(rt_patch_t) :: self
-    class(composition_type) :: comp
-    real(8), intent(in) :: vec(3)
-    logical, intent(in) :: do_rotate_atmos
-    integer, intent(in) :: i_mu
+    class(composition_type) :: comp        !< composition of the slab
+    real(8), intent(in) :: vec(3)          !< direction of the ray
+    logical, intent(in) :: do_rotate_atmos !< the composition is ray-aligned
+    integer, intent(in) :: i_mu            !< direction
     class(composition_type), pointer :: comp_up
     !-----------------------------------------------------------------------------
     ! composition of the real upstream neighbour patch, one plane before self's
-    ! ghost boundary -- used by long_char_hermite in place of a same-patch proxy
+    ! ghost boundary; long_char_hermite uses it in place of a same-patch proxy
     ! when a genuine neighbour is available (null at a physical domain boundary)
     comp_up => null()
     if (associated(self%upstream)) then
@@ -1571,7 +1648,7 @@ contains
         call self%long_char_quadratic(vec)
         case('hermite')
         ! the chain rule needs the composition gradients along the ray; in 3D
-        ! that means ray-aligned (rotated) compositions -- the rotate_array
+        ! that means ray-aligned (rotated) compositions, since the rotate_array
         ! shortcut above rotates only chi/Snu, not the thermodynamic state
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
           error stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
@@ -1610,14 +1687,19 @@ contains
   END SUBROUTINE radiative_transfer
 
   !===============================================================================
+  !> Adds the current direction to the angle integrals: Jnu (and PsiJ) when there
+  !> is an iteration, and the bound-bound rates of the atoms whose rates the slab
+  !> accumulates.
+  !===============================================================================
   SUBROUTINE aniso_integrations(self, comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
     class(rt_patch_t) :: self
-    class(composition_type), pointer :: comp
+    class(composition_type), pointer :: comp       !< composition, ray-aligned with do_rotate_atmos
+    integer, intent(in) :: i_mu                    !< direction
+    integer, intent(in) :: i_set                   !< set
+    logical, intent(in) :: do_rotate_atmos         !< the composition is ray-aligned
+    real(4), intent(in) :: wmu                     !< quadrature weight of the direction
+    real(4), dimension(:,:,:), intent(in) :: vproj !< velocity along the ray [c]
     class(atom_data_t), pointer :: adata
-    integer, intent(in) :: i_mu, i_set
-    logical, intent(in) :: do_rotate_atmos
-    real(4), intent(in) :: wmu
-    real(4), dimension(:,:,:), intent(in) :: vproj
     logical :: get_Jnu, get_PsiJ
     integer :: i
     !-----------------------------------------------------------------------------
@@ -1641,6 +1723,10 @@ contains
     end do
   END SUBROUTINE aniso_integrations
 
+  !===============================================================================
+  !> After the last direction of a set: the bound-free rates, which take the
+  !> angle-averaged Jnu, and the transfer of the slab's rates to the atoms
+  !> (integrate_rates).
   !===============================================================================
   SUBROUTINE iso_integrations(self)
     class(rt_patch_t) :: self
@@ -1800,9 +1886,9 @@ contains
   !===============================================================================
   SUBROUTINE load_Jnu_set (self, label, i_set, mem)
     class(rt_patch_t) :: self
-    character(len=*), intent(in) :: label
-    integer, intent(in) :: i_set
-    real(4), intent(out) :: mem(:,:,:,:)
+    character(len=*), intent(in) :: label !< file label, Jnu or Jnu_out
+    integer, intent(in) :: i_set          !< set to read
+    real(4), intent(out) :: mem(:,:,:,:)  !< Jnu of the set
     character(len=256) :: filename
     character(len=4096) :: folder
     integer :: lunit
@@ -1821,9 +1907,13 @@ contains
   END SUBROUTINE load_Jnu_set
 
   !===============================================================================
+  !> Saves chi, Snu and Inu of the main set, and Inu of the continuum set, for
+  !> direction i_mu as save_chi, save_Snu and save_Inu ask.
+  !===============================================================================
   SUBROUTINE save_debug_arrays(self, i_set, i_mu)
     class(rt_patch_t) :: self
-    integer, intent(in) :: i_set, i_mu
+    integer, intent(in) :: i_set !< set
+    integer, intent(in) :: i_mu  !< direction
     character(6) :: sav_label
     !-----------------------------------------------------------------------------
     if (save_chi) then
@@ -1849,15 +1939,22 @@ contains
     endif
   END SUBROUTINE save_debug_arrays
 
-
+  !===============================================================================
+  !> The LTE continuum extinction chi_cont and its scattering part sigma, with
+  !> beta and Bnu.  They come from the sampled table (do_sample_opac), from the
+  !> composition directly or, in a 1D atmosphere, from the store that the first
+  !> slab of the window fills.  On the make_eos path the first execution saves the
+  !> table instead.  The sampled line-list table is filled here on first use.
   !===============================================================================
   SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac, do_make_eos)
     class(rt_patch_t) :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp !< composition of the slab
+    logical :: include_absmet       !< include the absmet background
+    logical :: do_sample_opac       !< interpolate the sampled table
+    logical :: do_make_eos          !< build the opacity table and save it (make_eos)
     real(4) :: h_kT, hv_kT
     type(spectrum_type) :: tab_sp
     type(rt_params_t), pointer :: rtp
-    logical :: include_absmet, do_sample_opac, do_make_eos
     type(bg_opac_t), pointer :: store
     type(lock_t), pointer :: lock
     logical :: use_store
@@ -1988,12 +2085,17 @@ contains
   END SUBROUTINE lte_background_opacities
 
   !===============================================================================
+  !> The background emissivity eta = chi_cont*Bnu + sigma*(Jnu - Bnu) of set
+  !> i_set, leaving Jnu - Bnu in Jnu.  Jnu is the previous iteration's
+  !> full-sphere mean intensity (accelerated by the scattering ALI where it is
+  !> active) or, in the first iteration, the one initial_Jnu chooses.
+  !===============================================================================
   SUBROUTINE lte_background_emission (self, comp, i_set, vec, do_rotate_atmos)
     class(rt_patch_t), target :: self
-    class(composition_type) :: comp
-    integer, intent(in) :: i_set
-    real(8), intent(in) :: vec(3)
-    logical, intent(in) :: do_rotate_atmos
+    class(composition_type) :: comp        !< composition of the slab
+    integer, intent(in) :: i_set           !< set
+    real(8), intent(in) :: vec(3)          !< direction of the ray, read with do_rotate_atmos
+    logical, intent(in) :: do_rotate_atmos !< the composition is ray-aligned
     real(4), dimension(:,:,:,:), allocatable :: Jali_old
     real(8) :: op, Jfs, Jali_new, op_raw, op_max, amp_max
     integer :: n_neg
@@ -2039,8 +2141,8 @@ contains
         endif
       endif
       !-------------------------------------------------------------------------
-      ! Jnu enters eta via comp%scattering, so a corrupt Jnu -- from the twins'
-      ! exchange, whichever way it is passed -- shows up as an infinite source
+      ! Jnu enters eta via comp%scattering, so a corrupt Jnu (from the twins'
+      ! exchange, whichever way it is passed) shows up as an infinite source
       ! function.  Separate that from a corrupt boundary (see
       ! set_upstream_boundary) and from a corrupt opacity.
       !-------------------------------------------------------------------------
@@ -2075,7 +2177,7 @@ contains
       !   Jali = (J_FS - op*Jali_old)/(1 - op),   op = sigma_scat*PsiJ_full,
       ! the standard (1 - Lambda* a)^-1 acceleration.  Psi is stored as
       ! Lambda_diag/chi (rt_solvers_mod), so the dimensionless self-coupling is
-      ! sigma_scat*PsiJ -- multiply by the scattering *opacity*, mirroring the
+      ! sigma_scat*PsiJ: multiply by the scattering *opacity*, mirroring the
       ! bound-free `phi = PsiJ * cont%alpha`.  PsiJ_full is the twins' average,
       ! because each twin integrates only its own hemisphere; unlike bound-free,
       ! which consumes PsiJ linearly, this update divides by (1-op) and so must
@@ -2154,9 +2256,9 @@ contains
     !   eta = chi_true*Bnu + sigma*Jnu = chi_cont*Bnu + sigma*(Jnu - Bnu),
     ! and the second form is the one to use: every optical depth stays exactly
     ! as it is and only the departure of J from Planck drives the scattering
-    ! term.  Because sigma is built together with chi_cont -- summed after
+    ! term.  Because sigma is built together with chi_cont (summed after
     ! interpolation on the sampled path, accumulated side by side on the exact
-    ! one -- the effective single-scattering albedo sigma/chi_cont is <= 1 by
+    ! one), the effective single-scattering albedo sigma/chi_cont is <= 1 by
     ! construction, which is what makes this plain Lambda-iteration a
     ! contraction rather than an amplifier.
     !
@@ -2166,7 +2268,7 @@ contains
     !
     ! diag_no_scat_loop severs the scattering Lambda-loop while holding every
     ! optical depth fixed, by zeroing the weight rather than branching inside
-    ! the loop -- see m3d_debug_mod.
+    ! the loop (see m3d_debug_mod).
     !---------------------------------------------------------------------------
     wscat = 1.0
     if (diag_no_scat_loop) wscat = 0.0
@@ -2192,19 +2294,23 @@ contains
   END SUBROUTINE
 
   !===============================================================================
+  !> Fills the opacity table opac on the nodes of tab_comp, normalised by chi500.
+  !> Both components are always filled.  disjoint (the sampling path) keeps
+  !> val = true absorption and scat = scattering, each normalised, so that
+  !> sample_interpolate can sum them after interpolation and the sampled albedo
+  !> stays <= 1.  Without it (the make_eos path) val is the total and scat stays
+  !> in 1/cm, which is what save_opac_table writes out.
+  !===============================================================================
   SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist, build_deriv, &
                                      disjoint)
     class(rt_patch_t), target :: self
+    type(spectrum_type) :: sp                 !< frequencies of the table
+    logical, intent(in) :: include_absmet     !< include the absmet background
+    logical, intent(in) :: include_llist      !< include the line list
+    logical, intent(in) :: build_deriv        !< prepare the PCA axes and node derivatives for interpolation
+    logical, intent(in), optional :: disjoint !< keep absorption and scattering apart
     class(composition_type), pointer :: comp
-    type(spectrum_type) :: sp
     real(4), dimension(:,:,:,:), pointer :: all_chi, all_scat
-    logical, intent(in) :: include_absmet, include_llist, build_deriv
-    ! Both components are always filled.  disjoint (the sampling path) keeps
-    ! val = true absorption and scat = scattering, each normalised by chi500, so
-    ! that sample_interpolate can sum them after interpolation and the sampled
-    ! albedo stays <= 1.  Without it (the make_eos path) val is the total and
-    ! scat stays in raw 1/cm, which is what save_opac_table writes out.
-    logical, intent(in), optional :: disjoint
     logical :: do_disjoint
     real(4) :: over_chi500
     integer :: j,k, ntemp, nne, nnu
@@ -2258,16 +2364,17 @@ contains
   !> Build the separate sampled LTE line-list table (sample_linelist). tab_comp is
   !> masked to the non-departure species (see mask_departure_species), so the line
   !> opacity added here is pure LTE. In LTE the two working forms coincide
-  !> (xhat_line = ehat_line = chi_line/(1-beta)); we store that single quantity,
-  !> normalised by chi500, and at interpolation time add it to both work slots.
+  !> (xhat_line = ehat_line = chi_line/(1-beta)); the table stores that single
+  !> quantity, normalised by chi500, and interpolation adds it to both work slots.
   !> The pure line delta is isolated by subtracting the continuum working xhat that
   !> add_linelist needs in place for its opacity-threshold reference.
   !===============================================================================
   SUBROUTINE generate_ll_opacity_table (self, sp, include_absmet)
     class(rt_patch_t), target :: self
+    type(spectrum_type) :: sp             !< frequencies of the window
+    logical, intent(in) :: include_absmet !< include the absmet background in the reference continuum
     class(composition_type), pointer :: comp
-    type(spectrum_type) :: sp, psp
-    logical, intent(in) :: include_absmet
+    type(spectrum_type) :: psp
     real(4), dimension(:,:,:,:), pointer :: all_chi
     real(4), dimension(:,:,:,:), allocatable :: all_eta, all_beta, xhat_cont
     real(4), dimension(:,:,:,:), allocatable :: chi_scat
@@ -2328,8 +2435,8 @@ contains
     call mem_register(self%ll_opac%val, label='ll_opac_table')
 
     ! Continuum reference for add_linelist's opacity threshold.  The pipeline
-    ! hands back the working form directly -- continuum_opacities returns
-    ! xhat = ehat = chi/(1-beta) -- so there is nothing to convert here; only the
+    ! hands back the working form directly (continuum_opacities returns
+    ! xhat = ehat = chi/(1-beta)), so there is nothing to convert here; only the
     ! scattering opacity is dropped, since a threshold reference wants the
     ! opacity the lines are compared against, not the source function.
     all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%ll_opac%val
@@ -2378,6 +2485,9 @@ contains
   END SUBROUTINE generate_ll_opacity_table
 
   !===============================================================================
+  !> Writes the make_eos opacity table per unit mass [cm^2/g]: the absorption to
+  !> 'opa' and the scattering to 'scat'.
+  !===============================================================================
   SUBROUTINE save_opac_table (self)
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
@@ -2411,9 +2521,11 @@ contains
   END SUBROUTINE save_opac_table
 
   !===============================================================================
+  !> Zeroes the cells 1:nx, 1:ny of array over its z and last axes.
+  !===============================================================================
   SUBROUTINE reset_array (self, array)
     class(rt_patch_t), target :: self
-    real(4), dimension(:,:,:,:,:), intent(inout) :: array
+    real(4), dimension(:,:,:,:,:), intent(inout) :: array !< array per (f, x, y, z, k)
     integer :: i
     integer :: x, y, z
     !-----------------------------------------------------------------------------
@@ -2429,13 +2541,16 @@ contains
   END SUBROUTINE reset_array
 
   !===============================================================================
+  !> Adds the bound-free extinction and emissivity of the atom's continua to xhat
+  !> and ehat, with the populations of set i_set.
+  !===============================================================================
   SUBROUTINE add_bound_free_opacities (self, comp, atom, trans, adata, i_set)
     class(rt_patch_t), target :: self
-    class(composition_type) :: comp
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t), target :: adata
-    integer, intent(in) :: i_set
+    class(composition_type) :: comp     !< composition of the slab
+    class(atom_type) :: atom            !< model atom
+    class(atom_trans_t) :: trans        !< the atom's transitions in the window
+    class(atom_data_t), target :: adata !< the atom's data on the mesh
+    integer, intent(in) :: i_set        !< set
     class(cont_type), pointer :: cont
     real(4) :: ni, tmp, alpha
     real(8) :: dev
@@ -2494,12 +2609,15 @@ contains
   END SUBROUTINE add_bound_free_opacities
 
   !===============================================================================
+  !> The Voigt damping parameter of each line other than hydrogen, in units of
+  !> the Doppler width (trans%adamp); hprofl_mod handles the hydrogen lines.
+  !===============================================================================
   SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
     class(rt_patch_t), target :: self
-    class(composition_type) :: comp
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t) :: adata
+    class(composition_type) :: comp !< composition of the slab
+    class(atom_type) :: atom        !< model atom
+    class(atom_trans_t) :: trans    !< the atom's transitions in the window
+    class(atom_data_t) :: adata     !< the atom's data on the mesh
     class(line_type), pointer :: line
     real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp
     real(4), dimension(:,:,:), allocatable :: stark_pe, unsold
@@ -2529,25 +2647,33 @@ contains
   END SUBROUTINE bound_bound_damping
 
   !===============================================================================
+  !> Adds the line opacity and emissivity of the atom in the current direction to
+  !> the work arrays and, with split_rates, to the tracked contributions.  In the
+  !> first iteration of the internal spectrum it also sums each line's profile
+  !> integral over the directions (adata%wphi).
+  !===============================================================================
   SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE, &
                                         i_set, iatom)
     class(rt_patch_t), target :: self
-    class(composition_type) :: comp
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t), target :: adata
+    class(composition_type) :: comp                !< composition of the slab
+    class(atom_type) :: atom                       !< model atom
+    class(atom_trans_t) :: trans                   !< the atom's transitions in the window
+    class(atom_data_t), target :: adata            !< the atom's data on the mesh
+    real(4) :: wmu                                 !< quadrature weight of the direction
+    real(4), contiguous, dimension(:,:,:) :: vproj !< velocity along the ray [c]
+    logical :: LTE                                 !< take b = 1 (the LTE companion set)
+    integer, intent(in) :: i_set                   !< set
+    integer, intent(in) :: iatom                   !< index of the atom
     class(line_type), pointer :: line
     type(hline_t) :: hline
     type(hcell_t) :: hcell
-    real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: vphi
-    real(4) :: wmu, idf, vpr, a, ni, nj
+    real(4) :: idf, vpr, a, ni, nj
     real(8) :: q
     real(4) :: lower_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, fs, fe
-    logical :: LTE, do_LTE, get_wphi, sum_wphi
-    integer, intent(in) :: i_set, iatom
+    logical :: do_LTE, get_wphi, sum_wphi
     real(8), allocatable :: pop_ratio(:,:,:)
     integer, save :: itimer=0
     integer :: x, y, z, f, index, k
@@ -2679,26 +2805,32 @@ contains
   !===============================================================================
   LOGICAL FUNCTION sums_over_windows (self, line)
     class(rt_patch_t), intent(in) :: self
-    class(line_type), intent(in) :: line
+    class(line_type), intent(in) :: line !< line of the window
     !-----------------------------------------------------------------------------
     sums_over_windows = line%iblue <= self%fs .or. line%ired >= self%fe &
                         .or. line%hydrogen
   END FUNCTION sums_over_windows
 
   !===============================================================================
+  !> Adds the current direction's share of the atom's bound-bound rates to
+  !> trans%gamma_ij and gamma_ji, which hold a thermal part and the deviation from
+  !> it per line and cell (see below); line_rate_coefficients forms the rates.
+  !===============================================================================
   SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, iatom)
     class(rt_patch_t), target :: self
-    class(composition_type) :: comp
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t), target :: adata
+    class(composition_type) :: comp                !< composition of the slab
+    class(atom_type) :: atom                       !< model atom
+    class(atom_trans_t) :: trans                   !< the atom's transitions in the window
+    class(atom_data_t), target :: adata            !< the atom's data on the mesh
+    real(4) :: wmu                                 !< quadrature weight of the direction
+    real(4), contiguous, dimension(:,:,:) :: vproj !< velocity along the ray [c]
+    integer, intent(in) :: iatom                   !< index of the atom
     class(line_type), pointer :: line
     type(hline_t) :: hline
     type(hcell_t) :: hcell
-    real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: wmunu, vph
-    real(4) :: wmu, idf, vpr, a, ni, nj, phi
+    real(4) :: idf, vpr, a, ni, nj, phi
     real(4) :: vvv, sum_I, sum_P, sum_A, sum_T, sum_U, nb, inv_nref
     real(4) :: g_th, g_dev
     real(8) :: beta_ref
@@ -2707,7 +2839,6 @@ contains
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
-    integer, intent(in) :: iatom
     integer :: i, fs, fe, index
     logical :: split_rates, per_direction, own_norm, do_scat
     real(4), dimension(:), allocatable :: wqf
@@ -2949,18 +3080,20 @@ contains
   !> Keep the largest-magnitude term of a running sum apart from the rest, so
   !> that one term can later be removed from the total without a cancelling
   !> subtraction.  The remainder never contains the largest term, even when a
-  !> later term replaces it.  These two live here, next to their only callers,
-  !> rather than in a module of their own: they sit in the innermost frequency
-  !> loops of add_bound_bound_opacities and bound_bound_rates, and the build has
-  !> no link-time optimisation, so across a module boundary they would be a call
-  !> per frequency point per line per cell.
+  !> later term replaces it.
   !===============================================================================
   pure subroutine add_largest (value, index, largest, rest, largest_index)
-    real(4), intent(in) :: value
-    integer, intent(in) :: index
-    real(4), intent(inout) :: largest, rest
-    integer, intent(inout) :: largest_index
+    real(4), intent(in) :: value            !< the term
+    integer, intent(in) :: index            !< its contribution index
+    real(4), intent(inout) :: largest       !< largest term so far
+    real(4), intent(inout) :: rest          !< sum of the other terms
+    integer, intent(inout) :: largest_index !< contribution index of the largest term
     !-----------------------------------------------------------------------------
+    ! This and other_contribution live here, next to their only callers, rather
+    ! than in a module of their own: they sit in the innermost frequency loops of
+    ! add_bound_bound_opacities and bound_bound_rates, and the build has no
+    ! link-time optimisation, so across a module boundary they would be a call
+    ! per frequency point per line per cell.
     if (abs(value) > abs(largest)) then
       rest = rest + largest
       largest = value
@@ -2974,8 +3107,11 @@ contains
   !> The total less one named contribution, formed by addition only.
   !===============================================================================
   pure function other_contribution (value, index, largest, rest, largest_index) result(other)
-    real(4), intent(in) :: value, largest, rest
-    integer, intent(in) :: index, largest_index
+    real(4), intent(in) :: value         !< the contribution to remove
+    integer, intent(in) :: index         !< its contribution index
+    real(4), intent(in) :: largest       !< largest term
+    real(4), intent(in) :: rest          !< sum of the other terms
+    integer, intent(in) :: largest_index !< contribution index of the largest term
     real(4) :: other
     !-----------------------------------------------------------------------------
     if (index == largest_index) then
@@ -2986,11 +3122,14 @@ contains
   end function other_contribution
 
   !===============================================================================
+  !> Adds the atom's bound-free rates from the angle-averaged Jnu of the main set,
+  !> preconditioned with PsiJ when preconditioning is set.
+  !===============================================================================
   SUBROUTINE bound_free_rates (self, atom, trans, adata)
     class(rt_patch_t), target :: self
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t), target :: adata
+    class(atom_type) :: atom            !< model atom
+    class(atom_trans_t) :: trans        !< the atom's transitions in the window
+    class(atom_data_t), target :: adata !< the atom's data on the mesh
     class(cont_type), pointer :: cont
     real(4), dimension(:), allocatable :: w_alpha, wmunu
     real(4) :: phi
@@ -3055,9 +3194,16 @@ contains
   END SUBROUTINE bound_free_rates
 
   !===============================================================================
+  !> Fills the upstream ghost plane of work: no incoming radiation at the top of
+  !> the domain, a plane extrapolated from the first cells at the bottom (with
+  !> Inu = Snu), and the exit plane of the upstream slab (mem) everywhere else.
+  !===============================================================================
   SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
     class(rt_patch_t) :: self
-    integer :: i_mu, i_set, ng, i
+    integer :: i_mu  !< direction
+    integer :: i_set !< set
+    integer :: ng    !< number of ghost planes
+    integer :: i
     real(4) :: xxold(3), xxnew(ng)
     integer, save :: itimer=0
     integer :: x, y, z, f
@@ -3129,11 +3275,15 @@ contains
   END SUBROUTINE set_upstream_boundary
 
   !===============================================================================
+  !> Adds the intensity of the current direction to Jnu with weight 2*wmu, since
+  !> each twin covers one hemisphere, and with save_PsiJ Psi to PsiJ.
+  !===============================================================================
   SUBROUTINE integrate_intensity (self, wmu, i_set, save_PsiJ)
     class(rt_patch_t) :: self
-    real(4) :: wmu, wmu2
-    logical :: save_PsiJ
-    integer :: i_set
+    real(4) :: wmu       !< quadrature weight of the direction
+    integer :: i_set     !< set
+    logical :: save_PsiJ !< accumulate PsiJ too
+    real(4) :: wmu2
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -3163,11 +3313,14 @@ contains
   END SUBROUTINE integrate_intensity
 
   !===============================================================================
+  !> Adds the slab's rates to the atom's rates on the composition patch, under its
+  !> lock.
+  !===============================================================================
   SUBROUTINE integrate_rates (self, atom, trans, adata)
     class(rt_patch_t) :: self
-    class(atom_type) :: atom
-    class(atom_trans_t) :: trans
-    class(atom_data_t) :: adata
+    class(atom_type) :: atom     !< model atom
+    class(atom_trans_t) :: trans !< the atom's transitions in the window
+    class(atom_data_t) :: adata  !< the atom's data on the mesh
     integer :: m(4), i, j, k
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -3194,9 +3347,13 @@ contains
   END SUBROUTINE integrate_rates
 
   !===============================================================================
+  !> Copies the exit plane of work to mem for the next slab, allocating mem on
+  !> first use, and samples the debug point for print_post_update_info.
+  !===============================================================================
   SUBROUTINE set_downstream_boundary (self, i_mu, i_set)
     class(rt_patch_t) :: self
-    integer :: i_mu, i_set
+    integer :: i_mu  !< direction
+    integer :: i_set !< set
     real(4) :: nan_check(3)
     integer :: p(3)
     integer, save :: itimer=0
@@ -3214,7 +3371,6 @@ contains
       endif
       if (i_mu==self%mus .and. i_set==self%i_set_main) then   ! sample the spectrum set once
         memcheck(1:3) = self%work(self%fcheck, p(1), p(2), p(3),:)
-        !memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
         associate(beta=>self%beta(self%fcheck, p(1), p(2), p(3)))
           memcheck(2:3) = memcheck(2:3) * (1 - beta) / beta
         end associate
@@ -3239,7 +3395,7 @@ contains
   !===============================================================================
   !> ehat enters holding the physical emissivity eta (from lte_background_emission)
   !> and leaves holding the working form eta/beta.  xhat must therefore be formed
-  !> first, while ehat is still eta -- the two statements do not commute.
+  !> first, while ehat is still eta: the two statements do not commute.
   !===============================================================================
   SUBROUTINE convert_to_work_units(self)
     class(rt_patch_t) :: self
@@ -3262,6 +3418,9 @@ contains
   END SUBROUTINE convert_to_work_units
 
   !===============================================================================
+  !> Seeds the extinction and source slots of work with the direction-independent
+  !> xhat and ehat.
+  !===============================================================================
   SUBROUTINE back_to_work (self)
     class(rt_patch_t) :: self
     integer, save :: itimer=0
@@ -3283,17 +3442,13 @@ contains
   END SUBROUTINE back_to_work
 
   !===============================================================================
-  !===============================================================================
   !> Close the accumulation: turn the working pair (xhat, ehat) into the (chi, Snu)
   !> pair the formal solvers consume, and apply the line-scattering source on the
-  !> way.
-  !>
-  !>   chi = xhat - ehat*beta                    physical extinction, scattering
-  !>                                             opacity included (the lines went
-  !>                                             in as absorbers, so chi is whole)
-  !>   eta = ehat*beta + chi_scat*(Jnu - Bnu)    redirect the (1-eps) fraction of
-  !>                                             the line source from Bnu to Jnu
-  !>   Snu = eta/chi
+  !> way.  chi = xhat - ehat*beta is the physical extinction, scattering opacity
+  !> included (the lines went in as absorbers, so chi is whole).  eta = ehat*beta +
+  !> chi_scat*(Jnu - Bnu) redirects the (1-eps) fraction of the line source from Bnu
+  !> to Jnu, and Snu = eta/chi.  |chi| is held at least maser_chi_floor*xhat, so
+  !> that an inverted population keeps a bounded source function.
   !===============================================================================
   SUBROUTINE work_to_transfer_units (self)
     class(rt_patch_t) :: self
@@ -3378,10 +3533,14 @@ contains
   END SUBROUTINE work_to_transfer_units
 
   !===============================================================================
+  !> Shifts each z-plane of array horizontally (periodically, with bilinear
+  !> interpolation) so that the rays of direction vec become vertical, with the
+  !> plane at pivot_z left in place.
+  !===============================================================================
   SUBROUTINE rotate_array (self, vec, array)
     class(rt_patch_t) :: self
-    real(8), intent(in) :: vec(3)
-    real(4), intent(inout), dimension(:,:,:,:,:) :: array
+    real(8), intent(in) :: vec(3)                         !< direction of the ray
+    real(4), intent(inout), dimension(:,:,:,:,:) :: array !< array per (f, x, y, z, k)
     real(4), dimension(2) :: delta, deltak
     real(4), dimension(:,:,:), allocatable :: shifted
     real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
@@ -3435,6 +3594,9 @@ contains
   END SUBROUTINE rotate_array
 
   !===============================================================================
+  !> Sets the intensity of the current direction to fixed_Jnu*Bnu in place of a
+  !> formal solution, and the profile integrals wphi of the atoms to 1.
+  !===============================================================================
   SUBROUTINE set_fixed_Jnu (self)
     class(rt_patch_t) :: self
     integer :: i, j
@@ -3466,13 +3628,15 @@ contains
   END SUBROUTINE set_fixed_Jnu
 
   !===============================================================================
+  !> The velocity of each cell along direction vec.
+  !===============================================================================
   SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
     class(rt_patch_t) :: self
-    real(4), dimension(:,:,:) :: vproj
-    real(8), dimension(:) :: vec
+    real(4), dimension(:,:,:) :: vproj !< velocity along the ray [c]
+    real(8), dimension(:) :: vec       !< direction of the ray
+    logical :: rotate                  !< take the ray-aligned composition of direction i_mu
+    integer :: i_mu                    !< direction
     class(composition_type), pointer :: comp
-    integer :: i_mu
-    logical :: rotate
     integer, save :: itimer
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%get_vproj', itimer=itimer)
@@ -3489,27 +3653,29 @@ contains
   END SUBROUTINE get_vproj
 
   !===============================================================================
+  !> The contribution function of the emergent intensity per direction: the
+  !> continuum set stores its chi, eta and Inu, and the main set combines them
+  !> with its own into the contribution to the line depression (depression_cntrbf)
+  !> or the emissivity.  The main set's last direction saves 'cntrbf'.
+  !===============================================================================
   SUBROUTINE save_contribution_function (self, i_set, i_mu)
     class(rt_patch_t) :: self
-    integer :: i_set, i_mu
+    integer :: i_set !< set
+    integer :: i_mu  !< direction
     real(4) :: net_chi, net_src, net_eta, lin_chi, lin_eta
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
-    ! The continuum set now leads, so it is the one that stashes and the main set
-    ! that combines -- the reverse of the historical order.  The stash keeps all
-    ! three continuum quantities (chi, eta, Inu) rather than pre-combining them,
-    ! so the main set still forms the differences chi-chi_cnt and eta-eta_cnt
-    ! directly.  That matters: deep in the atmosphere those are catastrophically
-    ! cancelling, and any algebraically-equivalent regrouping that multiplies out
+    ! The continuum set comes first, so it stashes and the main set combines.
+    ! The stash keeps all three continuum quantities (chi, eta, Inu) rather than
+    ! pre-combining them, so that the main set forms the differences chi-chi_cnt
+    ! and eta-eta_cnt directly: deep in the atmosphere those are catastrophically
+    ! cancelling, and any algebraically equivalent regrouping that multiplies out
     ! first loses most of the significant digits there.
     !
-    ! The stash also carries a mu axis, which its predecessor (cntrbf_tmp) did
-    ! not.  In the set-outer/mu-inner loop of `execute` that meant every mu was
-    ! paired with only the *last* mu of the other set -- harmless for a static
-    ! atmosphere, where chi and eta do not depend on direction, but wrong as soon
-    ! as vproj does (any snapshot with velocities, i.e. the default rotate_atmos
-    ! = .false. path).  Fixed here rather than reproduced.
+    ! The stash has a direction axis because execute loops over the sets outside
+    ! the directions (unless rotate_atmos), and with velocities chi and eta
+    ! depend on the direction.
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%save_contribution_function', itimer=itimer)
     do z=1,self%nz
@@ -3552,6 +3718,8 @@ contains
   END SUBROUTINE save_contribution_function
 
   !===============================================================================
+  !> Prints the debug sample of set_downstream_boundary at console level 2.
+  !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(rt_patch_t) :: self
     !-----------------------------------------------------------------------------
@@ -3575,6 +3743,10 @@ contains
     self%link => link
   END SUBROUTINE append_to_task_list
 
+  !===============================================================================
+  !> Finishes the slab.  Once both twins have finished, frees their Jnu or, with
+  !> rt_to_file, removes its files (unless save_Jnu) and those of the scattering
+  !> ALI.
   !===============================================================================
   SUBROUTINE finish(self)
     class(rt_patch_t) :: self
@@ -3607,8 +3779,8 @@ contains
           endif
           !-----------------------------------------------------------------
           ! The scattering ALI persists PsiJ and Jali alongside Jnu (see
-          ! iso_integrations), but unlike Jnu they are pure iteration scratch
-          ! -- there is no save_PsiJ -- so they go regardless of save_Jnu.
+          ! combine_twin_hemispheres), but unlike Jnu they are pure iteration
+          ! scratch (there is no save_PsiJ), so they go regardless of save_Jnu.
           ! The twins are exactly the writers: for do_full_sp this patch and
           ! its partner, for do_final the i_mu=[1,2] output pair.
           !
@@ -3644,7 +3816,7 @@ contains
   !===============================================================================
   SUBROUTINE allocate_mem(self, m_in)
     class(rt_patch_t) :: self
-    integer, intent(in), optional :: m_in(6)
+    integer, intent(in), optional :: m_in(6) !< unused; required by patch_t%allocate_mem
   END SUBROUTINE allocate_mem
 
   !===============================================================================
@@ -3664,7 +3836,7 @@ contains
   !===============================================================================
   SUBROUTINE restore_exit_plane (self, nxt)
     class(rt_patch_t) :: self
-    class(rt_patch_t) :: nxt
+    class(rt_patch_t) :: nxt !< the next slab of the column
     !-----------------------------------------------------------------------------
     call nxt%allocate_boundary()
     if (rt_to_file) then
@@ -3702,6 +3874,10 @@ contains
   END SUBROUTINE allocate_boundary
 
   !===============================================================================
+  !> Saves the emergent intensity of the final pass from mem: 'ie', averaged over
+  !> the surface [erg/s/cm^2/A/sr], 'i3' per surface cell with save_resolved, and
+  !> the flux 'flux' [erg/s/cm^2/A].
+  !===============================================================================
   SUBROUTINE save_intensity (self)
     class(rt_patch_t) :: self
     real(4), dimension(:,:,:,:,:), allocatable :: ie, i3, flux
@@ -3736,8 +3912,7 @@ contains
 
     ! disk-integrated flux: F(lam) = 2*pi * sum_mu rt_out%wmu(mu) * ie(lam,mu)
     ! (rt_out%wmu already carries the cosine/mu factor, see ray_mod.f90's
-    ! nphi_copies), matching tumult/flux.py's integrate_flux exactly so the
-    ! Python post-processing step is no longer needed for this quantity.
+    ! nphi_copies), matching tumult/flux.py's integrate_flux.
     allocate(flux(fs:fe, 1, 1, 1, self%n_set), source=0.)
     do i_set=1, self%n_set
       do mu=self%mus, self%mue
@@ -3750,29 +3925,17 @@ contains
   END SUBROUTINE save_intensity
 
   !===============================================================================
-  !> Track the relative change of the top-of-domain emergent FLUX (mu-integrated,
-  !> using the same weighting convention as the astrophysical flux, see
-  !> integrate_intensity/save_intensity) between iterations for this wavelength
-  !> chunk, and fold it into a global (all-chunk) worst-case value via the same
-  !> RMA counter idiom used for the population-based convergence check in
-  !> nlte_patch_t%execute. Runs every ALI iteration (not just the final pass) so
-  !> both convergence metrics stay observable regardless of which one
-  !> (flux_convergence) actually governs the stop decision. The convergence
-  !> report itself (worst error, wavelength, i_nu) is printed by nlte_patch_t, by
-  !> reading the shared RMA counters set here.
+  !> Tracks the relative change between iterations of this window's emergent flux
+  !> at the top of the domain, and folds its largest value into the global value
+  !> of the round through the RMA counters that the population convergence check
+  !> of nlte_patch_t%execute uses as well.  It runs in every iteration, whichever
+  !> criterion decides (flux_convergence); nlte_patch_t prints the report (worst
+  !> change, wavelength, i_nu) from the shared counters.
   !>
-  !> rt_iter%wmu carries no cosine (mu) weighting -- it is the isotropic weight used
-  !> for the mean-intensity (Jnu) angle sum, normalized so that
-  !> sum(rt_iter%wmu(1:size)) = 1 over the full sphere (see integrate_intensity,
-  !> which undoes the top/bottom-hemisphere-mirror halving via wmu2=2*wmu). Flux
-  !> requires the additional mu = rt_iter%vec(3,i) factor, giving:
-  !>   F(lam) = 2*pi * sum_i [2*rt_iter%wmu(i)] * rt_iter%vec(3,i) * I(lam,i)
-  !>          = 4*pi * sum_i rt_iter%wmu(i) * rt_iter%vec(3,i) * I(lam,i)
-  !> summed over the top-hemisphere ray range self%mus:self%mue. This mirrors the
-  !> rt_out%wmu flux weights used by save_intensity's do_final pass (rt_out%wmu already
-  !> bakes the mu factor in, see ray_mod.f90's nphi_copies), but is only inferred
-  !> by analogy for the (coarser) short/ALI quadrature -- there is no other code
-  !> path in the repo computing flux from rt_iter%wmu to check it against.
+  !> rt_iter%wmu are the isotropic weights of the Jnu angle sum, normalised to 1
+  !> over the full sphere, so the flux takes the extra factor mu = rt_iter%vec(3,i):
+  !> F = 4*pi * sum_i rt_iter%wmu(i) * rt_iter%vec(3,i) * I_i over the upward
+  !> directions mus:mue.  The normalisation cancels in the relative change.
   !===============================================================================
   SUBROUTINE check_flux_convergence (self)
     class(rt_patch_t) :: self
@@ -3808,19 +3971,15 @@ contains
       self%flux_prev = flux_now
       self%flux_maxerr = local_err
 
-      ! expected = number of top-of-domain wavelength-chunk reporters per round
-      ! (bb + bf chunks when decouple_continuum). round_pos is this report's
-      ! 1-based position within its round, from the monotonic report counter:
-      ! round_pos==1 starts a fresh round (reset the running max to just this
-      ! report), and the decision is only ever evaluated at round_pos==expected,
-      ! i.e. once EVERY reporter has folded its value into the round's running
-      ! max. This replaces an earlier "same reporter seen again" reset idiom
-      ! that could fire (and evaluate convergence) after only one of several
-      ! reporters had contributed to the current round -- harmless with many
-      ! reporters (the population check uses this same idiom, keyed by
-      ! z-column, where it is very unlikely to misfire) but a near-certain
-      ! false convergence with as few as 2 reporters (e.g. n_windows=1 with
-      ! decouple_continuum=T).
+      ! expected = number of top-of-domain window reporters per round (bb and bf
+      ! windows with decouple_continuum).  round_pos is this report's 1-based
+      ! position within its round, from the monotonic report counter: round_pos==1
+      ! starts a fresh round (resets the running max to this report), and the
+      ! decision is evaluated only at round_pos==expected, once every reporter has
+      ! folded its value into the round's running max.  The population check
+      ! instead resets when a reporter (a z column) is seen again, which is safe
+      ! with many reporters but with as few as two (n_windows=1 with
+      ! decouple_continuum) would evaluate convergence after a single report.
       expected = merge(2*n_windows, n_windows, decouple_continuum)
 
       !$omp critical (flux_maxerr_reset)
@@ -3862,17 +4021,21 @@ contains
   END SUBROUTINE check_flux_convergence
 
   !===============================================================================
+  !> Registers the memory of arr with os.
+  !===============================================================================
   SUBROUTINE mem_register(arr, label)
-    real(4), dimension(..) :: arr
-    character(len=*), optional :: label
+    real(4), dimension(..) :: arr       !< the array
+    character(len=*), optional :: label !< label of the allocation
     !-----------------------------------------------------------------------------
     call os%mem_register(storage_size(arr), product(shape(arr)), label)
   END SUBROUTINE mem_register
 
   !===============================================================================
+  !> Unregisters the memory of arr with os.
+  !===============================================================================
   SUBROUTINE mem_unregister(arr, label)
-    real(4), dimension(..) :: arr
-    character(len=*), optional :: label
+    real(4), dimension(..) :: arr       !< the array
+    character(len=*), optional :: label !< label of the allocation
     !-----------------------------------------------------------------------------
     call os%mem_register(storage_size(arr), -product(shape(arr)), label)
   END SUBROUTINE mem_unregister
@@ -3883,8 +4046,8 @@ contains
   !> one ended (the windows are adjacent in grid index) and lies inside one window.
   !===============================================================================
   SUBROUTINE verify_output_patch_coverage(output_sp, offset)
-    class(atomic_spectrum_type), intent(in) :: output_sp
-    integer, intent(in) :: offset(:)
+    class(atomic_spectrum_type), intent(in) :: output_sp !< output spectrum
+    integer, intent(in) :: offset(:)                     !< patches before each window, and the total last
     integer :: i_nu, i_seg, fs, fe, prev_fe, n_out
     character(len=256) :: msg
     !---------------------------------------------------------------------------
