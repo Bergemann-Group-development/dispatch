@@ -5,13 +5,11 @@ MODULE atom_mod
     USE io_mod
     USE handyfuncs_mod
     USE m3d_debug_mod
-    USE prec_mod, only: inf8
     USE const_mod
     USE trans_mod
-    USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
+    USE op_math_mod, only: lineq, eqsyst, lineq_no_pivot
     USE interpol_mod, only: hermite_interpolation, hermite_derivative
-    USE level_mod, only: state_type
-    USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type, particle_type
+    USE ion_mod, only: ion_type, massive_type, particle_type
     USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
     USE composition_mod, only: composition_type
@@ -25,7 +23,6 @@ MODULE atom_mod
     USE hprofl_mod, only:prepare_hydrogen_damping
     USE ng_mod, only: ng_state_t, ng_promote, ng_should_fire, ng_coefficients, &
                       ng_accumulate, ng_extrapolate, ng_count_clamped, ng_condition
-    USE, intrinsic :: ieee_arithmetic
     implicit none
     private
     public :: radiative_cut
@@ -34,12 +31,9 @@ MODULE atom_mod
     !> A spectrum with the number of active transitions of the atoms at each frequency.
     !===============================================================================
     type, public, extends(spectrum_type) :: atomic_spectrum_type
-      integer :: nmax=0                                  !< unused
-      integer, dimension(:,:), contiguous, pointer :: ac !< unused
-      integer, dimension(:,:), contiguous, pointer :: al !< unused
-      integer, dimension(:), contiguous, pointer :: nac  !< number of active continua of the atom being set up, per frequency
-      integer, dimension(:), contiguous, pointer :: nal  !< number of its active lines, per frequency
-      integer, dimension(:), contiguous, pointer :: na   !< number of atoms with an active transition, per frequency
+      integer, dimension(:), contiguous, pointer :: nac !< number of active continua of the atom being set up, per frequency
+      integer, dimension(:), contiguous, pointer :: nal !< number of its active lines, per frequency
+      integer, dimension(:), contiguous, pointer :: na  !< number of atoms with an active transition, per frequency
     end type atomic_spectrum_type
 
     !===============================================================================
@@ -106,7 +100,6 @@ MODULE atom_mod
     !===============================================================================
     type, public, extends(massive_type) :: atom_type
       integer :: nrad                  !< total number of radiative transitions
-      integer :: nrfix                 !< unused
       integer :: ncont                 !< number of bound-free transitions
       integer :: nline                 !< number of bound-bound transitions
       integer :: nlevel                !< number of levels
@@ -116,7 +109,6 @@ MODULE atom_mod
       character(len=128) :: name     !< what this copy is for: 'input', 'main', 'output', 'bound-bound' or 'bound-free'
       character(len=4096) :: file='' !< the run's table-format copy of the atom
       character(len=3)   :: id       !< atom id string
-      character(len=20)  :: crout    !< unused
 
       character(len=20), dimension(:), allocatable :: label !< level label
 
@@ -142,9 +134,7 @@ MODULE atom_mod
       logical, dimension(:), pointer, contiguous :: ecol => null()    !< the pair has electron collision data in the file
       logical, dimension(:), pointer, contiguous :: hcol => null()    !< the pair has hydrogen collision data in the file
 
-      real(8) :: qnorm         !< unused
       real(8) :: drawin        !< prefactor of Drawin's hydrogen collision rate
-      real(8) :: mu_e          !< unused
       logical :: check=.false. !< the debug atom (m3d_debug_params)
 
       !> Ng acceleration state, shared by every patch copy of this atom: the
@@ -1890,12 +1880,11 @@ MODULE atom_mod
   !> Appends to a spectrum the input wavelengths of the active lines, or the grid
   !> of line_grid_file, and those of the active continua.
   !===============================================================================
-  SUBROUTINE append_transitions (self, sp, bb, bf, sort)
+  SUBROUTINE append_transitions (self, sp, bb, bf)
     class(atom_trans_t), target :: self
-    class(spectrum_type) :: sp            !< the spectrum
-    logical, intent(in), optional :: bb   !< append the lines
-    logical, intent(in), optional :: bf   !< append the continua
-    logical, intent(in), optional :: sort !< unused
+    class(spectrum_type) :: sp          !< the spectrum
+    logical, intent(in), optional :: bb !< append the lines
+    logical, intent(in), optional :: bf !< append the continua
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
