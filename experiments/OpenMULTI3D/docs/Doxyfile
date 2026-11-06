@@ -7,7 +7,8 @@ PROJECT_NAME           = OpenMULTI3D
 PROJECT_BRIEF          = "Spectrum synthesis and NLTE radiative transfer in 3D model atmospheres"
 OUTPUT_DIRECTORY       = build/doxygen
 
-INPUT                  = SRC HOP
+INPUT                  = docs/doxygen_mainpage.md SRC HOP
+USE_MDFILE_AS_MAINPAGE = docs/doxygen_mainpage.md
 RECURSIVE              = YES
 # The *.inc files are fragments included into other sources, not compilation units.
 FILE_PATTERNS          = *.f90 *.F90 *.f *.h
