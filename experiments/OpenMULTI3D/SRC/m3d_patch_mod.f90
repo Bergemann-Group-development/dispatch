@@ -26,7 +26,6 @@ MODULE m3d_patch_mod
     USE bits_mod
     USE const_mod
     USE handyfuncs_mod
-    USE prec_mod, only: inf4
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock, &
                             add_nbor_by_key
