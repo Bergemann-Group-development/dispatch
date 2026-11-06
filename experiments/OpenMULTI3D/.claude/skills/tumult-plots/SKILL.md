@@ -20,7 +20,7 @@ style (colours, sizes, labels, panel letters) is in the `pyplot-style` skill.
 | centre-to-limb variation | Centre-to-limb variation |
 | 3D atmosphere | Inspecting a snapshot |
 | curves of growth, NLTE corrections | the worked example (`sec:example`) |
-| workflow results (`SynthRequest`, `Departures`) | Python Workflows (`sec:pyworkflows`), `docs/FAQ.md` |
+| workflow results (`SynthRequest`, `Departures`) | Python Workflows (`sec:pyworkflows`) |
 
 `docs/manual/figs/science_case.py` draws every figure of the manual from runs and is the
 worked reference for combining these methods in one figure.
