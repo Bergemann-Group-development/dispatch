@@ -3,16 +3,10 @@
 !===============================================================================
 MODULE rt_patch_mod
   USE os_mod
-  USE halo_mod
-  USE gpatch_mod
-  USE link_mod
-  USE task_mod
   USE io_mod
-  USE timer_mod
   USE scaling_mod
   USE trace_mod
   USE bits_mod
-  USE os_mod
   USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA, pi
   USE patch_mod, only: patch_t
   USE interpol_mod, only: pchip_mono
@@ -20,7 +14,7 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type, radiative_cut
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
-  USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, bg_opac_t, &
+  USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, &
     dlam, out_patch_offset, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
@@ -29,7 +23,7 @@ MODULE rt_patch_mod
     scattering_preconditioning, scat_op_max, &
     make_eos, amr, save_Inu, save_chi, save_Snu, &
     fixed_Jnu, n_windows, save_Jnu, &
-    convlim, converged, flux_convergence, flux_conv_signal, &
+    convlim, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file
   USE mpi_mod, only: mpi
@@ -38,13 +32,12 @@ MODULE rt_patch_mod
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
-  USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
   USE hprofl_mod, only: hprofile, hline_t, hydrogen_line, hcell_t, hcell_prepare
   USE hvcs_mod, only: vcs_profile_t, vcs_supported
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only: composition_type, ref_lam, element_ids, &
+  USE composition_mod, only: composition_type, element_ids, &
     departure_pointer_t, read_departures, &
     line_scattering
   USE osmet_mod, only: compute_epsilon_stage
@@ -220,7 +213,6 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_cnt  !< chi, eta and Inu of the continuum set per direction
     real(8), dimension(:), allocatable :: flux_prev             !< previous iteration's emergent flux per frequency
     real(8) :: flux_global=0.d0                                 !< largest relative flux change so far in this round
-    real(8) :: flux_maxerr=0.d0                                 !< unused
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
@@ -568,7 +560,7 @@ contains
     integer, save :: itimer=0
     logical :: is_nlte
     ! ----------------------------------------------------------------------------
-    call trace%begin('rt_patch_t%_pre_init', itimer=itimer)
+    call trace%begin('rt_patch_t%pre_init', itimer=itimer)
     self%kind = 'rt_patch'
     call self%m3d_patch_t%pre_init()
 
@@ -755,8 +747,6 @@ contains
     !$omp critical (cr_save_set_manifest)
     if (first_time .and. mpi%master) then
       first_time = .false.
-      c_element = '-'
-      c_da      = '-'
       open(newunit=lunit, file=trim(io%run_dir)//'sets.txt', form='FORMATTED')
       write(lunit, '(A)') '# set  kind       element  da'
       do i_set=1, self%n_set
@@ -927,9 +917,7 @@ contains
   !===============================================================================
   SUBROUTINE execute (self)
     class(rt_patch_t) :: self
-    class(atom_type), pointer :: atom
     class(atom_trans_t), pointer :: trans
-    class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:), allocatable :: vproj
     real(4) :: wmu
@@ -2669,7 +2657,7 @@ contains
     type(hcell_t) :: hcell
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:), allocatable :: vphi
-    real(4) :: idf, vpr, a, ni, nj
+    real(4) :: idf, vpr, a, ni
     real(8) :: q
     real(4) :: lower_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, fs, fe
@@ -2719,7 +2707,6 @@ contains
             idf = adata%inv_df(x,y,z)
             ekt = comp%e_kT(x,y,z)
             ni = adata%nstar(x,y,z,line%i) * pop_ratio(x,y,z)
-            nj = adata%nstar(x,y,z,line%j) * pop_ratio(x,y,z)
 
             if (do_LTE) then
               bi = 1.0
@@ -3548,7 +3535,7 @@ contains
     integer :: x, y, z
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('net_opac_t%rotate_array', itimer=itimer)
+    call trace%begin('rt_patch%rotate_array', itimer=itimer)
     allocate(shifted, mold=array(:,:,:,1,1))
     delta = vec(:2) / (vec(3) * self%ds(:2)) ! shift in units of grid cells
 
@@ -3969,7 +3956,6 @@ contains
       local_err = abs(e(imax))
       lambda_max = HZ_TO_AA / self%nu(imax)
       self%flux_prev = flux_now
-      self%flux_maxerr = local_err
 
       ! expected = number of top-of-domain window reporters per round (bb and bf
       ! windows with decouple_continuum).  round_pos is this report's 1-based
