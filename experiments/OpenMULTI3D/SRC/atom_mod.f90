@@ -1,4 +1,6 @@
-! *******************************************************************
+!===============================================================================
+!> Model atoms: their levels, transitions and collision data, LTE populations and the statistical-equilibrium update.
+!===============================================================================
 MODULE atom_mod
     USE io_mod
     USE handyfuncs_mod
@@ -24,133 +26,131 @@ MODULE atom_mod
     USE ng_mod, only: ng_state_t, ng_promote, ng_should_fire, ng_coefficients, &
                       ng_accumulate, ng_extrapolate, ng_count_clamped, ng_condition
     USE, intrinsic :: ieee_arithmetic
-    ! *******************************************************************
-    !
-    !     Contains variables connected to the atom(s) 
-    !     included in the calculations
-    !
-    ! *******************************************************************
     implicit none
     private
     public :: radiative_cut
 
-    !---------------------------------------------------------------------
+    !===============================================================================
+    !> A spectrum with the number of active transitions of the atoms at each frequency.
+    !===============================================================================
     type, public, extends(spectrum_type) :: atomic_spectrum_type
-      !> maximum number of active lines or continua at any given frequency
-      integer :: nmax=0
-      !> which continua (ac) and lines (al) are active at each frequency
-      integer, dimension(:,:), contiguous, pointer :: ac,al
-      !> how many continua (nac) and lines (nal) are active at each frequency
-      integer, dimension(:), contiguous, pointer :: nac,nal
-      !> how many different atoms are active at each frequency
-      integer, dimension(:), contiguous, pointer :: na
-      ! has this frequency an active prd line
-      !logical,dimension(:),allocatable :: hasPRDline
+      integer :: nmax=0                                  !< unused
+      integer, dimension(:,:), contiguous, pointer :: ac !< unused
+      integer, dimension(:,:), contiguous, pointer :: al !< unused
+      integer, dimension(:), contiguous, pointer :: nac  !< number of active continua of the atom being set up, per frequency
+      integer, dimension(:), contiguous, pointer :: nal  !< number of its active lines, per frequency
+      integer, dimension(:), contiguous, pointer :: na   !< number of atoms with an active transition, per frequency
     end type atomic_spectrum_type
-    !---------------------------------------------------------------------
 
-    !---------------------------------------------------------------------
+    !===============================================================================
+    !> The profile integral of one line at every mesh point.
+    !===============================================================================
     type, public :: profile_sum_t
-      real(4), dimension(:,:,:), allocatable :: w
+      real(4), dimension(:,:,:), allocatable :: w !< the integral, its inverse once normalize_profiles has run
     end type profile_sum_t
-    !---------------------------------------------------------------------
 
-    !---------------------------------------------------------------------
+    !===============================================================================
+    !> The populations and rates of one atom on a patch's mesh.
+    !===============================================================================
     type, public :: atom_data_t
-      !> LTE, NLTE and total population of active atom
-      real(8), dimension(:,:,:),   allocatable :: totn
-      real(8), dimension(:,:,:,:), allocatable :: nstar
-      real(8), dimension(:,:,:,:), allocatable :: b
-      real(8), dimension(:,:,:,:,:), allocatable :: oldb
-      !> radiative rates, summed over frequency windows and directions.  real(4)
+      real(8), dimension(:,:,:),   allocatable :: totn   !< total number density of the atom's species [cm^-3]
+      real(8), dimension(:,:,:,:), allocatable :: nstar  !< LTE populations [cm^-3]
+      real(8), dimension(:,:,:,:), allocatable :: b      !< departure coefficients
+      real(8), dimension(:,:,:,:,:), allocatable :: oldb !< departure coefficients of the last three iterations (Ng)
+      !> Upward radiative rates, summed over frequency windows and directions.  real(4)
       !> suffices: each window's contribution is already a real(4) sum.  For a
-      !> continuum they are the rate coefficients R_ij and R_ji.  For a line they are
-      !> the thermal and deviation integrals of bound_bound_rates, from which
-      !> line_rate_coefficients forms R_ij and R_ji.
+      !> continuum they are the rate coefficients R_ij.  For a line they are the
+      !> thermal integrals of bound_bound_rates, from which line_rate_coefficients
+      !> forms R_ij and R_ji.
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
+      !> The downward counterparts: R_ji for a continuum, the deviation integral for a line.
       real(4), dimension(:,:,:,:), allocatable :: gamma_ji
       !> Profile integral of the lines that a wavelength window edge cuts, summed
       !> over windows and directions in the first iteration.  It is allocated for
       !> such a line when the first window reaches it.  Every other line lies
       !> inside one window and is normalised per direction by bound_bound_rates.
       type(profile_sum_t), dimension(:), allocatable :: wphi
-      real(4), dimension(:,:,:),   allocatable :: inv_df
-      real(8), dimension(:),   allocatable  :: e
-      real(8), dimension(:,:), allocatable  :: C, W
-      real(8), dimension(:), allocatable :: lvlerr
-      real(8) :: maxerr
-      logical :: converged=.false.
-      integer :: elvl, epos(3)
+      real(4), dimension(:,:,:),   allocatable :: inv_df !< inverse relative Doppler width of the species
+      real(8), dimension(:),   allocatable  :: e         !< rate-equation right-hand side of a cell, the correction on exit
+      real(8), dimension(:,:), allocatable  :: C         !< collision rate coefficients of a cell [1/s], C(j,i) from level i to j
+      real(8), dimension(:,:), allocatable  :: W         !< rate matrix of a cell
+      real(8), dimension(:), allocatable :: lvlerr       !< largest change of each level in the last update
+      real(8) :: maxerr                                  !< largest weighted change in the last update, signed
+      logical :: converged=.false.                       !< maxerr is below convmax
+      integer :: elvl                                    !< level of maxerr
+      integer :: epos(3)                                 !< mesh point of maxerr, local to the patch
     end type atom_data_t
-    !---------------------------------------------------------------------
 
-    !---------------------------------------------------------------------
+    !===============================================================================
+    !> An atom's radiative transitions on one frequency grid, with the rates an RT task accumulates on it.
+    !===============================================================================
     type, public :: atom_trans_t
-      type(line_type), dimension(:), pointer, contiguous :: line => null()
-      type(cont_type), dimension(:), pointer, contiguous :: cont => null()
+      type(line_type), dimension(:), pointer, contiguous :: line => null() !< bound-bound transitions
+      type(cont_type), dimension(:), pointer, contiguous :: cont => null() !< bound-free transitions
       !> SoA copy of the (non-hydrogen) bound-bound transitions, built by
       !> atom_type%build_ll for the linelist_out.txt export and for deduplication
       !> against the bulk line list
       type(linelist_type) :: ll
-      real(4), dimension(:,:,:,:), allocatable :: adamp
-      real(4), dimension(:,:,:,:), allocatable :: gamma_ij
-      real(4), dimension(:,:,:,:), allocatable :: gamma_ji
+      real(4), dimension(:,:,:,:), allocatable :: adamp    !< Voigt damping parameter of each line per mesh point
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ij !< upward rate sums of the task's windows, per transition
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ji !< downward rate sums of the task's windows, per transition
     contains
       procedure :: allocate => allocate_trans
       procedure :: set_ired_iblue
       procedure :: set_active_transitions
       procedure :: append_transitions
     end type atom_trans_t
-    !---------------------------------------------------------------------
-  
-    !---------------------------------------------------------------------
+
+    !===============================================================================
+    !> A model atom: its levels, transitions and collision data, and its populations on a patch's mesh.
+    !===============================================================================
     type, public, extends(massive_type) :: atom_type
       integer :: nrad                  !< total number of radiative transitions
-      integer :: nrfix                 !< number of fixed transitions
+      integer :: nrfix                 !< unused
       integer :: ncont                 !< number of bound-free transitions
       integer :: nline                 !< number of bound-bound transitions
       integer :: nlevel                !< number of levels
       integer :: idep=0                !< index of atom in departure coefficients array
       logical :: precomputed = .false. !< whether departure coeffs are precomputed
       
-      character(len=128) :: name
+      character(len=128) :: name     !< what this copy is for: 'input', 'main', 'output', 'bound-bound' or 'bound-free'
       character(len=4096) :: file='' !< the run's table-format copy of the atom
       character(len=3)   :: id       !< atom id string
-      character(len=20)  :: crout    !< which collisional SUBROUTINE to use
-  
+      character(len=20)  :: crout    !< unused
+
       character(len=20), dimension(:), allocatable :: label !< level label
-  
+
       integer, dimension(:), allocatable :: ion !< ionization stage of each level
-  
+
       real(8) :: abnd !< abundance ( in the [hydrogen]=12 scale)
-      !real(8) :: awgt ! atomic weight [g]
-  
-      real(8), dimension(:), allocatable :: ev         !< energy of level above ground state [eV]
-      real(8), dimension(:), allocatable :: g          !< multiplicity of level
-      integer, dimension(:), allocatable :: irad, jrad !< indices of levels in radiative transition
 
-      type(atom_trans_t), pointer :: trans => null()
-      type(atom_data_t), pointer :: data => null()
-      type(atom_data_t), dimension(:), pointer :: rotated_data => null()
-      type(coll_type), dimension(:), pointer, contiguous :: coll => null()
-      class(massive_type), pointer :: species => null()
+      real(8), dimension(:), allocatable :: ev   !< energy of level above ground state [eV]
+      real(8), dimension(:), allocatable :: g    !< multiplicity of level
+      integer, dimension(:), allocatable :: irad !< lower level of each radiative transition
+      integer, dimension(:), allocatable :: jrad !< upper level of each radiative transition
 
-      real(8), dimension(:,:), pointer, contiguous :: tgrid => null()
-      real(8), dimension(:,:), pointer, contiguous :: cgrid => null()
-      real(8), dimension(:,:), pointer, contiguous :: dcdt  => null()
-      real(4), dimension(:), pointer, contiguous :: cdata => null()
-      logical, dimension(:), pointer, contiguous :: ecol => null()
-      logical, dimension(:), pointer, contiguous :: hcol => null()
-      
-      real(8) :: qnorm
-      real(8) :: drawin, mu_e
-      logical :: check=.false.
+      type(atom_trans_t), pointer :: trans => null()                       !< radiative transitions
+      type(atom_data_t), pointer :: data => null()                         !< populations and rates on the patch's mesh
+      type(atom_data_t), dimension(:), pointer :: rotated_data => null()   !< the same on each output direction's ray-aligned mesh
+      type(coll_type), dimension(:), pointer, contiguous :: coll => null() !< collision records of the atom file
+      class(massive_type), pointer :: species => null()                    !< element or molecule of the atom
+
+      real(8), dimension(:,:), pointer, contiguous :: tgrid => null() !< temperatures of the collision tables [K]
+      real(8), dimension(:,:), pointer, contiguous :: cgrid => null() !< collision table values, logarithmic for rate records
+      real(8), dimension(:,:), pointer, contiguous :: dcdt  => null() !< their slopes, for Hermite interpolation
+      real(4), dimension(:), pointer, contiguous :: cdata => null()   !< f of each level pair, or alpha0 of a continuum
+      logical, dimension(:), pointer, contiguous :: ecol => null()    !< the pair has electron collision data in the file
+      logical, dimension(:), pointer, contiguous :: hcol => null()    !< the pair has hydrogen collision data in the file
+
+      real(8) :: qnorm         !< unused
+      real(8) :: drawin        !< prefactor of Drawin's hydrogen collision rate
+      real(8) :: mu_e          !< unused
+      logical :: check=.false. !< the debug atom (m3d_debug_params)
 
       !> Ng acceleration state, shared by every patch copy of this atom: the
       !> target is allocated once on the master atom and the pointer survives the
       !> copy, so all patches accumulate into one object.
       type(ng_state_t), pointer :: ng => null()
-
 
     contains
       procedure :: init_atom_data
@@ -174,53 +174,67 @@ MODULE atom_mod
       procedure :: ng_acceleration
       procedure :: ng_applied
     end type atom_type
-    !---------------------------------------------------------------------
 
-    !---------------------------------------------------------------------
+    !===============================================================================
+    !> One collision record of the atom file.
+    !===============================================================================
     type coll_type
       character(len=16) :: key !< transition type
       integer :: nc            !< size of coefficient grid
-      integer :: ll,ul         !< lower/upper level for transition
-      integer :: itemp
-      integer :: dir=0
-      logical :: log = .false.
-      integer :: np=0, ion=0, mol=0 !< collider identification
+      integer :: ll            !< lower level for transition
+      integer :: ul            !< upper level for transition
+      integer :: itemp         !< column of tgrid
+      integer :: dir=0         !< +1 for an upward, -1 for a downward rate of a record named after its collider
+      logical :: log = .false. !< the table holds logarithms
+      integer :: np=0          !< element of the collider
+      integer :: ion=0         !< ion of the collider
+      integer :: mol=0         !< molecule of the collider
     end type coll_type
-    !---------------------------------------------------------------------
 
-    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
-    logical, public :: legacy_freql=.False.
-    !> classical recipes for transitions without collision data in the atom file, one
-    !> switch per process holding the name of its recipe ('' off): electron excitation
-    !> 'regemorter', electron ionisation 'seaton', hydrogen excitation and ionisation
-    !> 'drawin', and hydrogen excitation of pairs without a line 'takeda'
-    character(len=16), public :: e_excitation='', e_ionisation='', h_excitation='', &
-      h_ionisation='', h_forbidden=''
+    real(8), public :: cbbesc=1.            !< factor on bound-bound electron collision rates (atom_params)
+    real(8), public :: cbfesc=1.            !< factor on bound-free electron collision rates
+    real(8), public :: cbbhsc=1.            !< factor on bound-bound hydrogen collision rates
+    real(8), public :: cbfhsc=1.            !< factor on bound-free hydrogen collision rates
+    real(8), public :: colscale=1.          !< factor on all collision rates
+    logical, public :: legacy_freql=.False. !< MULTI's older line grids, with twice the points (atom_params)
+
+    ! Classical recipes for transitions without collision data in the atom file, one
+    ! switch per process holding the name of its recipe, or '' for none (atom_params).
+    character(len=16), public :: e_excitation='' !< electron excitation: 'regemorter'
+    character(len=16), public :: e_ionisation='' !< electron ionisation: 'seaton'
+    character(len=16), public :: h_excitation='' !< hydrogen excitation: 'drawin'
+    character(len=16), public :: h_ionisation='' !< hydrogen ionisation: 'drawin'
+    character(len=16), public :: h_forbidden=''  !< hydrogen excitation of pairs without a line: 'takeda'
     !> lower bound on the effective collision strength of the CE recipe (Allen's form)
     real(8), public :: upsilon_floor=0.
-    logical, public :: kramer_bf=.False.
-    logical, public :: disable_bf=.False., disable_bb=.False.
-    logical, public :: level_partf=.false.
-    logical, public :: ch0_hmip=.false.
-    real(8), public :: red_thresh_aa  = 20000
-    real(8), public :: blue_thresh_aa = 500
-    real(8), public :: cont_step_aa = 50
-    real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
-    real(8), parameter :: ame=5.485799e-4, amh=1.0
-    real(8), parameter :: mu_e=ame/(ame+amh)
-    real(8), public :: fmin=1e-6
-    real(8) :: tmax_update=1.0d7
-    character(len=32), public :: lse_solver='lineq_no_pivot'
-    !---------------------------------------------------------------------------
-    !> Guard rails on the statistical-equilibrium update (see update_populations).
-    !> max_update is the largest factor by which a level population may change in
-    !> one iteration, in either direction; min_pop_frac keeps a level's population
-    !> from ratcheting down into a range where its column of the rate matrix is
-    !> numerically empty; conv_pop_floor is the population fraction above which a
-    !> level carries full weight in the convergence decision, so that convlim and
-    !> convmax are not held hostage by levels with no effect on any opacity.
-    !---------------------------------------------------------------------------
-    real(8), public :: max_update=1d2, min_pop_frac=1d-30, conv_pop_floor=1d-8
+    logical, public :: kramer_bf=.False.                     !< Kramers' formula for continua without cross sections; else dropped
+    logical, public :: disable_bf=.False.                    !< deactivate the atoms' bound-free transitions
+    logical, public :: disable_bb=.False.                    !< deactivate the atoms' bound-bound transitions
+    logical, public :: level_partf=.false.                   !< partition function from the atom's levels (MULTI-format atoms)
+    logical, public :: ch0_hmip=.false.                      !< CH0 rates times exp(-0.754 eV/kT), the H- binding energy
+    real(8), public :: red_thresh_aa  = 20000                !< longest wavelength of a Kramers continuum [AA]
+    real(8), public :: blue_thresh_aa = 500                  !< shortest wavelength of a Kramers continuum [AA]
+    real(8), public :: cont_step_aa = 50                     !< wavelength step of a Kramers continuum [AA]
+    real(8), public :: logf_cut = -99.9                      !< drop lines with lower log(gf); -99.9 keeps all
+    real(8), public :: red_cut=huge(1.0)                     !< drop lines entirely redward of this wavelength [AA]
+    real(8), public :: blue_cut=tiny(1.0)                    !< drop lines entirely blueward of this wavelength [AA]
+    real(8), parameter :: ame=5.485799e-4                    !< electron mass [amu]
+    real(8), parameter :: amh=1.0                            !< hydrogen mass [amu]
+    real(8), parameter :: mu_e=ame/(ame+amh)                 !< reduced electron mass relative to hydrogen
+    real(8), public :: fmin=1e-6                             !< floor of f/g_j in the van Regemorter recipe
+    real(8) :: tmax_update=1.0d7                             !< cells this hot keep their populations; for a molecule its tmolim
+    character(len=32), public :: lse_solver='lineq_no_pivot' !< solver of the rate equations (nlte_params)
+
+    ! Guard rails on the statistical-equilibrium update (see update_populations).
+    !> Largest factor by which a level population may change in one iteration, in either direction.
+    real(8), public :: max_update=1d2
+    !> Keeps a level's population from ratcheting down into a range where its column of
+    !> the rate matrix is numerically empty.
+    real(8), public :: min_pop_frac=1d-30
+    !> Population fraction above which a level carries full weight in the convergence
+    !> decision, so that convlim and convmax are not held hostage by levels with no
+    !> effect on any opacity.
+    real(8), public :: conv_pop_floor=1d-8
     !---------------------------------------------------------------------------
     !> A transition whose threshold lies above cut_x kT cannot be formed in
     !> real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
@@ -240,48 +254,52 @@ MODULE atom_mod
     !> zero.  The pair ties the upper level to the lower one, which is all these
     !> levels need: they hold less than exp(-cut_x) of the lower level's atoms.
     !---------------------------------------------------------------------------
-    real(8), parameter :: cut_x=70d0, bf_cut_rate=1d0
+    real(8), parameter :: cut_x=70d0
+    real(8), parameter :: bf_cut_rate=1d0 !< rate of the detailed-balance pair of a cut continuum [1/s]
     !---------------------------------------------------------------------------
     !> Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
     !> so the natural damping is geometric: e -> e**sor_w, which is exactly
     !> ln b -> ln b + sor_w*correction and keeps b positive for any sor_w > 0.
     !> If the undamped error map has eigenvalue lambda, the damped one has
     !> mu = 1 + sor_w*(lambda - 1), so a mode that alternates sign and grows at
-    !> |lambda| = 1.85 (see fe607_convergence.md) needs sor_w < 2/2.85 = 0.70.
-    !> sor_w = 1 is the undamped scheme, i.e. bit-identical to before.
+    !> |lambda| = 1.85 needs sor_w < 2/2.85 = 0.70.  sor_w = 1 is the undamped scheme.
     !---------------------------------------------------------------------------
     real(8), public :: sor_w=1d0
-    integer, public :: nq_min=0, nq_max=huge(1)
-    real(4), public :: nq_fac=1.0
+    integer, public :: nq_min=0       !< least number of points per line; negative grows it with log(gf) (atom_params)
+    integer, public :: nq_max=huge(1) !< largest number of points per line
+    real(4), public :: nq_fac=1.0     !< factor on the number of points per line
     !> Bound-bound wavelength grid read from a file (vacuum AA, one value per record,
     !> '#' or '!' comments) instead of being assembled from the per-line q0/qmax
     !> quadratures; those then only fix each line's lam_min/lam_max, i.e. the interval
     !> of the shared grid its rates are integrated over. tumult/line_quadrature.py
     !> writes the grid together with a matching atom copy.
     character(len=4096), public :: line_grid_file=''
-    real(8), dimension(:), allocatable, private, save :: line_grid
-    integer, public :: cswitch=1
+    real(8), dimension(:), allocatable, private, save :: line_grid !< the wavelengths of line_grid_file [AA]
+    integer, public :: cswitch=1                                   !< factor on the collision rates; 0 leaves them out (nlte_params)
     !> Ng acceleration schedule:
     !>   < 0  off
-    !>   = 0  automatic (default) -- accumulate every iteration and let the gate in ng_mod
+    !>   = 0  automatic (default): accumulate every iteration and let the gate in ng_mod
     !>        decide, using the contraction rate, its stationarity, the fraction
     !>        of corrections at the update limiter, and the conditioning of the
     !>        least-squares fit.  ng_start is then unused.
     !>   > 0  fixed schedule, applying on the iteration after each
     !>        mod(iter-ng_start, ng_step)==0.
-    integer, public :: ng_step=0, ng_start=8
-    logical, public :: ng_global=.true.
-    logical, public :: save_rate_matrix=.false.
+    integer, public :: ng_step=0
+    integer, public :: ng_start=8               !< first iteration of the fixed schedule
+    logical, public :: ng_global=.true.         !< one Ng state per species, shared by its patches; .false. leaves Ng off
+    logical, public :: save_rate_matrix=.false. !< write the rate and collision matrices of the debug point in iteration 1
 
-  
   contains
 
-  !====================================================================================
+  !===============================================================================
+  !> Allocates the line and continuum arrays, empty (nb, nf) or as copies (bb, bf).
+  !===============================================================================
   SUBROUTINE allocate_trans(self, nb, nf, bb, bf)
     class(atom_trans_t), target :: self
-    integer, intent(in), optional :: nb, nf
-    type(line_type), intent(in), dimension(:), optional :: bb
-    type(cont_type), intent(in), dimension(:), optional :: bf
+    integer, intent(in), optional :: nb                       !< number of lines
+    integer, intent(in), optional :: nf                       !< number of continua
+    type(line_type), intent(in), dimension(:), optional :: bb !< lines to copy
+    type(cont_type), intent(in), dimension(:), optional :: bf !< continua to copy
     !---------------------------------------------------------------------------------
     if (present(nb)) then
       allocate(self%line(nb))
@@ -302,14 +320,18 @@ MODULE atom_mod
   END SUBROUTINE allocate_trans
 
   !===============================================================================
+  !> Sets up the atom's data on a mesh: the total number density, the LTE
+  !> populations and the inverse Doppler width and, for an iterated atom,
+  !> departure coefficients of 1 and the work arrays of the solver.
+  !===============================================================================
   SUBROUTINE init_atom_data (self, comp, adata, iterate, found)
     class(atom_type), target :: self
-    class(composition_type), target :: comp
-    class(atom_data_t), target :: adata
+    class(composition_type), target :: comp !< composition on the mesh
+    class(atom_data_t), target :: adata     !< the data to set up
+    logical, intent(in) :: iterate          !< the populations are iterated
+    logical, intent(out), optional :: found !< the composition holds the atom's species
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    logical, intent(in) :: iterate
-    logical, intent(out), optional :: found
     integer, save:: itimer=0
     integer :: i, m(4), nl
     !-----------------------------------------------------------------------------
@@ -348,11 +370,16 @@ MODULE atom_mod
   END SUBROUTINE init_atom_data
 
   !===============================================================================
+  !> Turns the rate sums of the RT tasks into the rates of the solve: divides the
+  !> line sums by the profile integrals of the lines that window edges cut (inverting
+  !> these integrals in iteration 1), multiplies the downward continuum sums by the
+  !> LTE population ratio, and shifts the history of departure coefficients for Ng.
+  !===============================================================================
   SUBROUTINE normalize_profiles(self, iter)
     class(atom_type), target :: self
+    integer, intent(in) :: iter !< iteration
     class(atom_data_t), pointer :: adata
     class(transition_type), pointer :: line, cont
-    integer, intent(in) :: iter
     real(8), dimension(:,:,:,:), pointer, contiguous :: nstar
     real(4), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     integer :: i
@@ -363,9 +390,9 @@ MODULE atom_mod
     gamma_ji => adata%gamma_ji
 
     if (iter == 1) then
-      ! Normalize wphi; with the new-linelist rate kernel, lines below the LTE
-      ! strength cutoff accumulate no wphi (and no gamma) -- leave those at 1 so
-      ! the zero radiative rates pass through instead of producing 0*Inf
+      ! Normalize wphi.  Lines below the LTE strength cutoff of the rate kernel
+      ! accumulate no wphi (and no gamma); those stay at 1, so that their zero
+      ! radiative rates pass through instead of producing 0*Inf
       do i=1, self%nline
         if (.not. self%trans%line(i)%active) cycle
         if (.not. allocated(adata%wphi(i)%w)) cycle
@@ -405,14 +432,21 @@ MODULE atom_mod
   END SUBROUTINE normalize_profiles
 
   !===============================================================================
+  !> Solves the statistical equilibrium in every cell of the mesh for the
+  !> population corrections, limits and under-relaxes them, applies them with
+  !> particle conservation and a population floor, and records the largest
+  !> weighted change. Cells without the species, or at or above tmax_update, are left out.
+  !===============================================================================
   SUBROUTINE update_populations (self, comp, local, pcheck, cij, cji, w, c)
     class(atom_type), target :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp                         !< composition on the mesh
+    real(8), intent(out) :: local                           !< change of level lvlcheck at pcheck
+    integer, intent(in) :: pcheck(3)                        !< the debug point (m3d_debug_params)
+    real(4), intent(out), optional, dimension(:,:,:) :: cij !< upward collision rate of line linecheck, per cell (save_rates)
+    real(4), intent(out), optional, dimension(:,:,:) :: cji !< downward collision rate of line linecheck, per cell
+    real(8), intent(out), optional, dimension(:,:) :: w     !< rate matrix at pcheck (save_rate_matrix)
+    real(8), intent(out), optional, dimension(:,:) :: c     !< collision matrix at pcheck
     class(atom_data_t), pointer :: adata
-    real(8), intent(out) :: local
-    integer, intent(in) :: pcheck(3)
-    real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
-    real(8), intent(out), optional, dimension(:,:) :: w, c
     integer :: i, m(3), x, y, z, nk
     real(8) :: norm, elo, eup
     real(8), dimension(:), allocatable :: bold, ework
@@ -695,15 +729,23 @@ MODULE atom_mod
     call trace%end(itimer)
   END SUBROUTINE update_populations
   
-  !====================================================================================
+  !===============================================================================
+  !> Fills the rate matrix of one cell: the radiative rates (a detailed-balance
+  !> pair for a cut transition), the collision rates times cswitch, and particle
+  !> conservation in the row of the most populated level. The rate coefficients are
+  !> multiplied by the populations, so the solution is the population correction.
+  !===============================================================================
   SUBROUTINE setup_transition_matrix (self, comp, x,y,z)
     class(atom_type), target :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp !< composition on the mesh
+    integer :: x                    !< cell
+    integer :: y                    !< cell
+    integer :: z                    !< cell
     class(transition_type), pointer :: trans
     real(8), dimension(:), pointer :: b, nstar
     real(4), dimension(:), pointer :: rij, rji
     real(8) :: totn, e_kT, cut_rate, r_up, r_down
-    integer :: kr, pos, i, j, x,y,z
+    integer :: kr, pos, i, j
     logical :: ok, db_here
     logical, save :: first_time=.true.
     character(len=256) :: msg
@@ -805,9 +847,8 @@ MODULE atom_mod
       endif
     endif
   END SUBROUTINE setup_transition_matrix
-  !------------------------------------------------------------------------------------
 
-  !====================================================================================
+  !===============================================================================
   !> Rate coefficients R_ij and R_ji [1/s] of line kr in one cell, from the thermal and
   !> deviation integrals th and dev that bound_bound_rates stores (see there):
   !>   R_ij = n_ref*th + dev,   R_ji = g_i/g_j * ((n_ref+1)*th + dev)
@@ -815,13 +856,15 @@ MODULE atom_mod
   !> occupation number at the level energy difference.  Forming them here in real(8)
   !> puts the thermal parts in detailed balance, n*_i R_ij = n*_j R_ji, to real(8)
   !> rounding, while th and dev stay real(4).
-  !====================================================================================
+  !===============================================================================
   pure SUBROUTINE line_rate_coefficients (self, kr, nstar, th, dev, r_up, r_down)
     class(atom_type), intent(in) :: self
-    integer, intent(in) :: kr
-    real(8), intent(in) :: nstar(:)
-    real(4), intent(in) :: th, dev
-    real(8), intent(out) :: r_up, r_down
+    integer, intent(in) :: kr       !< line
+    real(8), intent(in) :: nstar(:) !< LTE populations of the cell
+    real(4), intent(in) :: th       !< thermal integral
+    real(4), intent(in) :: dev      !< deviation integral
+    real(8), intent(out) :: r_up    !< R_ij [1/s]
+    real(8), intent(out) :: r_down  !< R_ji [1/s]
     real(8) :: beta_ref, g_ij
     integer :: i, j
     !------------------------------------------------------------------------------------
@@ -838,13 +881,14 @@ MODULE atom_mod
     endif
   END SUBROUTINE line_rate_coefficients
 
-  !====================================================================================
+  !===============================================================================
   !> The rate coefficients of transition kr in every cell, in real(4), for output.
-  !====================================================================================
+  !===============================================================================
   SUBROUTINE rate_coefficients (self, kr, rij, rji)
     class(atom_type), intent(in) :: self
-    integer, intent(in) :: kr
-    real(4), dimension(:,:,:), intent(out) :: rij, rji
+    integer, intent(in) :: kr                     !< transition
+    real(4), dimension(:,:,:), intent(out) :: rij !< R_ij [1/s]
+    real(4), dimension(:,:,:), intent(out) :: rji !< R_ji [1/s]
     real(8) :: r_up, r_down
     integer :: x, y, z
     !------------------------------------------------------------------------------------
@@ -865,14 +909,16 @@ MODULE atom_mod
     end do
   END SUBROUTINE rate_coefficients
 
-  !====================================================================================
+  !===============================================================================
   !> Collision rate coefficients of one cell into self%data%c, in the convention of the
   !> rate matrix: c(j,i) is the coefficient [1/s] from level i to level j.
-  !====================================================================================
+  !===============================================================================
   SUBROUTINE collision_rates (self, comp, x, y, z)
     class(atom_type), target :: self
-    class(composition_type) :: comp
-    integer, intent(in) :: x, y, z
+    class(composition_type) :: comp !< composition on the mesh
+    integer, intent(in) :: x        !< cell
+    integer, intent(in) :: y        !< cell
+    integer, intent(in) :: z        !< cell
     !----------------------------------------------------------------------------------
     self%data%c = 0.d0
     if (any([e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden] /= '')) &
@@ -880,7 +926,7 @@ MODULE atom_mod
     if (associated(self%coll)) call self%gencol(comp,x,y,z)
   END SUBROUTINE collision_rates
 
-  !====================================================================================
+  !===============================================================================
   !> Rate diagnostics for model-atom reduction (&output_params save_net_rates).  Called
   !> after each population update, it replaces rad_file with the state of this update:
   !>   int32  nlevel, nrad, nx, ny, nz, iter
@@ -899,12 +945,13 @@ MODULE atom_mod
   !> The downward coefficient follows from detailed balance, cup*nstar_i/nstar_j, which
   !> is how gencol and classic_col form it.  The files grow with nlevel**2 per cell and
   !> are meant for 1D models.
-  !====================================================================================
+  !===============================================================================
   SUBROUTINE write_rates (self, comp, rad_file, col_file, iter)
     class(atom_type), target :: self
-    class(composition_type) :: comp
-    character(len=*), intent(in) :: rad_file, col_file
-    integer, intent(in) :: iter
+    class(composition_type) :: comp          !< composition on the mesh
+    character(len=*), intent(in) :: rad_file !< file of the radiative rates
+    character(len=*), intent(in) :: col_file !< file of the collision rates
+    integer, intent(in) :: iter              !< iteration
     real(4), dimension(:,:,:,:), allocatable :: cup, rij, rji
     integer :: m(3), nk, x, y, z, i, j, k, lunit
     !----------------------------------------------------------------------------------
@@ -946,10 +993,13 @@ MODULE atom_mod
     deallocate(cup)
   END SUBROUTINE write_rates
 
-  !====================================================================================
+  !===============================================================================
+  !> Warns, on the first call, where the atom's ionisation energies differ by more
+  !> than 10% from those of the EOS.
+  !===============================================================================
   SUBROUTINE check_ionisation_thresholds(self, element)
     class(atom_type), intent(inout) :: self
-    class(element_type), pointer :: element
+    class(element_type), pointer :: element !< the atom's element
     integer :: j1, j2, i, j
     real(4), dimension(:), allocatable :: xion
     logical :: first_time=.true.
@@ -979,16 +1029,24 @@ MODULE atom_mod
     first_time = .false.
   END SUBROUTINE check_ionisation_thresholds
   
-  !====================================================================================
+  !===============================================================================
+  !> LTE populations of the atom's levels from the Saha-Boltzmann distribution,
+  !> normalised to totn with the EOS partition functions of the element's ions or
+  !> the molecule, or with the atom's own levels (level_partf). A molecule's
+  !> dissociated state takes the ground-state density of its rarest component. totn
+  !> becomes the sum over the levels, which the rate equations conserve.
+  !===============================================================================
   SUBROUTINE compute_lte_populations(self, nstar, totn, temp, lsaha, dxi, element, mol)
     class(atom_type), intent(inout) :: self
-    class(element_type), pointer :: element
+    real(8), intent(inout), dimension(:,:,:,:) :: nstar !< LTE populations [cm^-3]
+    real(8), intent(inout), dimension(:,:,:) :: totn    !< total number density of the species [cm^-3]
+    real(4), intent(in), dimension(:,:,:) :: temp       !< temperature [K]
+    real(4), intent(in), dimension(:,:,:) :: lsaha      !< ln(2 (2 pi m_e kT/h^2)^(3/2) / ne)
+    real(4), intent(in), dimension(:,:,:) :: dxi        !< ionisation energy lowering per unit charge [eV]
+    class(element_type), pointer :: element             !< the atom's element, or null
+    class(molec_type), pointer :: mol                   !< the atom's molecule, or null
     class(ion_type), pointer :: ion
-    class(molec_type), pointer :: mol
     integer :: i, j
-    real(8), intent(inout), dimension(:,:,:,:) :: nstar
-    real(8), intent(inout), dimension(:,:,:) :: totn
-    real(4), intent(in), dimension(:,:,:) :: temp, lsaha, dxi
     real(4), dimension(:,:,:), allocatable :: partition, lvl_part, e_kT
     real(4), dimension(:,:,:), allocatable :: ev_off, ex, norm
     integer :: idis
@@ -1050,7 +1108,7 @@ MODULE atom_mod
     endif
     
     do i=1, self%nlevel
-      where(totn == 0) nstar(:,:,:,i) = 0 !ieee_value(nstar(:,:,:,i), ieee_quiet_nan)
+      where(totn == 0) nstar(:,:,:,i) = 0
       if (check_NaN) then
         call check_array(nstar(:,:,:,i), 'LTE populations', check_zero=.true., abort=.true.)
       endif
@@ -1060,13 +1118,18 @@ MODULE atom_mod
     totn = sum(nstar, dim=4)
     call trace%end(itimer)
   END SUBROUTINE compute_lte_populations
-  !------------------------------------------------------------------------------------
 
-  !====================================================================================
+  !===============================================================================
+  !> Unnormalised Saha-Boltzmann population of level i: g_i exp(-E_i/kT), with E_i
+  !> lowered by dxi per unit charge, times the Saha factor for each ionisation stage
+  !> above the atom's lowest.
+  !===============================================================================
   elemental function lte_pop(self, i, e_kT, dxi, lsaha) result(nstar)
     class(atom_type), intent(in) :: self
-    real(4), intent(in) :: e_kT, dxi, lsaha
-    integer, intent(in) :: i
+    integer, intent(in) :: i     !< level
+    real(4), intent(in) :: e_kT  !< 1 eV / kT
+    real(4), intent(in) :: dxi   !< ionisation energy lowering per unit charge [eV]
+    real(4), intent(in) :: lsaha !< ln(2 (2 pi m_e kT/h^2)^(3/2) / ne)
     real(8) :: evi, tns
     real(8) :: nstar
     integer :: j, l
@@ -1082,30 +1145,35 @@ MODULE atom_mod
 
     nstar = exp(tns)
   end function lte_pop
-  !------------------------------------------------------------------------------------
 
-  !====================================================================================
+  !===============================================================================
   !> Whether the radiative rates of a transition with threshold energy dev [eV] are cut
   !> at e_kT = e/kT [1/eV] (see cut_x).  The rate and opacity routines must agree cell
   !> by cell, so all call this with the level energy difference and the composition's
   !> e_kT; the continuum lowering dxi is left out for that reason.
-  !====================================================================================
+  !===============================================================================
   elemental logical function radiative_cut(dev, e_kT)
-    real(8), intent(in) :: dev, e_kT
+    real(8), intent(in) :: dev  !< threshold energy [eV]
+    real(8), intent(in) :: e_kT !< 1 eV / kT
     !---------------------------------------------------------------------------------
     radiative_cut = dev*e_kT > cut_x
   end function radiative_cut
-  !------------------------------------------------------------------------------------
 
-  !====================================================================================
+  !===============================================================================
+  !> Reads a table-format atom file: levels, lines, continua and collision
+  !> records, keeping the lines in_lines selects. A continuum without cross
+  !> sections takes Kramers' formula (kramer_bf) or is deactivated. Collision
+  !> records that fall faster with temperature than a Maxwellian average allows are
+  !> reported. Malformed records stop the run once the whole file has been read.
+  !===============================================================================
   SUBROUTINE read_pandas (self, atom_file, qnorm, in_lines)
     class(atom_type), target :: self
+    character(len=*), intent(in) :: atom_file                 !< the atom file
+    real(8), intent(in) :: qnorm                              !< Doppler unit of the line grids [km/s]
+    integer, intent(in), optional, allocatable :: in_lines(:) !< lines to keep; all by default
     type(line_type), pointer :: lin => null()
     type(cont_type), pointer :: cnt => null()
     type(coll_type), pointer :: col => null()
-    character(len=*), intent(in) :: atom_file
-    real(8), intent(in) :: qnorm
-    integer, intent(in), optional, allocatable :: in_lines(:)
     real(8), pointer, contiguous, dimension(:) :: bf_lam, bf_alpha
     integer, pointer, contiguous, dimension(:) :: icont, jcont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
@@ -1443,7 +1511,6 @@ MODULE atom_mod
           call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
           col%nc = ntemp
           col%itemp = 1
-          !self%cdata(tri) = -1.0 ! flag non-classical recipe
 
           select case(trim(key))
           case ('CE', 'CI', 'OHM', 'OHMEGA')
@@ -1474,11 +1541,11 @@ MODULE atom_mod
     call trace%end(itimer)
   END SUBROUTINE read_pandas
 
-  !====================================================================================
+  !===============================================================================
   !> Number of frequency points of a bound-bound line: odd, scaled by nq_fac (and
   !> doubled with legacy_freql), then clamped to nq_min/nq_max.  A negative nq_min
   !> grows the count with log(gf).
-  !====================================================================================
+  !===============================================================================
   SUBROUTINE set_line_nnu (lin, loggf)
     class(line_type), intent(inout) :: lin
     real(8), intent(in) :: loggf
@@ -1498,10 +1565,10 @@ MODULE atom_mod
     lin%nnu = min(lin%nnu, nq_max)
   END SUBROUTINE set_line_nnu
 
-  !====================================================================================
-  !> Post-parse selection and wavelength grid of bound-bound line i.  Returns .false. (and deactivates the line) when logf_cut or the
-  !> red/blue cuts remove it.
-  !====================================================================================
+  !===============================================================================
+  !> Post-parse selection and wavelength grid of bound-bound line i.  Returns .false.
+  !> (and deactivates the line) when logf_cut or the red/blue cuts remove it.
+  !===============================================================================
   LOGICAL FUNCTION line_frequency_grid (self, lin, i, qnorm, legacy) result(keep)
     class(atom_type), intent(in) :: self
     class(line_type), intent(inout) :: lin
@@ -1533,10 +1600,14 @@ MODULE atom_mod
     keep = .true.
   END FUNCTION line_frequency_grid
 
-  !====================================================================================
+  !===============================================================================
+  !> Prepares the broadening of each active line: scales its f by the isotope
+  !> fraction, and sets its radiative, Stark and van der Waals damping, or, for
+  !> hydrogen, the data of its Stark profiles.
+  !===============================================================================
   SUBROUTINE prepare_damping(self, species)
     class(atom_type), intent(inout) :: self
-    class(massive_type), intent(in), pointer :: species
+    class(massive_type), intent(in), pointer :: species !< element or molecule of the atom
     class(ion_type), pointer :: ions(:)
     class(isotope_type), pointer :: isotopes(:)
     class(line_type), pointer :: line
@@ -1583,35 +1654,25 @@ MODULE atom_mod
       else
         call line%prepare_Radiative(line%grad_in)
         vbar2e4 = self%compute_vbar2(10000.)
-        ! the following commented section is generally more correct, but not backwards compatible.
-        ! mul23 uses the ionisation threshold from the atom, not from the EOS.
-        ! I don't know why many of our atoms, e.g. Mn, have wrong ionisation thresholds...
-        !if (associated(species)) then
-        !  if (.not. is_molecule) then
-        !    cnt_ev = ions(j)%xion
-        !  else
-        !    cnt_ev = species%xion ! will not be used
-        !  endif
-        !else
-        ! find continuum level
+        ! the continuum energy is that of the atom's own next ion, as in MULTI 2.3,
+        ! even where it differs from the EOS threshold (check_ionisation_thresholds)
         ic = findloc(self%ion, j+1, 1)
         cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
-        !endif
         call line%prepare_Stark(line%gstk_in, self%ion(line%i), cnt_ev, is_mol=is_molecule)
         call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4, is_mol=is_molecule)
       endif
     end do
   END SUBROUTINE prepare_damping
 
-  !====================================================================================
+  !===============================================================================
   !> Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
   !> linelist trans%ll (linelist_mod), sorted by wavelength.  Broadening is copied as
   !> prepared by prepare_damping (same over_4pi/nu0 scaling), ipart is the ion stage
   !> (lower_ev re-referenced to the stage ground level).
-  !====================================================================================
+  !===============================================================================
   SUBROUTINE build_ll (self, trans)
     class(atom_type), intent(in) :: self
-    class(atom_trans_t), target :: trans
+    class(atom_trans_t), target :: trans !< transitions whose lines are converted
     class(line_type), pointer :: line
     class(isotope_type), pointer :: isotopes(:)
     real(8) :: gf, gpref0, llam0, lower_ev, dej, frac, loggf
@@ -1672,7 +1733,9 @@ MODULE atom_mod
     trans%ll%used(1:trans%ll%nline) = .true.
   END SUBROUTINE build_ll
 
-  !====================================================================================
+  !===============================================================================
+  !> Sets the prefactor of Drawin's hydrogen collision rate for the atom's weight.
+  !===============================================================================
   SUBROUTINE prepare_Drawin(self)
     class(atom_type), intent(inout) :: self
     real(8) :: drmu, mu_h, ama
@@ -1684,15 +1747,23 @@ MODULE atom_mod
     self%drawin = const * sqrt(2.0*BK/drmu) * mu_e/mu_h
   END SUBROUTINE prepare_Drawin
 
-  !====================================================================================
+  !===============================================================================
+  !> Adds the classical collision rates of one cell to data%c for the level pairs
+  !> without such data in the atom file: van Regemorter and Seaton for electrons,
+  !> Drawin and Takeda for hydrogen, as e_excitation, e_ionisation, h_excitation,
+  !> h_ionisation and h_forbidden select.
+  !===============================================================================
   SUBROUTINE classic_col(self, comp, x, y, z)
     class(atom_type), intent(inout) :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp !< composition on the mesh
+    integer :: x                    !< cell
+    integer :: y                    !< cell
+    integer :: z                    !< cell
     real(8) :: temp, ne, nh1
     real(8) :: ni, nj, nij, cup, cdn, e_kT, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, lam0
     real(8) :: seaton, allen, regemorter
-    integer :: x, y, z, i, j, ii, jj, tri, n
+    integer :: i, j, ii, jj, tri, n
     logical :: cont
     logical, save :: first_time=.true.
     real(8), parameter :: sq32 = sqrt(3.d0) / (2.d0)
@@ -1708,7 +1779,7 @@ MODULE atom_mod
     e_kT = comp%e_kT(x,y,z)
     nh1 = comp%elements(1)%ions(1)%levels(1)%n(x,y,z)
     sqt = sqrt(temp)
-    ! See Hubeny % Mihalas 2014, p. 276 for these recipes
+    ! See Hubeny & Mihalas 2014, p. 276 for these recipes
     allen = c0 * Rydk * ne / sqt
     regemorter = 14.5 * allen * Rydk / e_k
     seaton = 1.55e13 * ne / sqt
@@ -1816,12 +1887,15 @@ MODULE atom_mod
   END SUBROUTINE classic_col
 
   !===============================================================================
-  !> initialises the spectrum structure
+  !> Appends to a spectrum the input wavelengths of the active lines, or the grid
+  !> of line_grid_file, and those of the active continua.
   !===============================================================================
   SUBROUTINE append_transitions (self, sp, bb, bf, sort)
     class(atom_trans_t), target :: self
-    class(spectrum_type) :: sp
-    logical, intent(in), optional :: bb, bf, sort
+    class(spectrum_type) :: sp            !< the spectrum
+    logical, intent(in), optional :: bb   !< append the lines
+    logical, intent(in), optional :: bf   !< append the continua
+    logical, intent(in), optional :: sort !< unused
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
@@ -1921,10 +1995,18 @@ MODULE atom_mod
   END SUBROUTINE read_line_grid
 
   !===============================================================================
+  !> Locates each active transition on a spectrum's grid: sets its interval and
+  !> points its wavelengths at the grid, with the cross sections of a continuum
+  !> and the profile offsets of a line, and their integration weights. A
+  !> transition the grid does not reach, and a continuum on a single frequency,
+  !> are deactivated. With set_active, adds the transitions to the counts per frequency.
+  !===============================================================================
   SUBROUTINE set_ired_iblue (self, sp, bb, bf, set_active)
     class(atom_trans_t), target :: self
-    class(atomic_spectrum_type), target :: sp
-    logical, intent(in), optional :: bb, bf, set_active
+    class(atomic_spectrum_type), target :: sp   !< the spectrum
+    logical, intent(in), optional :: bb         !< the lines
+    logical, intent(in), optional :: bf         !< the continua
+    logical, intent(in), optional :: set_active !< add them to sp's counts per frequency
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i, nnu, ired, iblue
@@ -2020,10 +2102,13 @@ MODULE atom_mod
   END SUBROUTINE set_ired_iblue
 
   !===============================================================================
+  !> Adds the active continua and lines to a spectrum's counts per frequency, nac and nal.
+  !===============================================================================
   SUBROUTINE set_active_transitions (self, sp, bb, bf)
     class(atom_trans_t), target :: self
-    class(atomic_spectrum_type), target :: sp
-    logical, intent(in), optional :: bb, bf
+    class(atomic_spectrum_type), target :: sp !< the spectrum
+    logical, intent(in), optional :: bb       !< the lines
+    logical, intent(in), optional :: bf       !< the continua
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i
@@ -2051,23 +2136,12 @@ MODULE atom_mod
   END SUBROUTINE set_active_transitions
 
   !===============================================================================
-  !>     calculates partition function for ch
-  !>     data from u.g. jorgensen et al. a&a 1996, 315, 204
-  !>
-  !>: qjorg  98-08-13  new routine: (rouppe van der voort)
-  !>:        calculates partition functions for ch
-  !>:
-  !>:        00-10-25  modifications: (martin asplund)
-  !>:        constant extrapolation for t<1000 and t>8000
-  !>:        avoided exceeding array limits for t>8000
+  !> Partition function of CH from table 1 of Jorgensen et al. (1996, A&A 315, 204),
+  !> interpolated linearly between 1000 and 8000 K and constant outside. Written by
+  !> Rouppe van der Voort, with the constant extrapolation by Asplund.
   !===============================================================================
-  PURE ELEMENTAL FUNCTION qjorg(temp)  
-    !     data from jorgensen, table 1.
-    !     temperature range t={1000, 8000}
-    !     note that function extapolates for temp>8000 and temp<1000
-    !     for extrapolation for temp>8500 or temp<1000 the results
-    !     differ significant from a polynomial extrapolation (polint)
-    real(4), intent(in) :: temp
+  PURE ELEMENTAL FUNCTION qjorg(temp)
+    real(4), intent(in) :: temp !< temperature [K]
     real(4), parameter :: pfdata(15) = &
                 [203.5,  324.7,  471.2,  646.2,  850.8, 1085.1, 1348.1, &
                 1638.7, 1955.3, 2296.1, 2659.3, 3043.2, 3446.2, 3866.8, 4303.7]
@@ -2100,10 +2174,13 @@ MODULE atom_mod
     qjorg = a*(temp - x0) + b
   END FUNCTION qjorg
 
-  !====================================================================================
+  !===============================================================================
+  !> Finds the collider of each collision record named after one, with an 'up' or
+  !> 'dn' for the direction of its rate, in the composition.
+  !===============================================================================
   SUBROUTINE set_colliders(self, comp)
     class(atom_type) :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp !< the composition
     class(particle_type), pointer :: collider
     integer :: i, s, l
     integer, save :: itimer=0
@@ -2137,16 +2214,23 @@ MODULE atom_mod
     call trace%end(itimer)
   END SUBROUTINE set_colliders
 
-  !====================================================================================
+  !===============================================================================
+  !> Adds the collision rates of the atom file's records to data%c for one cell,
+  !> interpolated in temperature: OHM, CE, CH, CHI, CI and CH0 records, and records
+  !> named after their collider.
+  !===============================================================================
   SUBROUTINE gencol(self, comp, x, y, z)
     class(atom_type) :: self
-    class(composition_type) :: comp
+    class(composition_type) :: comp !< composition on the mesh
+    integer :: x                    !< cell
+    integer :: y                    !< cell
+    integer :: z                    !< cell
     character(8) :: key
     real(8) :: temp, ne
     real(8) :: ct, cup, cdn
     real(8) :: stg, nji, nh1, n_collider
     real(8) :: lsaha, dxi, dev, tns, e_kT
-    integer :: x,y,z,ul,ll,i, ii, jj, nc, itemp
+    integer :: ul,ll,i, ii, jj, nc, itemp
     real(8), parameter :: c0=((Eryd/sqrt(em)) * pi*Rbohr**2) * sqrt(8.0/(pi*bk))
     integer, save :: itimer=0
     !---------------------------------------------------------------------
@@ -2233,13 +2317,12 @@ MODULE atom_mod
           cdn = cup / nji
 
         case('CH0')
-          ! MB 5.04.2018 - charge transfer with H-, A+H <--> A+ + H-
-          ! these are upwards rates (CT ionisation or ion-pair formation)
-          ! also assumed for CI; but the difference is that CI downwards rates 
-          ! are computed from detailed balance (they are bi-directional);
-          ! CH0 are one-directional and the levels must be in the correct order
-          !  in the atom (, i.e. ll  --> lu for ioninisation)
-          ! in the QM papers, the inverse exothermic rates (neutralisation) 
+          ! charge transfer with H-, A+H <--> A+ + H-
+          ! these are upwards rates (CT ionisation or ion-pair formation), as
+          ! for CI, whose downward rates follow from detailed balance too.
+          ! CH0 records are one-directional, and the levels must be in the
+          ! right order in the atom (ll --> ul for ionisation).
+          ! In the QM papers, the inverse exothermic rates (neutralisation)
           ! are derived from the detailed balance
           ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
           cup = ct * nh1
@@ -2272,8 +2355,9 @@ MODULE atom_mod
     call trace%end(itimer)
   END SUBROUTINE gencol
 
-  !====================================================================================
-  !====================================================================================
+  !===============================================================================
+  !> Exponential integral E_1(x) from rational approximations; 0 for x <= 0.
+  !===============================================================================
   ELEMENTAL FUNCTION expin (x) result(ex1)
     real(8), intent(in) :: x
     real(8) :: ex, ex1
@@ -2313,7 +2397,11 @@ MODULE atom_mod
     endif
   END FUNCTION expin
 
-  !====================================================================================
+  !===============================================================================
+  !> Kramers' hydrogenic photoionisation cross section [cm^2] at wavelength lam [AA]
+  !> of a level with threshold energy dev [eV] and effective principal quantum
+  !> number sqrt(Ry/dev), with the Gaunt factor of gaunt.
+  !===============================================================================
   ELEMENTAL FUNCTION Kramer (lam, dev) result(hyd)
     real(8), intent(in) :: lam, dev
     real(8) :: nu, nl, hyd
@@ -2328,7 +2416,10 @@ MODULE atom_mod
     endif
   END FUNCTION Kramer
 
-  !====================================================================================
+  !===============================================================================
+  !> Bound-free Gaunt factor of principal quantum number n at wavelength lam [AA]:
+  !> a quadratic in 1/nu for n <= 6, 1 above.
+  !===============================================================================
   ELEMENTAL FUNCTION gaunt (lam, n)
     real(8), intent(in) :: lam
     integer, intent(in) :: n
@@ -2356,7 +2447,7 @@ MODULE atom_mod
   !===============================================================================
   !> Ng acceleration driver.  Accumulation is unconditional and cheap (a handful
   !> of inner products against an LU solve per cell), so the schedule is not what
-  !> decides whether to accelerate -- ng_should_fire is, from the quantities the
+  !> decides whether to accelerate: ng_should_fire is, from the quantities the
   !> accumulation already produces.
   !>
   !> ng_step > 0 keeps the fixed schedule: accumulate when mod(iter-ng_start,
@@ -2370,11 +2461,11 @@ MODULE atom_mod
   !===============================================================================
   SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
     class(atom_type):: self
-    integer, intent(in) :: iter
-    real(8), intent(in) :: err     !< current convergence measure
-    real(8), intent(in) :: convlim !< its target, for the headroom test
-    real(8), intent(out) :: emax
-    integer, intent(out) :: epos(4)
+    integer, intent(in) :: iter     !< iteration
+    real(8), intent(in) :: err      !< current convergence measure
+    real(8), intent(in) :: convlim  !< its target, for the headroom test
+    real(8), intent(out) :: emax    !< largest change by the extrapolation, 0 without one
+    integer, intent(out) :: epos(4) !< its (level, x, y, z)
     logical :: fire, applied, apply_here
     character(len=15) :: ng_reason
     integer, save :: itimer=0
@@ -2388,8 +2479,8 @@ MODULE atom_mod
     endif
 
     associate (ng => self%ng, adata => self%data)
-      ! Promote last iteration's partial sums, decide, and read the decision back
-      ! -- all under one lock, so a patch cannot act on a half-updated state.
+      ! Promote last iteration's partial sums, decide, and read the decision back,
+      ! all under one lock, so a patch cannot act on a half-updated state.
       ! Patches advance their own iteration counters, so both the roll and the
       ! decision are monotone in iter: a straggler still on an earlier iteration
       ! neither redoes them nor undoes them, and simply does not accelerate.
@@ -2445,7 +2536,7 @@ MODULE atom_mod
   !===============================================================================
   LOGICAL FUNCTION ng_applied (self, iter)
     class(atom_type), intent(in) :: self
-    integer, intent(in) :: iter
+    integer, intent(in) :: iter !< iteration
     !-----------------------------------------------------------------------------
     ng_applied = .false.
     if (associated(self%ng)) ng_applied = self%ng%coeff_valid .and. self%ng%iter_fired == iter
