@@ -34,7 +34,6 @@ Responsibilities across its three components are still evolving:
   analysis through Bokeh. Some scientific workflows currently live here.
   `TumultStudio_old/` is legacy and is not a target for new work.
 
-`docs/GUIWorkflow.md` describes the target TumultStudio tool workflow.
 `docs/GLOSSARY.md` defines the terms these components share, including the ones that mean
 different things in each. Read it before naming anything, and add to it when a name turns
 out to be ambiguous. `docs/PythonNamingConventions.md` covers how Python names are spelled;

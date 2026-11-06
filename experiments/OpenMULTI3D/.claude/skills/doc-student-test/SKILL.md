@@ -34,7 +34,7 @@ Launch `doc-student` in the background with an assignment that names:
 
 - the sandbox root and the base commit;
 - the scope, by default `README_INSTALL.md` then `QUICKSTART.md` including its optional
-  sections except the 3D snapshot; or a narrower one such as a single FAQ answer;
+  sections except the 3D snapshot; or a narrower one such as a single manual section;
 - anything the user wants varied, e.g. "you have never used a virtual environment".
 
 Expect 30 to 60 minutes; the native build alone takes several minutes. `model: sonnet` in

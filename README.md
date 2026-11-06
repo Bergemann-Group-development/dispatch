@@ -1,35 +1,33 @@
-# README #
+# OpenMULTI3D
 
-### What is this repository for? ###
+OpenMULTI3D synthesises stellar spectra from 1D and 3D model atmospheres, in LTE and NLTE. It solves the statistical equilibrium of model atoms and the radiative transfer on hydrostatic and hydrodynamic model atmospheres (MARCS, Stagger, M3DIS and others), with the task-based parallelisation of the DISPATCH framework.
 
-* This is the repository for DISPATCH2 (based on CompAstroCPH2015Teachers)
-* Version 0.1
-* [Markdown demo](https://bitbucket.org/tutorials/markdowndemo)
+This repository holds DISPATCH and, in [`experiments/OpenMULTI3D/`](experiments/OpenMULTI3D/), the OpenMULTI3D application:
 
-### How to set up a connection to this repository ###
+- **`dispatch.x`**, the Fortran executable built from `SRC/` and `HOP/`, which runs one synthesis or NLTE solve from a namelist.
+- **HOP**, the equation of state, continuous and line opacity library, also packaged on its own as `hopacity`.
+- **`tumult`**, the Python package that prepares and launches runs, reads their output and provides analysis workflows such as abundance fits and curves of growth.
+- **TumultStudio**, a browser GUI (Bokeh) built on `tumult` for interactive spectroscopic analysis.
 
-* If you have write access: simple updates in general go directly into this repository
-    * For larger, non-trivial edits, work on a branch and use pull requests.
-* If you have read access: fork this repository and use pull requests to contribute.
+## Getting started
 
-### Contribution guidelines ###
+OpenMULTI3D builds with DISPATCH's shared configuration, so clone the whole repository and work in the experiment directory:
 
-* If you want your pull request to have a chance, you need to merge from `master` before making the pull request.
-* One should also run the validation pipeline; pull requests that do not pass validation will not be accepted.
-* See also the (growing) [wiki](https://bitbucket.org/aanordlund/dispatch2/wiki/).
+```bash
+git clone https://github.com/Bergemann-Group-development/dispatch.git
+cd dispatch/experiments/OpenMULTI3D
+```
 
-### Commit codes ###
+Then follow these guides:
 
-When committing changes to this repository, please use the following three-letter codes at the beginning of your commit messages:
+- [README_INSTALL.md](experiments/OpenMULTI3D/README_INSTALL.md): requirements, the Python environment, the build, input data downloads and a verification run.
+- [QUICKSTART.md](experiments/OpenMULTI3D/QUICKSTART.md): a first LTE and NLTE synthesis, read and plotted in Python and opened in the GUI.
+- [docs/manual/](experiments/OpenMULTI3D/docs/manual/): the LaTeX manual, covering the calculations, TumultStudio, the Python workflows, running on a cluster, the physics and the namelist reference.
 
-* DEV: code development (incl. additions and deletions)
-* ORG: organisational, no changes to functionality
-* BUG: bug with significant impact on previous work -- `grep`-ing should give restricted list
-* FIX: fixes that occur during development, but which have essentially no impact on previous work
-* VIS: visualisation
-* OPT: optimisation
-* DBG: debugging
-* SYN: typos and misspellings (including simple syntax error fixes)
-* WIP: snapshot/work in progress
-* CLN: tidying of the code, including removal of obsolete features, experiments, etc.
-* DOC: Changes or additions to the documentation
+## DISPATCH
+
+DISPATCH is a task-based framework for astrophysical simulations, primarily 3D radiation-hydrodynamics, by Åke Nordlund, Jon Ramsey, Andrius Popovas, Troels Haugbølle and Michael Kuffmeier. Its sources sit at the top level of this repository and its documentation in [`docs/`](docs/).
+
+## License
+
+OpenMULTI3D is distributed under the GNU General Public License version 3 only ([`experiments/OpenMULTI3D/LICENSE`](experiments/OpenMULTI3D/LICENSE)); its authors and the licenses of the code and data it builds on are listed in [`experiments/OpenMULTI3D/AUTHORS`](experiments/OpenMULTI3D/AUTHORS). DISPATCH is distributed under the BSD-3-Clause license in [`LICENSE`](LICENSE).

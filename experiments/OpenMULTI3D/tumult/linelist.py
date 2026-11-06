@@ -338,7 +338,7 @@ def strip_ion_stages(species):
 
 MASTER_PATH = os.environ.get(
     "TUMULT_MASTER_LINELIST",
-    str(Path(__file__).resolve().parent.parent / "input" / "linelists" / "master_line.txt"),
+    str(Path(__file__).resolve().parent.parent / "input" / "linelists" / "SIU_masterline_Bergemann2026.txt"),
 )
 
 _DUMMY_T = 5000.0   # excitation temperature of the strength proxy below

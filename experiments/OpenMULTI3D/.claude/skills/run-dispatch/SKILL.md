@@ -6,7 +6,7 @@ description: Build and run OpenMULTI3D's dispatch.x directly from a namelist, re
 # Running dispatch.x
 
 Everything here runs from the OpenMULTI3D directory. Setup is in `README_INSTALL.md`, a
-first run in `QUICKSTART.md`, and printing and reading outputs in `docs/FAQ.md`. Python
+first run in `QUICKSTART.md`, and reading outputs in the manual (`docs/manual/main.tex`). Python
 runs in the activated `.venv`.
 
 ## Build
@@ -108,8 +108,7 @@ b = np.array([np.asarray(d, float).ravel() for d in dep]).T    # (nlevel, nz)
 T, logtau = np.asarray(run.atmos.temp).ravel(), np.log10(np.asarray(run.atmos.tau).ravel())
 ```
 
-- **Spectra:** use `run.crop(...)`, never the raw `save/*.bin` files. See the FAQ entry
-  "How do I read and plot the result?".
+- **Spectra:** use `run.crop(...)`, never the raw `save/*.bin` files.
 - **Workflow runs:** a tumult `departure_solve` run also writes `departures.json`, which
   `tumult.departures.load(path).profile().b` reads.
 - **Comparing two runs:** use the largest and median relative difference of `b`, with
@@ -136,6 +135,3 @@ Each check below is a cheap rerun:
    `setup_transition_matrix` in a worktree build. Rebuild W in Python and perturb one
    transition at a time. A gain near 1 means the matrix is fine and the rates carry the
    noise.
-
-Cancellations of this kind are recorded in `docs/FAQ.md` under the preconditioning
-question.

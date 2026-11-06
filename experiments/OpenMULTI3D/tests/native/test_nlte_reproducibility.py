@@ -11,7 +11,7 @@ real(4) sum in completion order, which leaves differences of about 1e-6; the tol
 admits those and nothing near the size of a schedule-dependent iteration.
 
 Needs the built ``dispatch.x`` and, from the input bundle (see ``README_INSTALL.md``),
-the solar MARCS model, the ``mg86g`` model atom and ``master_line.txt``.
+the solar MARCS model, the ``mg86g`` model atom and ``SIU_masterline_Bergemann2026.txt``.
 """
 import os
 import subprocess
@@ -27,13 +27,13 @@ EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
 ATOM = Path('input/atoms/atom.mg86g')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 
 pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, ATOM, LINELIST))),
-        reason='needs dispatch.x, the solar MARCS model, atom.mg86g and master_line.txt'),
+        reason='needs dispatch.x, the solar MARCS model, atom.mg86g and SIU_masterline_Bergemann2026.txt'),
 ]
 
 

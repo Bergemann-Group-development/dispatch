@@ -8,7 +8,7 @@ rt_patch of an output window must attach the shared line-list table, also when t
 1D background lets it return early, and no patch may hold a table of one wavelength, which
 the interpolation cannot bracket.
 
-Needs the built ``dispatch.x``, the solar MARCS model and ``master_line.txt``.
+Needs the built ``dispatch.x``, the solar MARCS model and ``SIU_masterline_Bergemann2026.txt``.
 """
 import os
 import subprocess
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 # Mg I b2, Mg I 5528 and Mg I 5711 with blends; 117, 110 and 72 points at R = 200000
 WINDOWS = [(5171.184, 5174.184), (5526.905, 5529.905), (5710.088, 5712.088)]
 
@@ -31,7 +31,7 @@ pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, LINELIST))),
-        reason='needs dispatch.x, the solar MARCS model and master_line.txt'),
+        reason='needs dispatch.x, the solar MARCS model and SIU_masterline_Bergemann2026.txt'),
 ]
 
 

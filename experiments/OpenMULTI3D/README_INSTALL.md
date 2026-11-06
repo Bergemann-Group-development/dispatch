@@ -10,8 +10,7 @@ NLTE. A working installation has three parts:
   and provides the analysis workflows.
 - **TumultStudio**, the optional browser GUI (Bokeh) built on `tumult`.
 
-This guide ends with a verified installation. [QUICKSTART.md](QUICKSTART.md) then
-introduces the calculations and [docs/GUIWorkflow.md](docs/GUIWorkflow.md) the GUI.
+This guide ends with a verified installation. [QUICKSTART.md](QUICKSTART.md) then introduces the calculations, and the manual in [docs/manual/](docs/manual/) covers the code in full.
 
 ## 1. Checkout layout and requirements
 
@@ -74,9 +73,7 @@ The build produces
 
 ## 4. Input data
 
-The repository tracks the inputs the verification below needs: one MARCS solar model,
-four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data
-and the atomic line list `input/linelists/master_line.txt`.
+The repository tracks a minimal data set in `input/`, which includes everything the verification below needs: five MARCS models (dwarfs and giants, including the Sun), four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data and `input/linelists/SIU_masterline_Bergemann2026.txt`, a line list of atoms and the common molecules, most of its lines between 3000 and 9000 Å.
 
 The larger inputs are not in git. They can be fetched from TumultStudio's Preferences
 or from the command line, whichever suits; both use the same code and skip files that are
@@ -161,8 +158,8 @@ three lines print with these values.
 
 - [QUICKSTART.md](QUICKSTART.md) continues from this calculation: it plots the spectrum,
   compares LTE with NLTE, changes an input and opens the result in the GUI, with optional
-  examples of the Python workflow interface and a 3D snapshot. [docs/FAQ.md](docs/FAQ.md)
-  answers further workflow questions (departures, long jobs, abundances).
+  examples of the Python workflow interface and a 3D snapshot.
+- The manual, [docs/manual/main.tex](docs/manual/main.tex), covers the calculations, the Python workflows, running on a cluster, the physics and every namelist key. `latexmk -pdf main.tex` in `docs/manual/` builds `main.pdf`.
 - TumultStudio, the GUI:
 
   ```bash
@@ -174,8 +171,7 @@ three lines print with these values.
   `bokeh serve --show TumultStudio` runs the app without the landing page. The GUI keeps
   its preferences, recent files and saved workspaces in `.tumultstudio.json` in the
   directory it was started from (`TUMULT_CONFIG` names another file); the file is
-  git-ignored. [docs/GUIWorkflow.md](docs/GUIWorkflow.md) describes the tools.
-- The source reference of the Fortran and C code in `SRC/` and `HOP/` (modules, types, procedures, call relations) is built with [Doxygen](https://www.doxygen.nl) and Graphviz by `doxygen docs/Doxyfile`, which writes `build/doxygen/html/index.html`. Each push to `main` publishes it to the repository's GitHub Pages site.
+  git-ignored. The manual's TumultStudio section describes the app.
 
 ## 7. Troubleshooting
 

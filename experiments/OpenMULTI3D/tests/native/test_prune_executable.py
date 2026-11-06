@@ -15,14 +15,14 @@ from tumult import prune
 ROOT = Path(__file__).resolve().parents[2]
 MARCS = ROOT / 'input' / 'atmos' / ('p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_'
                                     'o+0.00_r+0.00_s+0.00.mod')
-MASTER = ROOT / 'input' / 'linelists' / 'master_line.txt'
+MASTER = ROOT / 'input' / 'linelists' / 'SIU_masterline_Bergemann2026.txt'
 WINDOWS = [(5000.0, 5002.5), (5015.0, 5017.5)]      # disjoint, air Angstrom
 R = 300000.0
 DLAM = 2.0
 
 needs_executable = pytest.mark.skipif(
     not ((ROOT / prune.EXECUTABLE).is_file() and MARCS.is_file() and MASTER.is_file()),
-    reason='needs HOP/standalone/build/hop_prune.x, the solar MARCS model and master_line.txt')
+    reason='needs HOP/standalone/build/hop_prune.x, the solar MARCS model and SIU_masterline_Bergemann2026.txt')
 
 
 def _records(path):

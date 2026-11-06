@@ -8,7 +8,7 @@ Public entry points by domain:
 - reading spectra:   load_spectrum, load_file, is_run, load_run
 - scripting:         the domain modules `synthesis` (synthesize, fit, SynthRequest), `departures`
                      (solve, request), `abundance` (fit, nlte_corrections) and `sparams`
-                     (ionbalance); see docs/FAQ.md
+                     (ionbalance); see the manual's Python Workflows section
 - synthesis:         compute_spectrum, build_stellar_grid, get_NLTE_correction(s),
                      preset, PRESETS_DIR, CancelToken, CancelledError
 - EW / profiles:     Profile, profile_names, get_profile_class, get_weq,

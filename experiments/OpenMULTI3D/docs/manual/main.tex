@@ -373,7 +373,7 @@ In a notebook, \Code{\%load\_ext tumult} sets the matplotlib style of the tumult
 
 \subsection{Input data}\label{sec:inputdata}
 
-The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular data, and \File{input/linelists/master\_line.txt}, a line list of atoms and the common molecules from 3000 to 9000\,{\AA} that all examples of this manual use. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:studio}, one page per kind of data) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
+The repository tracks a minimal data set in \File{input/}: five MARCS models (dwarfs and giants, including the Sun), four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular data, and \File{input/linelists/SIU\_masterline\_Bergemann2026.txt}, a line list of atoms and the common molecules, most of its lines between 3000 and 9000\,{\AA}, that all examples of this manual use. The larger inputs are downloaded on demand, either in TumultStudio (Preferences, Sec.~\ref{sec:studio}, one page per kind of data) or from the command line. Both use the same code, skip files that are already complete and resume interrupted transfers.
 
 \input{tabs/input_data}
 
@@ -413,7 +413,7 @@ This section computes one NLTE line, plots it and then turns it into a spectrum 
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
 &atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
-!&linelist_params    linelist_file='./input/linelists/master_line.txt' match_nlte_levels=T /
+!&linelist_params    linelist_file='./input/linelists/SIU_masterline_Bergemann2026.txt' match_nlte_levels=T /
 !&spectrum_params    R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
 
@@ -423,7 +423,7 @@ Type in the experiment directory, with the virtual environment active:
 OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
 \end{minted}
 
-The prefix \Code{OMP\_STACKSIZE=256M} sets an environment variable for this one command, which the OpenMP threads need, and \Code{./} runs the program from the current directory. The run takes well under a second. Its console output ends like this (shortened):
+The prefix \Code{OMP\_STACKSIZE=256M} sets an environment variable for this one command, which the OpenMP threads need, and \Code{./} runs the program from the current directory. The run takes about a second. Its console output ends like this (shortened):
 
 \begin{minted}{Text}
 Reading atom file: ./input/atoms/atom.ba06
@@ -518,7 +518,7 @@ The download holds four tables: \File{absmet} for solar metallicity and \File{m-
 &atom_params         atom_file='./input/atoms/atom.ba06' abundance=2.11 /
 &nlte_params         convlim=1.0d-2 /
 &opac_table_params   absmet_file='./input/absmet_files/absmet' /
-&linelist_params     linelist_file='./input/linelists/master_line.txt'
+&linelist_params     linelist_file='./input/linelists/SIU_masterline_Bergemann2026.txt'
                      match_nlte_levels=T /
 &spectrum_params     R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
@@ -575,7 +575,7 @@ An LTE spectrum needs no model atom. Use it for blends, molecular bands or as a 
 \begin{minted}{Fortran}
 &io_params           datadir='data' /
 &atmos_params        atmos_file='./input/atmos/sun.mod' /
-&linelist_params     linelist_file='./input/linelists/master_line.txt' /
+&linelist_params     linelist_file='./input/linelists/SIU_masterline_Bergemann2026.txt' /
 &spectrum_params     R_sampling=5e5 aa_blue=4840 aa_red=4880 /
 \end{minted}
 
@@ -606,7 +606,7 @@ When one spectrum is needed for one atmosphere and one or a few model atoms, a s
 &nlte_params         convlim=1e-3 /
 &opac_table_params   absmet_file='./input/absmet_files/absmet' /
 &rt_output_params    maxiter=3 /
-&linelist_params     linelist_file='./input/linelists/master_line.txt'
+&linelist_params     linelist_file='./input/linelists/SIU_masterline_Bergemann2026.txt'
                      match_nlte_levels=T /
 &spectrum_params     R_sampling=5e5 aa_blue=4550 aa_red=4558 /
 \end{minted}
@@ -625,7 +625,7 @@ Departure coefficients solved once can serve several spectra, for example over d
 &atom_params         atom_file='./input/atoms/atom.ba06' /
 &rt_iteration_params maxiter=0 /
 &rt_output_params    maxiter=3 /
-&linelist_params     linelist_file='./input/linelists/master_line.txt'
+&linelist_params     linelist_file='./input/linelists/SIU_masterline_Bergemann2026.txt'
                      match_nlte_levels=T /
 &spectrum_params     window_file='./data/windows.txt' R_sampling=2e5 /
 \end{minted}
@@ -636,7 +636,7 @@ A stage-1 job that ran out of time during the iterations has saved no departures
 
 \subsection{Fit abundances and NLTE corrections}\label{sec:abundrecipe}
 
-Abundance fits to an observed spectrum and NLTE abundance corrections need many runs: every rung of an NLTE curve of growth solves its own statistical equilibrium, which sets the cost. These calculations are therefore workflows, which manage the abundance ladders, the line masks and the runs. Start them from TumultStudio (Sec.~\ref{sec:studio}) or from Python (Sec.~\ref{sec:pyabund}). The worked example of Sec.~\ref{sec:example} computes the curves of growth of two lines by hand, which shows what the workflows do, and \File{docs/FAQ.md} has further examples. The checks of Sec.~\ref{sec:checking} apply to every rung.
+Abundance fits to an observed spectrum and NLTE abundance corrections need many runs: every rung of an NLTE curve of growth solves its own statistical equilibrium, which sets the cost. These calculations are therefore workflows, which manage the abundance ladders, the line masks and the runs. Start them from TumultStudio (Sec.~\ref{sec:studio}) or from Python (Sec.~\ref{sec:pyabund}). The worked example of Sec.~\ref{sec:example} computes the curves of growth of two lines by hand, which shows what the workflows do. The checks of Sec.~\ref{sec:checking} apply to every rung.
 
 \subsection{Synthesise a 3D snapshot}\label{sec:rec3d}
 
@@ -753,7 +753,7 @@ python -m TumultStudio              # landing page at http://localhost:5006
 python -m TumultStudio --port 5010 --no-show
 \end{minted}
 
-TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences download and configure grids, line lists, model atoms and opacity tables, and manage reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}. \File{docs/GUIWorkflow.md} describes the intended workflow.
+TumultStudio opens spectra, runs and atoms; displays them on a canvas with a range-select tool; manages line masks; and starts syntheses, fits and NLTE corrections as durable workflows whose progress is shown in a Processes panel. Preferences download and configure grids, line lists, model atoms and opacity tables, and manage reference stars. State (sessions, preferences, recent files) is kept in \File{.tumultstudio.json} in the start directory, or in the file named by \Code{TUMULT\_CONFIG}.
 
 Its syntheses, fits and corrections are the workflows of Sec.~\ref{sec:pyworkflows}.
 
@@ -838,7 +838,7 @@ def launch(name, abundance, cntrbf=False):
         "atom_params": {"atom_file": "./input/atoms/atom.mg86g",
                         "abundance": abundance},
         "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
-        "linelist_params": {"linelist_file": "./input/linelists/master_line.txt",
+        "linelist_params": {"linelist_file": "./input/linelists/SIU_masterline_Bergemann2026.txt",
                             "match_nlte_levels": True},
         "spectrum_params": {"window_file": f"./{WINDOW_FILE}", "R_sampling": 5e5},
         "output_params": {"save_cntrbf": cntrbf},
@@ -1068,10 +1068,11 @@ from tumult import departures, synthesis
 from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="synth",
-                     linelist="input/linelists/master_line.txt",
+                     linelist="input/linelists/SIU_masterline_Bergemann2026.txt",
                      abundances="input/abund/abund_magg22.txt",
                      absmet="input/absmet_files",
-                     R_sampling=200_000)
+                     R_sampling=200_000,
+                     expert={"linelist_params": {"match_nlte_levels": True}})
 atmosphere = Atmosphere("input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=atmosphere,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
@@ -1082,7 +1083,7 @@ nlte = synthesis.synthesize(request.update(departures=ba))
 nlte.spectrum.plot()
 \end{minted}
 
-\py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}).
+\py{expert} adds namelist settings to every run of the request; here \fort{match_nlte_levels=T} gives the Ba\,\textsc{ii} lines of the line list, which carry no level indices, the departure coefficients of the atom (Sec.~\ref{sec:nlteoutput}). \py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}).
 
 \subsection{The recipes in Python}
 
@@ -1132,7 +1133,7 @@ corr = abundance.nlte_corrections(nlte, method="cog")
 
 This is the analysis of Sec.~\ref{sec:example} as a workflow, on the solar request above. For another star, \py{request.update(atmosphere=AtmosphereGrid("input/atmos/MARCS"), star=Star(...))} interpolates the MARCS grid (Sec.~\ref{sec:inputdata}) at the request's \Code{Star}. \py{abundance.fit} measures the observed spectrum (\py{target}, a file or a \Code{Spectrum}) in the windows of the line mask, a file naming its element (\File{input/linemasks/}), and inverts the equivalent widths on curves of growth (\py{method="cog"}) or fits the profiles (\py{method="profile"}). \py{abundance.nlte_corrections} gives $A(\mathrm{NLTE})-A(\mathrm{LTE})$ for every line of the atom stronger than \py{ew_min} (5\,m\AA) in an LTE reference synthesis, bracketing each line's NLTE curve of growth until it reproduces the reference equivalent width. \py{sparams.ionbalance} finds stellar parameters by ionisation balance.
 
-\py{departures.request} defers the solution: every abundance step of a curve of growth is an equilibrium solution of its own. \File{docs/FAQ.md} has worked examples.
+\py{departures.request} defers the solution: every abundance step of a curve of growth is an equilibrium solution of its own.
 
 \subsection{Launching single runs}\label{sec:launching}
 
@@ -1190,7 +1191,18 @@ sbatch dispatch.slurm a.nml b.nml
 
 A run occupies one node; choose the node by the pre-run memory estimate.
 
-From Python, \Code{tm.launch(..., slurm\_script=...)} submits a namelist; see \File{docs/FAQ.md} for submitting workflows.
+From Python, \Code{tm.launch(..., slurm\_script=...)} submits a namelist. A whole workflow runs as one Slurm job:
+\begin{minted}{Python}
+job = synthesis.submit_operation("synthesis.synthesize", request,
+                                 detach="slurm", slurm_script="driver.sbatch")
+\end{minted}
+The daemon calls \Code{sbatch driver.sbatch <folder>}, and the script requests the resources and runs the driver on the allocation:
+\begin{minted}{bash}
+#!/bin/sh
+#SBATCH --cpus-per-task=32 --time=12:00:00
+python -m tumult.synthesis.driver "$1"
+\end{minted}
+TumultStudio does the same when its \emph{Run synthesis workflows} preference is \Code{slurm}. Every native run of the workflow then shares that one allocation.
 
 \subsection{Stopping and continuing an NLTE run}\label{sec:stopping}
 
@@ -1347,8 +1359,7 @@ Atom & Levels & Bound-bound & Bound-free & Note\\
 \midrule
 \File{atom.ba06} & 6 & 4 & 5 & the demonstration atom\\
 \File{atom.fe607a} & 607 & 12635 & 606 & Fe\,\textsc{ii} super-levels without bound-bound transitions\\
-\File{atom.mg86e} & 86 & 242 & 85 & only the Mg\,\textsc{ii} ground level\\
-\File{atom.mg86g} & 86 & 245 & 85 & as \File{mg86e}, with the photo-ionisation cross sections over their full tabulated range\\
+\File{atom.mg86g} & 86 & 245 & 85 & Mg\,\textsc{i} with the Mg\,\textsc{ii} ground level, photo-ionisation cross sections over their full tabulated range\\
 \File{atom.o41f} & 41 & 256 & 22 & \\
 \bottomrule
 \end{tblr}
@@ -1848,7 +1859,7 @@ The workflows of Sec.~\ref{sec:pyworkflows} live in these modules. They choose t
 
 \input{tabs/python_modules}
 
-\File{docs/FAQ.md} contains worked examples. Names of concepts follow \File{docs/GLOSSARY.md}.
+Names of concepts follow \File{docs/GLOSSARY.md}.
 
 %%%%%%%%%%%%%%%%%%%%%%
 \section{Console Output and Timing}\label{sec:console}

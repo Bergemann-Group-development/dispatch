@@ -14,7 +14,7 @@ A converged run satisfies particle conservation per cell (the populations sum to
 total) and keeps the Na I ground state near LTE.  The collapsed solution sums to 1e-34 of
 the total.  The 12 iterations suffice: the collapse had happened by iteration 3.
 
-Needs the built ``dispatch.x``, the cool dwarf MARCS model, ``master_line.txt`` and the
+Needs the built ``dispatch.x``, the cool dwarf MARCS model, ``SIU_masterline_Bergemann2026.txt`` and the
 public ``atom.na_qmh`` (neither tracked in the repository).
 """
 import os
@@ -31,13 +31,13 @@ EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p4000_g+4.5_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
 ATOM = Path('input/atoms/public/atom.na_qmh')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 
 pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, ATOM, LINELIST))),
-        reason='needs dispatch.x, the p4000 MARCS model, atom.na_qmh and master_line.txt'),
+        reason='needs dispatch.x, the p4000 MARCS model, atom.na_qmh and SIU_masterline_Bergemann2026.txt'),
 ]
 
 
