@@ -1,4 +1,7 @@
 #include "../HOP/read_namelist.inc"
+!===============================================================================
+!> The NLTE patch of a depth slab, which solves the statistical equilibrium of the model atoms, and the namelist atom_params.
+!===============================================================================
 MODULE nlte_patch_mod
   USE os_mod
   USE gpatch_mod
@@ -44,19 +47,26 @@ MODULE nlte_patch_mod
   USE, intrinsic :: ieee_arithmetic
   implicit none
 
-  !-----------------------------------------------------------------------------
-
+  !===============================================================================
+  !> One depth slab's model atoms, whose populations it updates from the rates of the RT columns.
+  !===============================================================================
   type, public, extends(m3d_patch_t) :: nlte_patch_t
-    type(atom_type), dimension(:), pointer :: output_atoms=>null(), bb_atoms=>null(), bf_atoms=>null()
-    class(atomic_spectrum_type), pointer :: output_sp=>null()
-    class(atomic_spectrum_type), pointer :: bf_sp=>null()
-    class(atomic_spectrum_type), pointer :: bb_sp=>null()
-    real(8) :: maxerr=0, global=0
-    real(8), dimension(:), allocatable :: lvlerr
-    real(8) :: local
-    integer :: natom=0
-    logical :: update_skipped=.false., atom_allocated=.false., molec
-    logical :: pop_meta_written=.false.   !< this patch has its rows in pop_<atom>_meta.txt
+    type(atom_type), dimension(:), pointer :: output_atoms=>null() !< copies of the atoms with the output pass's transitions
+    type(atom_type), dimension(:), pointer :: bb_atoms=>null()     !< bound-bound copies of the atoms (decouple_continuum)
+    type(atom_type), dimension(:), pointer :: bf_atoms=>null()     !< bound-free copies of the atoms (decouple_continuum)
+    class(atomic_spectrum_type), pointer :: output_sp=>null()      !< output spectrum
+    class(atomic_spectrum_type), pointer :: bf_sp=>null()          !< frequencies of bf_atoms
+    class(atomic_spectrum_type), pointer :: bb_sp=>null()          !< frequencies of bb_atoms
+
+    real(8) :: maxerr=0                          !< largest weighted change of the departures in the last update, signed
+    real(8) :: global=0                          !< largest such change over all NLTE patches in the previous, complete iteration
+    real(8), dimension(:), allocatable :: lvlerr !< unused
+    real(8) :: local                             !< change of level lvlcheck at the debug point in the last update
+    integer :: natom=0                           !< number of model atoms
+    logical :: update_skipped=.false.            !< unused (never set)
+    logical :: atom_allocated=.false.            !< pre_init_atom has allocated the atoms
+    logical :: molec                             !< unused
+    logical :: pop_meta_written=.false.          !< this patch has its rows in `pop_<atom>_meta.txt`
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -77,39 +87,42 @@ MODULE nlte_patch_mod
     procedure :: init_nbors_hash
     procedure :: save_abundance_to_file
     procedure :: save_convergence_report
-    !procedure :: load_mem
     procedure :: check_mem_NaN
   end type nlte_patch_t
 
-  integer, save :: epos(3), elvl, eatom=1
-  !-----------------------------------------------------------------------------
-  !> Population convergence is judged per iteration (see execute).  sweep_iter is
-  !> the iteration now under way, sweep_active the number of nlte_patches that
-  !> update in it, sweep_updates how many have, and sweep_maxerr the largest
-  !> change among them.  last_maxerr is the largest change of the previous,
-  !> complete iteration.  n_finished counts the finished nlte_patches.
-  !-----------------------------------------------------------------------------
-  integer, save :: sweep_iter=-1, sweep_active=0, sweep_updates=0, n_finished=0
-  real(8), save :: sweep_maxerr=0d0, last_maxerr=0d0
-  logical, save :: exclude_from_line_list=.true.
-  !> with exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
-  !> levels an H model atom carries; .false. keeps them alongside the atom's continua
+  integer, save :: epos(3) !< mesh point of the largest change, in the global mesh
+  integer, save :: elvl    !< level of the largest change
+  integer, save :: eatom=1 !< atom of the largest change
+
+  ! Population convergence is judged per iteration (see execute).
+  integer, save :: sweep_iter=-1    !< iteration under way
+  integer, save :: sweep_active=0   !< number of NLTE patches that update in it
+  integer, save :: sweep_updates=0  !< number of them that have updated
+  integer, save :: n_finished=0     !< number of finished NLTE patches
+  real(8), save :: sweep_maxerr=0d0 !< largest change in the iteration under way
+  real(8), save :: last_maxerr=0d0  !< largest change in the previous, complete iteration
+
+  logical, save :: exclude_from_line_list=.true. !< drop the atoms' species from the line list (atom_params)
+  !> With exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
+  !> levels an H model atom carries; .false. keeps them alongside the atom's continua.
   logical, save :: exclude_h_continua=.true.
-  logical, save :: stale_stop_checked=.false.
-  logical, save :: departures_reported=.false.
-  logical, public, save :: external_sp=.false.
-  !> The output pass takes the lines of the atom's species from the line list, with the
-  !> atom's departure coefficients, instead of from the atom's own transitions:
-  !> output_from_line_list (the default) asks for it, output_grid_and_list says that the
-  !> run has both an explicit output grid and a line list (set by composition_pre_init),
-  !> and line_list_precedence is the decision.  Without an explicit grid the output
-  !> spectrum is built from the atom's own lines and these have to stay.
-  logical, save :: output_from_line_list=.true.
-  logical, public, save :: output_grid_and_list=.false., line_list_precedence=.false.
+  logical, save :: stale_stop_checked=.false.  !< a stop_nlte.flag left from an earlier run has been looked for
+  logical, save :: departures_reported=.false. !< the departures read with read_departures have been reported
+  logical, public, save :: external_sp=.false. !< the output spectrum has its own grid, not one made from the atoms
+
+  ! The output pass takes the lines of the atom's species from the line list, with the
+  ! atom's departure coefficients, instead of from the atom's own transitions. Without an
+  ! explicit grid the output spectrum is built from the atom's own lines, and these stay.
+  logical, save :: output_from_line_list=.true.         !< take these lines from the line list (atom_params)
+  logical, public, save :: output_grid_and_list=.false. !< the run has an explicit output grid and a line list
+  logical, public, save :: line_list_precedence=.false. !< both of the above: the output pass takes them from the line list
   !-----------------------------------------------------------------------------
 
 contains
 
+  !===============================================================================
+  !> Pre-initialises the patch: memory-less once its atoms are allocated, and
+  !> left out of the task list when it has neither atoms nor departures to read.
   !===============================================================================
   SUBROUTINE nlte_patch_pre_init (self)
     class(nlte_patch_t), target:: self
@@ -134,6 +147,11 @@ contains
     call trace%end(itimer)
   END SUBROUTINE nlte_patch_pre_init
 
+  !===============================================================================
+  !> Reads atom_params and the model atoms on the first call, ties them to their
+  !> species in the composition and sets their abundances. Then gives the patch
+  !> its own copies of the atoms, which share their data with the copies for the
+  !> output pass and, with decouple_continuum, the bound-bound and bound-free copies.
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
     class(nlte_patch_t) :: self
@@ -379,13 +397,13 @@ contains
   END SUBROUTINE pre_init_atom
 
   !===============================================================================
-  !> The run's copy of an atom whose file gives the id `id`: atoms/<id>.txt, named
+  !> The run's copy of an atom whose file gives the id `id`: `atoms/<id>.txt`, named
   !> after the id the atom takes in the run, that of its element or molecule (FE
   !> becomes Fe), or the file's id for a species the composition does not hold.
   !> A read_departures run finds the atom of saved departures by that id.
   !===============================================================================
   FUNCTION run_atom_file (id) RESULT (file)
-    character(len=*), intent(in) :: id
+    character(len=*), intent(in) :: id !< id of the atom file
     character(len=4096) :: file
     class(element_type), pointer :: element
     class(molec_type), pointer :: molecule
@@ -406,7 +424,9 @@ contains
   !> A classical-recipe switch of &atom_params is off ('') or names its recipe.
   !===============================================================================
   SUBROUTINE check_recipe (key, value, recipe)
-    character(len=*), intent(in) :: key, value, recipe
+    character(len=*), intent(in) :: key    !< name of the switch
+    character(len=*), intent(in) :: value  !< its value
+    character(len=*), intent(in) :: recipe !< the one recipe it can name
     !-----------------------------------------------------------------------------
     if (value == '' .or. value == recipe) return
     call console_error('&atom_params '//key//"='"//trim(value)//"': the recipe is '"// &
@@ -415,9 +435,14 @@ contains
   END SUBROUTINE check_recipe
 
   !===============================================================================
+  !> Makes the NLTE frequency grids of the atoms on the first call (one grid, or
+  !> one each for the bound-bound and bound-free transitions with
+  !> decouple_continuum), and the output spectrum from the atoms' lines unless it
+  !> has its own grid. Then points the patch at these spectra.
+  !===============================================================================
   SUBROUTINE pre_init_spectrum (self, output_sp)
     class(nlte_patch_t) :: self
-    type(atomic_spectrum_type), target :: output_sp
+    type(atomic_spectrum_type), target :: output_sp !< output spectrum, empty unless it has its own grid
     type(atomic_spectrum_type), save, target :: sp, bb_sp, bf_sp
     logical, save :: first_time=.true.
     logical :: save_sp, saved_already
@@ -521,6 +546,12 @@ contains
   END SUBROUTINE pre_init_spectrum
 
   !===============================================================================
+  !> Updates the populations: LTE populations in the first update, then one
+  !> solve of the statistical equilibrium per iteration from the accumulated
+  !> rates, with Ng acceleration. Judges the convergence of the iteration from the
+  !> largest change of the previous one, finishes the patch once it has converged,
+  !> looks for a stop request and saves the populations every save_every iterations.
+  !===============================================================================
   SUBROUTINE execute (self)
     class(nlte_patch_t) :: self
     class(atom_type), pointer :: atom
@@ -545,8 +576,8 @@ contains
     locally_converged = premature_finish
     m = self%n
     ! ng_step < 0 disables Ng; 0 selects the automatic trigger; > 0 keeps the
-    ! fixed ng_start/ng_step schedule.  The scheduling arithmetic now lives in
-    ! ng_acceleration, which needs the raw iteration number either way.
+    ! fixed ng_start/ng_step schedule, which ng_acceleration works out from the
+    ! raw iteration number.
     do_ng = ng_step >= 0
 
     if (save_rates>0) then
@@ -728,8 +759,8 @@ contains
     ! rt_patch raised flux_conv_signal in the PREVIOUS iteration, after nlte_patch
     ! had already solved these populations against the old radiation field. This
     ! execute() has now re-solved them against the converged field, so it is the
-    ! final solve for this z-patch -- finish it. `converged` (which freezes the
-    ! remaining rt tasks) is only set once EVERY z-patch has performed this final
+    ! final solve for this z-patch, which then finishes. `converged` (which freezes
+    ! the remaining rt tasks) is only set once EVERY z-patch has performed this final
     ! solve (count == dims(3)); setting it earlier would let the first patch's
     ! solve make the others skip theirs via pre_update.
     if (flux_convergence) then
@@ -771,7 +802,8 @@ contains
   !===============================================================================
   SUBROUTINE estimate_atom_memory (self, nlte, output)
     class(nlte_patch_t), intent(in) :: self
-    real(8), intent(out) :: nlte, output
+    real(8), intent(out) :: nlte   !< bytes during the NLTE iteration
+    real(8), intent(out) :: output !< bytes during the output pass
     real(8) :: cell, bytes
     integer :: i, nl
     !-----------------------------------------------------------------------------
@@ -791,6 +823,10 @@ contains
     end do
   END SUBROUTINE estimate_atom_memory
 
+  !===============================================================================
+  !> Finishes the patch: moves the departure coefficients to the departures the
+  !> RT tasks read, projects them onto the ray-aligned meshes and writes them. The
+  !> last NLTE patch writes the convergence report and releases the output tasks.
   !===============================================================================
   SUBROUTINE finish (self)
     class(nlte_patch_t):: self
@@ -852,6 +888,10 @@ contains
   END SUBROUTINE finish
 
   !===============================================================================
+  !> Makes the departures of the patch's atoms: read from `<atmos_file>/save/`
+  !> for the atoms a read_departures run finds there, which also start the
+  !> iteration from them, and allocated for the others.
+  !===============================================================================
   SUBROUTINE init_departures(self)
     class(nlte_patch_t), target :: self
     class(departure_pointer_t), pointer :: dep
@@ -877,10 +917,9 @@ contains
     endif
 
     ! Discover which of the requested atoms have precomputed departures by probing each
-    ! one's saved metadata file directly. This replaces os%get_filenames, whose shared
-    ! shell temp file ('.temp_files<thread>') races across the concurrent dispatch.x
-    ! processes the synthesis driver launches — they share a working directory and clobber
-    ! each other's temp file. inquire is pure Fortran: no shell, no temp file, no race.
+    ! one's saved metadata file with inquire. A directory listing through the shell
+    ! would need a temporary file, which the concurrent dispatch.x processes of a
+    ! synthesis driver, sharing one working directory, would overwrite.
     allocate(keys(self%natom))
     do i=1, self%natom
       atom => self%atoms(i)
@@ -937,7 +976,7 @@ contains
     do i=1, self%natom
       atom => self%atoms(i)
       adata => atom%data
-      ! every departure set carries the species key of its atom -- precomputed or not,
+      ! every departure set carries the species key of its atom, precomputed or not,
       ! and on every rotated copy; an unkeyed set would match no particle at all
       do k=1, 1+nmu
         call self%departures(atom%idep, k)%set_key(atom%id)
@@ -989,14 +1028,14 @@ contains
 
   !===============================================================================
   !> Write this patch's LTE populations and departure coefficients to
-  !> save/pop_<atom>_*.  An intermediate write (save_every) stores the unrotated
+  !> `save/pop_<atom>_*`.  An intermediate write (save_every) stores the unrotated
   !> populations only; the ray-aligned slots keep 1 until the final write, which
   !> follows project_populations.  Each write replaces the patch's file, and the
   !> meta row is added once.
   !===============================================================================
   SUBROUTINE write_populations (self, intermediate)
     class(nlte_patch_t), intent(inout), target :: self
-    logical, intent(in), optional :: intermediate
+    logical, intent(in), optional :: intermediate !< an intermediate write; by default the final one
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
@@ -1034,7 +1073,7 @@ contains
   END SUBROUTINE write_populations
 
   !===============================================================================
-  !> A stop request: the file <run_dir>/stop_nlte.flag, looked for by the last
+  !> A stop request: the file `<run_dir>/stop_nlte.flag`, looked for by the last
   !> nlte_patch of each iteration.  It ends the iterations the way convergence
   !> does, so every depth patch finishes with this iteration's solve and writes
   !> its departures.  The output pass then runs, unless the file's first word is
@@ -1069,7 +1108,11 @@ contains
     endif
   END SUBROUTINE check_stop_request
 
-  !====================================================================================
+  !===============================================================================
+  !> Projects the departure coefficients onto the ray-aligned mesh of each output
+  !> direction and sets the populations of the rotated atom copies from them,
+  !> renormalised to the rotated total number density.
+  !===============================================================================
   SUBROUTINE project_populations(self)
     class(nlte_patch_t), intent(inout), target :: self
     class(atom_type), pointer :: atom
@@ -1153,6 +1196,9 @@ contains
   END SUBROUTINE project_populations
 
   !===============================================================================
+  !> Writes the largest change of each level over the rank's NLTE patches to
+  !> `convergence_report_<rank>.txt`, once.
+  !===============================================================================
   SUBROUTINE save_convergence_report (self)
     class(nlte_patch_t) :: self
     integer :: lunit, i
@@ -1174,6 +1220,10 @@ contains
     endif
   END SUBROUTINE save_convergence_report
 
+  !===============================================================================
+  !> Prints the progress line of the iteration: the largest change, its level and
+  !> mesh point, and an asterisk after Ng-accelerated iterations. At console level 2
+  !> it prints the debug point's values and the flux convergence instead.
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(nlte_patch_t):: self
@@ -1230,10 +1280,13 @@ contains
   END SUBROUTINE print_post_update_info
 
   !===============================================================================
+  !> Sets a spectrum to the wavelengths of the opacity-sampling table that lie
+  !> within the atoms' continua (detailed_absmet).
+  !===============================================================================
   SUBROUTINE get_osmet_nu (self, sp)
     class(nlte_patch_t), target :: self
+    class(atomic_spectrum_type) :: sp !< spectrum set to the opacity-sampling wavelengths
     class(atom_type), pointer :: atom
-    class(atomic_spectrum_type) :: sp
     integer :: i, j, fs, fe
     !-----------------------------------------------------------------------------
     if (.not. osmet%initialised) return
@@ -1251,9 +1304,14 @@ contains
   END SUBROUTINE get_osmet_nu
 
   !===============================================================================
+  !> Deactivates the bound-free transitions of the LTE background that a model
+  !> atom carries as continua, matched by species and lower level (exclude_trace_cont).
+  !> Of a table hydrogen continuum with occupation probabilities, only the
+  !> dissolved-level part stays.
+  !===============================================================================
   SUBROUTINE exclude_double_continua (self, atom)
     class(nlte_patch_t), target :: self
-    type(atom_type) :: atom
+    type(atom_type) :: atom !< the model atom
     class(bftrans_type), pointer :: trans
     integer :: i, lower, kc, k
     logical :: ok, same_species
@@ -1334,7 +1392,7 @@ contains
   !> the hydrogen kernel honour.  Otherwise only the records that the atom
   !> reproduces are deactivated, so line-list lines the atom does not carry survive; the
   !> match is on rest frequency and gf, taken from the atom's own SoA copy (built on the
-  !> output transitions in pre_init_atom) so both sides carry the same conventions --
+  !> output transitions in pre_init_atom) so both sides carry the same conventions:
   !> isotope fraction divided out and fine-structure components split.
   !===============================================================================
   SUBROUTINE exclude_double_lines (self)
@@ -1400,11 +1458,15 @@ contains
   END SUBROUTINE exclude_double_lines
 
   !===============================================================================
+  !> The NLTE patch and the RT columns through its slab need each other; of the
+  !> other tasks, only the slab's composition patch is related.
+  !===============================================================================
   SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     class(nlte_patch_t) :: self
-    class(task_t), pointer :: another     !< another task in the list
-    logical :: needed, needs_me, download !< Is the other task: needed,
-    !    does it need me, should I download?
+    class(task_t), pointer :: another !< another task in the list
+    logical :: needed                 !< whether this patch needs the other task
+    logical :: needs_me               !< whether the other task needs this patch
+    logical :: download               !< whether to download the other task
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')
     if (another%kind == 'rt_column') then
@@ -1429,6 +1491,9 @@ contains
   END SUBROUTINE nlte_patch_nbor_relations
 
   !===============================================================================
+  !> Whether the debug point lies in the patch and level lvlcheck in the debug
+  !> atom (m3d_debug_params).
+  !===============================================================================
   FUNCTION check_in_bounds (self) result (cib)
     class(nlte_patch_t) :: self
     logical :: cib
@@ -1440,9 +1505,12 @@ contains
   END FUNCTION check_in_bounds
 
   !===============================================================================
+  !> Adds the RT columns of every window and direction to the neighbour list
+  !> found from the hash keys.
+  !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
     class(nlte_patch_t):: self
-    class(nbor_t), pointer:: nbors
+    class(nbor_t), pointer:: nbors !< the neighbour list
     integer :: key(4), i_nu, i_mu
     !-----------------------------------------------------------------------------
     call self%m3d_patch_t%init_nbors_hash(nbors)
@@ -1458,9 +1526,11 @@ contains
   END SUBROUTINE init_nbors_hash
 
   !===============================================================================
+  !> Appends the atom's abundance to abund.txt, from the first depth patch only.
+  !===============================================================================
   SUBROUTINE save_abundance_to_file (self, atom)
     class(nlte_patch_t), target :: self
-    class(atom_type) :: atom
+    class(atom_type) :: atom !< the model atom
     integer :: lunit
     !-----------------------------------------------------------------------------
     if (self%ipos(3)==0) then
@@ -1470,6 +1540,8 @@ contains
     endif
   END SUBROUTINE save_abundance_to_file
 
+  !===============================================================================
+  !> Aborts on NaN in the departure coefficients (check_NaN).
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
     class(nlte_patch_t):: self
