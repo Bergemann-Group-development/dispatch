@@ -24,9 +24,7 @@ PROJECT = Path("experiments/OpenMULTI3D")
 DOCS = (
     "README_INSTALL.md",
     "QUICKSTART.md",
-    "docs/FAQ.md",
     "docs/GLOSSARY.md",
-    "docs/GUIWorkflow.md",
     "docs/manual/",
     "HOP/README.md",
 )

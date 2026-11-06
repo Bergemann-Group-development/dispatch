@@ -77,7 +77,7 @@ PREF_PAGES = {
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
         # Both runners keep a synthesis alive across a server restart; the Slurm script
-        # must run `python -m tumult.synthesis.driver "$1"` (see docs/FAQ.md).
+        # must run `python -m tumult.synthesis.driver "$1"` (manual, Running on a cluster).
         ("workflow_runner", "Run synthesis workflows", "select", "local"),
         ("slurm_script", "Slurm batch script for workflows", "text", ""),
     ],

@@ -12,7 +12,7 @@ somewhere:
 
 The LineMasks view reuses the same gesture to extend the open set: ``begin_add`` puts the
 tool in *add* mode, where the only action is "Add window to <set>" and leaving the tool
-returns to that view. See ``docs/GUIWorkflow.md``.
+returns to that view.
 """
 from __future__ import annotations
 

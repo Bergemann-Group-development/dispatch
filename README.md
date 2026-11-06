@@ -22,9 +22,7 @@ Then follow these guides:
 
 - [README_INSTALL.md](experiments/OpenMULTI3D/README_INSTALL.md): requirements, the Python environment, the build, input data downloads and a verification run.
 - [QUICKSTART.md](experiments/OpenMULTI3D/QUICKSTART.md): a first LTE and NLTE synthesis, read and plotted in Python and opened in the GUI.
-- [docs/FAQ.md](experiments/OpenMULTI3D/docs/FAQ.md): departures, long jobs, abundances and other workflow questions.
-- [docs/GUIWorkflow.md](experiments/OpenMULTI3D/docs/GUIWorkflow.md): the TumultStudio tools.
-- [docs/manual/](experiments/OpenMULTI3D/docs/manual/): the LaTeX manual, including the namelist reference.
+- [docs/manual/](experiments/OpenMULTI3D/docs/manual/): the LaTeX manual, covering the calculations, TumultStudio, the Python workflows, running on a cluster, the physics and the namelist reference.
 
 ## DISPATCH
 

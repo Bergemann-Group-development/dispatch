@@ -29,7 +29,6 @@ the grid selection under ``"synthesis"``) and form names (the page slots ``synth
 own — the grid registry (Preferences → Atmosphere grids) and the NLTE model-atom selection
 every calculation shares — are constructed before this dialog and passed in; the
 preference sheets and the run-cache listing belong to :class:`preferences.page.PreferencesPage`.
-See ``docs/GUIWorkflow.md``.
 """
 from __future__ import annotations
 

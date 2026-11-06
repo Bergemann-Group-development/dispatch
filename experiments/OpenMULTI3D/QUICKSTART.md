@@ -269,9 +269,7 @@ picker to this checkout's `data/examples/sun_ba_1d` folder and press **Open run*
 NLTE flux appears on the canvas and in the object list on the left. Open
 `data/quickstart_ba_rich` the same way to overlay the abundance-changed run, and open the
 saved text file through the same picker with **Open** to add the cropped line. The canvas
-tools zoom, measure and compare the spectra; [docs/GUIWorkflow.md](docs/GUIWorkflow.md)
-describes them and the synthesis and analysis tools that run the same calculations from
-the GUI.
+tools zoom, measure and compare the spectra; the synthesis and analysis tools of the GUI run the same calculations as the Python workflows.
 
 **This is the end of the quickstart.** To remove what it created:
 
@@ -283,9 +281,7 @@ Where to go next:
 
 - The optional examples below cover viewing angles and broadening, the Python workflow
   interface and a 3D snapshot.
-- [docs/GUIWorkflow.md](docs/GUIWorkflow.md) for the GUI tools.
-- [docs/FAQ.md](docs/FAQ.md) for scripting departures, long calculations, abundance and
-  stellar-parameter analyses and the run cache.
+- The manual, [docs/manual/main.tex](docs/manual/main.tex), for the calculation recipes, the GUI, the Python workflows for departures, abundances and NLTE corrections, long calculations on a cluster and every namelist key.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md) for the terms these documents share.
 
 ---
@@ -378,14 +374,16 @@ here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` ob
 records the line-list pruning and whether departures were solved or reused. The first
 call takes a few seconds; repeating either call returns the cached result at once. The
 NLTE request solves the barium departures once and applies them in the formal solution
-that produces the spectrum; the LTE request skips the solve.
+that produces the spectrum; the LTE request skips the solve. The configuration names no
+metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs
+the downloaded tables (`python -m tumult.synthesis.input_data fetch absmet`) and
+`absmet="input/absmet_files"` in `SynthConfig`, as in the manual.
 
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
 interpolated at the star (`AtmosphereGrid("input/atmos/MARCS")`, after
 `python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (`Snapshot`), and as the input of the
-abundance and stellar-parameter workflows; [docs/FAQ.md](docs/FAQ.md) has the
-recipes. `rm -rf quickstart_synth data/quickstart_synth` removes this example's cache.
+abundance and stellar-parameter workflows, which the manual's Python Workflows section describes. `rm -rf quickstart_synth data/quickstart_synth` removes this example's cache.
 
 ## Optional: a 3D snapshot
 

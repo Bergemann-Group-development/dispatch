@@ -56,5 +56,4 @@ last iterations are all below 0.005%.
 `mg86g_rsg` is the sensitive case. The core of the Mg I 2852 A resonance line in its
 outer layers is so thick that its escape probability is close to the fp32 rounding of
 one. Before the spontaneous factor of the `'largest'` rate formulation was formed without
-cancellation, this run wandered at 0.2 to 0.5% per iteration for all 400 iterations (see
-`docs/FAQ.md`).
+cancellation, this run wandered at 0.2 to 0.5% per iteration for all 400 iterations.
