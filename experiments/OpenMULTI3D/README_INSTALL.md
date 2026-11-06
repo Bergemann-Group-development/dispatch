@@ -73,7 +73,7 @@ The build produces
 
 ## 4. Input data
 
-The repository tracks a minimal data set in `input/`, which includes everything the verification below needs: five MARCS models (dwarfs and giants, including the Sun), five model atoms (Ba, Fe, O and two for Mg), abundance tables, continuum and molecular opacity data and `input/linelists/master_line.txt`, a line list of atoms and the common molecules, most of its lines between 3000 and 9000 Å.
+The repository tracks a minimal data set in `input/`, which includes everything the verification below needs: five MARCS models (dwarfs and giants, including the Sun), four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data and `input/linelists/SIU_masterline_Bergemann2026.txt`, a line list of atoms and the common molecules, most of its lines between 3000 and 9000 Å.
 
 The larger inputs are not in git. They can be fetched from TumultStudio's Preferences
 or from the command line, whichever suits; both use the same code and skip files that are
@@ -172,7 +172,6 @@ three lines print with these values.
   its preferences, recent files and saved workspaces in `.tumultstudio.json` in the
   directory it was started from (`TUMULT_CONFIG` names another file); the file is
   git-ignored. The manual's TumultStudio section describes the app.
-- The source reference of the Fortran and C code in `SRC/` and `HOP/` (modules, types, procedures, call relations) is built with [Doxygen](https://www.doxygen.nl) and Graphviz by `doxygen docs/Doxyfile`, which writes `build/doxygen/html/index.html`. Each push to `main` publishes it to the repository's GitHub Pages site.
 
 ## 7. Troubleshooting
 

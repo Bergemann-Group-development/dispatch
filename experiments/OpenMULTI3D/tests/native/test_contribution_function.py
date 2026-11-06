@@ -12,7 +12,7 @@ core at mu = 0.2 included. A missing 1/mu, wrong flux weights or per-Hz units fa
 1.5 % tolerance by far.
 
 Needs the built ``dispatch.x`` and the tracked solar MARCS model, Ba atom and
-``master_line.txt``.
+``SIU_masterline_Bergemann2026.txt``.
 """
 import os
 import subprocess
@@ -29,11 +29,11 @@ EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
 ATOM = Path('input/atoms/atom.ba06')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 
 pytestmark = pytest.mark.skipif(
     not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, ATOM, LINELIST))),
-    reason='needs dispatch.x, the solar MARCS model, atom.ba06 and master_line.txt')
+    reason='needs dispatch.x, the solar MARCS model, atom.ba06 and SIU_masterline_Bergemann2026.txt')
 
 
 @pytest.fixture(scope='module')

@@ -65,7 +65,7 @@ def convert_broadening(ion, gvdw, grad, gstk):
     One code does not map exactly. ``-20 < gvdw < 0`` is Turbospectrum's 'W' recipe, which
     HOP makes temperature independent by dividing out the ``vbar2**0.3`` it applies
     later, while Korg scales it as T^0.3; the value returned matches HOP at 10,000 K and
-    drifts from it elsewhere. It is rare: in a 200 A extract of `master_line.txt` it
+    drifts from it elsewhere. It is rare: in a 200 A extract of `SIU_masterline_Bergemann2026.txt` it
     covers 1 of 6168 lines.
     """
     is_mol = ion in molecule_dict

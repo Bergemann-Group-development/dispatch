@@ -40,7 +40,7 @@ folder, ran = tm.launch(f'{OUT}/o_sun', nml_settings={
 folder, ran = tm.launch(f'{OUT}/lte_6162', nml_settings={
     'io_params': {'datadir': 'data', 'do_trace': False},
     'atmos_params': {'atmos_file': 'input/atmos/sun.mod'},
-    'linelist_params': {'linelist_file': 'input/linelists/master_line.txt'},
+    'linelist_params': {'linelist_file': 'input/linelists/SIU_masterline_Bergemann2026.txt'},
     'spectrum_params': {'R_sampling': 5e5, 'aa_blue': 6160.0, 'aa_red': 6164.0}},
     threads=4, verbose=0)
 run = tm.read(folder)

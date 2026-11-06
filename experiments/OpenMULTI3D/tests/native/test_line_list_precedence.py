@@ -8,7 +8,7 @@ matched to the atom's levels (``match_nlte_levels``) and takes its departures. W
 flag only lines with level indices are in NLTE, so the list line stays in LTE. The wings
 differ, since the list carries hyperfine and isotope components and its own damping.
 
-Needs the built ``dispatch.x``, the solar MARCS model, ``atom.ba06`` and ``master_line.txt``.
+Needs the built ``dispatch.x``, the solar MARCS model, ``atom.ba06`` and ``SIU_masterline_Bergemann2026.txt``.
 """
 import os
 import subprocess
@@ -24,13 +24,13 @@ EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
 ATOM = Path('input/atoms/atom.ba06')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 
 pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, ATOM, LINELIST))),
-        reason='needs dispatch.x, the solar MARCS model, atom.ba06 and master_line.txt'),
+        reason='needs dispatch.x, the solar MARCS model, atom.ba06 and SIU_masterline_Bergemann2026.txt'),
 ]
 
 

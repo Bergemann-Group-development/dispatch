@@ -137,11 +137,10 @@ input/atmos/*
 input/atoms/*
 !input/atoms/atom.ba06
 !input/atoms/atom.fe607a
-!input/atoms/atom.mg86e
 !input/atoms/atom.mg86g
 !input/atoms/atom.o41f
 !input/linelists/
 input/linelists/*
-!input/linelists/master_line.txt
+!input/linelists/SIU_masterline_Bergemann2026.txt
 !input/linemasks/
 !input/linemasks/**

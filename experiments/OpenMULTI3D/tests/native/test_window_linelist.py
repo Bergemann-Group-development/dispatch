@@ -7,7 +7,7 @@ kept the size of the unmerged one. The checks compare the number of lines read w
 count of the equivalent single windows. They run on whatever compiler built ``dispatch.x``;
 the regression only shows on an ifort build or a gfortran one with ``-fno-realloc-lhs``.
 
-Needs the built ``dispatch.x``, the solar MARCS model and ``master_line.txt``.
+Needs the built ``dispatch.x``, the solar MARCS model and ``SIU_masterline_Bergemann2026.txt``.
 """
 import os
 import re
@@ -20,13 +20,13 @@ ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = Path('input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_'
              'r+0.00_s+0.00.mod')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 
 pytestmark = [
     pytest.mark.requires_input_data,
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and all((ROOT / p).is_file() for p in (MARCS, LINELIST))),
-        reason='needs dispatch.x, the solar MARCS model and master_line.txt'),
+        reason='needs dispatch.x, the solar MARCS model and SIU_masterline_Bergemann2026.txt'),
 ]
 
 

@@ -12,7 +12,7 @@ follow from Galilean invariance and need no reference run:
   vz > 0, which catches a wrong sign or a shift applied to the wrong hemisphere;
 - the NLTE departures do not change.
 
-Needs the built ``dispatch.x`` and ``libhop``, the solar MARCS model, ``master_line.txt``
+Needs the built ``dispatch.x`` and ``libhop``, the solar MARCS model, ``SIU_masterline_Bergemann2026.txt``
 and ``atom.mg86g``.
 """
 import os
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EXECUTABLE = ROOT / 'dispatch.x'
 MARCS = ROOT / 'input' / 'atmos' / ('p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_'
                                      'o+0.00_r+0.00_s+0.00.mod')
-LINELIST = Path('input/linelists/master_line.txt')
+LINELIST = Path('input/linelists/SIU_masterline_Bergemann2026.txt')
 ATOM = Path('input/atoms/atom.mg86g')
 C_KMS = 299792.458
 
@@ -39,7 +39,7 @@ pytestmark = [
     pytest.mark.skipif(
         not (EXECUTABLE.is_file() and HOP_LIB.is_file() and MARCS.is_file()
              and all((ROOT / p).is_file() for p in (LINELIST, ATOM))),
-        reason='needs dispatch.x, libhop, the solar MARCS model, master_line.txt and atom.mg86g'),
+        reason='needs dispatch.x, libhop, the solar MARCS model, SIU_masterline_Bergemann2026.txt and atom.mg86g'),
 ]
 
 
