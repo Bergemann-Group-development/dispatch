@@ -21,9 +21,8 @@ MODULE nlte_patch_mod
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
     e_excitation, e_ionisation, h_excitation, h_ionisation, h_forbidden, upsilon_floor, &
     ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w, line_grid_file
-  USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
-  USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
+  USE ion_mod, only: ion_type, particle_type, debye_shield
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
   USE line_types_mod, only: linelist_type
@@ -58,15 +57,12 @@ MODULE nlte_patch_mod
     class(atomic_spectrum_type), pointer :: bf_sp=>null()          !< frequencies of bf_atoms
     class(atomic_spectrum_type), pointer :: bb_sp=>null()          !< frequencies of bb_atoms
 
-    real(8) :: maxerr=0                          !< largest weighted change of the departures in the last update, signed
-    real(8) :: global=0                          !< largest such change over all NLTE patches in the previous, complete iteration
-    real(8), dimension(:), allocatable :: lvlerr !< unused
-    real(8) :: local                             !< change of level lvlcheck at the debug point in the last update
-    integer :: natom=0                           !< number of model atoms
-    logical :: update_skipped=.false.            !< unused (never set)
-    logical :: atom_allocated=.false.            !< pre_init_atom has allocated the atoms
-    logical :: molec                             !< unused
-    logical :: pop_meta_written=.false.          !< this patch has its rows in `pop_<atom>_meta.txt`
+    real(8) :: maxerr=0                 !< largest weighted change of the departures in the last update, signed
+    real(8) :: global=0                 !< largest such change over all NLTE patches in the previous, complete iteration
+    real(8) :: local                    !< change of level lvlcheck at the debug point in the last update
+    integer :: natom=0                  !< number of model atoms
+    logical :: atom_allocated=.false.   !< pre_init_atom has allocated the atoms
+    logical :: pop_meta_written=.false. !< this patch has its rows in `pop_<atom>_meta.txt`
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -108,7 +104,6 @@ MODULE nlte_patch_mod
   logical, save :: exclude_h_continua=.true.
   logical, save :: stale_stop_checked=.false.  !< a stop_nlte.flag left from an earlier run has been looked for
   logical, save :: departures_reported=.false. !< the departures read with read_departures have been reported
-  logical, public, save :: external_sp=.false. !< the output spectrum has its own grid, not one made from the atoms
 
   ! The output pass takes the lines of the atom's species from the line list, with the
   ! atom's departure coefficients, instead of from the atom's own transitions. Without an
@@ -160,7 +155,6 @@ contains
     class(element_type), pointer :: element
     class(molec_type), pointer :: molecule
     class(ion_type), pointer :: ion
-    class(massive_type), pointer :: species
     character(len=4096), save, dimension(:), allocatable :: atom_file
     character(len=4096), save :: atom_root=''
     real(8), dimension(:), allocatable :: abundance
@@ -446,6 +440,7 @@ contains
     type(atomic_spectrum_type), save, target :: sp, bb_sp, bf_sp
     logical, save :: first_time=.true.
     logical :: save_sp, saved_already
+    logical :: external_sp
     integer :: i
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -557,10 +552,6 @@ contains
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
-    class(line_type), pointer :: line
-    class(cont_type), pointer :: cont
-    class(element_type), pointer :: element
-    class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji, rij, rji
     real(8), dimension(:,:), allocatable :: w, c
     real(8) :: r_up, r_down
@@ -905,7 +896,7 @@ contains
     integer :: itimer=0
     logical :: found
     !-----------------------------------------------------------------------------
-    call trace%begin('composition_patch_t%init_departures', itimer=itimer)
+    call trace%begin('nlte_patch_t%init_departures', itimer=itimer)
 
     nprecomp = 0
     if (read_departures) then
@@ -1242,9 +1233,7 @@ contains
         write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
       endif
       call io%header(text)
-      if (self%update_skipped) then
-        call self%print_to_stdout(text='update skipped')
-      elseif (self%m3d_patch_t%check_in_bounds()) then
+      if (self%m3d_patch_t%check_in_bounds()) then
         call self%print_to_stdout(arr=memcheck(1:4))
       else
         call self%print_to_stdout()
@@ -1397,7 +1386,6 @@ contains
   !===============================================================================
   SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
-    class(massive_type), pointer :: species
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
     integer :: j, ia
