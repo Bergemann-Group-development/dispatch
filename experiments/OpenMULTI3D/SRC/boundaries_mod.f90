@@ -171,12 +171,13 @@ CONTAINS
   FUNCTION mask (self, m) RESULT (out)
     class(boundaries_t)      :: self
     class(mesh_t), pointer   :: m(:) !< meshes of the patch, one per axis
-    logical                  :: out(m(1)%gn,m(2)%gn,m(3)%gn)
+    logical, allocatable     :: out(:,:,:)
     !............................................................................
     integer                  :: ix, iy, iz
     real(8)                  :: x, y, z, r
     !-----------------------------------------------------------------------------
     call trace%begin('standard_boundaries_t%mask')
+    allocate (out(m(1)%gn,m(2)%gn,m(3)%gn))
     out(:,:,:) = .false.
     out(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = .true.
     if (self%is_set (bits%spherical)) then

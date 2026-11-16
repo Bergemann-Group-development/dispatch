@@ -314,7 +314,7 @@ contains
     W = lw_select(u0 - ps, ut - E, thin)
   end subroutine linear_weights
 
-  include '../HOP/exp_neg.inc'
+#include "../HOP/exp_neg.inc"
 
   !===============================================================================
   !> Psi = t*P(t), the series form of linear_weights for |t| <= 1.
