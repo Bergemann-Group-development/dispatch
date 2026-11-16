@@ -1,3 +1,4 @@
 *.f90 filter=id
 *.nml filter=id
 * text=auto
+*.ipynb linguist-documentation
