@@ -319,7 +319,7 @@ Commands in this manual are typed in a terminal (on macOS, the Terminal applicat
 
 \begin{itemize}
     \item macOS or Linux. The build was verified on macOS 15 with Homebrew GCC 15; Linux x86-64 uses the same commands.
-    \item A Fortran compiler: \Code{gfortran}, \Code{ifort} or \Code{ifx}. On Apple silicon use \Code{gfortran}.
+    \item A Fortran compiler: \Code{gfortran} 11 or later, or Intel's \Code{ifort}. Intel has discontinued \Code{ifort}; its last release (2021.13, oneAPI HPC Toolkit 2024.2) is the recommended Intel compiler. \Code{ifx} builds the code too. The build is tested with \Code{gfortran} 11.5 to 16.2, \Code{ifort} 2021.11 and 2021.13, and \Code{ifx} 2024.0 and 2026.2. On Apple silicon use \Code{gfortran}.
     \item \Code{make} and \Code{perl}.
     \item Python 3.11 or later with \Code{venv} and \Code{pip}, for \File{tumult} and TumultStudio.
 \end{itemize}
