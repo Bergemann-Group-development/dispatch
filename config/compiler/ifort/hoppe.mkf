@@ -1,3 +1,7 @@
-OPT = -O3
-HW = -xAVX -axCORE-AVX512 -align array64byte -qopt-assume-safe-padding -assume norealloc_lhs
+# Production, multi-host build: an AVX2 baseline, which every x86-64 host since
+# Haswell and AMD Zen runs, plus an auto-dispatched AVX-512 path for Intel CPUs
+# that have it. HW names the instruction set only; make HW=-xHost builds for this
+# host alone.
+OPT = -O3 -align array64byte -qopt-assume-safe-padding
+HW = -march=core-avx2 -axCORE-AVX512
 DEBUG = -traceback
