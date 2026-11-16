@@ -63,4 +63,4 @@ DISPATCH is a task-based framework for astrophysical simulations, primarily 3D r
 
 ## License
 
-OpenMULTI3D is distributed under the GNU General Public License version 3 only ([`experiments/OpenMULTI3D/LICENSE`](experiments/OpenMULTI3D/LICENSE)); its authors and the licenses of the code and data it builds on are listed in [`experiments/OpenMULTI3D/AUTHORS`](experiments/OpenMULTI3D/AUTHORS). DISPATCH is distributed under the BSD-3-Clause license in [`LICENSE`](LICENSE).
+OpenMULTI3D is distributed under the GNU General Public License version 3 only ([`experiments/OpenMULTI3D/LICENSE`](experiments/OpenMULTI3D/LICENSE), with a copy in [`LICENSE-GPL`](LICENSE-GPL)); its authors and the licenses of the code and data it builds on are listed in [`experiments/OpenMULTI3D/AUTHORS`](experiments/OpenMULTI3D/AUTHORS). DISPATCH is distributed under the BSD-3-Clause license in [`LICENSE`](LICENSE).
