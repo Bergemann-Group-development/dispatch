@@ -1741,7 +1741,7 @@ Li    2
 
 The reader tries the native order and, if any of the four header records fails, reopens the file big-endian. The solar table \File{absmet} is little-endian; the metal-poor \File{m-1.00a+0.40\dots}, \File{m-2.00\dots} and \File{m-3.00\dots} tables are big-endian.
 
-\Code{hopacity.absmet.build\_absmet} computes a table in this layout with HOP from a line list, for any composition (\File{HOP/README.md}). At each node it solves the equation of state for the density at which $P_6$ takes the node's value, and the line opacity is the line-list opacity minus HOP's continuum. The line list should include \File{Hlinedata}, since HOP's continuum carries only the bound-free part of hydrogen.
+\Code{hopacity.absmet.build\_absmet} computes a table in this layout with HOP from a line list, for any composition. At each node it solves the equation of state for the density at which $P_6$ takes the node's value, and the line opacity is the line-list opacity minus HOP's continuum. The line list should include \File{Hlinedata}, since HOP's continuum carries only the bound-free part of hydrogen.
 
 \subsection{Window files}\label{sec:windowfiles}
 
