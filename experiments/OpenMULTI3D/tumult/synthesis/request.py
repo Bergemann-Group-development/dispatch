@@ -242,7 +242,7 @@ class SynthRequest:
 
     ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) applied to every
     run, later ones winning, on top of the geometry preset the atmosphere selects (``1d``
-    or ``3d``); the request's own settings and ``config.expert`` override them. The NLTE
+    or ``3d``); the request's own settings and ``config.nml_settings`` override them. The NLTE
     step presets are applied by the calculation the departures select and are not listed
     here.
 

@@ -242,12 +242,12 @@ def test_fit_refuses_what_fitting_does_not_support(tmp_path):
 
 def test_fit_synthesises_each_trial_point_as_the_request_over_the_span(tmp_path, monkeypatch):
     """Every trial point is the fit's own request at that point, over one span window, so
-    the configuration, expert settings, sampling and padding reach dispatch unchanged; the
+    the configuration, namelist settings, sampling and padding reach dispatch unchanged; the
     observation is compared only inside the fit windows."""
     from tumult.synthesis import Abundances, api, operations, snapshot_grid
     request = _request(AtmosphereGrid('grid'), tmp_path, [(5000, 5001), (5002, 5003)],
                        abundance_step=0.5, preferences={'fit_max_rounds': 3},
-                       expert={'spectrum_params': {'daa': 0.01}})
+                       nml_settings={'spectrum_params': {'daa': 0.01}})
     request = request.update(abundances={'Ca': 0.1})
     executed = []
 
@@ -326,13 +326,13 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
     assert windowed.settings['spectrum_params']['R_sampling'] == 1e6
 
 
-def test_snapshot_sampled_opacity_defaults_allow_expert_override(tmp_path):
-    expert = {
+def test_snapshot_sampled_opacity_defaults_allow_nml_settings_override(tmp_path):
+    nml_settings = {
         'rt_iteration_params': {'sample_back_opac': False, 'sample_linelist': False},
         'rt_output_params': {'sample_back_opac': False, 'sample_linelist': False},
     }
     request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
-                       star=(4548, 3.964, 0), expert=expert)
+                       star=(4548, 3.964, 0), nml_settings=nml_settings)
     settings = workflows.resolve_request(request, {}).settings
     for section in ('rt_iteration_params', 'rt_output_params'):
         assert settings[section]['sample_back_opac'] is False

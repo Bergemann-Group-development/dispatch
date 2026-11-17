@@ -106,7 +106,7 @@ class Turbospectrum(SpectrumTable):
         llist_file = tmp_txtfile(stack)
         llist_list = tmp_txtfile(stack)
         mask = (llist.lam0 >= lam_min) & (llist.lam0 <= lam_max)
-        llist[mask].write_to_ts_format(llist_file)
+        llist[mask].to_file(llist_file, fmt='ts')
         with open(llist_list, 'w') as f:
             f.write(str(llist_file))
         return str(llist_list)

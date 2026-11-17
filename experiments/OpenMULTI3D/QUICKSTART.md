@@ -49,7 +49,7 @@ wavelength it reads to standard air, whatever its range.
 ## 2. Run the calculation
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
+$ ./dispatch.x examples/sun_ba_1d.nml
 ```
 
 `dispatch.x` takes one namelist and writes its run under `data/<namelist path without .nml>/`,
@@ -65,8 +65,7 @@ OpenMULTI3D terminated successfully.
 ```
 
 after about one second on eight cores. The installation check created the same run;
-running it again overwrites it. `OMP_STACKSIZE` gives the OpenMP threads the stack the
-solver needs; the Python launcher used in step 6 sets it for you.
+running it again overwrites it.
 
 Before execution, `Memory estimate: peak ...` reports the expected peak of the memory
 Dispatch registers on each MPI rank, in GiB (2³⁰ bytes). The equation-of-state setup,
@@ -209,7 +208,7 @@ the new namelist is written under the name you give:
 
 ```python
 folder, ran = tm.launch("quickstart_ba_rich", default="examples/sun_ba_1d.nml",
-                        nml_settings={"atom_params": {"abundance": 2.41}},
+                        nml_settings=dict(atom_params=dict(abundance=2.41)),
                         verbose=1)
 rich = tm.read(folder)
 print(rich.abundances["Ba"])
@@ -225,7 +224,7 @@ This writes `quickstart_ba_rich.nml` here, runs it with the console output in
 `atom_params` `abundance` entry overrides the atom file's abundance, so A(Ba) rises by
 0.3 dex. `ran` is `False` when a finished run of that name already exists, in which case
 nothing is recomputed. Any namelist entry can be overridden the same way, for example
-`{"nlte_params": {"convlim": 1e-3}}` for a tighter convergence limit. Editing a copy of
+`dict(nlte_params=dict(convlim=1e-3))` for a tighter convergence limit. Editing a copy of
 `examples/sun_ba_1d.nml` by hand and running the copy with `dispatch.x` is equivalent.
 
 ```python
@@ -347,7 +346,7 @@ config = SynthConfig(root=".", cache="quickstart_synth",
                      linelist="input/linelists/SIU_masterline_Bergemann2026.txt",
                      abundances="input/abund/abund_magg22.txt",
                      R_sampling=200_000,
-                     expert={"linelist_params": {"match_nlte_levels": True}})
+                     nml_settings=dict(linelist_params=dict(match_nlte_levels=True)))
 marcs = Atmosphere("input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=marcs,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
@@ -414,7 +413,7 @@ The snapshot is a 160 × 160 × 159 cube; `examples/sun_ba_3d.nml` samples it on
 demonstration. Run it:
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_3d.nml
+$ ./dispatch.x examples/sun_ba_3d.nml
 ```
 
 The iteration blocks look like the 1D ones, and each takes far longer: every iteration

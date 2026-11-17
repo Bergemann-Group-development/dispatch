@@ -31,7 +31,7 @@ PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": 
                "abund_file": "abundances", "absmet": "absmet", "R": "R_sampling",
                "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
-               "max_threads": "threads", "expert_settings": "expert"}
+               "max_threads": "threads", "nml_settings": "nml_settings"}
 
 
 def _path(value):
@@ -65,8 +65,8 @@ class SynthConfig:
     microturbulence lattice of a grid, ``interpolation`` the grid node selection and
     ``threads`` the CPU budget of one operation (``None`` uses every core).
 
-    ``expert`` holds namelist sections merged into every run's settings last, e.g.
-    ``{"nlte_params": {"convlim": 1e-3}}``; ``preferences`` holds further entries of the
+    ``nml_settings`` holds namelist sections merged into every run's settings last, as
+    in :func:`tumult.launch`, e.g. ``dict(nlte_params=dict(convlim=1e-3))``; ``preferences`` holds further entries of the
     GUI preference dictionary (``fit_max_rounds``, ...). Both are escape hatches
     and are recorded with every result.
     """
@@ -81,7 +81,7 @@ class SynthConfig:
     vmic_step: float = 0.5
     interpolation: str = "NaturalNeighbor"
     threads: int | None = None
-    expert: dict = field(default_factory=dict)
+    nml_settings: dict = field(default_factory=dict)
     preferences: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -94,7 +94,7 @@ class SynthConfig:
         set_("linelist_skirt", _aa(self.linelist_skirt))
         set_("abundance_step", float(self.abundance_step))
         set_("vmic_step", float(self.vmic_step))
-        set_("expert", {str(k): dict(v) for k, v in dict(self.expert or {}).items()})
+        set_("nml_settings", {str(k): dict(v) for k, v in dict(self.nml_settings or {}).items()})
         set_("preferences", dict(self.preferences or {}))
         if not self.R_sampling > 0:
             raise ValueError("R_sampling must be positive.")
@@ -121,7 +121,7 @@ class SynthConfig:
             "R": self.R_sampling, "linelist_skirt_aa": self.linelist_skirt,
             "abund_step": self.abundance_step, "vmic_step": self.vmic_step,
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
-            "expert_settings": self.expert,
+            "nml_settings": self.nml_settings,
         }
         for key, name in (("linelist", "linelist"), ("abund_file", "abundances"),
                           ("absmet", "absmet")):
@@ -145,7 +145,7 @@ class SynthConfig:
                 values[name] = None
         if "threads" in values:
             values["threads"] = int(values["threads"] or 0) or None
-        values["expert"] = values.get("expert") or {}
+        values["nml_settings"] = values.get("nml_settings") or {}
         return cls(**values, preferences=prefs)
 
     def to_dict(self):
