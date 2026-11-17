@@ -38,12 +38,12 @@ MODULE io_mod
     !integer:: dims(3)=0         ! FIXME
     integer:: mpi_dims(3)=1     ! FIXME
     integer:: print_every=0, iprint=0       ! print cadence
-    character(len=512):: inputname          ! input namelist file (e.g. run.nml)
-    character(len=512):: inputdir='data/'   ! input directory (restart_mod)
-    character(len=512):: run_name=''        ! run part of input file
-    character(len=512):: data_dir='data/'   ! data
-    character(len=512):: run_dir='data/'    ! data/run
-    character(len=512):: outputname         ! same as run_dir, for compatibily
+    character(len=4096):: inputname          ! input namelist file (e.g. run.nml)
+    character(len=4096):: inputdir='data/'   ! input directory (restart_mod)
+    character(len=4096):: run_name=''        ! run part of input file
+    character(len=4096):: data_dir='data/'   ! data
+    character(len=4096):: run_dir='data/'    ! data/run
+    character(len=4096):: outputname         ! same as run_dir, for compatibily
     character(len=512):: top                ! base name
     character(len=1):: sep = '/'
     character(len=72):: &
@@ -130,7 +130,8 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=256):: filename, datadir='data'
+  character(len=4096):: filename
+  character(len=256):: datadir='data'
   character(len=256), save:: top='../../'
   character(len=16), save:: method='background'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
@@ -149,7 +150,7 @@ SUBROUTINE init (self, name)
   character(len=16), save:: solver=''
   character(len=32), save:: branch='', opts=''
   character(len=128), save:: compiler=''
-  character(len=512):: command
+  character(len=4096):: command
   character(len=120):: ids = &
   '$Id$'
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
@@ -173,7 +174,11 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     ! The input filename is input.nml, or as given on the command line
     !---------------------------------------------------------------------------
-    call getarg(1,filename)                                     ! command line
+    call get_command_argument (1, filename, status=iostat)      ! command line
+    if (iostat == -1) then
+      print '(a,i0,a)', ' The namelist path is longer than ', len(filename), ' characters'
+      stop 1
+    end if
     if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run.nml
       i = index(filename,'.',back=.true.) - 1                   ! last char
@@ -438,7 +443,7 @@ SUBROUTINE open_rank_file (unit, ext, form, thread)
   integer:: unit
   integer, optional:: thread
   character(len=*):: ext, form
-  character(len=256):: filename
+  character(len=4096):: filename
   !-----------------------------------------------------------------------------
   if (present(thread)) then
     write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &

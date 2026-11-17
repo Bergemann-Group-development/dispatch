@@ -17,7 +17,7 @@ MODULE io_unit_mod
     integer:: iodir = -1
     character(len=256):: inputname='input.nml', data_dir='data/', top='../../'
     character(len=256):: run_dir='data/', inputdir='data/'
-    character(len=256):: rankbase='rank', threadbase='thread'
+    character(len=4096):: rankbase='rank', threadbase='thread'
   contains
     procedure, nopass:: print_id
   end type
