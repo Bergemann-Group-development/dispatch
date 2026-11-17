@@ -87,6 +87,7 @@ It prints the electron density of a solar-photosphere state, `[2.02576419e+13]` 
 | `pe`, `pg` | electron and gas pressure | dyn cm⁻² |
 | `energy` | internal energy | erg g⁻¹ |
 | `chi500` | extinction at 5000 Å (air) | cm⁻¹ |
+| `log_p6` | log₁₀ of the van der Waals perturber pressure P(H I) + 0.41 P(He I) + 0.85 P(H₂) | dyn cm⁻² |
 
 `species_density('Fe I')` returns the number density [cm⁻³] of one atom, ion or molecule; pass `species=['Fe I', 'CO']` to `load_state` to keep the ones you will ask for. Instead of `rho` you can give `ne`, and `rho` is then solved for.
 
@@ -120,7 +121,7 @@ It takes about a second.
 
 ### Composition and options
 
-`HopEOS` sets the chemical composition. `feh` scales the solar abundances (Magg et al. 2022 by default) of all elements heavier than Li to a metallicity [Fe/H]; `alpha_enhancement` is added to the α elements O, Ne, Mg, Si, S, Ar, Ca and Ti; `abundances='Mg=7.70 Fe=7.40'` sets single elements to absolute abundances log ε (on the scale log ε(H) = 12), or adds the values to the scaled ones if you also pass `relative_abundances=True`. `abund_file`, `absdat_file`, `isotope_file` and `molec_file` replace the bundled abundance, continuum, isotope and molecular data. Any other HOP setting is a keyword argument too, and `hop.option_names()` lists them.
+`HopEOS` sets the chemical composition. `feh` scales the solar abundances (Magg et al. 2022 by default) of all elements heavier than Li to a metallicity [Fe/H]; `alpha_enhancement` is added to the α elements O, Ne, Mg, Si, S, Ar, Ca and Ti; `abundances='Mg=7.70 Fe=7.40'` sets single elements to absolute abundances log ε (on the scale log ε(H) = 12), or adds the values to the scaled ones if you also pass `relative_abundances=True`. `abund_file`, `absdat_file`, `isotope_file` and `molec_file` replace the bundled abundance, continuum, isotope and molecular data. Any other HOP setting is a keyword argument too, and `hop.option_names()` lists them. `hop.abundances` returns the abundances log ε that result, by atomic number Z (index Z − 1), with −99 for elements HOP does not carry.
 
 HOP keeps its state in the process, so only one `HopEOS` can be open at a time. Use it in a `with` block, as here, or call `close()` before opening the next.
 
