@@ -82,7 +82,7 @@ def launch(name, abundance=REFERENCE, cntrbf=False):
         "io_params": {"datadir": "."},
         "atmos_params": {"atmos_file": ATMOSPHERE},
         "atom_params": {"atom_file": ATOM, "abundance": abundance},
-        "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
+        "opac_table_params": {"absmet_file": "./input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin"},
         "linelist_params": {"linelist_file": "./input/linelists/SIU_masterline_Bergemann2026.txt",
                             "match_nlte_levels": True},
         "spectrum_params": {"window_file": f"./{WINDOW_FILE}", "R_sampling": 5e5},
@@ -105,7 +105,7 @@ def launch_demo(name, blends=False):
     }
     if blends:
         cfg |= {
-            "opac_table_params": {"absmet_file": "./input/absmet_files/absmet"},
+            "opac_table_params": {"absmet_file": "./input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin"},
             "linelist_params": {"linelist_file": "./input/linelists/SIU_masterline_Bergemann2026.txt",
                                 "match_nlte_levels": True},
             "spectrum_params": {"R_sampling": 5e5, "aa_blue": 4550, "aa_red": 4558},

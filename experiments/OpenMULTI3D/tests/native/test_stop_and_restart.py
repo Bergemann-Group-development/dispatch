@@ -40,7 +40,7 @@ def _namelist(work, atmos, extra=''):
 &atmos_params {atmos} /
 &atom_params atom_file='{ATOM}' relative_abundance=T /
 &composition_params abund_file='input/abund/abund_magg22.txt' /
-&opac_table_params absmet_file='input/absmet_files/absmet' /
+&opac_table_params absmet_file='input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin' /
 &nlte_params convlim=1d-5 /
 &rt_iteration_params maxiter=400 /
 &spectrum_params aa_blue=5170 aa_red=5175 R_sampling=2e5 /

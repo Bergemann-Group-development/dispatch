@@ -277,3 +277,24 @@ def test_probe_stars_share_the_target_runs_and_add_only_their_own_nodes(tmp_path
     target, probe = results
     assert target[0][0] == (5750., [('a', 1.0)])
     assert probe[1][0] == (5850., [('a', 1.0), ('b', 1.0)])
+
+
+def test_absmet_folder_gives_each_feh_the_nearest_table(tmp_path):
+    """A table carries no metallicity scaling, so each grid [Fe/H] takes the table of the
+    nearest [Fe/H]; the solar table must not be confused with the c+0.00, n+0.00, ...
+    fields of the metal-poor names."""
+    names = {feh: f"m{feh:+.2f}a{a:+.2f}c+0.00n+0.00o{a:+.2f}r+0.00s+0.00v+1.00.bin"
+             for feh, a in ((0.0, 0.0), (-1.0, 0.4), (-2.0, 0.4), (-3.0, 0.4))}
+    for name in names.values():
+        (tmp_path / name).touch()
+    (tmp_path / "README.txt").touch()
+    grid = {(5000., 4., feh): "atmos" for feh in (0.25, 0.0, -0.4, -1.0, -1.5, -2.25, -4.0)}
+    got = synth._absmet_files({"absmet": str(tmp_path)}, grid)
+    want = {0.25: 0.0, 0.0: 0.0, -0.4: 0.0, -1.0: -1.0, -1.5: -2.0, -2.25: -2.0, -4.0: -3.0}
+    assert got == {feh: str(tmp_path / names[t]) for feh, t in want.items()}
+
+
+def test_absmet_folder_without_tables_is_an_error(tmp_path):
+    (tmp_path / "absmet").touch()
+    with pytest.raises(FileNotFoundError):
+        synth._absmet_files({"absmet": str(tmp_path)}, {(5000., 4., 0.): "atmos"})
