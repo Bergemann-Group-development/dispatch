@@ -496,27 +496,35 @@ def build_settings(prefs, run_vals, atmos_format=None):
     return settings
 
 
+# an absmet table's [Fe/H] opens its name, as in the MARCS tables: m-2.00a+0.40c+0.00...
+_ABSMET_FEH = re.compile(r"m([+-]\d+\.\d+)")
+
+
 def _absmet_files(prefs, atmos_files):
     """Map every grid [Fe/H] to the configured absmet file (None if unset).
 
-    A single ``absmet`` file applies to all metallicities; a folder is parsed per-FeH.
-    Returning a per-FeH dict is required because ``build_stellar_grid`` overrides
-    ``composition_params.absmet_file`` per node (and would otherwise blank it).
+    A single ``absmet`` file applies to all metallicities. In a folder, each [Fe/H] takes
+    the table nearest to it, the more metal-poor one on a tie, since a table carries no
+    metallicity scaling. A per-FeH dict is required because ``build_stellar_grid``
+    overrides ``composition_params.absmet_file`` per node (and would otherwise blank it).
     """
     absmet = prefs.get("absmet")
     if not absmet:
         return None
     p = Path(absmet).expanduser()
-    fehs = {round(k[2], 4) for k in atmos_files}
+    fehs = {k[2] for k in atmos_files}
     if p.is_dir():
-        found = {}
-        for k in atmos_files:
-            feh = k[2]
-            cand = sorted(p.glob(f"*{feh:+.2f}*"))
-            if cand:
-                found[feh] = str(cand[0])
-        return found or None
-    return {k[2]: str(p) for k in atmos_files} if fehs else None
+        tables = {}
+        for f in sorted(p.iterdir()):
+            m = _ABSMET_FEH.match(f.name)
+            if m and f.is_file():
+                tables[float(m.group(1))] = f
+        if not tables:
+            raise FileNotFoundError(f"{p} holds no absmet table named m<[Fe/H]>... "
+                                    "(e.g. m-2.00a+0.40c+0.00n+0.00o+0.40r+0.00s+0.00v+1.00.bin)")
+        table_fehs = sorted(tables)
+        return {feh: str(tables[min(table_fehs, key=lambda t: abs(t - feh))]) for feh in fehs}
+    return {feh: str(p) for feh in fehs} if fehs else None
 
 
 def _prune_spec(prefs, prune):

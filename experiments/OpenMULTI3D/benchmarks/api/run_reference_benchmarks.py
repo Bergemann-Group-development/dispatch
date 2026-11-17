@@ -314,7 +314,7 @@ def parser():
     p.add_argument("--atom", default="input/atoms/atom.mg86g")
     p.add_argument("--linelist", default="input/linelists/sun_3000-9000.txt")
     p.add_argument("--abundances", default="input/abund/abund_magg22.txt")
-    p.add_argument("--absmet", default="input/absmet_files/absmet")
+    p.add_argument("--absmet", default="input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin")
     p.add_argument("--abundance-masks", default="input/linemasks/Fe/fe-lmask.txt")
     p.add_argument("--balance-masks", default="input/linemasks/Fe/fe-balance-test.txt")
     p.add_argument("--analysis-masks", default="input/linemasks/Mg/mg-lmask.txt",

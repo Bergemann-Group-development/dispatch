@@ -6,5 +6,5 @@
 &nlte_params         convlim=1d-2 convmax=1d-3 ng_step=20 /
 &rt_iteration_params maxiter=99 sample_back_opac=T /
 &rt_output_params    angle_quad='none' /
-&opac_table_params   absmet_file='input/absmet_files/absmet'/
+&opac_table_params   absmet_file='input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin'/
 &m3d_debug_params    verbose=2 /
