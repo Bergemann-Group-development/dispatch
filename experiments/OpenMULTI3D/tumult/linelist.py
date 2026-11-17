@@ -178,7 +178,17 @@ class LineList(pd.DataFrame):
     df['iso'] = 0
     return cls(df)
   
-  def write_to_tumult_format(self, filename, label=None):
+  def to_file(self, filename, fmt='tumult', label=None):
+    """Write the list in the tumult layout (``fmt='tumult'``, which dispatch.x reads
+    natively) or in Turbospectrum's (``fmt='ts'``). ``label`` tags the tumult blocks."""
+    if fmt == 'tumult':
+      self._write_tumult(filename, label=label)
+    elif fmt == 'ts':
+      self._write_ts(filename)
+    else:
+      raise ValueError(f"Unknown line list format: {fmt}")
+
+  def _write_tumult(self, filename, label=None):
     # work with a copy so slice/view issues don't matter
     df = self.copy()
     head = ['lam0', 'evi', 'loggf', 'gvdw', 'grad', 'gstk', 'i', 'j', 'label']
@@ -199,7 +209,7 @@ class LineList(pd.DataFrame):
         f.write(f"'{iso_token(s, iso)}' {nlines}\n")
         f.write(sub.to_string(index=False, header=False, na_rep='', formatters=formatters))
   
-  def write_to_ts_format(self, filename):
+  def _write_ts(self, filename):
     # work with a copy so slice/view issues don't matter
     df = self.copy()
 

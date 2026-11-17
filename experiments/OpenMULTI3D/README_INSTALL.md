@@ -71,6 +71,14 @@ The build produces
 
 `make clean && make -j` rebuilds everything from scratch; `make -C HOP/standalone` rebuilds the HOP library alone.
 
+The OpenMP threads of `dispatch.x` need a larger stack than the system default, set by the environment variable `OMP_STACKSIZE`. Set it once in the shell profile (`~/.zshrc` on macOS, `~/.bashrc` on most Linux systems) and open a new terminal:
+
+```bash
+echo 'export OMP_STACKSIZE=256M' >> ~/.zshrc
+```
+
+`tm.launch` and the Python workflows set it for the runs they start.
+
 ## 4. Input data
 
 The repository tracks a minimal data set in `input/`, which includes everything the verification below needs: five MARCS models (dwarfs and giants, including the Sun), four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data and `input/linelists/SIU_masterline_Bergemann2026.txt`, a line list of atoms and the common molecules, most of its lines between 3000 and 9000 Å.
@@ -116,13 +124,13 @@ folder above when that preference is a single file. The Model atoms page always 
 Run the demo namelist:
 
 ```bash
-OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
+./dispatch.x examples/sun_ba_1d.nml
 ```
 
 `examples/sun_ba_1d.nml` synthesises the four Ba II lines of a six-level toy model atom
 (`input/atoms/atom.ba06`: 4554, 4934, 5853 and 6497 Å) in a MARCS solar model, in LTE
 and NLTE, without a background line list. It takes well under a minute (about one second
-on eight cores). `tm.launch` sets the same `OMP_STACKSIZE` for every run it starts.
+on eight cores).
 The run succeeded when the last line of the output is
 
 ```

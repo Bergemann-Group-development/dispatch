@@ -589,7 +589,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
         settings = update_dict(deepcopy(layer),
                                build_settings(prefs, values, atmos_format=atmosphere.format))
         settings = update_dict(settings, {"atmos_params": mesh})
-        settings = update_dict(settings, deepcopy(config.expert))
+        settings = update_dict(settings, deepcopy(config.nml_settings))
         if set_spectrum:
             sampling = settings.setdefault("spectrum_params", {})
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
@@ -901,7 +901,7 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
         settings = update_dict(settings,
                                {'atmos_params': _grid_mesh(atmosphere.record(config))})
     settings = update_dict(settings, _single_atmosphere_settings(request, prefs))
-    settings = update_dict(settings, deepcopy(config.expert))
+    settings = update_dict(settings, deepcopy(config.nml_settings))
     # A correction ladder without windows uses the model atom's frequency grid,
     # including a prepared line_grid_file. Injecting R alone requests an explicit
     # spectrum grid without supplying its bounds, which DISPATCH cannot construct.

@@ -191,7 +191,7 @@ def fig_depart(run):
 
 
 def fig_lines(run, atlas):
-    """Broadening fitted to 5711.1, and the blends of Mg b2 labelled. Returns the
+    """Broadening fitted to 5711.1, and the blends of Mg I 5172.7 labelled. Returns the
     fitted broadening."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=wide(), width_ratios=(1, 1.4),
                                    layout="constrained")
@@ -217,7 +217,7 @@ def fig_lines(run, atlas):
     ax2.set_xticks([5172, 5173, 5174])
     ax2.set_xlabel(r"$\lambda$ [$\AA$]")
     ax2.ticklabel_format(axis="x", useOffset=False)
-    run.plot_line_labels(show_atom=False, ntop=10, fontfamily="sans-serif")
+    run.plot_line_labels(ntop=10, fontfamily="sans-serif")
     fig.savefig(FIGS / "mg_lines.pdf")
     return dict(vrot=VROT, **best)
 
@@ -243,7 +243,7 @@ def fig_spectra(run, atlas, broadening):
 
 
 def fig_cntrbf(run):
-    """Contribution function of Mg b2 over wavelength and depth, and at selected
+    """Contribution function of Mg I 5172.7 over wavelength and depth, and at selected
     wavelengths, compared with a weak line."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=wide(), width_ratios=(1.2, 1),
                                    layout="constrained")

@@ -16,7 +16,7 @@ from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    read_angle_quadrature, read_segments, read_set_manifest,
                    split_ie)
 from .io_binary import read_patch_save as _read_patch_save
-from .linelist import LineList
+from .linelist import LineList, ion_dict
 from .namelist import NameList
 from .spectrum import Spectrum
 from .spectrum_grid import SpectrumGrid
@@ -400,12 +400,14 @@ class Run(object):
         self.atmos.plot_cube_slice(Z, ang=ang, **kwargs)
 
     #=====================================================================
-    def get_pop(self, atom=0, ilvl=None):
+    def get_pop(self, ilvl=None, iatom=0):
+        """The LTE and NLTE populations of level ``ilvl`` (all levels when None), as
+        ``(lte, nlte)``; ``ilvl`` and ``iatom`` as in :meth:`get_depart`."""
         #-----------------------------------------------------------------
-        if type(atom) is int: atom = self.atoms[atom]
-        if ilvl is not None:
-            if ilvl < 0: ilvl = atom.nk + ilvl
-        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)
+        if isinstance(ilvl, Level):
+            ilvl, iatom = ilvl.i, ilvl.atom.id
+        atomid = self.atoms[iatom].id if type(iatom) is int else iatom
+        mem = self.read_patch_save(f'pop_{atomid}', zdim=2)
         if mem.ndim==6: mem = mem[...,0]
         lte = mem[...,0]
         dep = mem[...,1]
@@ -543,13 +545,16 @@ class Run(object):
         return xx, yy
 
     #=====================================================================
-    def plot_line_labels(self, offset=None, tol=0.02, show_atom=True,
+    def plot_line_labels(self, offset=None, tol=0.02, show_atom=False,
                          show_llist=True, dry=False, xmin=None, xmax=None, query=None, **kwargs):
         """Labels the species of the strongest lines inside the current axes and returns the labels.
 
+        The line list's transitions are labelled by default. show_atom=True adds the
+        model atoms' transitions, labelled with their species (the atom id and the ion
+        stage of the lower level); without a line list they are always shown.
+
         query is a pandas query string on the labels' columns ion, lam0, strength and loggf,
-        e.g. ``"ion == 'H I'"``. It applies after the lines within tol are merged; a model
-        atom's transitions carry the atom id as ion.
+        e.g. ``"ion == 'H I'"``. It applies after the lines within tol are merged.
         """
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
@@ -602,17 +607,20 @@ class Run(object):
 
         if show_atom:
             for atom in self.atoms:
-                bbt = atom.bbt[['lam0', 'loggf', 'grad']].copy().reset_index(drop=True)
+                bbt = atom.bbt[['i', 'lam0', 'loggf', 'grad']].copy().reset_index(drop=True)
                 mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
                 bbt = bbt[mask]
-                bbt['ion'] = atom.id
+                stages = atom.lvl.ion.values[bbt.i.values].astype(int)
+                bbt = bbt.drop(columns='i')
+                bbt['ion'] = [f"{atom.id} {ion_dict[s]}" for s in stages]
                 bbt['strength'] = max_strength
-                if len(bbt) == 1:
-                    llist = pd.concat([llist, bbt])
-                elif len(bbt) > 1 and tol is not None:
-                    groups = assign_group_indices(bbt['lam0'].values, tol) - 1
+                for s, sub in bbt.groupby('ion'):
+                    if len(sub) == 1 or tol is None:
+                        llist = pd.concat([llist, sub])
+                        continue
+                    groups = assign_group_indices(sub['lam0'].values, tol) - 1
                     for i in range(groups.max()+1):
-                        group = bbt[groups == i]
+                        group = sub[groups == i]
                         if len(group) == 1:
                             llist = pd.concat([llist, group])
                         else:
@@ -620,7 +628,7 @@ class Run(object):
                             wts = group.strength / strength
                             lam0 = np.sum(group.lam0 * wts)
                             loggf = np.log10(np.sum(10**group.loggf))
-                            new_row = pd.DataFrame({'ion': [atom.id], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
+                            new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
                             llist = pd.concat([llist, new_row])
 
         if len(llist) > 0:

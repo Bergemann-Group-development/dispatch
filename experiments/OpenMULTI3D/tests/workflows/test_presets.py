@@ -2,7 +2,7 @@
 
 What is load-bearing: a user file replaces the shipped preset of its name; later presets
 win and the conflict is reported; the atmosphere selects the geometry preset; the request's
-own settings, a grid's mesh and ``config.expert`` override presets; and a request preset
+own settings, a grid's mesh and ``config.nml_settings`` override presets; and a request preset
 refines an NLTE step rather than being overridden by it.
 """
 import logging
@@ -60,7 +60,7 @@ def test_request_settings_and_expert_override_presets(tmp_path, user_dir):
     (user_dir / "wide.nml").write_text(
         "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 dlam=50 /\n")
     config = SynthConfig(root=tmp_path, R_sampling=50_000,
-                         expert={"linelist_params": {"dlam": 20}})
+                         nml_settings={"linelist_params": {"dlam": 20}})
     request = SynthRequest(config=config, atmosphere="a.mod", star=STAR,
                            windows=[(5000, 5010)], presets=["wide"])
     settings = resolve_request(request).settings

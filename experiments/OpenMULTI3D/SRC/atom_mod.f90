@@ -223,8 +223,8 @@ MODULE atom_mod
     real(8), public :: min_pop_frac=1d-30
     !> Population fraction above which a level carries full weight in the convergence
     !> decision, so that convlim and convmax are not held hostage by levels with no
-    !> effect on any opacity.
-    real(8), public :: conv_pop_floor=1d-8
+    !> effect on any opacity. 0 (the default) weights every level fully.
+    real(8), public :: conv_pop_floor=0d0
     !---------------------------------------------------------------------------
     !> A transition whose threshold lies above cut_x kT cannot be formed in
     !> real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
@@ -661,14 +661,17 @@ MODULE atom_mod
               ! keep the full per-level record for the convergence report
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
 
-              ! The convergence decision, on the other hand, weights each level by the
-              ! share of the atoms it actually holds.  The top levels of the last ion
-              ! are radiatively controlled by a near-zero radiation field, so they swing
-              ! by orders of magnitude while holding 1e-10 of the iron or less; on an
-              ! unweighted maximum they own convlim and convmax outright and the run
-              ! never terminates.  Levels above conv_pop_floor keep their full weight,
-              ! so this cannot mask a level that contributes to an opacity or a rate.
-              ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              ! With conv_pop_floor > 0 the convergence decision weights each level by
+              ! the share of the atoms it holds.  The top levels of the last ion are
+              ! radiatively controlled by a near-zero radiation field, so they can swing
+              ! by orders of magnitude while holding 1e-10 of the iron or less, and on
+              ! the unweighted maximum they own convlim and convmax.  Levels above
+              ! conv_pop_floor keep their full weight.
+              if (conv_pop_floor > 0d0) then
+                ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              else
+                ework = abs(e)
+              end if
               i = maxloc(ework, dim=1)
               if (ework(i) > abs(maxerr)) then
                 maxerr = sign(ework(i), e(i))
