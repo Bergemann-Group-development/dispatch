@@ -1524,10 +1524,9 @@ contains
       lock => self%m3d_parent%ll_point_locks(self%i_nu)
       filled_here = .false.
       call lock%set('ll_point_table')
-      associate(table => self%m3d_parent%ll_point_tables(self%i_nu))
-        if (.not. allocated(table%set)) allocate(table%set(self%n_set))
-        store => table%set(i_set)
-      end associate
+      if (.not. allocated(self%m3d_parent%ll_point_tables(self%i_nu)%set)) &
+        allocate(self%m3d_parent%ll_point_tables(self%i_nu)%set(self%n_set))
+      store => self%m3d_parent%ll_point_tables(self%i_nu)%set(i_set)
       if (.not. store%initialised) then
         allocate(store%chi(self%fs:self%fe,self%nx,self%ny,self%nz), &
                  store%eta(self%fs:self%fe,self%nx,self%ny,self%nz))

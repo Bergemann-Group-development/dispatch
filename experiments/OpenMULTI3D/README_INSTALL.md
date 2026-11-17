@@ -30,9 +30,7 @@ You need:
 
 - macOS or Linux. The commands below were verified on macOS 15 (Apple silicon, Homebrew
   GCC 15); Linux x86-64 uses the same commands.
-- A Fortran compiler: `gfortran`, `ifort` or `ifx`. On Apple silicon use gfortran: the
-  macOS Intel compilers produce x86-64 code only, which runs slower under Rosetta, and an
-  x86-64 HOP library cannot be loaded by an arm64 Python at all.
+- A Fortran compiler: gfortran 11 or later, or Intel's `ifort`. Intel has discontinued `ifort`; its last release (2021.13, oneAPI HPC Toolkit 2024.2) is the recommended Intel compiler and stays fixed. `ifx` builds the code too. The build is tested with gfortran 11.5, 12.4, 13.4, 14.4, 15.3 and 16.2, ifort 2021.11 and 2021.13, and ifx 2024.0 and 2026.2. On Apple silicon use gfortran: the macOS Intel compilers produce x86-64 code only, which runs slower under Rosetta, and an x86-64 HOP library cannot be loaded by an arm64 Python at all.
 - `make` and `perl` (the build scans module dependencies with a Perl script).
 - Python 3.11 or later (verified with 3.14), with `venv` and `pip`.
 
