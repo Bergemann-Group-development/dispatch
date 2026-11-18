@@ -112,7 +112,12 @@ def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
 
 #=====================================================================
 def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
-            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', **kwargs):
+            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', bins=None,
+            **kwargs):
+  """Image of the number of points (log scale) on a grid of nodes spanning xmin..xmax and
+  ymin..ymax. Each point is shared bilinearly between its four neighbouring nodes. bins
+  (an int or (nx, ny)) sets the number of nodes; by default there is one per pixel of the
+  current axes at the figure's dpi, so set it when the figure is drawn at another size."""
   #-----------------------------------------------------------------
   plt = get_plt()
 
@@ -125,39 +130,31 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
   if ymin is None: ymin = yy.min()
   if ymax is None: ymax = yy.max()
 
-  fig = plt.gcf()
-  nx, ny = fig.get_size_inches() * fig.get_dpi()
-
-  # Get the bounding box of the axes in figure-relative coordinates
-  bbox = plt.gca().get_position()
-
-  # Compute the size of the axes in inches
-  nx = bbox.width * nx
-  ny = bbox.height * ny
-
-  nx = np.ceil(nx).astype(int)
-  ny = np.ceil(ny).astype(int)
+  if bins is None:
+    fig = plt.gcf()
+    bbox = plt.gca().get_position()
+    nx, ny = np.ceil([bbox.width, bbox.height] * fig.get_size_inches() * fig.get_dpi()).astype(int)
+  else:
+    nx, ny = np.broadcast_to(bins, 2)
   dx = (xmax - xmin) / (nx-1)
   dy = (ymax - ymin) / (ny-1)
   
   ix = (xx - xmin) / dx
   iy = (yy - ymin) / dy
-  iix = np.floor(ix).astype(int)
-  iiy = np.floor(iy).astype(int)
-  mask = (iix >= 0) & (iix < nx-1) & (iiy >= 0) & (iiy < ny-1)
+  mask = (ix >= 0) & (ix <= nx-1) & (iy >= 0) & (iy <= ny-1)
   ix = ix[mask]
   iy = iy[mask]
-  iix = iix[mask]
-  iiy = iiy[mask]
+  # lower neighbour node; a point on the last node goes to the cell below it with weight 1
+  iix = np.minimum(np.floor(ix).astype(int), nx-2)
+  iiy = np.minimum(np.floor(iy).astype(int), ny-2)
   fx = ix - iix
   fy = iy - iiy
 
-  # Image
-  image = np.zeros((nx, ny))  # Replace with your actual image
-  np.add.at(image, (iix-1, iiy-1), (1-fx)*(1-fy))
-  np.add.at(image, (iix, iiy-1), fx*(1-fy))
-  np.add.at(image, (iix-1, iiy), (1-fx)*fy)
-  np.add.at(image, (iix, iiy), fx*fy)
+  image = np.zeros((nx, ny))
+  np.add.at(image, (iix, iiy), (1-fx)*(1-fy))
+  np.add.at(image, (iix+1, iiy), fx*(1-fy))
+  np.add.at(image, (iix, iiy+1), (1-fx)*fy)
+  np.add.at(image, (iix+1, iiy+1), fx*fy)
 
   if radius > 0:
     # Circle convolution kernel
@@ -173,7 +170,9 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
     image = np.log(image)
 
   if vmax is None: vmax = image.max()
-  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax),
+  # each node at the centre of its pixel
+  return plt.imshow(image.T, origin='lower',
+                    extent=(xmin-dx/2, xmax+dx/2, ymin-dy/2, ymax+dy/2),
                     vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
                     interpolation=interpolation, **kwargs)
 
