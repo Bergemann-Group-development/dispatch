@@ -229,7 +229,8 @@ class AtmosClass(object):
         plt.ylim(np.nanmin(yy), np.nanmax(yy))
 
         if density:
-                return scatter_density(xx, yy, cmap=cmap, **kwargs)
+                return scatter_density(xx, yy, cmap=cmap, xmin=xmin, xmax=xmax, ymin=ymin,
+                                       ymax=ymax, **kwargs)
         else:
                 return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
                                                 rasterized=rasterized, **kwargs)
