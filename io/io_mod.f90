@@ -227,7 +227,12 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     ! `mkdir -p` doesn't work from inside the code, so two `mkdir` are required
     call ensure_dirname (datadir)
-    self%run_dir = trim(datadir)//trim(self%run_name)
+    ! a run named by an absolute path is written to that path itself
+    if (self%run_name(1:1) == '/') then
+      self%run_dir = trim(self%run_name)
+    else
+      self%run_dir = trim(datadir)//trim(self%run_name)
+    end if
     call ensure_dirname (self%run_dir)
     write (command, *) 'mkdir -p ', trim(self%run_dir)
     call execute_command_line (trim(command), exitstat=iostat)
