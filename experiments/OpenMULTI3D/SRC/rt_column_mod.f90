@@ -682,11 +682,13 @@ END SUBROUTINE check_memory_limit
 
 !===============================================================================
 !> Physical memory of this machine [GiB], 0 if it cannot be determined.  Linux
-!> lists it in /proc/meminfo; elsewhere sysctl hw.memsize gives it in bytes.
+!> lists it in /proc/meminfo; elsewhere sysctl hw.memsize gives it in bytes, written
+!> to a file in the run's own folder, since concurrent runs share the working directory.
 !===============================================================================
 FUNCTION physical_memory_gib () RESULT (gib)
   real(8) :: gib
   character(len=128) :: line
+  character(len=:), allocatable :: file
   integer(8) :: value
   integer :: unit, iostat
   !-----------------------------------------------------------------------------
@@ -705,9 +707,10 @@ FUNCTION physical_memory_gib () RESULT (gib)
     close (unit)
     return
   endif
-  call execute_command_line ('sysctl -n hw.memsize > .hw_memsize 2> /dev/null', exitstat=iostat)
+  allocate (file, source=trim(io%run_dir)//'.hw_memsize')
+  call execute_command_line ('sysctl -n hw.memsize > '//file//' 2> /dev/null', exitstat=iostat)
   if (iostat /= 0) return
-  open (newunit=unit, file='.hw_memsize', status='old', action='read', iostat=iostat)
+  open (newunit=unit, file=file, status='old', action='read', iostat=iostat)
   if (iostat /= 0) return
   read (unit, *, iostat=iostat) value
   if (iostat == 0) gib = real(value,8)/1024d0**3
