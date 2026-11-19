@@ -434,8 +434,16 @@ ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere, "snapshot"
 
 
 def _coerce_preparation(atmosphere):
-    if atmosphere.preparation is not None:
-        object.__setattr__(atmosphere, "preparation", coerce_atmosphere(atmosphere.preparation))
+    """``preparation=True`` is the atmosphere itself and ``False`` none; anything else is
+    coerced as an atmosphere input."""
+    value = atmosphere.preparation
+    if value is True:
+        value = replace(atmosphere, preparation=None)
+    elif value is False:
+        value = None
+    elif value is not None:
+        value = coerce_atmosphere(value)
+    object.__setattr__(atmosphere, "preparation", value)
 
 
 def coerce_atmosphere(value):

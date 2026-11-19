@@ -1,10 +1,11 @@
 """The reference atmospheres HOP preparations are computed on.
 
 An atmosphere's ``preparation`` names them, and nothing is prepared without one: the runs
-then read the full line list and the model atoms keep their own quadratures. A
-preparation that is an individual :class:`~.inputs.Atmosphere` is the reference of every
-synthesis; an :class:`~.inputs.AtmosphereGrid` gives its node nearest the star, or the
-node nearest each node of a synthesis grid. A 3D :class:`~.inputs.Snapshot`, or the node of
+then read the full line list and the model atoms keep their own quadratures.
+``preparation=True`` names the atmosphere itself. A preparation that is an individual
+:class:`~.inputs.Atmosphere` is the reference of every synthesis; an
+:class:`~.inputs.AtmosphereGrid` gives its node nearest the star, or the node nearest each
+node of a synthesis grid. A 3D :class:`~.inputs.Snapshot`, or the node of
 a snapshot grid, is replaced by its <3D> average on surfaces of constant tau_500
 (:mod:`tumult.avg3d`), written once in dispatch.x's 'text' format under the preparation
 cache.

@@ -130,9 +130,11 @@ def test_only_a_named_preparation_prepares(tmp_path, monkeypatch):
     from tumult.synthesis import preparation, workflows
     plain = workflows.resolve_request(_request(Atmosphere('science.mod'), tmp_path))
     assert plain.preparation_references == () and plain.preparation_aliases == {}
-    itself = workflows.resolve_request(
-        _request(Atmosphere('science.mod', preparation='science.mod'), tmp_path))
-    assert itself.preparation_references == ((str(tmp_path / 'science.mod'), 'Marcs'),)
+    science = Atmosphere('science.mod', 'Text', preparation=True)
+    assert science.preparation == Atmosphere('science.mod', 'Text')
+    assert Atmosphere.from_dict(science.to_dict()) == science
+    itself = workflows.resolve_request(_request(science, tmp_path))
+    assert itself.preparation_references == ((str(tmp_path / 'science.mod'), 'Text'),)
     averaged = []
 
     def mean_3d(snapshot, atmos_format, feh, root):

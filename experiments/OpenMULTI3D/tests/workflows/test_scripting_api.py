@@ -153,7 +153,7 @@ def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, ato
     assert lte.provenance["calculation"] == "LTE" and lte.provenance["departures"] == "none"
     assert lte.provenance["preparation_atmospheres"] == []
     prepared = synthesis.synthesize(request.update(
-        atmosphere=Atmosphere("one.mod", preparation="one.mod")))
+        atmosphere=Atmosphere("one.mod", preparation=True)))
     assert prepared.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
     with pytest.raises(ValueError, match="preparation"):
         synthesis.synthesize(request.update(

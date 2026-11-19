@@ -198,7 +198,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   Switched off, an abundance fit or balance synthesises the element's transitions alone
   (`only_elements`) and a correction the model atom's alone (`only_atom`); blend screens
   compare against every species either way.
-- *preparation atmosphere*: the 1D model a HOP preparation (a pruned line list, an atom's prepared wavelength quadrature) is computed on, named by the atmosphere's `preparation` (`tumult.synthesis.preparation`): an individual atmosphere, the nearest node of a grid, or the <3D> average of a snapshot. Without a `preparation` nothing is prepared.
+- *preparation atmosphere*: the 1D model a HOP preparation (a pruned line list, an atom's prepared wavelength quadrature) is computed on, named by the atmosphere's `preparation` (`tumult.synthesis.preparation`): the atmosphere itself (`True`), an individual atmosphere, the nearest node of a grid, or the <3D> average of a snapshot. Without a `preparation` nothing is prepared.
 - *workflow*: one resolved user calculation, which may prepare inputs and schedule several
   native runs. Its durable form is a record under `_workflows/` with a
   `WorkflowHandle`, run by the workflow daemon or a Slurm driver; it is not a DISPATCH task.

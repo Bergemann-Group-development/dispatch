@@ -356,7 +356,7 @@ class DepartureRequest:
         if atmosphere is None:
             raise ValueError("A prepared line quadrature (line_grid=True) is computed on the "
                              "atmosphere's preparation; give it one, e.g. "
-                             "Atmosphere(path, preparation=path).")
+                             "Atmosphere(path, preparation=True).")
         composition = request.abundances
         root = preparation_root(config.to_prefs())
         prepared = [prepare_line_quadrature(
