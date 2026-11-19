@@ -308,7 +308,8 @@ def line_extents(lam, env, floor, lam0, cap_lo, cap_hi, rise_dex=0.05):
 
 
 # --- driver -----------------------------------------------------------------------------
-def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS, vmic=1.0,
+def generate_line_quadrature(atom_file, atmos_file, out_dir, *, atmos_format='marcs',
+                             qnorm=QNORM_KMS, vmic=1.0,
                              feh=0.0, abundances='', relative_abundances=True,
                              half_window_kms=300.0, R=1e6, tol_dex=0.05,
                              rel_floor=1e-3, abs_floor=1e-2, lam_range=None,
@@ -316,7 +317,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     """Write ``<out_dir>/line_grid.txt`` and ``<out_dir>/atom.<El>`` for a run.
 
     Steps: the atom's lines become a HOP line list; their opacity is evaluated on
-    :data:`linestrength.NDEPTH` depths of ``atmos_file`` (a MARCS model) over
+    :data:`linestrength.NDEPTH` depths of ``atmos_file`` (a 1D model in ``atmos_format``) over
     ``+-half_window_kms`` around every line at resolving power ``R``; the depth
     envelope of ``chi_line/chi_cont`` is floored per line at ``min(rel_floor * peak,
     abs_floor)``, never below :data:`RATIO_EPS`, and thinned in log10 to ``tol_dex``;
@@ -330,7 +331,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     spectrum they produce.
     """
     from hopacity import HopEOS
-    from .linestrength import read_marcs
+    from .linestrength import read_reference
     from .synthesis.runtime import HOP_LOCK
 
     out_dir = Path(out_dir)
@@ -356,7 +357,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
 
     linelist = out_dir / f'{atom.element}_lines.txt'
     write_atom_linelist(atom, lines[use], linelist)
-    T, rho = read_marcs(atmos_file)
+    T, rho = read_reference(atmos_file, atmos_format)
     options = {}
     if abundances:
         options = {'abundances': str(abundances),
@@ -452,8 +453,9 @@ class PreparedLineQuadrature:
                                         'atmos_file', 'settings')})
 
 
-def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh=0.0,
-                            abundances='', relative_abundances=True, **params):
+def prepare_line_quadrature(output_root, atom_file, atmos_file, *, atmos_format='marcs',
+                            vmic=1.0, feh=0.0, abundances='', relative_abundances=True,
+                            **params):
     """Generate the grid and atom copy once per (atom, model, settings) under ``output_root``.
 
     The digest covers the identities (path, size, mtime) of the atom and the model, and
@@ -469,7 +471,8 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
                     ratio_eps=RATIO_EPS,
                     **{k: (float(v) if isinstance(v, (int, float)) else v)
                        for k, v in params.items()})
-    identity = {'atom': atom_id, 'atmos': atmos_id, 'settings': settings}
+    identity = {'atom': atom_id, 'atmos': atmos_id, 'atmos_format': str(atmos_format).lower(),
+                'settings': settings}
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str)
                             .encode()).hexdigest()[:16]
     folder = Path(output_root).expanduser().resolve() / f'quadrature-{digest}'
@@ -479,7 +482,8 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
         if Path(prepared.grid_file).is_file() and Path(prepared.atom_file).is_file():
             return prepared
     grid_file, atom_copy = generate_line_quadrature(
-        atom_id['path'], atmos_id['path'], folder, vmic=vmic, feh=feh, abundances=abundances,
+        atom_id['path'], atmos_id['path'], folder, atmos_format=atmos_format, vmic=vmic,
+        feh=feh, abundances=abundances,
         relative_abundances=relative_abundances, verbose=False, **params)
     prepared = PreparedLineQuadrature(str(folder), str(grid_file), str(atom_copy),
                                       atom_id['path'], atmos_id['path'], settings)
@@ -540,6 +544,7 @@ def main(argv=None):
     p.add_argument('atom_file')
     p.add_argument('atmos_file', help='MARCS model')
     p.add_argument('out_dir')
+    p.add_argument('--atmos-format', default='marcs', help="the model's &atmos_params atmos_format")
     p.add_argument('--qnorm', type=float, default=QNORM_KMS, help="the run's &atom_params qnorm")
     p.add_argument('--vmic', type=float, default=1.0)
     p.add_argument('--feh', type=float, default=0.0)
@@ -552,7 +557,8 @@ def main(argv=None):
     p.add_argument('--lam-range', type=float, nargs=2, metavar=('BLUE', 'RED'),
                    help='vacuum AA')
     a = p.parse_args(argv)
-    generate_line_quadrature(a.atom_file, a.atmos_file, a.out_dir, qnorm=a.qnorm,
+    generate_line_quadrature(a.atom_file, a.atmos_file, a.out_dir, atmos_format=a.atmos_format,
+                             qnorm=a.qnorm,
                              vmic=a.vmic, feh=a.feh, abundances=a.abundances,
                              half_window_kms=a.half_window_kms, R=a.R, tol_dex=a.tol_dex,
                              rel_floor=a.rel_floor, abs_floor=a.abs_floor,

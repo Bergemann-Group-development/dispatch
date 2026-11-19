@@ -17,7 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 import time
 
-from .inputs import STAR_KEYS, Abundances, Atmosphere, AtmosphereGrid, Snapshot
+from .inputs import STAR_KEYS, Abundances, AtmosphereGrid, Snapshot
 from .request import SpectrumFit, SynthRequest
 
 
@@ -72,25 +72,16 @@ def departure_run_values(request):
     return departures.run_values(request, quadrature), quadrature, atmosphere
 
 
-def quadrature_atmosphere(request):
-    """The MARCS atmosphere a model atom's wavelength quadrature is prepared on.
-
-    An individual MARCS atmosphere is used directly. A MARCS grid gives the node nearest the
-    star; any other format needs its ``preparation`` grid, whose nearest node is used.
-    """
-    from .workflows import nearest_marcs_atmosphere
-    config, atmosphere, star = request.config, request.atmosphere, request.star
-    if isinstance(atmosphere, Atmosphere) and atmosphere.is_marcs:
-        return str(config.resolve(atmosphere.path))
-    grid = atmosphere if isinstance(atmosphere, AtmosphereGrid) and atmosphere.is_marcs \
-        else atmosphere.preparation
-    if grid is None or not grid.is_marcs:
-        raise ValueError(f"A {atmosphere.format} atmosphere needs a MARCS preparation grid "
-                         "for the model atom's wavelength quadrature; set its "
-                         "`preparation=AtmosphereGrid(...)`.")
+def preparation_reference(request):
+    """The :class:`~.preparation.Reference` the atmosphere's ``preparation`` gives at the
+    request's star, or None without a preparation."""
+    from .preparation import reference_atmosphere
+    atmosphere, star = request.atmosphere, request.star
+    if atmosphere.preparation is None:
+        return None
     vmic = star.vmic if star.vmic is not None else 1.0
-    return nearest_marcs_atmosphere(grid.record(config), (star.teff, star.logg, star.feh, vmic),
-                                    config.to_prefs())
+    return reference_atmosphere(atmosphere.preparation,
+                                (star.teff, star.logg, star.feh, vmic), request.config)
 
 
 def preflight(request):
@@ -104,7 +95,7 @@ def preflight(request):
         value = getattr(config, name)
         if value is not None and not config.resolve(value).exists():
             problems.append(f"config.{name} not found: {config.resolve(value)}")
-    if config.linelist is not None and config.linelist_skirt > 0:
+    if config.linelist is not None and request.atmosphere.preparation is not None:
         from ..prune import executable
         try:
             executable(config.root)
@@ -193,7 +184,8 @@ def synthesize(request, *, background_lines=True, cancel_token=None):
     """Synthesize the spectra ``request`` describes, one per window.
 
     Without windows the whole range of the line list (or of the model atoms) is synthesised.
-    The line list is pruned per atmosphere when ``config.linelist_skirt`` is positive.
+    The line list is pruned when the atmosphere names a ``preparation``
+    (:mod:`tumult.synthesis.preparation`), over the windows widened by ``config.linelist_skirt``.
     ``background_lines=False`` synthesises only the model atoms' transitions of an NLTE
     request.
 
@@ -261,7 +253,7 @@ def _synthesize(request, background_lines, cancel_token):
         state = departure_status(result.runs, resolved.execution_root, started)
     provenance = {
         "calculation": "LTE" if departures is None else "NLTE",
-        "preparation_atmospheres": list(resolved.preparation_references),
+        "preparation_atmospheres": [path for path, _fmt in resolved.preparation_references],
         "pruned": result.preparation is not None,
         "departures": state,
         "quadrature": quadrature.to_dict() if quadrature is not None else None,
