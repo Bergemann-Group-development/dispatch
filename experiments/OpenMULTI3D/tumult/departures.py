@@ -59,8 +59,8 @@ class Departures:
     given; only ``folder`` survives a change of working directory. ``atmosphere`` is the
     model the populations belong to, ``star`` the stellar parameters of the solve,
     ``composition`` its composition settings, ``atom`` the model atom it was requested for
-    and ``quadrature`` the prepared wavelength quadrature (empty when the atom's own was
-    used). ``settings`` is the full namelist of the solve.
+    (empty for several; :attr:`atom_settings` lists the run's atoms) and ``quadrature`` the
+    prepared wavelength quadrature (empty when the atoms' own were used). ``settings`` is the full namelist of the solve.
 
     ``status`` says how this object was obtained in this process: ``"solved"`` by a native
     run, ``"reused"`` from the run cache or ``"loaded"`` from a saved record. It is not
@@ -315,14 +315,14 @@ class DepartureRequest:
     """Equilibrium departures of the model ``atoms``, solved for each request that consumes
     them.
 
-    ``line_grid`` prepares the bound-bound wavelength quadrature from the atom's opacity
-    profiles on the request's atmosphere
-    (:func:`tumult.line_quadrature.prepare_line_quadrature`), which is built for one atom;
-    off, every atom keeps its own ``nq``/``qmax``/``q0`` quadrature. ``quadrature`` holds
-    further generator settings (``R``, ``tol_dex``, ...).
+    By default every atom keeps its own ``nq``/``qmax``/``q0`` quadrature. ``line_grid``
+    prepares the bound-bound wavelength quadrature of every atom from its opacity profiles
+    on the request's atmosphere (:func:`tumult.line_quadrature.prepare_line_quadrature`)
+    and runs them on the union of their grids. ``quadrature`` holds further generator
+    settings (``R``, ``tol_dex``, ...).
     """
     atoms: tuple
-    line_grid: bool = True
+    line_grid: bool = False
     quadrature: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -331,45 +331,43 @@ class DepartureRequest:
             raise ValueError("Requested departures need at least one model atom.")
         object.__setattr__(self, "atoms", tuple(Path(atom).expanduser() for atom in atoms))
         object.__setattr__(self, "quadrature", dict(self.quadrature or {}))
-        if self.line_grid and len(atoms) > 1:
-            raise ValueError("A prepared line quadrature is built for one model atom; "
-                             "request several atoms with line_grid=False.")
 
     @property
     def atom(self):
-        """The model atom of a single-atom request (a quadrature preparation or an NLTE
-        correction needs exactly one)."""
+        """The model atom of a single-atom request (an NLTE correction needs exactly
+        one)."""
         if len(self.atoms) != 1:
             raise ValueError(f"This needs one model atom; {len(self.atoms)} were requested.")
         return self.atoms[0]
 
     def prepare(self, request):
-        """The prepared quadrature for ``request`` and the atmosphere it was prepared on.
+        """The prepared :class:`~tumult.line_quadrature.LineQuadrature` of the atoms for
+        ``request`` and the atmosphere it was prepared on.
 
         Returns ``(None, None)`` without ``line_grid``.
         """
         if not self.line_grid:
             return None, None
-        from .line_quadrature import prepare_line_quadrature
+        from .line_quadrature import combine_line_quadratures, prepare_line_quadrature
         from .synthesis.operations import quadrature_atmosphere
         from .synthesis.workflows import preparation_root
         config, star = request.config, request.star
         atmosphere = quadrature_atmosphere(request)
         composition = request.abundances
-        prepared = prepare_line_quadrature(
-            preparation_root(config.to_prefs()), config.resolve(self.atom), atmosphere,
-            vmic=star.vmic if star.vmic else 1.0, feh=star.feh,
-            abundances=composition.override() if composition else "",
+        root = preparation_root(config.to_prefs())
+        prepared = [prepare_line_quadrature(
+            root, config.resolve(atom), atmosphere, vmic=star.vmic if star.vmic else 1.0,
+            feh=star.feh, abundances=composition.override() if composition else "",
             relative_abundances=composition.relative if composition else True,
-            **self.quadrature)
-        return prepared, atmosphere
+            **self.quadrature) for atom in self.atoms]
+        return combine_line_quadratures(root, prepared), atmosphere
 
     def run_values(self, request, prepared=None):
         """The native run values selecting these atoms, on ``prepared`` when given.
 
         A request for a prepared quadrature has no run values until it is prepared."""
         if prepared is not None:
-            return {"atoms": [prepared.atom_file], "line_grid": prepared.grid_file}
+            return {"atoms": prepared.atom_files, "line_grid": prepared.grid_file}
         if self.line_grid:
             raise ValueError("The line quadrature of the requested departures is not "
                              "prepared yet (DepartureRequest.prepare).")
@@ -416,9 +414,9 @@ def load(path):
     return Departures.load(path)
 
 
-def request(request, *, atom, line_grid=True, **quadrature):
-    """Describe equilibrium departures of ``atom`` (one model atom, or several with
-    ``line_grid=False``) for consumers to solve on demand.
+def request(request, *, atom, line_grid=False, **quadrature):
+    """Describe equilibrium departures of ``atom`` (one model atom or several) for
+    consumers to solve on demand.
 
     ``request`` only validates the atoms against the configuration; the returned
     :class:`DepartureRequest` does not keep it, so attaching it to an updated request
@@ -440,8 +438,9 @@ def _status(folder, started):
     return "solved" if stamp.is_file() and stamp.stat().st_mtime >= started else "reused"
 
 
-def solve(request, *, atom, line_grid=True, cancel_token=None, **quadrature):
-    """Prepare ``atom``'s quadrature and solve its equilibrium departures for ``request``.
+def solve(request, *, atom, line_grid=False, cancel_token=None, **quadrature):
+    """Solve the equilibrium departures of ``atom`` (one model atom or several) for
+    ``request``, on a prepared quadrature with ``line_grid`` (:class:`DepartureRequest`).
 
     An individual atmosphere or snapshot gives :class:`Departures`; a grid gives a
     :class:`DepartureGrid` with one solve per node and vmic lattice point the request's
@@ -458,7 +457,8 @@ def solve(request, *, atom, line_grid=True, cancel_token=None, **quadrature):
     prepared, prep_atmosphere = spec.prepare(request)
     request = request.update(windows=())
     run_values = {"mode": "NLTE", "only_atom": True, **spec.run_values(request, prepared)}
-    record = dict(atom=str(request.config.resolve(spec.atom)),
+    atom = str(request.config.resolve(spec.atom)) if len(spec.atoms) == 1 else ""
+    record = dict(atom=atom,
                   quadrature=prepared.to_dict() if prepared else {},
                   preparation_atmosphere=str(prep_atmosphere or ""))
     started = time.time() - 1.0

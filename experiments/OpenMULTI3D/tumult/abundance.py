@@ -788,7 +788,7 @@ def measure_reference_lines(request, atom, *, opts=None, quadrature=None, cancel
 
     windows, run_atom = {}, atom
     if opts.line_grid and quadrature is None:
-        quadrature, _atmosphere = DepartureRequest((atom,)).prepare(request)
+        quadrature, _atmosphere = DepartureRequest((atom,), line_grid=True).prepare(request)
     if not opts.line_grid:
         quadrature = None
     if quadrature is not None:
@@ -1921,8 +1921,10 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     """Equilibrium NLTE abundance corrections ``A(NLTE) - A(LTE)`` of a model atom's lines.
 
     ``request`` carries the atom as requested departures (``departures.request``) and the
-    NLTE atmosphere. The atom's wavelength quadrature is prepared once, at the request's
-    star and composition, and shared by every synthesis of the operation. The LTE reference
+    NLTE atmosphere. With their ``line_grid``, the atom's wavelength quadrature is prepared
+    once, at the request's star and composition, and shared by every synthesis of the
+    operation; its line windows are where the integrating default profile (``"trapz"``)
+    measures, so a fitted profile is needed without it. The LTE reference
     is synthesised on ``reference_atmosphere`` (the request's atmosphere when that is 1D)
     at the request's composition, and its atom lines stronger than ``ew_min`` mÅ are
     measured over the quadrature's line windows (:func:`measure_reference_lines`). The
@@ -1955,6 +1957,10 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     if request.windows:
         raise ValueError("NLTE corrections measure the atom's own line windows; clear the "
                          "request's windows.")
+    if not departures.line_grid and not get_profile_class(profile).fitted:
+        raise ValueError(f"The {profile!r} profile measures each line over its window from "
+                         "a prepared quadrature; request the departures with line_grid=True "
+                         "or choose a fitted profile.")
     reference = _reference_atmosphere(request, reference_atmosphere)
     request.check()
     lte_request = request.update(atmosphere=reference, departures=None)

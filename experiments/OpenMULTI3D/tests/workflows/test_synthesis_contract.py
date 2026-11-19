@@ -214,7 +214,7 @@ def test_unsupported_combinations_are_refused_before_a_record_exists(tmp_path):
     with pytest.raises(ValueError, match='model atoms'):
         workflows.resolve_request(one, {'mode': 'NLTE'})
     with pytest.raises(ValueError, match='prepared'):
-        workflows.resolve_request(one.update(departures=DepartureRequest('mg.atom')))
+        workflows.resolve_request(one.update(departures=DepartureRequest('mg.atom', line_grid=True)))
     with pytest.raises(ValueError, match='unknown operation'):
         submission.submit_operation('synthesis.compute', one, root=tmp_path / 'jobs')
     assert not (tmp_path / 'jobs').exists()      # nothing was recorded for a refused request

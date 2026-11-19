@@ -31,7 +31,7 @@ def result(tmp_path_factory):
                          linelist_skirt=0, threads=2)
     request = SynthRequest(config=config, atmosphere='input/atmos/sun.mod',
                            star=Star(5777, 4.44, 0.0, 1.0), windows=WINDOW)
-    nlte = departures.request(request, atom='input/atoms/atom.ba06', line_grid=False)
+    nlte = departures.request(request, atom='input/atoms/atom.ba06')
     return synthesis.synthesize(request.update(departures=nlte))
 
 
