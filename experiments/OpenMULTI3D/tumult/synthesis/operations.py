@@ -180,6 +180,15 @@ def departure_status(runs, root, started):
     return states.pop() if len(states) == 1 else "mixed"
 
 
+def clear_cache(config):
+    """Delete the cache of ``config`` (a :class:`~tumult.synthesis.SynthConfig`): the native
+    runs under ``<root>/data/<cache>``, their namelists under ``<root>/<cache>`` and the HOP
+    preparations (pruned line lists, line quadratures, <3D> averages) there. Returns the
+    number of runs removed."""
+    from .workflows import clear_cache as clear
+    return clear(config.to_prefs())
+
+
 def synthesize(request, *, background_lines=True, cancel_token=None):
     """Synthesize the spectra ``request`` describes, one per window.
 

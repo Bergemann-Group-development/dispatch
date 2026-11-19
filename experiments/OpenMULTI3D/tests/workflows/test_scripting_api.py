@@ -697,3 +697,17 @@ def test_complete_edited_result_preserves_abundance_convention(config, monkeypat
     if balance:
         # completing the rungs updates the diagnostics, not the solved parameters
         assert set(result.stale_reasons()) == {'lines'}
+
+
+def test_clear_cache_empties_the_cache_of_a_config(tmp_path):
+    config = SynthConfig(root=tmp_path, cache="mine")
+    run = tmp_path / "data" / "mine" / "bucket" / "run"
+    prepared = tmp_path / "mine" / "_preparation" / "linelist.txt"
+    other = tmp_path / "data" / "other" / "run"
+    for folder in (run, prepared.parent, other):
+        folder.mkdir(parents=True)
+    prepared.write_text("")
+    synthesis.clear_cache(config)
+    assert not any((tmp_path / "data" / "mine").iterdir())
+    assert not any((tmp_path / "mine").iterdir())
+    assert other.is_dir()
