@@ -1380,7 +1380,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     """
     from .synthesis import workflows as synth
     from .synthesis.api import NodeStore
-    from .synthesis.inputs import Snapshot
+    from .synthesis.inputs import is_snapshot
     from .synthesis.operations import run_values as complete_values
 
     opts = opts or CorrectionOpts()
@@ -1389,7 +1389,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     request = request.update(departures=None)
     symbol = result.symbol
     step = request.config.abundance_step
-    snapshot = isinstance(request.atmosphere, Snapshot)
+    snapshot = is_snapshot(request.atmosphere)
 
     # the grid and atom copy stage 1 prepared, so both stages see the same line windows
     run_atom, line_grid = atom, None
@@ -1541,7 +1541,7 @@ class _LatticeContext:
         from .departures import DepartureGrid, Departures
         from .synthesis import workflows as synth
         from .synthesis.api import NodeStore
-        from .synthesis.inputs import Snapshot
+        from .synthesis.inputs import is_snapshot
         from .synthesis.operations import departure_run_values, run_values
 
         self.departure_values, self.quadrature, self.quadrature_atmosphere = \
@@ -1550,7 +1550,7 @@ class _LatticeContext:
         self.solved_departures = isinstance(request.departures, (Departures, DepartureGrid))
         # snapshots and solved departures run through execute_request, which reads them;
         # the batch path schedules every variant's runs together on 1D atmospheres
-        self.direct = self.solved_departures or isinstance(request.atmosphere, Snapshot)
+        self.direct = self.solved_departures or is_snapshot(request.atmosphere)
         self.lte_request = request.update(departures=None)
         base = run_values(request, **self.departure_values)
         self.prefs = request.config.to_prefs()
@@ -1897,19 +1897,15 @@ def _provenance(request, context, background_lines):
 
 def _reference_atmosphere(request, reference_atmosphere):
     """The 1D atmosphere or grid the LTE reference of a correction is computed on."""
-    from .synthesis.inputs import AtmosphereGrid, Snapshot, coerce_atmosphere
-    from .synthesis.snapshot_grid import SNAPSHOT_FORMATS
+    from .synthesis.inputs import coerce_atmosphere
     if reference_atmosphere is not None:
         reference = coerce_atmosphere(reference_atmosphere)
     else:
         reference = request.atmosphere
-        three_d = isinstance(reference, Snapshot) or (
-            isinstance(reference, AtmosphereGrid)
-            and str(reference.format).lower() in SNAPSHOT_FORMATS)
-        if three_d:
+        if reference.is_3d:
             raise ValueError("A 3D NLTE correction needs a 1D LTE reference; pass "
                              "reference_atmosphere=AtmosphereGrid(...) or Atmosphere(...).")
-    if isinstance(reference, Snapshot):
+    if reference.is_3d:
         raise ValueError("The LTE reference atmosphere must be 1D.")
     return reference
 

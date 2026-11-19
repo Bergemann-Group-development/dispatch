@@ -47,7 +47,7 @@ from bokeh.models import TextInput
 
 from tumult import refstars
 from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
-                              DepartureRequest, Departures, Snapshot, Star, SynthRequest,
+                              DepartureRequest, Departures, Star, SynthRequest,
                               presets)
 from tumult.synthesis.snapshot_grid import SNAPSHOT_FORMATS, is_snapshot_grid
 
@@ -722,9 +722,11 @@ class SynthSetup:
                 # active_grid() already carries the Individual selector's format or the
                 # registered grid's; a snapshot picked from a Stagger grid must not fall back
                 # to the Individual preference (which defaults to Marcs)
-                atmosphere = Snapshot(atmos_file, grid.get("format"), resolution, preparation)
+                atmosphere = Atmosphere(atmos_file, grid.get("format"), resolution,
+                                        preparation=preparation)
             elif atmos_file:
-                atmosphere = Atmosphere(atmos_file, grid.get("format") or "Marcs", preparation)
+                atmosphere = Atmosphere(atmos_file, grid.get("format") or "Marcs",
+                                        preparation=preparation)
             else:
                 atmosphere = atmosphere_grid(grid, preparation)
             base = self.base_form.values()

@@ -3,10 +3,10 @@
 An atmosphere's ``preparation`` names them, and nothing is prepared without one: the runs
 then read the full line list and the model atoms keep their own quadratures.
 ``preparation=True`` names the atmosphere itself. A preparation that is an individual
-:class:`~.inputs.Atmosphere` is the reference of every synthesis; an
+1D :class:`~.inputs.Atmosphere` is the reference of every synthesis; an
 :class:`~.inputs.AtmosphereGrid` gives its node nearest the star, or the node nearest each
-node of a synthesis grid. A 3D :class:`~.inputs.Snapshot`, or the node of
-a snapshot grid, is replaced by its <3D> average on surfaces of constant tau_500
+node of a synthesis grid. A 3D snapshot (an :class:`~.inputs.Atmosphere` of a 3D format),
+or the node of a snapshot grid, is replaced by its <3D> average on surfaces of constant tau_500
 (:mod:`tumult.avg3d`), written once in dispatch.x's 'text' format under the preparation
 cache.
 
@@ -21,8 +21,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .inputs import Atmosphere, Snapshot
-from .snapshot_grid import SNAPSHOT_FORMATS
+from .inputs import Atmosphere
 
 
 @dataclass(frozen=True)
@@ -39,18 +38,18 @@ def reference_atmosphere(preparation, target, config):
     from .workflows import (DEFAULT_PATTERN, _nearest_grid_path, discover_atmos_grid,
                             preparation_root)
     prefs = config.to_prefs()
-    if isinstance(preparation, Atmosphere):
-        return Reference(str(config.resolve(preparation.path)), preparation.format)
-    if isinstance(preparation, Snapshot):
+    if isinstance(preparation, Atmosphere) and preparation.is_3d:
         return mean_3d(config.resolve(preparation.path), preparation.format,
                        float(target[2]), preparation_root(prefs))
+    if isinstance(preparation, Atmosphere):
+        return Reference(str(config.resolve(preparation.path)), preparation.format)
     record = preparation.record(config)
     nodes = discover_atmos_grid(Path(record["folder"]), record.get("pattern") or DEFAULT_PATTERN)
     if not nodes:
         raise ValueError(f"The preparation grid {record['folder']} holds no atmospheres.")
     vmic = float(target[3]) if len(target) > 3 and target[3] is not None else 0.0
     path = str(config.resolve(_nearest_grid_path(nodes, target[:3], vmic)))
-    if str(preparation.format).lower() in SNAPSHOT_FORMATS:
+    if preparation.is_3d:
         return mean_3d(path, preparation.format, float(target[2]), preparation_root(prefs))
     return Reference(path, preparation.format)
 

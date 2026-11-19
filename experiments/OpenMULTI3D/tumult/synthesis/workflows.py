@@ -33,9 +33,9 @@ from ..abundance import (
     SYNTH_PAD_AA, read_solar_abundances, xfe_to_abund,
 )
 from .cancel import CancelToken, CancelledError
-from .inputs import Atmosphere, AtmosphereGrid, Snapshot
+from .inputs import AtmosphereGrid, is_snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
-from .snapshot_grid import SNAPSHOT_FORMATS, discover_grid
+from .snapshot_grid import discover_grid
 from ..auxfuncs import update_dict
 from ..launch import run_file
 from . import presets
@@ -761,8 +761,7 @@ def preset_settings(request, report=True):
     (:func:`tumult.synthesis.api._foldable_ladder`).
     """
     atmosphere = request.atmosphere
-    is_3d = (isinstance(atmosphere, Snapshot)
-             or str(atmosphere.format).lower() in SNAPSHOT_FORMATS)
+    is_3d = atmosphere.is_3d
     geometry = presets.geometry(atmosphere.format, is_3d)
     names = ([geometry] if geometry else []) + list(request.all_presets)
     settings, conflicts = presets.stack(names)
@@ -842,8 +841,8 @@ def _single_atmosphere_settings(request, prefs):
     absmet = _absmet_files(prefs, {(star.teff, star.logg, feh): atmosphere.path}) or {}
     if absmet.get(feh):
         settings['opac_table_params'] = {'absmet_file': absmet[feh]}
-    if isinstance(atmosphere, Atmosphere):
-        settings['atmos_params'] = {'feh': feh, 'vmic': float(star.vmic)}
+    if not atmosphere.is_3d:
+        settings["atmos_params"] = {"feh": feh, "vmic": float(star.vmic)}
     return settings
 
 
@@ -934,9 +933,9 @@ def execute_request(request, run_values=None, *, cancel_token=None):
     departures = (request.departures
                   if isinstance(request.departures, (Departures, DepartureGrid)) else None)
     dep_dirs = departures.folders() if isinstance(departures, DepartureGrid) else None
-    if isinstance(atmosphere, Snapshot) or (departures is not None and dep_dirs is None):
+    if is_snapshot(atmosphere) or (departures is not None and dep_dirs is None):
         from .snapshot import solve_departures, synthesise, synthesise_snapshot
-        resolution = atmosphere.resolution if isinstance(atmosphere, Snapshot) else None
+        resolution = atmosphere.resolution if is_snapshot(atmosphere) else None
         if nlte and departures is None:
             departures = solve_departures(top, path, settings, resolution=resolution,
                                           atmos_format=atmosphere.format,
@@ -998,7 +997,7 @@ def solve_request_departures(request, run_values, *, cancel_token=None):
     launch_kwargs = {'overwrite': False, 'verbose': 0, 'default': [str(_BASE_LAYER)],
                      'cwd': resolved.execution_root}
     from .snapshot import solve_departures
-    resolution = atmosphere.resolution if isinstance(atmosphere, Snapshot) else None
+    resolution = atmosphere.resolution if is_snapshot(atmosphere) else None
     return solve_departures(str(request.config.cache),
                             _resolved_path(Path(resolved.execution_root), atmosphere.path),
                             resolved.settings, resolution=resolution,

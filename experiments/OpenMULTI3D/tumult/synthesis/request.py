@@ -19,7 +19,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from . import presets
-from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Star, SynthConfig, is_snapshot,
                      coerce_atmosphere, coerce_windows)
 
 
@@ -99,7 +99,7 @@ class SynthesisResult:
 
     @property
     def geometry(self):
-        return "3d" if isinstance(self.request.atmosphere, Snapshot) else "1d"
+        return "3d" if is_snapshot(self.request.atmosphere) else "1d"
 
     @property
     def spectrum(self):
@@ -364,11 +364,11 @@ class SynthRequest:
     """Everything needed to produce synthetic spectra.
 
     ``config`` (:class:`~tumult.synthesis.inputs.SynthConfig`) states paths and numerical
-    settings; ``atmosphere`` an :class:`~tumult.synthesis.inputs.Atmosphere`,
-    :class:`~tumult.synthesis.inputs.AtmosphereGrid` or
-    :class:`~tumult.synthesis.inputs.Snapshot` (a path is taken as a MARCS file or grid);
-    ``star`` the stellar parameters, which are required for every atmosphere and never read
-    from a model file; ``windows`` the wavelength ranges of a requested spectrum (one
+    settings; ``atmosphere`` an :class:`~tumult.synthesis.inputs.Atmosphere` or
+    :class:`~tumult.synthesis.inputs.AtmosphereGrid`, 1D or 3D by its format (a path is
+    taken as a MARCS file or grid); ``star`` the stellar parameters, which are required
+    for every atmosphere and never read from a model file (a 3D snapshot needs no
+    ``vmic``); ``windows`` the wavelength ranges of a requested spectrum (one
     ``(blue, red)`` pair or several, Angstrom or astropy quantities); ``abundances`` the
     overrides of the standard composition, applied in every synthesis an operation issues.
 
@@ -390,7 +390,7 @@ class SynthRequest:
     results may be passed for ``star`` and ``abundances``.
     """
     config: SynthConfig
-    atmosphere: Atmosphere | AtmosphereGrid | Snapshot
+    atmosphere: Atmosphere | AtmosphereGrid
     star: Star
     windows: tuple = ()
     abundances: Abundances | None = None
@@ -419,7 +419,7 @@ class SynthRequest:
             raise TypeError("departures must be Departures, a DepartureGrid, a "
                             "DepartureRequest (departures.request) or None.")
         atmosphere = self.atmosphere
-        if self.star.vmic is None and not isinstance(atmosphere, Snapshot):
+        if self.star.vmic is None and not is_snapshot(atmosphere):
             raise ValueError("A 1D atmosphere needs vmic in the stellar parameters.")
         if isinstance(departures, Departures):
             if isinstance(atmosphere, AtmosphereGrid):
@@ -439,7 +439,7 @@ class SynthRequest:
     def _check_star(self, solved, what):
         if not solved:
             return
-        mismatch = {key: (solved.get(key), self.star[key]) for key in self.star
+        mismatch = {key: (solved.get(key), self.star[key]) for key in self.star.keys()
                     if solved.get(key) is not None
                     and not math.isclose(float(solved[key]), self.star[key], abs_tol=1e-9)}
         if mismatch:

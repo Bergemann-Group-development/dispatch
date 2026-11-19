@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from tumult import Spectrum
-from tumult.synthesis import (Atmosphere, AtmosphereGrid, ResolvedSynthRequest, Snapshot,
+from tumult.synthesis import (Atmosphere, AtmosphereGrid, ResolvedSynthRequest,
                               SynthConfig, SynthesisResult, SynthRequest, workflows)
 
 
@@ -22,7 +22,7 @@ def _request(atmosphere, tmp_path, windows=(), star=(5750, 4.5, 0, 1), **config)
 def test_all_atmosphere_kinds_roundtrip(tmp_path):
     requests = [_request(AtmosphereGrid('grid'), tmp_path, [(4999.5, 5001.5)]),
                 _request(Atmosphere('one.mod'), tmp_path, [(4999.5, 5001.5)]),
-                _request(Snapshot('cube.dat', 'Stagger', (8, 8, 16)), tmp_path,
+                _request(Atmosphere('cube.dat', 'Stagger', (8, 8, 16)), tmp_path,
                          [(4999.5, 5001.5)], star=(5750, 4.5, 0))]
     for request in requests:
         reopened = SynthRequest.from_json(request.to_json())
@@ -142,7 +142,7 @@ def test_only_a_named_preparation_prepares(tmp_path, monkeypatch):
         return preparation.Reference(str(tmp_path / 'mean.txt'), 'text')
 
     monkeypatch.setattr(preparation, 'mean_3d', mean_3d)
-    cube = Snapshot('cube.atmos', 'M3DIS', preparation=Snapshot('cube.atmos', 'M3DIS'))
+    cube = Atmosphere('cube.atmos', 'M3DIS', preparation=Atmosphere('cube.atmos', 'M3DIS'))
     resolved = workflows.resolve_request(_request(cube, tmp_path))
     assert averaged == [('cube.atmos', 'M3DIS')]
     assert resolved.preparation_references == ((str(tmp_path / 'mean.txt'), 'text'),)
@@ -161,7 +161,7 @@ def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monke
 
     monkeypatch.setattr(snapshot, 'synthesise_snapshot', direct)
     windows = [(4999.5, 5001.5), (6100.0, 6102.0)]
-    request = _request(Snapshot('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
+    request = _request(Atmosphere('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
                        windows, star=(5750, 4.5, 0))
     result = workflows.execute_request(request)
     assert result.geometry == '3d' and len(seen) == 1
@@ -252,7 +252,7 @@ def test_fit_refuses_what_fitting_does_not_support(tmp_path):
 
     one = _request(Atmosphere('one.mod'), tmp_path, windows)
     with pytest.raises(ValueError, match='1D atmospheres and grids'):
-        check_fit(_request(Snapshot('cube.dat', 'Stagger', (4, 4, 8)), tmp_path, windows,
+        check_fit(_request(Atmosphere('cube.dat', 'Stagger', (4, 4, 8)), tmp_path, windows,
                            star=(5750, 4.5, 0)), fit_post={'vshift': 0})
     with pytest.raises(ValueError, match='Frozen departures'):
         check_fit(one.update(departures=_saved_departures(tmp_path)), abund_fits={'Mg': 0.0})
@@ -327,7 +327,7 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
 
     atom = tmp_path / 'atom.ba'
     line_grid = tmp_path / 'line_grid.txt'
-    request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
+    request = _request(Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
                        star=(4548, 3.964, 0), R_sampling=1e6, linelist_skirt=0)
     run_values = {'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)}
@@ -355,7 +355,7 @@ def test_snapshot_sampled_opacity_defaults_allow_nml_settings_override(tmp_path)
         'rt_iteration_params': {'sample_back_opac': False, 'sample_linelist': False},
         'rt_output_params': {'sample_back_opac': False, 'sample_linelist': False},
     }
-    request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
+    request = _request(Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
                        star=(4548, 3.964, 0), nml_settings=nml_settings)
     settings = workflows.resolve_request(request, {}).settings
     for section in ('rt_iteration_params', 'rt_output_params'):
@@ -365,3 +365,10 @@ def test_snapshot_sampled_opacity_defaults_allow_nml_settings_override(tmp_path)
     one_d = workflows.resolve_request(_request(Atmosphere('one.mod'), tmp_path), {}).settings
     assert 'rt_iteration_params' not in one_d
     assert 'rt_output_params' not in one_d
+
+
+def test_the_format_decides_whether_an_atmosphere_is_a_snapshot():
+    assert Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)).is_3d
+    assert not Atmosphere('sun.mod').is_3d
+    with pytest.raises(ValueError, match='1D format'):
+        Atmosphere('sun.mod', 'Marcs', (20, 20, 64))
