@@ -16,8 +16,12 @@ of the atom in which each line's ``nq qmax q0`` are rewritten so that its
 copy differs from the original only in those three columns. Several atoms share one grid,
 the union of theirs (:func:`combine_line_quadratures`).
 
-Only the classic (``atom.*``) model-atom format is handled, and only single-component
-lines (``iw <= 1``).
+Only the classic (``atom.*``) model-atom format is handled. The lines are evaluated as
+the run reads them, from the atom's conversion to the table format
+(:func:`read_components`), where a line with hyperfine or isotopic components is one
+line per component. Each component gets its own window, and the copy gives each MULTI
+line the widest window of its components, since the run places every component on its
+line's ``qmax``.
 """
 from __future__ import annotations
 
@@ -31,7 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from .const import CC_KMS, HCE
-from .physics import vac2air
+from .physics import air2vac
 
 CM_TO_EV = HCE * 1e-8            # energy in cm^-1 -> eV
 QNORM_KMS = 10.0                 # the Fortran &atom_params qnorm default the atom copy assumes
@@ -44,15 +48,17 @@ ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
 class ClassicAtom:
     """The parts of a classic model atom the grid generator needs.
 
-    ``lines`` holds one row per bound-bound transition, in file order; ``records`` the
-    line index of every text line of the file that is a bb record, so the file can be
-    rewritten with those records replaced and everything else verbatim.
+    ``lines`` holds one row per bound-bound transition, in file order, with ``ncomp`` the
+    number of lines the conversion writes for it (its components of positive weight, one
+    for a single line); ``records`` the line index of every text line of the file that
+    is a bb record, so the file can be rewritten with those records replaced and
+    everything else verbatim.
     """
     element: str
     ev_cm: np.ndarray            # level energies [cm^-1]
     g: np.ndarray
     ion: np.ndarray              # ionisation stage per level (1 = neutral)
-    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, grad, gvdw, gstk
+    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, grad, gvdw, gstk, ncomp
     text: list[str]
     records: dict[int, int]      # text line index -> bb line index
 
@@ -70,9 +76,10 @@ def _is_entry(text):
 def read_classic_atom(path):
     """Parse the header, levels and bound-bound records of a classic model atom.
 
-    Follows dispatch's MULTI parser (HOP/atom_convert_mod.f90): entries are the non-blank lines not starting with
-    ``*``; hyperfine components (``iw > 1``) would follow their line record without
-    comment skipping and are not supported here.
+    Follows dispatch's MULTI parser (HOP/atom_convert_mod.f90): entries are the non-blank
+    lines not starting with ``*``; the ``iw`` component records of a line with ``iw > 1``
+    follow its record without comment skipping, and their weights (second column) give
+    ``ncomp``.
     """
     text = Path(path).read_text().splitlines()
     entries = [k for k, t in enumerate(text) if _is_entry(t)]
@@ -96,45 +103,73 @@ def read_classic_atom(path):
         ion[n] = int(w[-1])
 
     dtype = [('i', int), ('j', int), ('f', float), ('nq', int), ('qmax', float),
-             ('q0', float), ('iw', int), ('grad', float), ('gvdw', float), ('gstk', float)]
+             ('q0', float), ('iw', int), ('grad', float), ('gvdw', float), ('gstk', float),
+             ('ncomp', int)]
     lines = np.empty(nline, dtype=dtype)
     records = {}
     for n in range(nline):
         k, w = entry()
         jj, ii = int(w[0]), int(w[1])
+        iw, ncomp = int(w[6]), 1
+        if iw >= 2:
+            ncomp = sum(float(c.split()[1]) > 0 for c in text[k + 1:k + 1 + iw])
+            while pos < len(entries) and entries[pos] <= k + iw:
+                pos += 1
         lines[n] = (min(ii, jj) - 1, max(ii, jj) - 1, float(w[2]), int(w[3]), float(w[4]),
-                    float(w[5]), int(w[6]), float(w[7]), float(w[8]), float(w[9]))
-        if lines[n]['iw'] > 1:
-            raise NotImplementedError(f'line {n + 1} of {path} has {lines[n]["iw"]} '
-                                      'hyperfine components; not supported')
+                    float(w[5]), iw, float(w[7]), float(w[8]), float(w[9]), ncomp)
         records[k] = n
     return ClassicAtom(element.strip(), ev_cm, g, ion, lines, text, records)
 
 
-def write_atom_linelist(atom, path):
-    """Write the atom's lines as an input line list, one block per ionisation stage.
+def read_components(atom_file, atom):
+    """The bound-bound lines of ``atom_file`` as the run reads them, with their parents.
+
+    The atom is converted to the table format as a run converts it
+    (:meth:`tumult.atom.Atom.read`), which writes one line per component of positive
+    weight. ``parent`` is the index of each written line's MULTI line in ``atom.lines``:
+    the first component keeps its line's position and the others follow the MULTI lines
+    in order (HOP/atom_convert_mod.f90).
+    """
+    from .atom import Atom
+
+    bbt = Atom.read(atom_file).bbt
+    nline = atom.lines.size
+    extra = np.repeat(np.arange(nline), atom.lines['ncomp'] - 1)
+    if len(bbt) != nline + extra.size:
+        raise ValueError(f'{atom_file}: the conversion wrote {len(bbt)} lines, the MULTI '
+                         f'records give {nline + extra.size}')
+    parent = np.concatenate([np.arange(nline), extra])
+    if np.any(bbt['i'].to_numpy() != atom.lines['i'][parent]) or \
+            np.any(bbt['j'].to_numpy() != atom.lines['j'][parent]):
+        raise ValueError(f'{atom_file}: converted lines do not match their MULTI lines')
+    return bbt.assign(parent=parent).reset_index(drop=True)
+
+
+def write_atom_linelist(atom, lines, path):
+    """Write the converted ``lines`` (:func:`read_components`) as an input line list,
+    one block per ionisation stage.
 
     The record layout is the one linelist_out.txt uses (``lam_air evi loggf gvdw grad gstk i
     j``): the lower-level energy is relative to the ground level of the line's ionisation
     stage, and the broadening columns are the atom's own, since atom_mod and the line-list
     reader feed them to the same prepare_* routines.
     """
-    lam_air = vac2air(atom.lam0_vac)
-    i, j = atom.lines['i'], atom.lines['j']
-    loggf = np.log10(atom.g[i] * atom.lines['f'])
+    lam_air = lines['lam0'].to_numpy(float)
+    i, j = lines['i'].to_numpy(), lines['j'].to_numpy()
     stage = atom.ion[i]
     ground = {s: np.flatnonzero(atom.ion == s)[0] for s in np.unique(stage)}
-    evi = np.array([(atom.ev_cm[ii] - atom.ev_cm[ground[s]]) * CM_TO_EV
-                    for ii, s in zip(i, stage)])
+    evi = (atom.ev_cm[i] - atom.ev_cm[[ground[s] for s in stage]]) * CM_TO_EV
+    loggf, gvdw = lines['loggf'].to_numpy(float), lines['gvdw'].to_numpy(float)
+    grad, gstk = lines['grad'].to_numpy(float), lines['gstk'].to_numpy(float)
     with Path(path).open('w') as f:
         for s in sorted(ground):
             sel = np.flatnonzero(stage == s)
-            sel = sel[np.argsort(lam_air[sel])]
+            sel = sel[np.argsort(lam_air[sel], kind='stable')]
             f.write(f"'{atom.element} {ROMAN[s - 1]}'\n'0' {sel.size}\n")
             for n in sel:
                 f.write(f"{lam_air[n]:12.4f}{evi[n]:10.4f}{loggf[n]:9.3f}"
-                        f"{atom.lines['gvdw'][n]:14.6f}{atom.lines['grad'][n]:12.3E}"
-                        f"{atom.lines['gstk'][n]:12.3E}{i[n] + 1:6d}{j[n] + 1:6d}\n")
+                        f"{gvdw[n]:14.6f}{grad[n]:12.3E}{gstk[n]:12.3E}"
+                        f"{i[n] + 1:6d}{j[n] + 1:6d}\n")
     return path
 
 
@@ -301,7 +336,8 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     atom = read_classic_atom(atom_file)
-    lam0_all = atom.lam0_vac
+    lines = read_components(atom_file, atom)
+    lam0_all = air2vac(lines['lam0'].to_numpy(float))
     use = np.ones(lam0_all.size, bool)
     if lam_range is not None:
         use &= (lam0_all >= lam_range[0]) & (lam0_all <= lam_range[1])
@@ -319,7 +355,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
         print(f'{len(windows)} windows, {lam.size} fine-grid points')
 
     linelist = out_dir / f'{atom.element}_lines.txt'
-    write_atom_linelist(atom, linelist)
+    write_atom_linelist(atom, lines[use], linelist)
     T, rho = read_marcs(atmos_file)
     options = {}
     if abundances:
@@ -360,8 +396,10 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     lo = grid[np.minimum(np.searchsorted(grid, lo, side='right') - 1, ig - 1)]
     hi = grid[np.minimum(np.maximum(np.searchsorted(grid, hi), ig + 1), grid.size - 1)]
     half = np.maximum(centres - lo, hi - centres) / centres * CC_KMS     # [km/s]
-    half_all = np.full(lam0_all.size, np.nan)
-    half_all[np.flatnonzero(use)[order]] = half
+    # a MULTI line takes the widest window of its components
+    half_all = np.full(atom.lines.size, -np.inf)
+    np.maximum.at(half_all, lines['parent'].to_numpy()[np.flatnonzero(use)[order]], half)
+    half_all[np.isinf(half_all)] = np.nan
 
     grid_file = out_dir / 'line_grid.txt'
     with grid_file.open('w') as f:

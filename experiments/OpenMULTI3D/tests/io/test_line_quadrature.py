@@ -1,16 +1,21 @@
-"""The parts of tumult.line_quadrature that need no HOP: the thinning invariant, the
-atom copy, whose contract is that only the ``nq qmax q0`` columns change, and the grid
-several atoms share."""
+"""The parts of tumult.line_quadrature that need no HOP opacities: the thinning invariant,
+the atom copy, whose contract is that only the ``nq qmax q0`` columns change, the lines the
+generator evaluates, and the grid several atoms share. Reading the lines needs the built
+``atom_convert.x``."""
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tumult.line_quadrature import (PreparedLineQuadrature, combine_line_quadratures,
-                                    read_classic_atom, thin_linear, write_atom_copy,
-                                    write_atom_linelist)
+                                    read_classic_atom, read_components, thin_linear,
+                                    write_atom_copy, write_atom_linelist)
+from tumult.atom import CONVERTER
 from tumult.linelist import LineList
 
 ATOM = Path(__file__).resolve().parents[2] / "input" / "atoms" / "atom.ba06"
+HFS_ATOM = Path(__file__).resolve().parents[2] / "input" / "atoms" / "public" / "atom.mn281kbc"
+needs_converter = pytest.mark.skipif(not CONVERTER.is_file(), reason="needs atom_convert.x")
 
 
 def test_thin_linear_recovers_within_tolerance():
@@ -46,14 +51,35 @@ def test_atom_copy_changes_only_the_quadrature_columns(tmp_path):
     assert again.lines["qmax"][1] == atom.lines["qmax"][1]
 
 
+@needs_converter
 def test_atom_linelist_reads_back(tmp_path):
     atom = read_classic_atom(ATOM)
-    ll = LineList.from_tumult_format(write_atom_linelist(atom, tmp_path / "ll.txt"))
+    lines = read_components(ATOM, atom)
+    ll = LineList.from_tumult_format(write_atom_linelist(atom, lines, tmp_path / "ll.txt"))
     assert len(ll) == atom.lines.size
     assert set(ll.index.get_level_values("ion")) == {"Ba II"}
     # Ba II 4554: resonance line, log gf = 0.14 in the atom's comment
     row = ll.iloc[np.argmin(np.abs(ll["lam0"].values - 4554.03))]
     assert abs(row["evi"]) < 1e-6 and abs(row["loggf"] - 0.14) < 5e-3
+
+
+@needs_converter
+def test_components_are_lines_of_their_own(tmp_path):
+    atom = read_classic_atom(HFS_ATOM)
+    lines = read_components(HFS_ATOM, atom)
+    split = np.flatnonzero(atom.lines["ncomp"] > 1)
+    assert split.size > 0 and len(lines) == atom.lines["ncomp"].sum()
+    n = split[0]
+    comps = lines[lines["parent"] == n]
+    assert len(comps) == atom.lines["ncomp"][n] and comps["lam0"].nunique() > 1
+    # the components share their line's total gf
+    gf = atom.g[atom.lines["i"][n]] * atom.lines["f"][n]
+    assert abs(np.log10((10.0 ** comps["loggf"]).sum()) - np.log10(gf)) < 0.01
+    # the copy keeps the component records after their line
+    half = np.full(atom.lines.size, 50.0)
+    copy = read_classic_atom(write_atom_copy(atom, tmp_path / "atom.mn", half, qnorm=10.0))
+    assert np.array_equal(copy.lines["ncomp"], atom.lines["ncomp"])
+    assert np.all(copy.lines["qmax"] == 5.0)
 
 
 def test_several_atoms_share_the_union_of_their_grids(tmp_path):
