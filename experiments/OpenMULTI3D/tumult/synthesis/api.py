@@ -77,6 +77,12 @@ def _node_atmos(atmos_path, feh_i, v):
     return override
 
 
+def _node_absmet(absmet_file):
+    """The per-node ``opac_table_params`` override of a node given its own absmet table;
+    none without one, which keeps the table or folder of the shared settings."""
+    return {'opac_table_params': {'absmet_file': absmet_file}} if absmet_file else {}
+
+
 def _dep_jobs(base, nodes, departures_top):
     """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: the
     ``departures`` preset under ``base``, no line list and no output spectrum
@@ -88,8 +94,8 @@ def _dep_jobs(base, nodes, departures_top):
         dep_nml.pop('spectrum_params', None)
         dep_nml = update_dict(dep_nml, {
             'atmos_params': dict(_node_atmos(atmos_path, feh_i, v), save_atmos=True),
-            'opac_table_params': {'absmet_file': absmet_file},
             'rt_output_params': {'angle_quad': 'none'},
+            **_node_absmet(absmet_file),
         })
         jobs.append((jkey, Path(departures_top) / _node_name(jkey, teff_i, logg_i, feh_i, v),
                      dep_nml))
@@ -121,7 +127,7 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
         node_base = presets.fill(base, presets.STEP_READ) if nlte else copy.deepcopy(base)
         nml_i = update_dict(node_base, {
             'atmos_params': atmos_override,
-            'opac_table_params': {'absmet_file': absmet_file},
+            **_node_absmet(absmet_file),
             **extra,
         })
         jobs.append((jkey, Path(top) / _node_name(jkey, teff_i, logg_i, feh_i, v), nml_i))

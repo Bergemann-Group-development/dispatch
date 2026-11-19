@@ -31,7 +31,7 @@ CONVENTIONS = ("[X/Fe]", "A(X)")
 ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
 PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist_file",
-               "abund_file": "abund_file", "absmet": "absmet", "R": "R_sampling",
+               "abund_file": "abund_file", "R": "R_sampling",
                "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
                "max_threads": "threads", "nml_settings": "nml_settings"}
@@ -61,9 +61,11 @@ class SynthConfig:
 
     A field that sets one namelist setting has its name: ``linelist_file`` is the
     transition list every synthesis draws from (a file, or a folder whose files it lists),
-    ``abund_file`` the standard composition and ``R_sampling`` the spectrum sampling.
-    ``absmet`` is the background opacity table (a file for every metallicity or a folder
-    keyed by [Fe/H]), ``linelist_skirt`` how far outside a window a transition may still
+    ``abund_file`` the standard composition, ``absmet_file`` the metal-opacity table of
+    every run and ``R_sampling`` the spectrum sampling. ``absmet_folder`` instead holds
+    tables named by their [Fe/H] (``m-1.00a+0.40...``), from which every run, departure
+    solves included, takes the one nearest the [Fe/H] of its atmosphere (the more
+    metal-poor on a tie); at most one of the two is given. ``linelist_skirt`` how far outside a window a transition may still
     contribute when the line list is pruned on the atmosphere's preparation,
     ``abundance_step`` the lattice every abundance ladder is placed on, ``vmic_step`` the
     microturbulence lattice of a grid, ``interpolation`` the grid node selection and
@@ -82,7 +84,8 @@ class SynthConfig:
     cache: Path = Path("synth")
     linelist_file: Path | None = None
     abund_file: Path | None = None
-    absmet: Path | None = None
+    absmet_file: Path | None = None
+    absmet_folder: Path | None = None
     R_sampling: float = 300_000.0
     linelist_skirt: float = 5.0
     abundance_step: float = 0.25
@@ -97,8 +100,11 @@ class SynthConfig:
         set_ = lambda name, value: object.__setattr__(self, name, value)
         set_("root", Path(self.root).expanduser().resolve())
         set_("cache", Path(self.cache).expanduser())
-        for name in ("linelist_file", "abund_file", "absmet"):
+        for name in ("linelist_file", "abund_file", "absmet_file", "absmet_folder"):
             set_(name, _path(getattr(self, name)))
+        if self.absmet_file is not None and self.absmet_folder is not None:
+            raise ValueError("Give absmet_file (one table) or absmet_folder (a table per "
+                             "[Fe/H]), not both.")
         set_("R_sampling", float(self.R_sampling))
         set_("linelist_skirt", _aa(self.linelist_skirt))
         set_("abundance_step", float(self.abundance_step))
@@ -134,7 +140,7 @@ class SynthConfig:
             "nml_settings": self.nml_settings,
         }
         for key, name in (("linelist", "linelist_file"), ("abund_file", "abund_file"),
-                          ("absmet", "absmet")):
+                          ("absmet", "absmet_file"), ("absmet", "absmet_folder")):
             value = getattr(self, name)
             if value is not None:
                 prefs[key] = str(self.resolve(value))
@@ -144,13 +150,20 @@ class SynthConfig:
     def from_prefs(cls, prefs):
         """The configuration a preference dictionary describes; the inverse of
         :meth:`to_prefs`. Keys without a field of their own go to ``preferences``, and an
-        empty path or a zero thread count means unset."""
+        empty path or a zero thread count means unset. The ``absmet`` preference is the
+        ``absmet_folder`` when it names a folder, else the ``absmet_file``."""
         prefs = dict(prefs)
         values = {}
         for key, name in PREF_FIELDS.items():
             if key in prefs:
                 values[name] = prefs.pop(key)
-        for name in ("linelist_file", "abund_file", "absmet"):
+        absmet = str(prefs.pop("absmet", "") or "").strip()
+        if absmet:
+            root = Path(values.get("root") or ".").expanduser()
+            path = Path(absmet).expanduser()
+            folder = (path if path.is_absolute() else root / path).is_dir()
+            values["absmet_folder" if folder else "absmet_file"] = absmet
+        for name in ("linelist_file", "abund_file"):
             if isinstance(values.get(name), str) and not values[name].strip():
                 values[name] = None
         if "threads" in values:

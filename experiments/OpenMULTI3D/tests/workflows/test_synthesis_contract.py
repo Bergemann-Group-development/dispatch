@@ -149,7 +149,9 @@ def test_only_a_named_preparation_prepares(tmp_path, monkeypatch):
 
 
 def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monkeypatch):
-    """A snapshot is one run over every window, read through a window file."""
+    """A snapshot is one run over every window, read through a window file. It takes the
+    star's [Fe/H], which dispatch needs for any non-solar composition and absmet table,
+    and no vmic, since its velocity field replaces microturbulence."""
     from tumult.synthesis import snapshot, workflows
     run = type('Run', (), {'folder': tmp_path / 'run',
                            'crop': lambda self, **kwargs: ('spectrum', kwargs)})()
@@ -162,9 +164,11 @@ def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monke
     monkeypatch.setattr(snapshot, 'synthesise_snapshot', direct)
     windows = [(4999.5, 5001.5), (6100.0, 6102.0)]
     request = _request(Atmosphere('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
-                       windows, star=(5750, 4.5, 0))
+                       windows, star=(5750, 4.5, -3))
     result = workflows.execute_request(request)
     assert result.geometry == '3d' and len(seen) == 1
+    assert seen[0][2]['settings']['atmos_params']['feh'] == -3
+    assert 'vmic' not in seen[0][2]['settings']['atmos_params']
     assert [kwargs['window'] for _name, kwargs in result.spectra] == windows
     assert seen[0][1] == (tmp_path / 'cube.dat').resolve()
     assert seen[0][2]['resolution'] == (4, 5, 6)
@@ -372,3 +376,15 @@ def test_the_format_decides_whether_an_atmosphere_is_a_snapshot():
     assert not Atmosphere('sun.mod').is_3d
     with pytest.raises(ValueError, match='1D format'):
         Atmosphere('sun.mod', 'Marcs', (20, 20, 64))
+
+
+def test_absmet_is_one_table_or_a_folder_of_them(tmp_path):
+    (tmp_path / 'tables').mkdir()
+    (tmp_path / 'one.bin').touch()
+    folder = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'tables'})
+    single = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'one.bin'})
+    assert (folder.absmet_folder, folder.absmet_file) == (Path('tables'), None)
+    assert (single.absmet_file, single.absmet_folder) == (Path('one.bin'), None)
+    assert SynthConfig.from_prefs(folder.to_prefs()).absmet_folder == tmp_path / 'tables'
+    with pytest.raises(ValueError, match='not both'):
+        SynthConfig(root=tmp_path, absmet_file='one.bin', absmet_folder='tables')

@@ -11,7 +11,6 @@ from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest, workflow
 def calls(monkeypatch, tmp_path):
     recorded = []
     monkeypatch.setattr(synth, 'discover_atmos_grid', lambda *a: {(5750,4.5,0.): tmp_path/'a.mod'})
-    monkeypatch.setattr(synth, '_absmet_files', lambda *a: None)
     def record(**kwargs):
         recorded.append(kwargs)
         # execute_request unpacks (spectra per window, runs) from a window batch; each
@@ -282,22 +281,14 @@ def test_probe_stars_share_the_target_runs_and_add_only_their_own_nodes(tmp_path
     assert probe[1][0] == (5850., [('a', 1.0), ('b', 1.0)])
 
 
-def test_absmet_folder_gives_each_feh_the_nearest_table(tmp_path):
-    """A table carries no metallicity scaling, so each grid [Fe/H] takes the table of the
-    nearest [Fe/H]; the solar table must not be confused with the c+0.00, n+0.00, ...
-    fields of the metal-poor names."""
-    names = {feh: f"m{feh:+.2f}a{a:+.2f}c+0.00n+0.00o{a:+.2f}r+0.00s+0.00v+1.00.bin"
-             for feh, a in ((0.0, 0.0), (-1.0, 0.4), (-2.0, 0.4), (-3.0, 0.4))}
-    for name in names.values():
-        (tmp_path / name).touch()
-    (tmp_path / "README.txt").touch()
-    grid = {(5000., 4., feh): "atmos" for feh in (0.25, 0.0, -0.4, -1.0, -1.5, -2.25, -4.0)}
-    got = synth._absmet_files({"absmet": str(tmp_path)}, grid)
-    want = {0.25: 0.0, 0.0: 0.0, -0.4: 0.0, -1.0: -1.0, -1.5: -2.0, -2.25: -2.0, -4.0: -3.0}
-    assert got == {feh: str(tmp_path / names[t]) for feh, t in want.items()}
-
-
-def test_absmet_folder_without_tables_is_an_error(tmp_path):
-    (tmp_path / "absmet").touch()
-    with pytest.raises(FileNotFoundError):
-        synth._absmet_files({"absmet": str(tmp_path)}, {(5000., 4., 0.): "atmos"})
+def test_absmet_reaches_the_namelist_as_a_table_or_a_folder(tmp_path):
+    """dispatch.x picks a folder's table at each run's [Fe/H], so the configured folder
+    reaches every run as ``absmet_folder`` and a single table as ``absmet_file``."""
+    (tmp_path / "tables").mkdir()
+    (tmp_path / "one.bin").touch()
+    for config, key, path in ((SynthConfig(root=tmp_path, absmet_folder="tables"),
+                               "absmet_folder", tmp_path / "tables"),
+                              (SynthConfig(root=tmp_path, absmet_file="one.bin"),
+                               "absmet_file", tmp_path / "one.bin")):
+        settings = synth.build_settings(config.to_prefs(), {"mode": "LTE"})
+        assert settings["opac_table_params"] == {key: str(path)}
