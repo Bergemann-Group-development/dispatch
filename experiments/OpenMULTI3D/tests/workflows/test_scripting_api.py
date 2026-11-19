@@ -135,7 +135,7 @@ def test_requests_departures_and_results_reopen(tmp_path, config, atom):
 
 
 # --- synthesis and departures ----------------------------------------------------------------
-def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, monkeypatch):
+def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, atom, monkeypatch):
     from tumult.synthesis import workflows
     from tumult.synthesis.request import SynthesisResult
     monkeypatch.setattr(SynthRequest, "check", lambda self: self)
@@ -151,7 +151,13 @@ def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, mon
     lte = synthesis.synthesize(request)
     assert lte.request is request
     assert lte.provenance["calculation"] == "LTE" and lte.provenance["departures"] == "none"
-    assert lte.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
+    assert lte.provenance["preparation_atmospheres"] == []
+    prepared = synthesis.synthesize(request.update(
+        atmosphere=Atmosphere("one.mod", preparation="one.mod")))
+    assert prepared.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
+    with pytest.raises(ValueError, match="preparation"):
+        synthesis.synthesize(request.update(
+            departures=departures.request(request, atom=atom, line_grid=True)))
     nlte = synthesis.synthesize(request.update(departures=_saved_departures(tmp_path)))
     assert nlte.provenance["departures"] == "loaded"
     assert seen[-1].values["mode"] == "NLTE"

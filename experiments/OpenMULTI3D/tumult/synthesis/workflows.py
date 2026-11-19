@@ -777,17 +777,6 @@ def _resolved_path(root, value):
     return (path if path.is_absolute() else root / path).resolve()
 
 
-def _preparation_grid(request):
-    """The MARCS grid record HOP preparations draw their reference atmospheres from: the
-    atmosphere's ``preparation`` grid, else a MARCS grid itself, else none."""
-    atmosphere, config = request.atmosphere, request.config
-    if atmosphere.preparation is not None:
-        return atmosphere.preparation.record(config)
-    if isinstance(atmosphere, AtmosphereGrid) and atmosphere.is_marcs:
-        return atmosphere.record(config)
-    return {}
-
-
 def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
     keys = sorted({tuple(float(v) for v in key[:3]) for key in atmospheres})
     spans = [max(values) - min(values) or 1.0 for values in zip(*keys)]
@@ -801,21 +790,6 @@ def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
                                     - float(vmic)), str(item[1])))[1]
 
 
-def nearest_marcs_atmosphere(grid, target, prefs):
-    """The MARCS model of ``grid`` nearest to ``target`` (teff, logg, feh[, vmic]).
-
-    Used by preparations that need one representative 1D model of a star, such as the
-    bound-bound grid for its NLTE corrections; ``grid`` must be a MARCS-format grid record.
-    """
-    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
-        raise ValueError('A MARCS-format grid is needed to pick a reference model.')
-    root = execution_root(prefs).resolve()
-    atmospheres = discover_atmos_grid(_resolved_path(root, grid['folder']),
-                                      grid.get('pattern') or DEFAULT_PATTERN)
-    vmic = float(target[3]) if len(target) > 3 else 0.0
-    return str(_resolved_path(root, _nearest_grid_path(atmospheres, target, vmic)))
-
-
 def preparation_root(prefs):
     """Where HOP preparations (pruned line lists, bound-bound grids) are cached."""
     root = execution_root(prefs).resolve()
@@ -823,44 +797,37 @@ def preparation_root(prefs):
 
 
 def _reference_atmospheres(request, prefs, root, prefs_vmic=1.0):
-    """The MARCS atmospheres HOP preparations use, and which synthesis atmosphere each serves.
-
-    An individual MARCS atmosphere and the nodes of a MARCS grid are prepared on
-    themselves. Other formats use the nearest node of their preparation grid.
+    """The reference atmospheres the line list is pruned on, and which synthesis atmosphere
+    each serves: ``(references, aliases)``, with ``references`` the distinct ``(path,
+    format)`` pairs (:func:`.preparation.reference_atmosphere`) and ``aliases`` mapping each
+    synthesis atmosphere or grid node to its reference path. Both are empty when the
+    atmosphere names no ``preparation``.
     """
-    atmosphere, star = request.atmosphere, request.star
-    if isinstance(atmosphere, Atmosphere) and atmosphere.is_marcs:
-        source = str(_resolved_path(root, atmosphere.path))
-        return (source,), {source: source}
-    grid = _preparation_grid(request)
-    if not grid.get('folder'):
+    from .preparation import reference_atmosphere
+    atmosphere, star, config = request.atmosphere, request.star, request.config
+    preparation = atmosphere.preparation
+    if preparation is None:
         return (), {}
-    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
-        raise ValueError('The automatic HOP preparation reference grid must use MARCS format.')
-    references = discover_atmos_grid(
-        _resolved_path(root, grid['folder']), grid.get('pattern') or DEFAULT_PATTERN)
+    references, aliases = {}, {}
     if isinstance(atmosphere, AtmosphereGrid):
         from .atmos_select import select_nodes
-        synthesis_grid = discover_grid(atmosphere.record(request.config), root)
+        synthesis_grid = discover_grid(atmosphere.record(config), root)
         stellar = star.tuple() if star.vmic is not None else star.tuple()[:3]
         nodes, _ = select_nodes(stellar, synthesis_grid,
                                 method=prefs.get('interp_method', 'NaturalNeighbor'),
                                 vmic_step=float(prefs.get('vmic_step') or 0.5))
-        aliases = {}
         for node in nodes:
-            source = str(_resolved_path(root, node[6]))
-            # a snapshot node has no vmic; its MARCS reference takes the request's
+            # a snapshot node has no vmic; its reference takes the request's
             vmic = node[4] if node[4] is not None else float(prefs_vmic)
-            reference = str(_resolved_path(
-                root, _nearest_grid_path(references, node[1:4], vmic)))
-            aliases[source] = reference
-        return tuple(dict.fromkeys(aliases.values())), aliases
-
-    vmic = star.vmic if star.vmic is not None else 0.0
-    reference = str(_resolved_path(root, _nearest_grid_path(references, star.tuple()[:3],
-                                                            vmic)))
-    source = str(_resolved_path(root, atmosphere.path))
-    return (reference,), {source: reference}
+            reference = reference_atmosphere(preparation, (*node[1:4], vmic), config)
+            references[reference.path] = (reference.path, reference.format)
+            aliases[str(_resolved_path(root, node[6]))] = reference.path
+    else:
+        vmic = star.vmic if star.vmic is not None else 0.0
+        reference = reference_atmosphere(preparation, (*star.tuple()[:3], vmic), config)
+        references[reference.path] = (reference.path, reference.format)
+        aliases[str(_resolved_path(root, atmosphere.path))] = reference.path
+    return tuple(references.values()), aliases
 
 
 def _single_atmosphere_settings(request, prefs):
@@ -915,10 +882,6 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
                    for window in windows)
     references, aliases = _reference_atmospheres(
         request, prefs, root, prefs_vmic=float(values.get('vmic') or 1.0))
-    if (not values.get('only_atom') and config.linelist_skirt > 0 and config.linelist
-            and not references):
-        raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
-                         'Configure a reference grid or set linelist_skirt=0 to use the full list.')
     return ResolvedSynthRequest(request, extra, settings, windows, padded, references,
                                 aliases, str(root), str(output_root(prefs)))
 
@@ -929,14 +892,14 @@ def _prepare_artifact(resolved, cancel_token=None):
         return None
     config, windows = resolved.request.config, resolved.padded_windows
     prefs = config.to_prefs()
-    skirt = config.linelist_skirt
-    if not (skirt > 0 and windows and resolved.preparation_references and prefs.get('linelist')):
+    if not (windows and resolved.preparation_references and prefs.get('linelist')):
         return None
     from ..linestrength import prepare_linelist
     settings = resolved.settings.get('composition_params', {}) or {}
     return prepare_linelist(preparation_root(prefs),
                             resolved.preparation_references, prefs['linelist'], windows,
-                            R=float(resolved.settings['spectrum_params']['R_sampling']), dlam=skirt,
+                            R=float(resolved.settings['spectrum_params']['R_sampling']),
+                            dlam=config.linelist_skirt,
                             vmic=float(values.get('vmic', 1.0)),
                             feh=float(values.get('feh', 0.0)),
                             abundances=settings.get('abundances', ''),

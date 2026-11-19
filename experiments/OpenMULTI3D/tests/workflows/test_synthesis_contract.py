@@ -56,13 +56,13 @@ def test_preparation_cache_tracks_changed_inputs(tmp_path, monkeypatch):
         return [path for path, _nml in jobs]
 
     monkeypatch.setattr('tumult.prune.prune_batch', prune_batch)
-    a = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    a = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
-    b = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    b = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
     assert a.folder == b.folder and len(calls) == 1
     master.write_text('changed master input')
-    c = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    c = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
     assert c.folder != a.folder and len(calls) == 2
 
@@ -102,7 +102,7 @@ def test_preparation_expands_a_linelist_folder_for_the_standalone_pruner(tmp_pat
             Path(path).write_text('prepared')
 
     monkeypatch.setattr('tumult.prune.prune_batch', prune_batch)
-    linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                   [(5000, 5002)], R=50000)
     assert seen == [[str(master / 'Fe.txt'), str(master / 'Mg.txt')]]
 
@@ -119,9 +119,31 @@ def test_individual_atmosphere_resolves_nearest_marcs_reference(tmp_path, monkey
     atmosphere = Atmosphere('science.mod', 'Text', preparation=AtmosphereGrid(marcs))
     resolved = workflows.resolve_request(
         _request(atmosphere, tmp_path, star=(5700, 4.4, 0.0, 1.0)))
-    assert resolved.preparation_references == (str(solar.resolve()),)
+    assert resolved.preparation_references == ((str(solar.resolve()), 'Marcs'),)
     assert resolved.preparation_aliases[str((tmp_path / 'science.mod').resolve())] == \
         str(solar.resolve())
+
+
+def test_only_a_named_preparation_prepares(tmp_path, monkeypatch):
+    """Without ``preparation`` nothing is pruned, a MARCS model included; a snapshot
+    preparation is prepared on its <3D> average."""
+    from tumult.synthesis import preparation, workflows
+    plain = workflows.resolve_request(_request(Atmosphere('science.mod'), tmp_path))
+    assert plain.preparation_references == () and plain.preparation_aliases == {}
+    itself = workflows.resolve_request(
+        _request(Atmosphere('science.mod', preparation='science.mod'), tmp_path))
+    assert itself.preparation_references == ((str(tmp_path / 'science.mod'), 'Marcs'),)
+    averaged = []
+
+    def mean_3d(snapshot, atmos_format, feh, root):
+        averaged.append((Path(snapshot).name, atmos_format))
+        return preparation.Reference(str(tmp_path / 'mean.txt'), 'text')
+
+    monkeypatch.setattr(preparation, 'mean_3d', mean_3d)
+    cube = Snapshot('cube.atmos', 'M3DIS', preparation=Snapshot('cube.atmos', 'M3DIS'))
+    resolved = workflows.resolve_request(_request(cube, tmp_path))
+    assert averaged == [('cube.atmos', 'M3DIS')]
+    assert resolved.preparation_references == ((str(tmp_path / 'mean.txt'), 'text'),)
 
 
 def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monkeypatch):

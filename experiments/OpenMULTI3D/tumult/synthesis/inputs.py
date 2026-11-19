@@ -326,22 +326,21 @@ class AtmosphereGrid:
     ``pattern`` recovers the stellar parameters from each path (see
     :func:`tumult.synthesis.workflows.compile_pattern`); it defaults to the stock pattern of
     ``format``. A snapshot grid names its ``snapshots`` policy and the ``resolution`` its
-    cubes are sampled onto. ``preparation`` is the MARCS grid that HOP preparations use
-    when this grid is not MARCS itself.
+    cubes are sampled onto. ``preparation`` names the reference atmospheres of the HOP
+    preparations (:mod:`tumult.synthesis.preparation`).
     """
     folder: Path
     pattern: str | None = None
     format: str = "Marcs"
     snapshots: str | None = None
     resolution: tuple | None = None
-    preparation: "AtmosphereGrid | None" = None
+    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "folder", Path(self.folder).expanduser())
         if self.resolution is not None:
             object.__setattr__(self, "resolution", tuple(int(v) for v in self.resolution))
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
+        _coerce_preparation(self)
 
     @property
     def is_marcs(self):
@@ -376,16 +375,16 @@ class Atmosphere:
     """One 1D model atmosphere file, synthesised as it is (no interpolation).
 
     Stellar parameters still come from the request: they are never read from the file.
-    ``preparation`` is the MARCS grid HOP preparations use when ``format`` is not MARCS.
+    ``preparation`` names the reference atmospheres of the HOP preparations
+    (:mod:`tumult.synthesis.preparation`).
     """
     path: Path
     format: str = "Marcs"
-    preparation: AtmosphereGrid | None = None
+    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "path", Path(self.path).expanduser())
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
+        _coerce_preparation(self)
 
     @property
     def is_marcs(self):
@@ -403,11 +402,12 @@ class Atmosphere:
 @dataclass(frozen=True)
 class Snapshot:
     """One 3D snapshot sampled onto ``resolution`` ``(nx, ny, nz)``; without one, onto the
-    mesh of the request's presets (the ``3d`` preset's by default)."""
+    mesh of the request's presets (the ``3d`` preset's by default). ``preparation`` names
+    the reference atmospheres of the HOP preparations (:mod:`tumult.synthesis.preparation`)."""
     path: Path
     format: str
     resolution: tuple | None = None
-    preparation: AtmosphereGrid | None = None
+    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "path", Path(self.path).expanduser())
@@ -416,8 +416,7 @@ class Snapshot:
             if len(resolution) != 3 or any(v <= 0 for v in resolution):
                 raise ValueError("Snapshot resolution needs three positive integers.")
             object.__setattr__(self, "resolution", resolution)
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
+        _coerce_preparation(self)
 
     is_marcs = False
 
@@ -432,6 +431,11 @@ class Snapshot:
 
 
 ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere, "snapshot": Snapshot}
+
+
+def _coerce_preparation(atmosphere):
+    if atmosphere.preparation is not None:
+        object.__setattr__(atmosphere, "preparation", coerce_atmosphere(atmosphere.preparation))
 
 
 def coerce_atmosphere(value):

@@ -1073,7 +1073,7 @@ It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was d
 
 \subsection{Requests}\label{sec:primer}
 
-The Python workflows describe a calculation as a \Code{SynthRequest}: a configuration (line list, abundance table, resolving power, cache directory), an atmosphere, stellar parameters and wavelength windows. A workflow takes the request, writes the namelists from the presets, prunes the line list to the windows, runs \File{dispatch.x} and returns spectra. This example synthesises the Ba\,\textsc{ii} 4554.0\,{\AA} region in LTE and NLTE:
+The Python workflows describe a calculation as a \Code{SynthRequest}: a configuration (line list, abundance table, resolving power, cache directory), an atmosphere, stellar parameters and wavelength windows. A workflow takes the request, writes the namelists from the presets, prunes the line list to the windows when the atmosphere names a \py{preparation}, runs \File{dispatch.x} and returns spectra. This example synthesises the Ba\,\textsc{ii} 4554.0\,{\AA} region in LTE and NLTE:
 
 \begin{minted}{Python}
 from tumult import departures, synthesis
@@ -1085,7 +1085,7 @@ config = SynthConfig(root=".", cache="synth",
                      absmet="input/absmet_files",
                      R_sampling=200_000,
                      nml_settings=dict(linelist_params=dict(match_nlte_levels=True)))
-atmosphere = Atmosphere("input/atmos/sun.mod")
+atmosphere = Atmosphere("input/atmos/sun.mod", preparation="input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=atmosphere,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
                        windows=(4550, 4558))
@@ -1095,7 +1095,7 @@ nlte = synthesis.synthesize(request.update(departures=ba))
 nlte.spectrum.plot()
 \end{minted}
 
-\py{nml_settings} adds namelist settings to every run of the request, as in \py{tm.launch}; here \fort{match_nlte_levels=T} gives the Ba\,\textsc{ii} lines of the line list, which carry no level indices, the departure coefficients of the atom (Sec.~\ref{sec:nlteoutput}). \py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}). \py{nlte.spectrum} is the normalised spectrum of the window. \py{nlte.crop(...)} crops it again from the runs it came from, the spectrum run of an individual atmosphere or the node grid interpolated at the star, with the arguments of \py{run.crop} (Sec.~\ref{sec:pyref}); \py{nlte.crop(LTE=True)} is the LTE spectrum the NLTE run computes alongside, and \py{window=i} picks one of several windows.
+\py{preparation} names the reference atmosphere HOP prepares on: an \Code{Atmosphere} (here the model itself), an \Code{AtmosphereGrid}, whose node nearest the star (or nearest each node of a synthesis grid) is used, or a \Code{Snapshot}, whose $\langle\mathrm{3D}\rangle$ average on surfaces of constant $\tau_{500}$ is used. HOP keeps the lines of the master list that are not negligible on that reference over the windows (Sec.~\ref{sec:hop}), and \py{departures.request(..., line_grid=True)} prepares the model atoms' wavelength quadrature on it from their opacity profiles. Without a \py{preparation} the runs read the full line list, and \py{line_grid=True} is refused. \py{nml_settings} adds namelist settings to every run of the request, as in \py{tm.launch}; here \fort{match_nlte_levels=T} gives the Ba\,\textsc{ii} lines of the line list, which carry no level indices, the departure coefficients of the atom (Sec.~\ref{sec:nlteoutput}). \py{absmet} names a metal-opacity table, or a folder of them from which each model gets the table of its [Fe/H]. \Code{Star} takes the effective temperature (K), $\log g$ (cgs), [Fe/H] (dex) and microturbulence (\si{\km\per\s}). \py{request.update(...)} returns a modified copy. The workflows always solve the departures in a run of their own and synthesise each window on them (Sec.~\ref{sec:twostage}). \py{nlte.spectrum} is the normalised spectrum of the window. \py{nlte.crop(...)} crops it again from the runs it came from, the spectrum run of an individual atmosphere or the node grid interpolated at the star, with the arguments of \py{run.crop} (Sec.~\ref{sec:pyref}); \py{nlte.crop(LTE=True)} is the LTE spectrum the NLTE run computes alongside, and \py{window=i} picks one of several windows.
 
 \subsection{The recipes in Python}
 

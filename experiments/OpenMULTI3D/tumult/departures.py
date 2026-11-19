@@ -349,18 +349,23 @@ class DepartureRequest:
         if not self.line_grid:
             return None, None
         from .line_quadrature import combine_line_quadratures, prepare_line_quadrature
-        from .synthesis.operations import quadrature_atmosphere
+        from .synthesis.operations import preparation_reference
         from .synthesis.workflows import preparation_root
         config, star = request.config, request.star
-        atmosphere = quadrature_atmosphere(request)
+        atmosphere = preparation_reference(request)
+        if atmosphere is None:
+            raise ValueError("A prepared line quadrature (line_grid=True) is computed on the "
+                             "atmosphere's preparation; give it one, e.g. "
+                             "Atmosphere(path, preparation=path).")
         composition = request.abundances
         root = preparation_root(config.to_prefs())
         prepared = [prepare_line_quadrature(
-            root, config.resolve(atom), atmosphere, vmic=star.vmic if star.vmic else 1.0,
+            root, config.resolve(atom), atmosphere.path, atmos_format=atmosphere.format,
+            vmic=star.vmic if star.vmic else 1.0,
             feh=star.feh, abundances=composition.override() if composition else "",
             relative_abundances=composition.relative if composition else True,
             **self.quadrature) for atom in self.atoms]
-        return combine_line_quadratures(root, prepared), atmosphere
+        return combine_line_quadratures(root, prepared), atmosphere.path
 
     def run_values(self, request, prepared=None):
         """The native run values selecting these atoms, on ``prepared`` when given.

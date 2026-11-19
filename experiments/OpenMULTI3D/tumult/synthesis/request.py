@@ -78,17 +78,29 @@ class SynthesisResult:
         one. ``window`` is the position of the window in ``windows``, needed when there are
         several. Without a wavelength selection the crop covers that window.
         """
+        window = self._window(window)
+        bounds = self.windows[window]
+        if bounds is not None and not _SELECTIONS & set(kwargs):
+            kwargs.update(xmin=bounds[0], xmax=bounds[1])
+        return self.sources[window].crop(LTE=LTE or not self.request.is_nlte, **kwargs)
+
+    def plot_line_labels(self, window=None, **kwargs):
+        """Label the strongest lines inside the current axes with
+        :meth:`tumult.run.Run.plot_line_labels`, which takes the other arguments, on the
+        spectrum run of one window: the run of an individual atmosphere, or the node of the
+        grid with the largest interpolation weight. ``window`` is as in :meth:`crop`."""
+        return self.sources[self._window(window)].run.plot_line_labels(**kwargs)
+
+    def _window(self, window):
+        """The position of the window a run-backed method works on."""
         if len(self.sources) != len(self.spectra):
-            raise ValueError("This result keeps no runs to crop; use spectra.")
+            raise ValueError("This result keeps no runs; use spectra.")
         if window is None:
             if len(self.sources) != 1:
                 raise ValueError(f"The result has {len(self.sources)} windows; choose one "
                                  "with window=<position>.")
             window = 0
-        bounds = self.windows[window]
-        if bounds is not None and not _SELECTIONS & set(kwargs):
-            kwargs.update(xmin=bounds[0], xmax=bounds[1])
-        return self.sources[window].crop(LTE=LTE or not self.request.is_nlte, **kwargs)
+        return window
 
     @property
     def frozen_composition_changed(self):
@@ -177,7 +189,7 @@ class ResolvedSynthRequest:
     settings: dict
     windows: tuple[tuple[float, float], ...]
     padded_windows: tuple[tuple[float, float], ...]
-    preparation_references: tuple[str, ...]
+    preparation_references: tuple[tuple[str, str], ...]   # (path, atmos_format)
     preparation_aliases: dict
     execution_root: str
     output_root: str
@@ -194,7 +206,7 @@ class ResolvedSynthRequest:
                 "settings": deepcopy(self.settings),
                 "windows": [list(window) for window in self.windows],
                 "padded_windows": [list(window) for window in self.padded_windows],
-                "preparation_references": list(self.preparation_references),
+                "preparation_references": [list(ref) for ref in self.preparation_references],
                 "preparation_aliases": deepcopy(self.preparation_aliases),
                 "execution_root": self.execution_root, "output_root": self.output_root}
 
@@ -212,7 +224,8 @@ class ResolvedSynthRequest:
                    settings=value.get('settings', {}),
                    windows=tuple(tuple(w) for w in value.get('windows', ())),
                    padded_windows=tuple(tuple(w) for w in value.get('padded_windows', ())),
-                   preparation_references=tuple(value.get('preparation_references', ())),
+                   preparation_references=tuple(
+                       tuple(ref) for ref in value.get('preparation_references', ())),
                    preparation_aliases=dict(value.get('preparation_aliases') or {}),
                    execution_root=str(value['execution_root']),
                    output_root=str(value['output_root']))

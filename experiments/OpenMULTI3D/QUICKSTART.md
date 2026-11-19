@@ -328,10 +328,7 @@ the profile comparison in step 5 is only meaningful at the same broadening.
 
 Steps 2 and 6 drove `dispatch.x` through namelists. The analysis workflows (`tumult.synthesis`,
 `tumult.departures`, `tumult.abundance`, `tumult.sparams`) and the GUI describe a
-calculation as a `SynthRequest` instead: a configuration, an atmosphere, stellar
-parameters, wavelength windows and, for NLTE, the model atoms to solve. The layer writes
-the namelists, prunes the line list to the windows, caches every native run by its inputs
-and returns `Spectrum` objects.
+calculation as a `SynthRequest` instead: a configuration, an atmosphere, stellar parameters, wavelength windows and, for NLTE, the model atoms to solve. The layer writes the namelists, prunes the line list to the windows on the atmosphere's `preparation`, caches every native run by its inputs and returns `Spectrum` objects.
 
 This example synthesises the same Ba II 4554 Å region on the same MARCS model, now
 with the blends of the tracked line list `input/linelists/SIU_masterline_Bergemann2026.txt`. The list has no
@@ -347,7 +344,7 @@ config = SynthConfig(root=".", cache="quickstart_synth",
                      abundances="input/abund/abund_magg22.txt",
                      R_sampling=200_000,
                      nml_settings=dict(linelist_params=dict(match_nlte_levels=True)))
-marcs = Atmosphere("input/atmos/sun.mod")
+marcs = Atmosphere("input/atmos/sun.mod", preparation="input/atmos/sun.mod")
 request = SynthRequest(config=config, atmosphere=marcs,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
                        windows=(4550, 4558))
@@ -365,7 +362,7 @@ plt.show()
 print(lte.runs, nlte.provenance["departures"])
 ```
 
-The stellar parameters are always given explicitly, since the workflow never reads them from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects: `.spectrum` is the normalised flux over the window, `.runs` the native run folders under `data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance` records the line-list pruning and whether departures were solved or reused. `.crop()` crops the spectrum again from its runs and takes the arguments of a run's `crop` (step 3); an NLTE run also computes the LTE spectrum, so `nlte.crop(LTE=True)` is the LTE comparison without a second synthesis. The first call takes a few seconds; repeating either call returns the cached result at once. The NLTE request solves the barium departures once and applies them in the formal solution that produces the spectrum; the LTE request skips the solve. The configuration names no metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs the downloaded tables (`python -m tumult.synthesis.input_data fetch absmet`) and `absmet="input/absmet_files"` in `SynthConfig`, as in the manual.
+`preparation` names the model HOP prunes the line list on, here the MARCS model itself; without it the runs read the full list. The stellar parameters are always given explicitly, since the workflow never reads them from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects: `.spectrum` is the normalised flux over the window, `.runs` the native run folders under `data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance` records the line-list pruning and whether departures were solved or reused. `.crop()` crops the spectrum again from its runs and takes the arguments of a run's `crop` (step 3); an NLTE run also computes the LTE spectrum, so `nlte.crop(LTE=True)` is the LTE comparison without a second synthesis. The first call takes a few seconds; repeating either call returns the cached result at once. The NLTE request solves the barium departures once and applies them in the formal solution that produces the spectrum; the LTE request skips the solve. The configuration names no metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs the downloaded tables (`python -m tumult.synthesis.input_data fetch absmet`) and `absmet="input/absmet_files"` in `SynthConfig`, as in the manual.
 
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
