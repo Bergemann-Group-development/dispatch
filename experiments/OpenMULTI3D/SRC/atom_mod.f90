@@ -2515,7 +2515,10 @@ MODULE atom_mod
       ! Feed this iteration's differences in for the next decision.  Skipped on
       ! an iteration that extrapolated: b no longer belongs to the same
       ! geometric sequence as oldb, so the differences would be meaningless.
-      if (ng%iter_fired /= iter .and. allocated(adata%oldb)) then
+      ! normalize_profiles shifts one iterate into oldb per iteration, so oldb
+      ! holds three (the oldest being the start populations) only from
+      ! iteration 3 on; before that its unfilled slots are not populations.
+      if (iter >= 3 .and. ng%iter_fired /= iter .and. allocated(adata%oldb)) then
         call ng_accumulate(ng, adata%b, adata%oldb, self%nlevel)
       endif
     end associate
