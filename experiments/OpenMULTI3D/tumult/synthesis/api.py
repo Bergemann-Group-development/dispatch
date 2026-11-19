@@ -543,6 +543,18 @@ class CropSource:
             return self.source.crop(method=self.method, **kwargs)
         return self.source.crop(**kwargs)
 
+    @property
+    def run(self):
+        """The spectrum run itself, or for a grid the run of its node with the largest
+        interpolation weight (the first run of a snapshot node)."""
+        if not self.is_grid:
+            return self.source
+        weights = self.source.interp_weights
+        node = self.source.spectra[0 if weights is None else int(np.argmax(weights))]
+        if isinstance(node, _SnapshotMeanView):
+            node = node.runs[0]
+        return getattr(node, 'run', node)
+
     def to_dict(self):
         if not self.is_grid:
             return {'kind': 'run', 'folder': str(self.source.folder)}
