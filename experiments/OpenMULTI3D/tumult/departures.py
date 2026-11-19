@@ -315,14 +315,14 @@ class DepartureRequest:
     """Equilibrium departures of the model ``atoms``, solved for each request that consumes
     them.
 
-    ``line_grid`` prepares the bound-bound wavelength quadrature of every atom from its
-    opacity profiles on the request's atmosphere
-    (:func:`tumult.line_quadrature.prepare_line_quadrature`) and runs them on the union of
-    their grids; off, every atom keeps its own ``nq``/``qmax``/``q0`` quadrature.
-    ``quadrature`` holds further generator settings (``R``, ``tol_dex``, ...).
+    By default every atom keeps its own ``nq``/``qmax``/``q0`` quadrature. ``line_grid``
+    prepares the bound-bound wavelength quadrature of every atom from its opacity profiles
+    on the request's atmosphere (:func:`tumult.line_quadrature.prepare_line_quadrature`)
+    and runs them on the union of their grids. ``quadrature`` holds further generator
+    settings (``R``, ``tol_dex``, ...).
     """
     atoms: tuple
-    line_grid: bool = True
+    line_grid: bool = False
     quadrature: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -414,7 +414,7 @@ def load(path):
     return Departures.load(path)
 
 
-def request(request, *, atom, line_grid=True, **quadrature):
+def request(request, *, atom, line_grid=False, **quadrature):
     """Describe equilibrium departures of ``atom`` (one model atom or several) for
     consumers to solve on demand.
 
@@ -438,9 +438,9 @@ def _status(folder, started):
     return "solved" if stamp.is_file() and stamp.stat().st_mtime >= started else "reused"
 
 
-def solve(request, *, atom, line_grid=True, cancel_token=None, **quadrature):
-    """Prepare the quadrature of ``atom`` (one model atom or several) and solve their
-    equilibrium departures for ``request``.
+def solve(request, *, atom, line_grid=False, cancel_token=None, **quadrature):
+    """Solve the equilibrium departures of ``atom`` (one model atom or several) for
+    ``request``, on a prepared quadrature with ``line_grid`` (:class:`DepartureRequest`).
 
     An individual atmosphere or snapshot gives :class:`Departures`; a grid gives a
     :class:`DepartureGrid` with one solve per node and vmic lattice point the request's

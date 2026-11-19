@@ -50,10 +50,10 @@ def test_departure_state_selects_the_calculation(tmp_path, config, atom):
     one = Atmosphere("one.mod")
     lte = SynthRequest(config=config, atmosphere=one, star=STAR, windows=(5160, 5190))
     assert run_values(lte)["mode"] == "LTE"
-    ondemand = lte.update(departures=departures.request(lte, atom=atom, line_grid=False))
+    ondemand = lte.update(departures=departures.request(lte, atom=atom))
     assert run_values(ondemand)["mode"] == "NLTE"
     assert run_values(ondemand)["atoms"] == [str(atom)]
-    prepared = lte.update(departures=departures.request(lte, atom=atom))
+    prepared = lte.update(departures=departures.request(lte, atom=atom, line_grid=True))
     with pytest.raises(ValueError, match="not prepared"):
         run_values(prepared)
     frozen = run_values(lte.update(departures=_saved_departures(tmp_path)))
@@ -533,7 +533,8 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     monkeypatch.setattr(ab, "run_nlte_corrections", rungs)
     request = SynthRequest(config=config, atmosphere="one.mod", star=STAR,
                            abundances={"Mg": 0.2, "Ca": 0.1})
-    request = request.update(departures=departures.request(request, atom=atom))
+    request = request.update(departures=departures.request(request, atom=atom,
+                                                           line_grid=True))
     result = ab.nlte_corrections(request, method="cog", background_lines=False,
                                  uid="listed12")
     assert calls["prepare"] == 1
@@ -543,6 +544,9 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     assert result.uid == "listed12"       # the result the caller listed continues
     with pytest.raises(ValueError, match="departures.request"):
         ab.nlte_corrections(request.update(departures=None))
+    own = request.update(departures=departures.request(request, atom=atom))
+    with pytest.raises(ValueError, match="line_grid=True"):
+        ab.nlte_corrections(own)
 
 
 def test_correction_rungs_move_the_element_on_top_of_the_composition(tmp_path, monkeypatch):
