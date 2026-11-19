@@ -13,7 +13,8 @@ matched to the trapezoidal weights ``set_weights`` gives each line on the shared
 ``&atom_params line_grid_file=... atom_file=...``: the grid (vacuum Angstrom) and a copy
 of the atom in which each line's ``nq qmax q0`` are rewritten so that its
 ``lam_min``/``lam_max`` span the interval of the grid its rates are integrated over. The
-copy differs from the original only in those three columns.
+copy differs from the original only in those three columns. Several atoms share one grid,
+the union of theirs (:func:`combine_line_quadratures`).
 
 Only the classic (``atom.*``) model-atom format is handled, and only single-component
 lines (``iw <= 1``).
@@ -448,6 +449,52 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
     tmp.write_text(json.dumps(prepared.to_dict(), indent=2, sort_keys=True) + '\n')
     tmp.replace(manifest)
     return prepared
+
+
+@dataclass(frozen=True)
+class LineQuadrature:
+    """The quadrature of a run's model atoms: each atom's prepared copy, all on one grid.
+
+    A run reads a single ``line_grid_file`` and every atom places its lines on it (the
+    Fortran drops repeated wavelengths), so the grids of several atoms are combined into
+    their union. Each line then integrates on its own grid points and any other atom's
+    points inside its window, never on fewer than its own preparation gave it.
+    """
+    grid_file: str
+    atoms: tuple            # PreparedLineQuadrature per atom, in request order
+
+    @property
+    def atom_files(self):
+        """The atom copies a run uses, in request order."""
+        return [prepared.atom_file for prepared in self.atoms]
+
+    def to_dict(self):
+        return dict(grid_file=self.grid_file, atoms=[p.to_dict() for p in self.atoms])
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(d['grid_file'],
+                   tuple(PreparedLineQuadrature.from_dict(p) for p in d['atoms']))
+
+
+def combine_line_quadratures(output_root, prepared):
+    """The :class:`LineQuadrature` of the prepared atoms ``prepared``: one atom's own grid,
+    or for several the union of their grids, written once under ``output_root`` and named
+    by the grids it joins (each already named by its atom, model and settings)."""
+    prepared = tuple(prepared)
+    if len(prepared) == 1:
+        return LineQuadrature(prepared[0].grid_file, prepared)
+    files = [p.grid_file for p in prepared]
+    digest = hashlib.sha256(json.dumps(files).encode()).hexdigest()[:16]
+    grid_file = Path(output_root).expanduser().resolve() / f'line-grid-{digest}.txt'
+    if not grid_file.is_file():
+        grid = np.unique(np.concatenate([np.loadtxt(f, comments='#', ndmin=1) for f in files]))
+        tmp = grid_file.with_name(f'{grid_file.name}.{os.getpid()}.partial')
+        with tmp.open('w') as f:
+            f.write('# bound-bound grid: the union of ' + ' '.join(files) + ' [vacuum AA]\n')
+            np.savetxt(f, grid, fmt='%.6f')
+        tmp.replace(grid_file)
+    return LineQuadrature(str(grid_file), prepared)
 
 
 def main(argv=None):

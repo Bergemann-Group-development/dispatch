@@ -1,10 +1,12 @@
-"""The parts of tumult.line_quadrature that need no HOP: the thinning invariant and the
-atom copy, whose contract is that only the ``nq qmax q0`` columns change."""
+"""The parts of tumult.line_quadrature that need no HOP: the thinning invariant, the
+atom copy, whose contract is that only the ``nq qmax q0`` columns change, and the grid
+several atoms share."""
 from pathlib import Path
 
 import numpy as np
 
-from tumult.line_quadrature import (read_classic_atom, thin_linear, write_atom_copy,
+from tumult.line_quadrature import (PreparedLineQuadrature, combine_line_quadratures,
+                                    read_classic_atom, thin_linear, write_atom_copy,
                                     write_atom_linelist)
 from tumult.linelist import LineList
 
@@ -52,3 +54,17 @@ def test_atom_linelist_reads_back(tmp_path):
     # Ba II 4554: resonance line, log gf = 0.14 in the atom's comment
     row = ll.iloc[np.argmin(np.abs(ll["lam0"].values - 4554.03))]
     assert abs(row["evi"]) < 1e-6 and abs(row["loggf"] - 0.14) < 5e-3
+
+
+def test_several_atoms_share_the_union_of_their_grids(tmp_path):
+    grids = {"ba": [4554.0, 4554.1, 5853.6], "fe": [4554.05, 5000.0]}
+    prepared = []
+    for name, grid in grids.items():
+        np.savetxt(tmp_path / f"{name}.txt", grid, header="grid")
+        prepared.append(PreparedLineQuadrature(str(tmp_path), str(tmp_path / f"{name}.txt"),
+                                               f"atom.{name}", f"src.{name}", "sun.mod", {}))
+    combined = combine_line_quadratures(tmp_path, prepared)
+    assert combined.atom_files == ["atom.ba", "atom.fe"]
+    union = np.loadtxt(combined.grid_file, comments="#")
+    np.testing.assert_array_equal(union, np.unique(np.concatenate(list(grids.values()))))
+    assert combine_line_quadratures(tmp_path, prepared[:1]).grid_file == prepared[0].grid_file
