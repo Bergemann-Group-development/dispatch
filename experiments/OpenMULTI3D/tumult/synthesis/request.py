@@ -29,6 +29,10 @@ def _read_windows(values):
     return tuple(None if window is None else tuple(window) for window in values)
 
 
+# crop arguments that select wavelengths themselves (Run.crop and Spectrum.crop)
+_SELECTIONS = {"xmin", "xmax", "x0", "dx", "slc", "line", "newx"}
+
+
 @dataclass(frozen=True)
 class SynthesisResult:
     """The spectra of one synthesis and what produced them.
@@ -39,6 +43,8 @@ class SynthesisResult:
     ``resolved_settings`` are the runs' namelist settings, ``preparation`` the pruned line
     list, ``departures`` the frozen departures read back, ``runs`` the run folders and
     ``provenance`` what the operation recorded about preparation and departures.
+    ``sources`` holds, per window, what its spectrum was cropped from
+    (:class:`~tumult.synthesis.api.CropSource`), which :meth:`crop` crops again.
     """
     spectra: tuple[Any, ...]
     windows: tuple
@@ -49,6 +55,7 @@ class SynthesisResult:
     departures: Any | None = None
     runs: tuple[str, ...] = ()
     provenance: dict = field(default_factory=dict)
+    sources: tuple = ()
 
     @property
     def geometry(self):
@@ -59,6 +66,29 @@ class SynthesisResult:
         if len(self.spectra) != 1:
             raise ValueError("Result contains more than one spectrum; use spectra/windows.")
         return self.spectra[0]
+
+    def crop(self, LTE=False, window=None, **kwargs):
+        """The spectrum of one window, cropped again from the runs it came from.
+
+        This delegates to the spectrum run of an individual atmosphere
+        (:meth:`tumult.run.Run.crop`) or to the node grid interpolated at the star
+        (:meth:`tumult.spectrum_grid.SpectrumGrid.crop`) and takes their arguments
+        (``xmin``/``xmax``, ``x0``/``dx``, ``norm``, ...). ``LTE`` gives the LTE spectrum
+        that an NLTE run computes alongside its NLTE spectrum; an LTE result has only that
+        one. ``window`` is the position of the window in ``windows``, needed when there are
+        several. Without a wavelength selection the crop covers that window.
+        """
+        if len(self.sources) != len(self.spectra):
+            raise ValueError("This result keeps no runs to crop; use spectra.")
+        if window is None:
+            if len(self.sources) != 1:
+                raise ValueError(f"The result has {len(self.sources)} windows; choose one "
+                                 "with window=<position>.")
+            window = 0
+        bounds = self.windows[window]
+        if bounds is not None and not _SELECTIONS & set(kwargs):
+            kwargs.update(xmin=bounds[0], xmax=bounds[1])
+        return self.sources[window].crop(LTE=LTE or not self.request.is_nlte, **kwargs)
 
     @property
     def frozen_composition_changed(self):
@@ -81,7 +111,8 @@ class SynthesisResult:
                 "resolved_settings": deepcopy(self.resolved_settings),
                 "preparation": item(self.preparation),
                 "departures": to_record(self.departures),
-                "runs": list(self.runs)}
+                "runs": list(self.runs),
+                "sources": [source.to_dict() for source in self.sources]}
 
     def save(self, folder):
         """Save replay metadata and consumer-ready spectra for later reopening."""
@@ -111,6 +142,7 @@ class SynthesisResult:
         import numpy as np
         from astropy import units as u
         from ..spectrum import Spectrum
+        from .api import CropSource
         path = Path(path)
         manifest = path if path.is_file() else path / 'result.json'
         value = json.loads(manifest.read_text())
@@ -132,7 +164,8 @@ class SynthesisResult:
         return cls(tuple(spectra), _read_windows(value.get('windows', ())),
                    SynthRequest.from_dict(value['request']), value.get('run_values') or {},
                    value.get('resolved_settings', {}), preparation, departure,
-                   tuple(value.get('runs', ())), value.get('provenance') or {})
+                   tuple(value.get('runs', ())), value.get('provenance') or {},
+                   tuple(CropSource.from_dict(item) for item in value.get('sources', ())))
 
 
 @dataclass(frozen=True)

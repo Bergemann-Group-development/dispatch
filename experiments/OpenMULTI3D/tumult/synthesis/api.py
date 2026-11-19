@@ -348,7 +348,8 @@ def _dep_bucket(top, settings):
 
 def _interp_crop(grid, xmin, xmax, method):
     """Interpolate a node grid at its target point and crop to the window — the shared tail
-    of ``compute_spectrum``/``compute_spectra``."""
+    of ``compute_spectrum``/``compute_spectra``. The spectrum carries the grid as its
+    ``source`` (:class:`CropSource`), so a result can crop it again."""
     # a run can finish yet emit no spectrum (e.g. no R_sampling/daa/nnu/lam_file set, or
     # angle_quad='none'); flag it clearly instead of failing later on a missing attribute.
     no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
@@ -365,6 +366,7 @@ def _interp_crop(grid, xmin, xmax, method):
         raise RuntimeError(
             f"Interpolated spectrum is empty over [{xmin}, {xmax}] Å — the synthesis "
             f"did not cover the requested window.")
+    spec.source = CropSource(grid, method)
     return spec
 
 
@@ -462,23 +464,108 @@ def _foldable_ladder(settings_list, launch_kwargs, nlte):
     return base, manifest
 
 
+# The set of a folded NLTE run that holds the LTE spectrum at the ladder's base composition
+# (continuum, NLTE, LTE, then the variants; see _foldable_ladder).
+_LADDER_LTE_SET = 2
+
+
+def _ladder_lte_set(nlte, slot, index):
+    """The set holding the LTE spectrum of ladder variant ``slot`` read from set ``index``:
+    that set itself in an LTE run; in an NLTE run the base composition's LTE set, which
+    only the first variant shares (None for the others). None when ``index`` is None."""
+    if index is None or not nlte:
+        return index
+    return _LADDER_LTE_SET if slot == 0 else None
+
+
 class _LadderRunView:
     """One node spectrum as :class:`SpectrumGrid` expects it: set ``index`` of a folded run,
-    or the run's own spectrum when ``index`` is None. ``output`` is the run's resolved
+    or the run's own spectrum when ``index`` is None. ``lte_index`` is the set holding the
+    variant's LTE spectrum (see :func:`_ladder_lte_set`). ``output`` is the run's resolved
     folder as :func:`job_output` names it."""
-    def __init__(self, run, index=None, output=None):
+    def __init__(self, run, index=None, output=None, lte_index=None):
         self.run = run
         self.index = index
+        self.lte_index = lte_index
         self.has_spectrum = getattr(run, 'has_spectrum', False)
         self.mode = getattr(run, 'mode', 'LTE')
         self.folder = run.folder
         self.output = output
 
     @instance_cache
-    def crop(self, **kwargs):
-        """``run.crop`` of this node's spectrum; a workflow crops the same node to the same
-        window at every trial star and lattice round, so the result is kept."""
+    def crop(self, LTE=False, **kwargs):
+        """``run.crop`` of this node's spectrum, its LTE spectrum with ``LTE``; a workflow
+        crops the same node to the same window at every trial star and lattice round, so
+        the result is kept."""
+        if self.index is None:
+            return self.run.crop(LTE=LTE, **kwargs)
+        if LTE and self.mode != 'LTE':
+            if self.lte_index is None:
+                raise ValueError("A folded NLTE ladder holds an LTE spectrum only at its "
+                                 "base composition.")
+            return self.run.crop(index=self.lte_index, **kwargs)
         return self.run.crop(index=self.index, **kwargs)
+
+
+def _view_record(view):
+    """A node spectrum of a grid as a JSON record (see :class:`CropSource`)."""
+    if isinstance(view, _SnapshotMeanView):
+        return {'mean': [_view_record(run) for run in view.runs]}
+    if isinstance(view, _LadderRunView):
+        return {'folder': str(view.folder), 'index': view.index,
+                'lte_index': view.lte_index}
+    return {'folder': str(view.folder), 'index': None, 'lte_index': None}
+
+
+def _open_view(record):
+    """The inverse of :func:`_view_record`, reading the runs again."""
+    if 'mean' in record:
+        return _SnapshotMeanView([_open_view(item) for item in record['mean']])
+    return _LadderRunView(tm.read(record['folder']), record['index'],
+                          lte_index=record['lte_index'])
+
+
+class CropSource:
+    """What a synthesised spectrum was cropped from, to crop it again with other arguments:
+    the spectrum run of an individual atmosphere (:meth:`tumult.run.Run.crop`), or the node
+    grid interpolated at the star with ``method`` (:meth:`tumult.spectrum_grid.SpectrumGrid.crop`).
+    """
+    def __init__(self, source, method=None):
+        self.source = source
+        self.method = method
+
+    @property
+    def is_grid(self):
+        return isinstance(self.source, tm.SpectrumGrid)
+
+    def crop(self, **kwargs):
+        if self.is_grid:
+            return self.source.crop(method=self.method, **kwargs)
+        return self.source.crop(**kwargs)
+
+    def to_dict(self):
+        if not self.is_grid:
+            return {'kind': 'run', 'folder': str(self.source.folder)}
+        grid = self.source
+        weights = grid.interp_weights
+        return {'kind': 'grid', 'method': self.method,
+                'nodes': [_view_record(view) for view in grid.spectra],
+                'params': {name: [float(v) for v in grid.params[name]]
+                           for name in grid.params.columns},
+                'separable': grid.separable,
+                'p0': {name: float(v) for name, v in grid.p0.items()},
+                'weights': None if weights is None else [float(w) for w in weights]}
+
+    @classmethod
+    def from_dict(cls, value):
+        if value['kind'] == 'run':
+            return cls(tm.read(value['folder']))
+        grid = tm.RunGrid([_open_view(item) for item in value['nodes']],
+                          separable=value['separable'], **value['params'])
+        grid.p0 = dict(value['p0'])
+        if value['weights'] is not None:
+            grid.interp_weights = np.asarray(value['weights'], dtype=float)
+        return cls(grid, value['method'])
 
 
 class NodeStore:
@@ -936,8 +1023,9 @@ def _run_plans(plans, nodes, selections, stars, *, top, launch_kwargs, max_threa
                 key = node[0]
                 view = stored.get((gi, key))
                 if view is None:
-                    view = _LadderRunView(runs[(gi, key)], set_index(nlte, slot),
-                                          outputs[key])
+                    index = set_index(nlte, slot)
+                    view = _LadderRunView(runs[(gi, key)], index, outputs[key],
+                                          _ladder_lte_set(nlte, slot, index))
                     if store is not None:
                         new_entries.append((node, abundances[vi], view))
                 views[(vi, key)] = view
@@ -1222,7 +1310,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         first_ladder = 3 if nlte_v else 2
         results = []
         for vi in range(len(settings_list)):
-            views = {key: _LadderRunView(runs[key], first_ladder + vi)
+            views = {key: _LadderRunView(runs[key], first_ladder + vi, lte_index=
+                                         _ladder_lte_set(nlte_v, vi, first_ladder + vi))
                      for key in job_keys}
             grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
                                   job_params, vmic_points)

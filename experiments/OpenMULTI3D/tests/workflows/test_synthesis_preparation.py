@@ -14,8 +14,11 @@ def calls(monkeypatch, tmp_path):
     monkeypatch.setattr(synth, '_absmet_files', lambda *a: None)
     def record(**kwargs):
         recorded.append(kwargs)
-        # execute_request unpacks (spectra per window, runs) from a window batch
-        return ([[kwargs] * len(kwargs['windows'])], ()) if kwargs.get('return_runs') else kwargs
+        # execute_request unpacks (spectra per window, runs) from a window batch; each
+        # spectrum carries the source it was cropped from
+        spectrum = SimpleNamespace(source=None)
+        return (([[spectrum] * len(kwargs['windows'])], ()) if kwargs.get('return_runs')
+                else kwargs)
     for name in ('compute_spectrum', 'compute_spectra', '_compute_window_batch'):
         monkeypatch.setattr(synth, name, record)
     return recorded

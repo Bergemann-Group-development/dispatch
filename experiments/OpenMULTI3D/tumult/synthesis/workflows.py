@@ -25,7 +25,7 @@ import re
 import shutil
 from pathlib import Path
 
-from .api import (compute_spectrum, compute_spectra,
+from .api import (CropSource, compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   normalise_windows, write_window_file,
                   PROVENANCE_NAME)
@@ -998,6 +998,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
         runs.append(str(Path(run.folder).resolve()))
         spectra.extend(run.crop(window=window) if window is not None else run.crop()
                        for window in (resolved.windows or (None,)))
+        sources = [CropSource(run)] * len(spectra)
     else:
         extra = [resolved.run_values]
         if resolved.windows:
@@ -1015,9 +1016,10 @@ def execute_request(request, run_values=None, *, cancel_token=None):
                                                 dep_dirs=dep_dirs)
             spectra.append(value)
             runs.extend(str(path) for path in run_paths)
+        sources = [spectrum.source for spectrum in spectra]
     windows = resolved.windows or (None,)
     return SynthesisResult(tuple(spectra), windows, request, resolved.run_values, settings,
-                           artifact, departures, tuple(runs))
+                           artifact, departures, tuple(runs), sources=tuple(sources))
 
 
 def solve_request_departures(request, run_values, *, cancel_token=None):
