@@ -59,14 +59,14 @@ def test_the_atmosphere_selects_the_geometry_preset(tmp_path):
 def test_request_settings_and_expert_override_presets(tmp_path, user_dir):
     from tumult.synthesis.workflows import resolve_request
     (user_dir / "wide.nml").write_text(
-        "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 dlam=50 /\n")
+        "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 line_margin=50 /\n")
     config = SynthConfig(root=tmp_path, R_sampling=50_000,
-                         nml_settings={"linelist_params": {"dlam": 20}})
+                         nml_settings={"linelist_params": {"line_margin": 20}})
     request = SynthRequest(config=config, atmosphere="a.mod", star=STAR,
                            windows=[(5000, 5010)], presets=["wide"])
     settings = resolve_request(request).settings
     assert settings["linelist_params"]["tolerance"] == 1e-3
-    assert settings["linelist_params"]["dlam"] == 20
+    assert settings["linelist_params"]["line_margin"] == 20
     assert settings["atmos_params"]["nz"] == 64
 
 
@@ -75,13 +75,13 @@ def test_the_request_layers_override_the_configuration(tmp_path, user_dir):
     (user_dir / "coarse.nml").write_text("&atmos_params nz=48 /\n")
     (user_dir / "fine.nml").write_text("&atmos_params nz=128 /\n")
     config = SynthConfig(root=tmp_path, presets="coarse",
-                         nml_settings={"linelist_params": {"dlam": 20, "tolerance": 1e-3}})
+                         nml_settings={"linelist_params": {"line_margin": 20, "tolerance": 1e-3}})
     request = SynthRequest(config=config, atmosphere="a.mod", star=STAR, windows=[(5000, 5010)],
-                           presets=["fine"], nml_settings={"linelist_params": {"dlam": 30}})
+                           presets=["fine"], nml_settings={"linelist_params": {"line_margin": 30}})
     assert request.all_presets == ("coarse", "fine")
     settings = resolve_request(request).settings
     assert settings["atmos_params"]["nz"] == 128
-    assert settings["linelist_params"]["dlam"] == 30
+    assert settings["linelist_params"]["line_margin"] == 30
     assert settings["linelist_params"]["tolerance"] == 1e-3
     assert SynthRequest.from_dict(request.to_dict()) == request
 
@@ -117,9 +117,9 @@ def test_step_presets_are_chosen_by_the_departures(tmp_path):
 
 
 def test_a_comment_may_hold_an_apostrophe():
-    text = "! the atom's own lines\n&linelist_params linelist_file='' dlam=5 /\n"
+    text = "! the atom's own lines\n&linelist_params linelist_file='' line_margin=5 /\n"
     assert NameList.from_string(text) == {"linelist_params": {"linelist_file": "",
-                                                              "dlam": 5}}
+                                                              "line_margin": 5}}
 
 
 def test_detail_preset_blankets_the_coupled_set_from_a_line_list():

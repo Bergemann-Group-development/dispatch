@@ -504,7 +504,7 @@ def build_settings(prefs, run_vals, atmos_format=None):
 def _prune_spec(prefs, prune):
     """The per-node line-list pruning descriptor for the API, or None for no pruning.
 
-    Splits the decision in two: the skirt is a preference (``linelist_skirt_aa``, 0 to switch
+    Splits the decision in two: the margin is a preference (``prune_margin_aa``, 0 to switch
     pruning off), because how far outside a window a line may still matter is a property of
     the physics and not of any one caller; the composition the selection is made at is the
     caller's (see :func:`tumult.synthesis.api._node_linelists`). A caller passing
@@ -512,10 +512,10 @@ def _prune_spec(prefs, prune):
     """
     if prune is None:
         return None
-    skirt = float(prefs.get("linelist_skirt_aa") or 0.0)
-    if not skirt > 0:
+    margin = float(prefs.get("prune_margin_aa") or 0.0)
+    if not margin > 0:
         return None
-    return {"skirt": skirt, "abundances": str(prune.get("abundances") or ""),
+    return {"margin": margin, "abundances": str(prune.get("abundances") or ""),
             "relative_abundances": bool(prune.get("relative_abundances", True))}
 
 
@@ -869,7 +869,7 @@ def _prepare_artifact(resolved, cancel_token=None):
     return prepare_linelist(preparation_root(prefs),
                             resolved.preparation_references, prefs['linelist'], windows,
                             R=float(resolved.settings['spectrum_params']['R_sampling']),
-                            dlam=config.linelist_skirt,
+                            line_margin=config.prune_margin,
                             vmic=float(values.get('vmic', 1.0)),
                             feh=float(values.get('feh', 0.0)),
                             abundances=settings.get('abundances', ''),
@@ -958,7 +958,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
 def solve_request_departures(request, run_values, *, cancel_token=None):
     """Solve only the departures of ``request`` with NLTE ``run_values`` on its individual
     atmosphere or snapshot; the request's windows and line-list pruning do not enter."""
-    config = replace(request.config, linelist_skirt=0.0)
+    config = replace(request.config, prune_margin=0.0)
     resolved = resolve_request(request.update(config=config, windows=()), run_values)
     request, atmosphere = resolved.request, resolved.request.atmosphere
     if isinstance(atmosphere, AtmosphereGrid):

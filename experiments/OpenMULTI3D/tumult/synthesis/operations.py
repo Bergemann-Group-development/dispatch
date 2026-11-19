@@ -200,7 +200,7 @@ def synthesize(request, *, background_lines=True, cancel_token=None):
 
     Without windows the whole range of the line list (or of the model atoms) is synthesised.
     The line list is pruned when the atmosphere names a ``preparation``
-    (:mod:`tumult.synthesis.preparation`), over the windows widened by ``config.linelist_skirt``.
+    (:mod:`tumult.synthesis.preparation`), over the windows widened by ``config.prune_margin``.
     ``background_lines=False`` synthesises only the model atoms' transitions of an NLTE
     request.
 

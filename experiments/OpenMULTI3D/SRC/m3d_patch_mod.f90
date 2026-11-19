@@ -317,7 +317,7 @@ MODULE m3d_patch_mod
     logical, public, save :: save_chi=.false.                 !< write the opacity
     logical, public, save :: save_Snu=.false.                 !< write the source function
     logical, public, save :: save_Jnu=.false.                 !< write the mean intensity
-    real(8), public, save :: dlam=100.                        !< distance from a window up to which line wings are followed [AA]
+    real(8), public, save :: line_margin=100.                        !< distance from a window up to which line wings are followed [AA]
     real(8), public, dimension(:), allocatable :: rank_lvlerr !< largest relative change of each level on this rank
     character(len=128), save :: save_patch_kind=''            !< kinds of the tasks that save their output
     !> Optional input manifest for an extended output set axis (abundance ladder).

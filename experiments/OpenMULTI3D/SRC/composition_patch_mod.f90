@@ -16,7 +16,7 @@ MODULE composition_patch_mod
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, composition, dlam, &
+  USE m3d_patch_mod,   only: m3d_patch_t, composition, line_margin, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   rotate_atmos, decouple_continuum, n_windows, n_windows_out, out_patch_offset, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
@@ -135,7 +135,7 @@ SUBROUTINE read_composition_params ()
   hydrogen_BPO, hydrogen_profiles, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   ldne, ldrho, ldtemp, absmet_file, absmet_folder
-  namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
+  namelist /linelist_params/ line_margin, exclude_elements, linelist_file, linelist_folder, &
   tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file, &
   match_nlte_levels
   ! ----------------------------------------------------------------------------
@@ -268,7 +268,7 @@ SUBROUTINE composition_pre_init (self)
 
   if (first_time) then
     first_time = .false.
-    ! The line-list readers keep lines inside [lam(1)-dlam, lam(end)+dlam], so
+    ! The line-list readers keep lines inside [lam(1)-line_margin, lam(end)+line_margin], so
     ! collect the combined wavelength range of every spectrum whose pass draws on
     ! the line list: the output spectrum when the output pass includes (or samples)
     ! it, or when make_eos bakes it into the tables; the internal iteration
@@ -281,16 +281,16 @@ SUBROUTINE composition_pre_init (self)
       integer :: n_intervals
 
       ll_lam = [huge(1d0), -huge(1d0)]
-      call build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, ll_intervals, n_intervals)
+      call build_linelist_intervals(output_sp, nlte_patch, ll_lam, line_margin, ll_intervals, n_intervals)
 
       if (ll_lam(1) <= ll_lam(2)) then
         do i=1, size(linelist_file)
           ! Pass the intervals to init_linelist so build_linelist selects on the
           ! union of windows, not a single min/max span.
           if (allocated(ll_intervals) .and. n_intervals > 0) then
-            call composition%init_linelist(linelist_file(i), dlam, ll_lam, ll_intervals)
+            call composition%init_linelist(linelist_file(i), line_margin, ll_lam, ll_intervals)
           else
-            call composition%init_linelist(linelist_file(i), dlam, ll_lam)
+            call composition%init_linelist(linelist_file(i), line_margin, ll_lam)
           end if
         end do
       elseif (any(linelist_file /= '')) then
@@ -490,13 +490,13 @@ END SUBROUTINE create_rt_slabs
 !> The wavelength intervals the line list is read for: each segment of the
 !> output spectrum (or its whole range) when the output pass uses the line list,
 !> and the range of each internal spectrum when the iteration pass does. The
-!> intervals are widened by dlam and overlapping ones merged.
+!> intervals are widened by line_margin and overlapping ones merged.
 !===============================================================================
-SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, intervals_out, n_intervals_out)
+SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, line_margin, intervals_out, n_intervals_out)
   class(atomic_spectrum_type), intent(in), pointer :: output_sp  !< the output spectrum
   type(nlte_patch_t), intent(in) :: nlte_patch                   !< holds the internal spectra
-  real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without dlam
-  real(dp), intent(in) :: dlam                                   !< widening of each window
+  real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without line_margin
+  real(dp), intent(in) :: line_margin                                   !< widening of each window
   type(interval_t), intent(out), allocatable :: intervals_out(:) !< merged intervals
   integer, intent(out) :: n_intervals_out                        !< number of merged intervals
   real(dp), allocatable :: windows(:,:)
@@ -578,8 +578,8 @@ SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, interva
 
   ! Merge intervals and return them
   if (n_windows > 0 .and. allocated(windows)) then
-    ! Call merge_intervals to build the union of windows with dlam expansion
-    call merge_intervals(windows, n_windows, dlam, intervals_out, n_intervals_out)
+    ! Call merge_intervals to build the union of windows with line_margin expansion
+    call merge_intervals(windows, n_windows, line_margin, intervals_out, n_intervals_out)
 
     ! The span of all windows
     ll_lam(1) = minval(windows(:, 1))

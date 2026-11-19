@@ -332,7 +332,7 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
     atom = tmp_path / 'atom.ba'
     line_grid = tmp_path / 'line_grid.txt'
     request = _request(Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
-                       star=(4548, 3.964, 0), R_sampling=1e6, linelist_skirt=0)
+                       star=(4548, 3.964, 0), R_sampling=1e6, prune_margin=0)
     run_values = {'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)}
     resolved = workflows.resolve_request(request, run_values)
