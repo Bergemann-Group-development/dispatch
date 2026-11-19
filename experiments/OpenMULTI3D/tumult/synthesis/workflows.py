@@ -804,12 +804,17 @@ def _reference_atmospheres(request, prefs, root, prefs_vmic=1.0):
 
 def _single_atmosphere_settings(request):
     """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`)
-    for an individual 1D atmosphere, whose runs bypass the node selection when departures
-    are solved or read back directly."""
+    for an individual atmosphere, whose runs bypass the node selection when departures are
+    solved or read back directly: the star's [Fe/H], which scales the abundances and picks
+    the table of an ``absmet_folder``, and for a 1D atmosphere its vmic. A snapshot's
+    velocity field replaces microturbulence."""
     atmosphere, star = request.atmosphere, request.star
-    if isinstance(atmosphere, AtmosphereGrid) or atmosphere.is_3d:
+    if isinstance(atmosphere, AtmosphereGrid):
         return {}
-    return {"atmos_params": {"feh": float(star.feh), "vmic": float(star.vmic)}}
+    atmos = {"feh": float(star.feh)}
+    if not atmosphere.is_3d:
+        atmos["vmic"] = float(star.vmic)
+    return {"atmos_params": atmos}
 
 
 def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
