@@ -2992,7 +2992,11 @@ contains
             ! with escape = 1 - Psi*chi from the solver: in the core of a very
             ! thick line both 1 - Psi*chi and 1 - chi_t/chi are near the fp32
             ! rounding of one, and so is their true value, 1/dtau.  Where Psi is
-            ! zero (fixed_Jnu) the unpreconditioned integrands are taken.  The
+            ! zero (fixed_Jnu) the unpreconditioned integrands are taken, and so
+            ! they are where the transition itself is inverted (chi_t < 0) under
+            ! a positive total extinction: its local operator then amplifies the
+            ! change of its own populations, and the iterations settle into a
+            ! period-2 cycle of the inverted pair instead of converging.  The
             ! tracked contributions carry no beta, and the line-scattering
             ! emissivity is not among them: it emits into the source term but
             ! adds no extinction of its own.
@@ -3009,6 +3013,7 @@ contains
                   self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z)) - eta_other
                 other = eta_other
                 if (do_scat) other = other + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
+                if (chi_t < 0.) psi = 0.
                 up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
