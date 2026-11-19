@@ -91,11 +91,11 @@ def preflight(request):
     problems = []
     if not (config.root / "dispatch.x").is_file():
         problems.append(f"dispatch.x is not built in {config.root}")
-    for name in ("linelist", "abundances", "absmet"):
+    for name in ("linelist_file", "abund_file", "absmet"):
         value = getattr(config, name)
         if value is not None and not config.resolve(value).exists():
             problems.append(f"config.{name} not found: {config.resolve(value)}")
-    if config.linelist is not None and request.atmosphere.preparation is not None:
+    if config.linelist_file is not None and request.atmosphere.preparation is not None:
         from ..prune import executable
         try:
             executable(config.root)
@@ -127,7 +127,7 @@ def _preset_problems(request):
     which name no model atom to solve."""
     from . import presets
     problems = []
-    for name in request.presets:
+    for name in request.all_presets:
         try:
             item = presets.load(name)
         except FileNotFoundError as exc:
@@ -229,14 +229,14 @@ def synthesize_lines(request, lines, *, pad=2.0, lam_tol=0.02, background_lines=
         lines = lines.to_dict("records")
     config = request.config
     folder = config.resolve(config.cache) / "linelists"
-    base = config.resolve(config.linelist) if config.linelist is not None else None
+    base = config.resolve(config.linelist_file) if config.linelist_file is not None else None
     tmp = override_lines(lines, folder / f".partial-{time.time_ns()}.txt", base=base,
                          lam_tol=lam_tol)
     digest = hashlib.sha1(tmp.read_bytes()).hexdigest()[:12]
     llist = tmp.replace(folder / f"{digest}.txt")
     wins = request.windows or tuple((float(l["lam0"]) - pad, float(l["lam0"]) + pad)
                                     for l in lines)
-    request = request.update(config=replace(config, linelist=llist), windows=wins)
+    request = request.update(config=replace(config, linelist_file=llist), windows=wins)
     return synthesize(request, background_lines=background_lines, cancel_token=cancel_token)
 
 

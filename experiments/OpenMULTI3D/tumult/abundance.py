@@ -1833,8 +1833,8 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
             # measured into the identity the caller holds (the result is listed already)
             stage("Measuring windows", 0)
         measured_now = measure_lines(mset, spectrum,
-                                     linelist=str(config.resolve(config.linelist))
-                                     if config.linelist else None,
+                                     linelist=str(config.resolve(config.linelist_file))
+                                     if config.linelist_file else None,
                                      profile=profile, snr=snr, cont_pct=cont_pct)
         if result is None:
             result = measured_now

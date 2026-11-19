@@ -51,6 +51,23 @@ class Preset:
         return dict(NameList.from_file(self.path))
 
 
+def coerce_names(names):
+    """Preset names as a tuple of strings; one name may be given alone. The NLTE step
+    presets are refused, since the departures of a request select them."""
+    names = (names,) if isinstance(names, (str, Path)) else names
+    names = tuple(str(name) for name in (names or ()))
+    steps = [name for name in names if Path(name).stem in STEP_PRESETS and len(Path(name).parts) == 1]
+    if steps:
+        raise ValueError(f"{', '.join(steps)}: the NLTE step presets follow from "
+                         "`departures`; request departures instead of listing them.")
+    return names
+
+
+def coerce_settings(settings):
+    """Namelist settings as a dict of sections, each a dict of keys."""
+    return {str(section): dict(keys) for section, keys in dict(settings or {}).items()}
+
+
 def internal(name):
     """Path of a workflow layer (``base.nml``, ``corr_ref.nml``); these are not presets."""
     return INTERNAL_DIR / name

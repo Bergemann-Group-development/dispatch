@@ -17,6 +17,8 @@ from dataclasses import dataclass, field, fields, replace
 import math
 from pathlib import Path
 
+from . import presets
+
 STAR_KEYS = ("teff", "logg", "feh", "vmic")
 CONVENTIONS = ("[X/Fe]", "A(X)")
 # the ``atmos_format`` values the Fortran reader accepts for the ``format`` of an
@@ -27,8 +29,8 @@ CONVENTIONS = ("[X/Fe]", "A(X)")
 # the canonical ones rather than the only accepted ones.
 ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
-PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
-               "abund_file": "abundances", "absmet": "absmet", "R": "R_sampling",
+PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist_file",
+               "abund_file": "abund_file", "absmet": "absmet", "R": "R_sampling",
                "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
                "max_threads": "threads", "nml_settings": "nml_settings"}
@@ -56,24 +58,29 @@ class SynthConfig:
     input tree. ``cache`` holds the native runs and the HOP preparations; it may be shared
     between scripts, since every cached item is keyed by what produced it.
 
-    ``linelist`` is the transition list every synthesis draws from (a file or folder),
-    ``abundances`` the standard composition, ``absmet`` the background opacity table (a
-    file for every metallicity or a folder keyed by [Fe/H]). ``R_sampling`` sets the
-    spectrum sampling, ``linelist_skirt`` how far outside a window a transition may still
-    contribute when the line list is pruned per atmosphere (0 disables pruning),
+    A field that sets one namelist setting has its name: ``linelist_file`` is the
+    transition list every synthesis draws from (a file, or a folder whose files it lists),
+    ``abund_file`` the standard composition and ``R_sampling`` the spectrum sampling.
+    ``absmet`` is the background opacity table (a file for every metallicity or a folder
+    keyed by [Fe/H]), ``linelist_skirt`` how far outside a window a transition may still
+    contribute when the line list is pruned on the atmosphere's preparation,
     ``abundance_step`` the lattice every abundance ladder is placed on, ``vmic_step`` the
     microturbulence lattice of a grid, ``interpolation`` the grid node selection and
     ``threads`` the CPU budget of one operation (``None`` uses every core).
 
-    ``nml_settings`` holds namelist sections merged into every run's settings last, as
-    in :func:`tumult.launch`, e.g. ``dict(nlte_params=dict(convlim=1e-3))``; ``preferences`` holds further entries of the
-    GUI preference dictionary (``fit_max_rounds``, ...). Both are escape hatches
-    and are recorded with every result.
+    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) and
+    ``nml_settings`` namelist sections, as in :func:`tumult.launch`, e.g.
+    ``dict(nlte_params=dict(convlim=1e-3))``, for every request on this configuration; a
+    :class:`~tumult.synthesis.SynthRequest` adds its own of both, which win
+    (:attr:`~tumult.synthesis.SynthRequest.all_presets`,
+    :attr:`~tumult.synthesis.SynthRequest.all_nml_settings`). ``preferences`` holds
+    further entries of the GUI preference dictionary (``fit_max_rounds``, ...), recorded
+    with every result.
     """
     root: Path = Path(".")
     cache: Path = Path("synth")
-    linelist: Path | None = None
-    abundances: Path | None = None
+    linelist_file: Path | None = None
+    abund_file: Path | None = None
     absmet: Path | None = None
     R_sampling: float = 300_000.0
     linelist_skirt: float = 5.0
@@ -81,6 +88,7 @@ class SynthConfig:
     vmic_step: float = 0.5
     interpolation: str = "NaturalNeighbor"
     threads: int | None = None
+    presets: tuple = ()
     nml_settings: dict = field(default_factory=dict)
     preferences: dict = field(default_factory=dict)
 
@@ -88,13 +96,14 @@ class SynthConfig:
         set_ = lambda name, value: object.__setattr__(self, name, value)
         set_("root", Path(self.root).expanduser().resolve())
         set_("cache", Path(self.cache).expanduser())
-        for name in ("linelist", "abundances", "absmet"):
+        for name in ("linelist_file", "abund_file", "absmet"):
             set_(name, _path(getattr(self, name)))
         set_("R_sampling", float(self.R_sampling))
         set_("linelist_skirt", _aa(self.linelist_skirt))
         set_("abundance_step", float(self.abundance_step))
         set_("vmic_step", float(self.vmic_step))
-        set_("nml_settings", {str(k): dict(v) for k, v in dict(self.nml_settings or {}).items()})
+        set_("presets", presets.coerce_names(self.presets))
+        set_("nml_settings", presets.coerce_settings(self.nml_settings))
         set_("preferences", dict(self.preferences or {}))
         if not self.R_sampling > 0:
             raise ValueError("R_sampling must be positive.")
@@ -123,7 +132,7 @@ class SynthConfig:
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
             "nml_settings": self.nml_settings,
         }
-        for key, name in (("linelist", "linelist"), ("abund_file", "abundances"),
+        for key, name in (("linelist", "linelist_file"), ("abund_file", "abund_file"),
                           ("absmet", "absmet")):
             value = getattr(self, name)
             if value is not None:
@@ -140,7 +149,7 @@ class SynthConfig:
         for key, name in PREF_FIELDS.items():
             if key in prefs:
                 values[name] = prefs.pop(key)
-        for name in ("linelist", "abundances", "absmet"):
+        for name in ("linelist_file", "abund_file", "absmet"):
             if isinstance(values.get(name), str) and not values[name].strip():
                 values[name] = None
         if "threads" in values:
@@ -150,6 +159,7 @@ class SynthConfig:
 
     def to_dict(self):
         value = {f.name: getattr(self, f.name) for f in fields(self)}
+        value["presets"] = list(self.presets)
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in value.items()}
 
     @classmethod
