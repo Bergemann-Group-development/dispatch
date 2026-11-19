@@ -16,6 +16,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
+import numpy as np
+
 from .presets import STEP_PRESETS
 from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
                      coerce_atmosphere, coerce_windows)
@@ -29,8 +31,46 @@ def _read_windows(values):
     return tuple(None if window is None else tuple(window) for window in values)
 
 
-# crop arguments that select wavelengths themselves (Run.crop and Spectrum.crop)
-_SELECTIONS = {"xmin", "xmax", "x0", "dx", "slc", "line", "newx"}
+# crop arguments that select wavelengths themselves (Run.crop and Spectrum.crop), and those
+# among them that SynthesisResult.crop replaces by xmin/xmax for each window of a selection
+_SELECTIONS = {"window", "xmin", "xmax", "x0", "dx", "width", "slc", "line", "newx"}
+_RANGE_KEYS = {"window", "xmin", "xmax", "x0", "dx", "width", "newx"}
+
+
+def _angstrom(value):
+    """A wavelength, number or Quantity (spectral units), in Å; plain numbers are Å."""
+    import astropy.units as u
+    if isinstance(value, u.Quantity):
+        return value.to_value(u.AA, equivalencies=u.spectral())
+    return np.asarray(value, dtype=float) if np.ndim(value) else float(value)
+
+
+def _selection_range(kwargs):
+    """The wavelength range (Å) a crop selection asks for; unbounded without one."""
+    lo, hi = -math.inf, math.inf
+    if kwargs.get("window") is not None:
+        lo, hi = (_angstrom(value) for value in kwargs["window"])
+    elif kwargs.get("x0") is not None and (kwargs.get("dx") is not None
+                                           or kwargs.get("width") is not None):
+        x0 = _angstrom(kwargs["x0"])
+        half = (_angstrom(kwargs["dx"]) if kwargs.get("dx") is not None
+                else _angstrom(kwargs["width"]) / 2)
+        lo, hi = x0 - half, x0 + half
+    elif kwargs.get("newx") is not None:
+        newx = _angstrom(kwargs["newx"])
+        lo, hi = float(np.min(newx)), float(np.max(newx))
+    elif kwargs.get("line") is not None:
+        lo = hi = float(kwargs["line"].lam0)
+    if kwargs.get("xmin") is not None:
+        lo = _angstrom(kwargs["xmin"])
+    if kwargs.get("xmax") is not None:
+        hi = _angstrom(kwargs["xmax"])
+    return min(lo, hi), max(lo, hi)
+
+
+def _describe(windows):
+    return ", ".join("full range" if bounds is None else f"{bounds[0]:g}-{bounds[1]:g}"
+                     for bounds in windows)
 
 
 @dataclass(frozen=True)
@@ -67,40 +107,92 @@ class SynthesisResult:
             raise ValueError("Result contains more than one spectrum; use spectra/windows.")
         return self.spectra[0]
 
-    def crop(self, LTE=False, window=None, **kwargs):
-        """The spectrum of one window, cropped again from the runs it came from.
+    def crop(self, LTE=False, **kwargs):
+        """The spectrum over a wavelength selection, cropped again from the runs it came from.
 
         This delegates to the spectrum run of an individual atmosphere
         (:meth:`tumult.run.Run.crop`) or to the node grid interpolated at the star
         (:meth:`tumult.spectrum_grid.SpectrumGrid.crop`) and takes their arguments
-        (``xmin``/``xmax``, ``x0``/``dx``, ``norm``, ...). ``LTE`` gives the LTE spectrum
-        that an NLTE run computes alongside its NLTE spectrum; an LTE result has only that
-        one. ``window`` is the position of the window in ``windows``, needed when there are
-        several. Without a wavelength selection the crop covers that window.
+        (``window=(xmin, xmax)``, ``xmin``/``xmax``, ``x0`` with ``dx`` or ``width``,
+        ``newx``, ``line``, ``norm``, ...). ``LTE`` gives the LTE spectrum that an NLTE run
+        computes alongside its NLTE spectrum; an LTE result has only that one.
+
+        The selection picks the windows of the result it overlaps; without one, the crop
+        covers every window. A selection inside one window is cropped from it with the
+        arguments as given. One that spans several is cropped from each over its part of
+        the selection and returned as one spectrum with a segment per window
+        (:meth:`~tumult.spectrum.Spectrum.split_segments`). ``slc`` indexes the run of a
+        single window and ``relative`` needs one centre, so both need a selection inside
+        one window.
         """
-        window = self._window(window)
-        bounds = self.windows[window]
-        if bounds is not None and not _SELECTIONS & set(kwargs):
-            kwargs.update(xmin=bounds[0], xmax=bounds[1])
-        return self.sources[window].crop(LTE=LTE or not self.request.is_nlte, **kwargs)
+        lte = LTE or not self.request.is_nlte
+        lo, hi = _selection_range(kwargs)
+        chosen = self._overlapping(lo, hi)
+        if not chosen:
+            raise ValueError(f"The selection {lo:g}-{hi:g} Å overlaps no window of the "
+                             f"result ({_describe(self.windows)}).")
+        if len(chosen) == 1:
+            index = chosen[0]
+            bounds = self.windows[index]
+            if bounds is not None and not _SELECTIONS & set(kwargs):
+                kwargs.update(xmin=bounds[0], xmax=bounds[1])
+            elif bounds is not None and {"xmin", "xmax"} & set(kwargs):
+                kwargs.setdefault("xmin", bounds[0])
+                kwargs.setdefault("xmax", bounds[1])
+            return self.sources[index].crop(LTE=lte, **kwargs)
+        if "slc" in kwargs or kwargs.get("relative"):
+            raise ValueError("slc and relative need a selection inside one window; this one "
+                             f"spans {len(chosen)} windows.")
+        newx = kwargs.get("newx")
+        if newx is not None and not hasattr(newx, "unit"):
+            newx = np.asarray(newx, dtype=float)
+        base = {key: value for key, value in kwargs.items() if key not in _RANGE_KEYS}
+        pieces, segments, first = [], [], 1
+        for index in chosen:
+            blue, red = max(lo, self.windows[index][0]), min(hi, self.windows[index][1])
+            part = dict(base, xmin=blue, xmax=red)
+            if newx is not None:
+                inside = (_angstrom(newx) >= blue) & (_angstrom(newx) <= red)
+                if not inside.any():
+                    continue
+                part["newx"] = newx[inside]
+            piece = self.sources[index].crop(LTE=lte, **part)
+            pieces.append(piece)
+            segments.append({"first": first, "last": first + len(piece.xdata) - 1,
+                             "blue": blue, "red": red})
+            first += len(piece.xdata)
+        from ..spectrum import Spectrum
+        return Spectrum(np.concatenate([piece.xdata for piece in pieces]),
+                        np.concatenate([piece.ydata for piece in pieces]),
+                        xref=pieces[0].xref, segments=segments)
 
-    def plot_line_labels(self, window=None, **kwargs):
-        """Label the strongest lines inside the current axes with
-        :meth:`tumult.run.Run.plot_line_labels`, which takes the other arguments, on the
-        spectrum run of one window: the run of an individual atmosphere, or the node of the
-        grid with the largest interpolation weight. ``window`` is as in :meth:`crop`."""
-        return self.sources[self._window(window)].run.plot_line_labels(**kwargs)
+    def plot_line_labels(self, **kwargs):
+        """Label the strongest lines between ``xmin`` and ``xmax``, by default the limits
+        of the current axes, with :meth:`tumult.run.Run.plot_line_labels`, which takes the
+        other arguments. The lines of each window in that range come from its spectrum
+        run: the run of an individual atmosphere, or the node of the grid with the largest
+        interpolation weight. Returns the labelled lines."""
+        import pandas as pd
+        xmin, xmax = kwargs.pop("xmin", None), kwargs.pop("xmax", None)
+        if xmin is None or xmax is None:
+            import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+            left, right = sorted(plt.gca().get_xlim())
+            xmin = left if xmin is None else xmin
+            xmax = right if xmax is None else xmax
+        lists = []
+        for index in self._overlapping(xmin, xmax):
+            bounds = self.windows[index] or (xmin, xmax)
+            lists.append(self.sources[index].run.plot_line_labels(
+                xmin=max(xmin, bounds[0]), xmax=min(xmax, bounds[1]), **kwargs))
+        lists = [labels for labels in lists if len(labels)]
+        return pd.concat(lists, ignore_index=True) if lists else pd.DataFrame()
 
-    def _window(self, window):
-        """The position of the window a run-backed method works on."""
+    def _overlapping(self, lo, hi):
+        """The positions of the windows that overlap lo-hi (Å); a None window is unbounded."""
         if len(self.sources) != len(self.spectra):
             raise ValueError("This result keeps no runs; use spectra.")
-        if window is None:
-            if len(self.sources) != 1:
-                raise ValueError(f"The result has {len(self.sources)} windows; choose one "
-                                 "with window=<position>.")
-            window = 0
-        return window
+        return [index for index, bounds in enumerate(self.windows)
+                if bounds is None or (bounds[1] >= lo and bounds[0] <= hi)]
 
     @property
     def frozen_composition_changed(self):
