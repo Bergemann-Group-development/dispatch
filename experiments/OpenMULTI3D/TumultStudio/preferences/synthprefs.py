@@ -73,7 +73,7 @@ PREF_PAGES = {
         # window a line may still contribute. 0 disables pruning and every run reads the
         # whole list. 5 A keeps the measured EW error at ~0.06% mean with the local
         # continuum fit, where 20 A is no better and 1 A starts clipping strong wings.
-        ("linelist_skirt_aa", "Line-list padding [Å] (0 = off)", "number", 5.0),
+        ("prune_margin_aa", "Prune margin [Å] (0 = off)", "number", 5.0),
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
         # Both runners keep a synthesis alive across a server restart; the Slurm script

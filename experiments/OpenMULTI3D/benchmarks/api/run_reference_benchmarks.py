@@ -136,7 +136,7 @@ def inputs(args):
     config = SynthConfig(root=ROOT, cache=args.cache, linelist_file=args.linelist,
                          abund_file=args.abundances, absmet_file=args.absmet,
                          R_sampling=args.R_sampling,
-                         linelist_skirt=args.line_list_skirt,
+                         prune_margin=args.prune_margin,
                          abundance_step=args.abundance_step, threads=args.threads)
     stars = [(Star(*stellar), Atmosphere(path)) for stellar, path in REFERENCE_STARS]
     return {"config": config, "grid": AtmosphereGrid(args.atmosphere_grid), "stars": stars,
@@ -303,7 +303,7 @@ def parser():
     p.add_argument("--wavelength", type=float, nargs=2, default=(4000.0, 9000.0),
                    metavar=("BLUE_AA", "RED_AA"))
     p.add_argument("--R-sampling", type=float, default=100_000.0)
-    p.add_argument("--line-list-skirt", type=float, default=5.0)
+    p.add_argument("--prune-margin", type=float, default=5.0)
     p.add_argument("--abundance-step", type=float, default=0.25)
     p.add_argument("--correction-limit", type=float, default=1.0)
     p.add_argument("--profile", default="voigt")

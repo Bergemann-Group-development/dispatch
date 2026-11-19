@@ -1,6 +1,6 @@
 """The lines read for a window file depend only on the union of its windows.
 
-A window file of several narrow windows within ``dlam`` of each other merges to one line-list
+A window file of several narrow windows within ``line_margin`` of each other merges to one line-list
 interval (``merge_intervals``), and the Intel builds, which compile with
 ``-assume norealloc_lhs``, once read no line at all from that case because the merged array
 kept the size of the unmerged one. The checks compare the number of lines read with the

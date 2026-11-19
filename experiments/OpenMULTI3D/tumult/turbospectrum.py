@@ -136,7 +136,7 @@ class Turbospectrum(SpectrumTable):
         lmin  = nml['spectrum_params']['aa_blue']
         lmax  = nml['spectrum_params']['aa_red']
         lstep = nml['spectrum_params']['daa']
-        lpad  = nml['linelist_params']['dlam']
+        lpad  = nml['linelist_params']['line_margin']
 
         input = {
                 'PURE-LTE': nml['rt_output_params']['maxiter'] == 0,

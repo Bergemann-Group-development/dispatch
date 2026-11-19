@@ -52,24 +52,10 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   `000` for the natural mixture, so `012014` is 12C14N. HOP's `canonical_iso` and
   `tumult.isotopes` share this convention, and Turbospectrum's species code
   (`0607.012014`) carries the same digits after the point.
-- *pruned line list*: the subset of the configured line list that a synthesis on one
-  atmosphere node keeps, written in the input format by `hop_prune.x`
-  (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node
-  reads it as its `linelist_file`. The selection is HOP's own negligibility test on the
-  node's sampled states over the requested windows widened by the *skirt*
-  (`prune_linelist`, the `linelist_skirt_aa` preference). An older name for the same thing
-  is *preparation* (the per-reference artifact of `prepare_linelist`). *Crop* is reserved
-  for cutting a spectrum to a wavelength range. Distinct from a run's `linelist_out.txt`,
-  which is a derived diagnostic.
-- *skirt*: how far outside a requested window a transition may still be kept when pruning,
-  in Angstrom; it is handed to HOP as the line-wing search radius `dlam`, so a pruned run
-  reads wings only to that distance.
-- *reach*: the half-width around a transition's centre, in Angstrom, out to which its
-  extinction exceeds HOP's tolerance times the continuum, maximised over the states it was
-  computed on. It is the column after *strength* in a pruned line list and in
-  `linelist_out.txt`. A run whose line list carries it visits, in each output patch, only
-  the transitions whose reach touches that patch. Distinct from the *skirt*, which is a
-  selection radius set for the whole list.
+- *pruned line list*: the subset of the configured line list that a synthesis on one atmosphere node keeps, written in the input format by `hop_prune.x` (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node reads it as its `linelist_file`. The selection is HOP's own negligibility test on the node's sampled states over the requested windows, each widened by the *prune margin* (`prune_linelist`, the `prune_margin_aa` preference). An older name for the same thing is *preparation* (the per-reference artifact of `prepare_linelist`). *Crop* is reserved for cutting a spectrum to a wavelength range. Distinct from a run's `linelist_out.txt`, which is a derived diagnostic.
+- *line margin*: `line_margin` in `&linelist_params` and in HOP's opacity calls, in Angstrom: the distance from a window, and in a run from each output patch, within which a transition's opacity is added. The line lists are read over the windows widened by it, and windows closer than twice the margin share one read interval.
+- *prune margin*: `SynthConfig.prune_margin`, in Angstrom: how far outside each requested window a transition is kept when the line list is pruned. The pruner gets it as its `line_margin`, so a pruned run reads wings only to that distance, whatever the runs' own line margin.
+- *reach*: the half-width around a transition's centre, in Angstrom, out to which its extinction exceeds HOP's tolerance times the continuum, maximised over the states it was computed on. It is the column after *strength* in a pruned line list and in `linelist_out.txt`. A run whose line list carries it visits, in each output patch, only the transitions whose reach touches that patch. Distinct from the *line margin* and the *prune margin*, which are selection radii set for the whole list.
 - *use line list*: the per-calculation choice to synthesise the model atoms together with
   the line list (background transitions and blends) rather than the atoms alone. Off is
   `only_atom` in the request; it never blanks the configured path.

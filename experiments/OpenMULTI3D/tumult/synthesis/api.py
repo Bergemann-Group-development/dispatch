@@ -141,7 +141,7 @@ def _prune_digest(base, windows, prune):
     """Cache identity of a per-node pruned line list.
 
     Everything the pruning depends on except the atmosphere node, which the file name carries:
-    the master list, the windows, the skirt, the sampling the selection was made at and the
+    the master list, the windows, the margin, the sampling the selection was made at and the
     abundances it was made for. This goes into the *runs'* digest as well as into the name of
     the pruned lists' directory, because two runs on the same node with the same namelist but
     different pruned lists are different runs -- without it the second would be served the
@@ -155,8 +155,8 @@ def _prune_digest(base, windows, prune):
         sort_keys=True, default=str).encode()).hexdigest()[:8]
 
 
-# composition_patch_mod's default line-list read margin (&linelist_params dlam)
-DEFAULT_DLAM_AA = 100.0
+# composition_patch_mod's default line-list read margin (&linelist_params line_margin)
+DEFAULT_LINE_MARGIN_AA = 100.0
 
 
 def _resolved_masters(files, launch_kwargs):
@@ -186,11 +186,11 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     (``HOP/linelist_reader_mod.f90``), so finding the records costs the selection rather
     than the list.
 
-    ``prune`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
+    ``prune`` is the caller's descriptor: ``margin`` in Angstrom (how far outside a window a
     line may still contribute; 0 or absent disables pruning altogether) and the
     ``abundances`` / ``relative_abundances`` the selection is made at, which is the
     composition itself -- a ladder's rungs share their node's selection rather than each
-    getting its own. Hydrogen lines, whose Stark wings reach far beyond the skirt, bypass
+    getting its own. Hydrogen lines, whose Stark wings reach far beyond the prune margin, bypass
     the prune and are read as the master lists give them. Each node then maps to the list
     of its files.
 
@@ -213,7 +213,7 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     files = [f for f in linelist.get('linelist_file') or [] if f]
     if not files:
         return None
-    if not prune or not float(prune.get('skirt') or 0.0) > 0.0:
+    if not prune or not float(prune.get('margin') or 0.0) > 0.0:
         return None                   # nothing to select per node; every run shares the list
     R = float((base.get('spectrum_params') or {}).get('R_sampling') or 0.0)
     if R <= 0:
@@ -221,8 +221,8 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     from .. import prune as hop_prune
     from ..linestrength import _window_text
 
-    skirt = float(prune['skirt'])
-    padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
+    margin = float(prune['margin'])
+    padded = sorted((float(min(w)) - margin, float(max(w)) + margin) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
     out_dir = (cwd / top / '_linelists' / _prune_digest(base, windows, prune)).resolve()
     # HOP loads the files in this order for the prune as a run would for itself, so the
@@ -250,7 +250,7 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
         if not jobs:
             window_file.write_text(_window_text(padded))
         jobs.append((path, hop_prune.prune_namelist(
-            path, atmos, masters, window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
+            path, atmos, masters, window_file, R=R, line_margin=margin, vmic=v, feh=feh_i,
             abundances=abundances, relative_abundances=relative, base=base,
             exclude_elements='H')))
     hop_prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)

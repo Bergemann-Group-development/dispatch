@@ -18,7 +18,7 @@ MARCS = ROOT / 'input' / 'atmos' / ('p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.0
 MASTER = ROOT / 'input' / 'linelists' / 'SIU_masterline_Bergemann2026.txt'
 WINDOWS = [(5000.0, 5002.5), (5015.0, 5017.5)]      # disjoint, air Angstrom
 R = 300000.0
-DLAM = 2.0
+LINE_MARGIN = 2.0
 
 needs_executable = pytest.mark.skipif(
     not ((ROOT / prune.EXECUTABLE).is_file() and MARCS.is_file() and MASTER.is_file()),
@@ -44,7 +44,7 @@ def _prune(tmp_path, name, **overrides):
     out = tmp_path / f'{name}.txt'
     window_file = tmp_path / 'windows.txt'
     window_file.write_text('\n'.join(f'{lo} {hi}' for lo, hi in WINDOWS) + '\n')
-    kwargs = dict(R=R, dlam=DLAM, vmic=1.0, feh=0.0)
+    kwargs = dict(R=R, line_margin=LINE_MARGIN, vmic=1.0, feh=0.0)
     kwargs.update(overrides)
     nml = prune.prune_namelist(out, MARCS, [MASTER], window_file, **kwargs)
     prune.prune_batch([(out, nml)], cwd=ROOT)
@@ -74,7 +74,7 @@ def test_executable_selects_what_the_in_process_crop_selects(tmp_path):
     temp, rho = read_marcs(MARCS)
     with tm.HopEOS(feh=0.0) as hop:
         hop.load_state(temp, rho=rho, vmic=1.0)
-        hop.write_linelist(tmp_path / 'python.txt', lam, str(MASTER), dlam=DLAM, vmic=1.0,
+        hop.write_linelist(tmp_path / 'python.txt', lam, str(MASTER), line_margin=LINE_MARGIN, vmic=1.0,
                            windows=vac)
     a, b, c = _records(sampled), _records(every), _records(tmp_path / 'python.txt')
     assert len(a) > 300
@@ -83,15 +83,15 @@ def test_executable_selects_what_the_in_process_crop_selects(tmp_path):
     result = record['prune_result']
     assert result['ntransitions'] == len(a) and record['prune_params']['sample_count'] == 8
     assert result['sampled_depths'][0] == 1 and result['sampled_depths'][-1] == result['nz_model']
-    assert len(result['blue_vac']) == 2 and record['linelist_params']['dlam'] == DLAM
+    assert len(result['blue_vac']) == 2 and record['linelist_params']['line_margin'] == LINE_MARGIN
     assert record['spectrum_params']['r_sampling'] == R
     assert result['use_rho_used'] is True and result['use_ne_used'] is False
     # boundary transitions: the wing contributors outside the windows are kept, nothing
-    # farther than dlam from a window is
+    # farther than line_margin from a window is
     lam0 = np.array([k[1] for k in a])
     inside = np.zeros(lam0.shape, bool)
     for lo, hi in WINDOWS:
-        inside |= (lam0 >= lo - DLAM) & (lam0 <= hi + DLAM)
+        inside |= (lam0 >= lo - LINE_MARGIN) & (lam0 <= hi + LINE_MARGIN)
     assert inside.all()
     assert ((lam0 < WINDOWS[0][0]) | (lam0 > WINDOWS[0][1])).any()
 
@@ -132,12 +132,12 @@ def test_invalid_inputs_fail_without_publishing(tmp_path):
     window_file = tmp_path / 'windows.txt'
     window_file.write_text('5000 5002.5\n')
     nml = prune.prune_namelist(out, MARCS, [tmp_path / 'missing.txt'], window_file,
-                               R=R, dlam=DLAM, vmic=1.0, feh=0.0)
+                               R=R, line_margin=LINE_MARGIN, vmic=1.0, feh=0.0)
     with pytest.raises(RuntimeError, match='file not found'):
         prune.prune_batch([(out, nml)], cwd=ROOT)
     assert not out.exists() and not list(tmp_path.glob('bad.txt.*'))
     nml = prune.prune_namelist(out, tmp_path / 'nope.mod', [MASTER], window_file,
-                               R=R, dlam=DLAM, vmic=1.0, feh=0.0)
+                               R=R, line_margin=LINE_MARGIN, vmic=1.0, feh=0.0)
     with pytest.raises(RuntimeError, match='File not found'):
         prune.prune_batch([(out, nml)], cwd=ROOT)
     assert not out.exists()

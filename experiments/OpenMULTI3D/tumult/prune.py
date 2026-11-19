@@ -7,7 +7,7 @@ selection once per node from the same namelist groups the runs use and writes it
 line list, so every run on the node reads the pruned file as its ``linelist_file``. An
 abundance ladder makes that one selection at the composition it is centred on and its rungs
 share it (:func:`tumult.synthesis.api._node_linelists`); hydrogen, whose Stark wings reach
-tens of Angstrom beyond any skirt, bypasses the prune (:func:`hydrogen_lists`). A run that
+tens of Angstrom beyond any prune margin, bypasses the prune (:func:`hydrogen_lists`). A run that
 reads one species alone (``only_elements``) is not pruned: HOP skips the other species'
 blocks as it reads the master list. Prunes and runs read the masters themselves; HOP
 bisects each block for the windows it was given (``HOP/linelist_reader_mod.f90``), so
@@ -58,7 +58,7 @@ def executable(cwd=None):
         f'"make -C HOP/standalone hop_prune.x" or point $HOP_PRUNE at it')
 
 
-def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, dlam,
+def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, line_margin,
                    vmic=None, feh=None, abundances='', relative_abundances=True,
                    base=None, sample_count=SAMPLE_COUNT, atmos_format=None, use_abnd=None,
                    only_elements='', exclude_elements=''):
@@ -69,7 +69,7 @@ def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, d
     vmic, rejection tolerance and element filters the runs do. The node-specific values
     replace what the runs would set per node: ``atmos_file``, ``feh``, ``vmic``, and the
     ``abundances`` override the caller prunes at (a blank string leaves the standard
-    composition). ``linelist_files`` and ``dlam`` replace the
+    composition). ``linelist_files`` and ``line_margin`` replace the
     base list selection, and ``window_file`` with ``R`` define the wavelength grid.
     ``only_elements`` restricts the selection to those species and ``exclude_elements``
     leaves them out, for a selection made for one part of what the runs read; the
@@ -104,7 +104,7 @@ def prune_namelist(output_file, atmos_file, linelist_files, window_file, *, R, d
     linelist.pop('only_elements', None)
     linelist.pop('exclude_elements', None)
     linelist['linelist_file'] = [str(f) for f in linelist_files]
-    linelist['dlam'] = float(dlam)
+    linelist['line_margin'] = float(line_margin)
     if only_elements:
         linelist['only_elements'] = str(only_elements)
     if exclude_elements:
@@ -170,7 +170,7 @@ def hydrogen_lists(files, out_dir):
     """The hydrogen lines of the master ``files``, as list files a run reads beside its
     pruned selection: a ``Hlinedata`` file as it is (its layout is keyed to that name),
     the ``'H I'`` block of any other file copied to ``out_dir``. Hydrogen lines are few,
-    and their Stark wings reach tens of Angstrom, far beyond a prune's skirt, so they
+    and their Stark wings reach tens of Angstrom, far beyond the prune margin, so they
     are left to the run's own wavelength margin; the prune leaves them out
     (``exclude_elements``) so none is read twice."""
     out_dir = Path(out_dir)

@@ -15,7 +15,7 @@ MODULE rt_patch_mod
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
   USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, &
-    dlam, out_patch_offset, &
+    line_margin, out_patch_offset, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
@@ -1387,7 +1387,7 @@ contains
       ! (b) departure-carrying species in detail, with departures + velocity
       if (associated(departures)) then
         associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
             departures=departures, only_departures=.true., i_set=i_set, &
             window_lam=window_lam)
         end associate
@@ -1406,14 +1406,14 @@ contains
               self%one_m_eps(:,:,:,:,1))
             call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
               self%one_m_eps(:,:,:,:,2))
-            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
               only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
               one_m_eps=self%one_m_eps, chi_scat=scat_lte, beta=self%beta, &
               i_set=i_set, window_lam=window_lam)
             self%chi_scat = self%chi_scat + scat_lte
             deallocate(scat_lte)
           else
-            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
               only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
               i_set=i_set, window_lam=window_lam)
           endif
@@ -1488,12 +1488,12 @@ contains
             self%one_m_eps(:,:,:,:,1))
           call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
             self%one_m_eps(:,:,:,:,2))
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
             departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
             beta=self%beta, i_set=i_set, window_lam=window_lam, &
             chi_lines=chi_lines, eta_lines=eta_lines)
         else
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
                                            departures=departures, i_set=i_set, &
                                            window_lam=window_lam, &
                                            chi_lines=chi_lines, eta_lines=eta_lines)
@@ -2322,7 +2322,7 @@ contains
     call mem_register(self%opac%scat, label='opac_table')
     all_scat(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac%scat
     call comp%opacity(sp, all_chi, all_scat, include_absmet=include_absmet, &
-      include_llist=include_llist, dlam=dlam, sorted=self%sp%sorted, &
+      include_llist=include_llist, line_margin=line_margin, sorted=self%sp%sorted, &
       disjoint=do_disjoint)
 
     do k=1, nne
@@ -2446,12 +2446,12 @@ contains
       allocate(chi_scat(nnu, ntemp, nne, 1), source=0.)
       call compute_epsilon_stage(1, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,1))
       call compute_epsilon_stage(2, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,2))
-      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam, &
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, line_margin, &
         one_m_eps=one_m_eps, chi_scat=chi_scat, beta=all_beta)
       allocate(self%ll_opac%scat(nnu, ntemp, nne), source=0.)
       call mem_register(self%ll_opac%scat, label='ll_opac_table')
     else
-      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam)
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, line_margin)
     endif
 
     ! isolate the pure line xhat delta and normalise by chi500 (undone per cell in

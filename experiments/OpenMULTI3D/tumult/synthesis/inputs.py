@@ -32,7 +32,7 @@ ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "sa
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
 PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist_file",
                "abund_file": "abund_file", "R": "R_sampling",
-               "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
+               "prune_margin_aa": "prune_margin", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
                "max_threads": "threads", "nml_settings": "nml_settings"}
 
@@ -65,7 +65,7 @@ class SynthConfig:
     every run and ``R_sampling`` the spectrum sampling. ``absmet_folder`` instead holds
     tables named by their [Fe/H] (``m-1.00a+0.40...``), from which every run, departure
     solves included, takes the one nearest the [Fe/H] of its atmosphere (the more
-    metal-poor on a tie); at most one of the two is given. ``linelist_skirt`` how far outside a window a transition may still
+    metal-poor on a tie); at most one of the two is given. ``prune_margin`` how far outside a window a transition may still
     contribute when the line list is pruned on the atmosphere's preparation,
     ``abundance_step`` the lattice every abundance ladder is placed on, ``vmic_step`` the
     microturbulence lattice of a grid, ``interpolation`` the grid node selection and
@@ -87,7 +87,7 @@ class SynthConfig:
     absmet_file: Path | None = None
     absmet_folder: Path | None = None
     R_sampling: float = 300_000.0
-    linelist_skirt: float = 5.0
+    prune_margin: float = 5.0
     abundance_step: float = 0.25
     vmic_step: float = 0.5
     interpolation: str = "NaturalNeighbor"
@@ -106,7 +106,7 @@ class SynthConfig:
             raise ValueError("Give absmet_file (one table) or absmet_folder (a table per "
                              "[Fe/H]), not both.")
         set_("R_sampling", float(self.R_sampling))
-        set_("linelist_skirt", _aa(self.linelist_skirt))
+        set_("prune_margin", _aa(self.prune_margin))
         set_("abundance_step", float(self.abundance_step))
         set_("vmic_step", float(self.vmic_step))
         set_("presets", presets.coerce_names(self.presets))
@@ -114,8 +114,8 @@ class SynthConfig:
         set_("preferences", dict(self.preferences or {}))
         if not self.R_sampling > 0:
             raise ValueError("R_sampling must be positive.")
-        if self.linelist_skirt < 0:
-            raise ValueError("linelist_skirt must not be negative.")
+        if self.prune_margin < 0:
+            raise ValueError("prune_margin must not be negative.")
         if not (self.abundance_step > 0 and self.vmic_step > 0):
             raise ValueError("abundance_step and vmic_step must be positive.")
         if self.interpolation not in ("NaturalNeighbor", "Delaunay"):
@@ -134,7 +134,7 @@ class SynthConfig:
         """The preference dictionary the execution layer reads."""
         prefs = {
             "dispatch_cwd": str(self.root), "synth_output_dir": str(self.cache),
-            "R": self.R_sampling, "linelist_skirt_aa": self.linelist_skirt,
+            "R": self.R_sampling, "prune_margin_aa": self.prune_margin,
             "abund_step": self.abundance_step, "vmic_step": self.vmic_step,
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
             "nml_settings": self.nml_settings,

@@ -84,7 +84,7 @@ BAND_STEPS = 16              # a view spans at most this many grid steps; the st
 MAX_BAND_AA = 6000.0         # widest band computed in one go (cost is linear in width) —
                              # wide enough that a whole optical spectrum is one band
 GRID_AA = 0.005              # sampling: must resolve a line core, or peaks are under-read
-DLAM_AA = 2.0                # wing search radius handed to HOP's line-list reader
+LINE_MARGIN_AA = 2.0                # wing search radius handed to HOP's line-list reader
 MAX_BANDS = 8                # bands kept in the process-wide cache
 NDEPTH = 8                   # depths of the reference atmospheres (see read_marcs)
 PARAMS_NAME = "params.nml"
@@ -220,7 +220,7 @@ class PreparedLineList:
 
 
 def prepare_linelist(output_root, references, linelist, windows, *, R,
-                     dlam=DLAM_AA, vmic=1.0, feh=0.0, abundances='',
+                     line_margin=LINE_MARGIN_AA, vmic=1.0, feh=0.0, abundances='',
                      relative_abundances=True, aliases=None, cwd=None, cancel_token=None):
     """Crop/thin once for all ``references``, ``(path, atmos_format)`` pairs, and return
     its artifact.
@@ -238,7 +238,7 @@ def prepare_linelist(output_root, references, linelist, windows, *, R,
     bounds = tuple((float(min(w)), float(max(w))) for w in windows)
     if not bounds:
         raise ValueError('Line-list preparation needs at least one window.')
-    settings = {'R': float(R), 'dlam': float(dlam), 'vmic': float(vmic),
+    settings = {'R': float(R), 'line_margin': float(line_margin), 'vmic': float(vmic),
                 'feh': float(feh), 'abundances': str(abundances),
                 'relative_abundances': bool(relative_abundances)}
     aliases = {str(Path(key).expanduser().resolve()):
@@ -263,7 +263,7 @@ def prepare_linelist(output_root, references, linelist, windows, *, R,
             window_file.write_text(_window_text(sorted(bounds)))
         jobs.append((output, prune.prune_namelist(
             output, Path(reference['path']).resolve(), master_files,
-            window_file, R=R, dlam=dlam, vmic=vmic, feh=feh, abundances=abundances,
+            window_file, R=R, line_margin=line_margin, vmic=vmic, feh=feh, abundances=abundances,
             relative_abundances=relative_abundances, atmos_format=fmt)))
     # one hop_prune.x child per uncached reference, scheduled together
     prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
@@ -427,7 +427,7 @@ def _hop_band(T, rho, linelist, lo, hi):
     hop = tm.HopEOS(feh=0.0)
     try:
         hop.load_state(T, rho=rho)
-        df = hop.line_strengths(lam, linelist, dlam=DLAM_AA, vmic=1.0)
+        df = hop.line_strengths(lam, linelist, line_margin=LINE_MARGIN_AA, vmic=1.0)
     finally:
         hop.close()
     return _sorted_frame(df[(df.lam0 >= lo) & (df.lam0 <= hi)])
@@ -512,7 +512,7 @@ def cached_band(star, linelist, lo, hi):
 
 
 # --- pruning a line list to an atmosphere -------------------------------------------------
-def prune_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, vmic=1.0,
+def prune_linelist(out_path, atmos_file, linelist, windows, *, R, line_margin=LINE_MARGIN_AA, vmic=1.0,
                    feh=0.0, abundances="", relative_abundances=True, base=None, cwd=None,
                    cancel_token=None):
     """Write the lines a run on ``atmos_file`` would actually use, as an input line list.
@@ -525,10 +525,10 @@ def prune_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, 
 
     The selection is made by ``hop_prune.x`` in a child process (:mod:`tumult.prune`), from
     the same namelist groups the runs read. Two selections are applied, both HOP's own.
-    ``windows`` (air Angstrom, expanded by ``dlam`` and merged) bounds which lines are read
+    ``windows`` (air Angstrom, expanded by ``line_margin`` and merged) bounds which lines are read
     at all; then the opacity over the windows' constant-``R`` grid marks the lines that
     clear HOP's negligibility test on this structure, and only those are written. ``R`` and
-    ``dlam`` therefore have to match what the runs will use, or the pruning drops contributors
+    ``line_margin`` therefore have to match what the runs will use, or the pruning drops contributors
     they would have had. ``base`` carries the runs' composition, background and line-list
     settings into the selection; without it the executable's defaults apply, which are the
     run defaults.
@@ -556,7 +556,7 @@ def prune_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, 
     window_file = out_path.with_suffix('.windows.txt')
     window_file.write_text(_window_text(bounds))
     nml = prune.prune_namelist(out_path, Path(atmos_file).resolve(), [Path(linelist).resolve()],
-                               window_file, R=R, dlam=dlam, vmic=vmic, feh=feh,
+                               window_file, R=R, line_margin=line_margin, vmic=vmic, feh=feh,
                                abundances=abundances, relative_abundances=relative_abundances,
                                base=base)
     prune.prune_batch([(out_path, nml)], cwd=cwd, cancel_token=cancel_token)

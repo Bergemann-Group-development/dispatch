@@ -1970,7 +1970,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
 
 \begin{enumerate}
     \item \textbf{Setup} (\File{setup\_mod.f90}): I/O, run directory, job record, scaling.
-    \item \textbf{Read the atmosphere} (\File{read\_external\_mod.f90}, \File{HOP/atmos\_reader\_mod.f90}): read the namelists, load the model with the selected reader, build the slab list and create one composition patch per slab. The atoms, line list (over the output windows widened by \fort{dlam}) and spectrum grids are set up here. The master rank wipes old output of the same name.
+    \item \textbf{Read the atmosphere} (\File{read\_external\_mod.f90}, \File{HOP/atmos\_reader\_mod.f90}): read the namelists, load the model with the selected reader, build the slab list and create one composition patch per slab. The atoms, line list (over the output windows widened by \fort{line_margin}) and spectrum grids are set up here. The master rank wipes old output of the same name.
     \item \textbf{Memory check}: print the memory estimate and stop if it exceeds the machine (Sec.~\ref{sec:Memory}).
     \item \textbf{Equation of state and opacity} (iteration 0): interpolate onto the slab mesh with PCHIP and compute equilibrium and opacities with HOP.
     \item \textbf{NLTE iterations}: the NLTE patches update the populations from the rates of the previous iteration. Then the RT columns of the internal spectrum compute background opacity, line opacity, source function and formal solution, and accumulate the radiative rates. Convergence is judged once per iteration. Once the change falls below \fort{convlim}, every patch performs one more solution against the converged radiation field.

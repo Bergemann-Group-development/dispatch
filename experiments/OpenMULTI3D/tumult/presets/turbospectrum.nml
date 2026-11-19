@@ -17,6 +17,6 @@
   molecule_damping_estimates = .false.
 /
 &linelist_params
-  dlam = 100
+  line_margin = 100
   tolerance = 0.001
 /

@@ -51,7 +51,7 @@
     \fignote{with \kw{\&spectrum\_params}: \kw{aa\_blue}, \kw{aa\_red} and \kw{daa}, \kw{nnu} or \kw{R\_sampling}; or \kw{lam\_file}; or \kw{window\_file} (several windows)\\[2pt]
     without: the atom's own bound-bound points, cropped to \kw{aa\_blue}\,\ldots\,\kw{aa\_red} if given}};
   \node[input, below=9mm of ogrid] (ll) {line list over the output windows\\
-    \fignote{widened by \kw{dlam}; the atom's species from the list (\kw{output\_from\_line\_list})}};
+    \fignote{widened by \kw{line_margin}; the atom's species from the list (\kw{output\_from\_line\_list})}};
   \node[proc, below=of ll] (split2) {grid split into \kw{n\_windows\_out} windows\\
     \fignote{(each \kw{window\_file} window separately)}};
   \node[rad, below=of split2] (final) {\kw{maxiter} scattering iterations,\\

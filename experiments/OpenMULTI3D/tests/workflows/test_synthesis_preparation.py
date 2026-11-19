@@ -120,7 +120,7 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     base = {'linelist_params': {'linelist_file': ['master.txt']},
             'spectrum_params': {'R_sampling': 300000.}}
     windows = [(5000., 5002.)]
-    prune = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
+    prune = {'margin': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
     nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]
 
     # nothing named, nothing on disk: the readers stay on what the settings say
@@ -154,8 +154,8 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     # the prune reads the master itself: HOP bisects it for the windows it is given
     sources, = [a[1] for _n, a, _kw in named]
     assert [Path(f) for f in sources] == [master]
-    # the skirt, the windows and the rung the pruning was made at all key the pruning
-    for changed in ({**prune, 'skirt': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
+    # the margin, the windows and the rung the pruning was made at all key the pruning
+    for changed in ({**prune, 'margin': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
         assert api._prune_digest(base, windows, changed) != api._prune_digest(base, windows, prune)
     assert api._prune_digest(base, [(5000., 5003.)], prune) != api._prune_digest(base, windows, prune)
 

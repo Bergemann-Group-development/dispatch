@@ -221,7 +221,7 @@ def fine_grid(windows, lam0, R):
     return np.unique(np.concatenate(parts))
 
 
-def line_envelope(hop, lam, linelist, dlam, windows, vmic, chunk=500_000):
+def line_envelope(hop, lam, linelist, line_margin, windows, vmic, chunk=500_000):
     """``max`` over the loaded depths of ``chi_line/chi_cont`` on ``lam``.
 
     The depth maximum keeps the narrowest core and the widest wing the line shows
@@ -233,7 +233,7 @@ def line_envelope(hop, lam, linelist, dlam, windows, vmic, chunk=500_000):
     for a in range(0, lam.size, chunk):
         b = min(a + chunk, lam.size)
         cont, _ = hop.opacity(lam[a:b])
-        tot, _ = hop.opacity(lam[a:b], linelist=linelist, dlam=dlam, vmic=vmic,
+        tot, _ = hop.opacity(lam[a:b], linelist=linelist, line_margin=line_margin, vmic=vmic,
                              windows=windows)
         ratio = np.asarray(tot, float) / np.asarray(cont, float) - 1.0
         env[a:b] = np.maximum(ratio, 0.0).max(axis=0)
@@ -351,7 +351,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, atmos_format='ma
     cap_lo, cap_hi = lam0 * (1 - fac), lam0 * (1 + fac)
     windows = merge_windows(cap_lo, cap_hi)
     lam = fine_grid(windows, lam0, R)
-    dlam = float(max(b - a for a, b in windows))
+    line_margin = float(max(b - a for a, b in windows))
     if verbose:
         print(f'{len(windows)} windows, {lam.size} fine-grid points')
 
@@ -366,7 +366,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, atmos_format='ma
         hop = HopEOS(feh=float(feh), **options)
         try:
             hop.load_state(T, rho=rho, vmic=float(vmic))
-            env = line_envelope(hop, lam, linelist, dlam, windows, vmic)
+            env = line_envelope(hop, lam, linelist, line_margin, windows, vmic)
         finally:
             hop.close()
 
