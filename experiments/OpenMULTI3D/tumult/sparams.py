@@ -598,14 +598,14 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     if mset is not None:
         stage("Measuring windows", 0)
         measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
-                              str(config.resolve(config.linelist)) if config.linelist else None,
+                              str(config.resolve(config.linelist_file)) if config.linelist_file else None,
                               reference=preparation_reference(request))
     stage(steps[0], 0)
 
     solar = abund_table(config.to_prefs())
     solar_x = solar.get(element)
     if solar_x is None:
-        raise ValueError(f"No solar {element} abundance; configure config.abundances.")
+        raise ValueError(f"No solar {element} abundance; configure config.abund_file.")
     result.solar_x = float(solar_x)
     result.termination, result.converged = "running", False
 

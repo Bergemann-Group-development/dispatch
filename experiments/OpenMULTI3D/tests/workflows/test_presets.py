@@ -2,8 +2,9 @@
 
 What is load-bearing: a user file replaces the shipped preset of its name; later presets
 win and the conflict is reported; the atmosphere selects the geometry preset; the request's
-own settings, a grid's mesh and ``config.nml_settings`` override presets; and a request preset
-refines an NLTE step rather than being overridden by it.
+own settings, a grid's mesh and the namelist sections override presets; the request's presets
+and namelist sections override the configuration's; and a request preset refines an NLTE
+step rather than being overridden by it.
 """
 import logging
 
@@ -67,6 +68,22 @@ def test_request_settings_and_expert_override_presets(tmp_path, user_dir):
     assert settings["linelist_params"]["tolerance"] == 1e-3
     assert settings["linelist_params"]["dlam"] == 20
     assert settings["atmos_params"]["nz"] == 64
+
+
+def test_the_request_layers_override_the_configuration(tmp_path, user_dir):
+    from tumult.synthesis.workflows import resolve_request
+    (user_dir / "coarse.nml").write_text("&atmos_params nz=48 /\n")
+    (user_dir / "fine.nml").write_text("&atmos_params nz=128 /\n")
+    config = SynthConfig(root=tmp_path, presets="coarse",
+                         nml_settings={"linelist_params": {"dlam": 20, "tolerance": 1e-3}})
+    request = SynthRequest(config=config, atmosphere="a.mod", star=STAR, windows=[(5000, 5010)],
+                           presets=["fine"], nml_settings={"linelist_params": {"dlam": 30}})
+    assert request.all_presets == ("coarse", "fine")
+    settings = resolve_request(request).settings
+    assert settings["atmos_params"]["nz"] == 128
+    assert settings["linelist_params"]["dlam"] == 30
+    assert settings["linelist_params"]["tolerance"] == 1e-3
+    assert SynthRequest.from_dict(request.to_dict()) == request
 
 
 def test_a_request_preset_refines_the_departure_solve(tmp_path, user_dir, monkeypatch):

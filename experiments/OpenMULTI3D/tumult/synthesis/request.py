@@ -18,7 +18,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from .presets import STEP_PRESETS
+from . import presets
 from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
                      coerce_atmosphere, coerce_windows)
 
@@ -378,11 +378,13 @@ class SynthRequest:
     :class:`~tumult.departures.DepartureRequest` is NLTE with departures solved for each
     effective request.
 
-    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) applied to every
-    run, later ones winning, on top of the geometry preset the atmosphere selects (``1d``
-    or ``3d``); the request's own settings and ``config.nml_settings`` override them. The NLTE
-    step presets are applied by the calculation the departures select and are not listed
-    here.
+    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) and
+    ``nml_settings`` namelist sections for every run of the request, on top of those of
+    ``config``. A run's namelist stacks, later layers winning: the geometry preset the
+    atmosphere selects (``1d`` or ``3d``), the presets (:attr:`all_presets`, later ones
+    winning), the settings the request itself implies (line list, composition, atoms,
+    sampling) and the namelist sections (:attr:`all_nml_settings`). The NLTE step presets
+    are applied by the calculation the departures select and are not listed here.
 
     The request is immutable; :meth:`update` returns a changed copy. Balance and abundance
     results may be passed for ``star`` and ``abundances``.
@@ -394,6 +396,7 @@ class SynthRequest:
     abundances: Abundances | None = None
     departures: Any | None = None
     presets: tuple = ()
+    nml_settings: dict = field(default_factory=dict)
 
     def __post_init__(self):
         from ..departures import DepartureGrid, DepartureRequest, Departures
@@ -408,13 +411,8 @@ class SynthRequest:
         set_("abundances", Abundances.coerce(self.abundances))
         if self.abundances is not None and not self.abundances:
             set_("abundances", None)
-        names = (self.presets,) if isinstance(self.presets, (str, Path)) else self.presets
-        set_("presets", tuple(str(name) for name in (names or ())))
-        steps = [name for name in self.presets if Path(name).stem in STEP_PRESETS
-                 and len(Path(name).parts) == 1]
-        if steps:
-            raise ValueError(f"{', '.join(steps)}: the NLTE step presets follow from "
-                             "`departures`; request departures instead of listing them.")
+        set_("presets", presets.coerce_names(self.presets))
+        set_("nml_settings", presets.coerce_settings(self.nml_settings))
         departures = self.departures
         if not isinstance(departures, (type(None), Departures, DepartureGrid,
                                        DepartureRequest)):
@@ -452,7 +450,8 @@ class SynthRequest:
 
     def update(self, **changes):
         """A new request with ``changes`` (``star``, ``abundances``, ``windows``,
-        ``departures``, ``atmosphere``, ``config``, ``presets``) applied and validated.
+        ``departures``, ``atmosphere``, ``config``, ``presets``, ``nml_settings``) applied
+        and validated.
 
         ``star`` may be a balance result and ``abundances`` an abundance result; both are
         reduced to their lightweight form. The request this is called on is unchanged.
@@ -465,6 +464,17 @@ class SynthRequest:
     @property
     def is_nlte(self):
         return self.departures is not None
+
+    @property
+    def all_presets(self):
+        """The presets of the configuration, then those of the request."""
+        return self.config.presets + self.presets
+
+    @property
+    def all_nml_settings(self):
+        """The namelist sections of the configuration, updated by those of the request."""
+        from ..auxfuncs import update_dict
+        return update_dict(deepcopy(self.config.nml_settings), deepcopy(self.nml_settings))
 
     def check(self):
         """Preflight the inputs this request names before any calculation.
@@ -484,7 +494,7 @@ class SynthRequest:
                 "windows": [list(window) for window in self.windows],
                 "abundances": None if self.abundances is None else self.abundances.to_dict(),
                 "departures": to_record(self.departures),
-                "presets": list(self.presets)}
+                "presets": list(self.presets), "nml_settings": self.nml_settings}
 
     def to_json(self, path=None):
         text = json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str)
@@ -503,7 +513,8 @@ class SynthRequest:
                    star=Star.coerce(value["star"]), windows=value.get("windows") or (),
                    abundances=Abundances.coerce(value.get("abundances")),
                    departures=from_record(value.get("departures")),
-                   presets=tuple(value.get("presets") or ()))
+                   presets=tuple(value.get("presets") or ()),
+                   nml_settings=value.get("nml_settings") or {})
 
     @classmethod
     def from_json(cls, value):

@@ -340,8 +340,8 @@ from tumult import departures, synthesis
 from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="quickstart_synth",
-                     linelist="input/linelists/SIU_masterline_Bergemann2026.txt",
-                     abundances="input/abund/abund_magg22.txt",
+                     linelist_file="input/linelists/SIU_masterline_Bergemann2026.txt",
+                     abund_file="input/abund/abund_magg22.txt",
                      R_sampling=200_000,
                      nml_settings=dict(linelist_params=dict(match_nlte_levels=True)))
 marcs = Atmosphere("input/atmos/sun.mod", preparation=True)

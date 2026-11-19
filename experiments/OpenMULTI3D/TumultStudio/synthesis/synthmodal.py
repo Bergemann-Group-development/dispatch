@@ -543,7 +543,7 @@ class SynthModal:
                                 xmin=shown_min, xmax=shown_max, atmosphere=atmosphere)
         use_linelist = self.setup.use_linelist
         linelist = ("Off (model atom only)" if not use_linelist else
-                    str(request.config.linelist or ""))
+                    str(request.config.linelist_file or ""))
         meta["params"].append(["Line list", linelist])
         if kind == "masks":
             meta["params"].append(["Line mask", mset.name])

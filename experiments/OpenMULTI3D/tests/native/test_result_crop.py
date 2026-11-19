@@ -28,7 +28,7 @@ def result(tmp_path_factory):
     root = tmp_path_factory.mktemp('crop')
     for name in ('dispatch.x', 'input'):
         (root / name).symlink_to(ROOT / name)
-    config = SynthConfig(root=root, cache='synth', abundances='input/abund/abund_magg22.txt',
+    config = SynthConfig(root=root, cache='synth', abund_file='input/abund/abund_magg22.txt',
                          threads=2)
     request = SynthRequest(config=config, atmosphere='input/atmos/sun.mod',
                            star=Star(5777, 4.44, 0.0, 1.0), windows=WINDOW)
