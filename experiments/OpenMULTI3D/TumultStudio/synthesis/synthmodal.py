@@ -39,7 +39,7 @@ from pathlib import Path
 from ..workspace import store
 from tumult.departures import Departures
 from tumult.linemask import LineMask, LineMaskSet
-from tumult.synthesis import AtmosphereGrid, Snapshot, SynthRequest, check_fit
+from tumult.synthesis import AtmosphereGrid, SynthRequest, check_fit
 from tumult.synthesis import workflows as synth
 from ..ui.controls import Field, Form
 from .fittab import FitTab
@@ -320,9 +320,7 @@ class SynthModal:
         if isinstance(atmosphere, AtmosphereGrid):
             return cls._atmosphere_rows({**(grid or {}), "format": atmosphere.format})
         return cls._atmosphere_rows({**(grid or {}), "format": atmosphere.format},
-                                    atmosphere.path,
-                                    atmosphere.resolution if isinstance(atmosphere, Snapshot)
-                                    else None)
+                                    atmosphere.path, atmosphere.resolution)
 
     @staticmethod
     def _request_terms(request):

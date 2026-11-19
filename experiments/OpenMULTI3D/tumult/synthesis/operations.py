@@ -17,7 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 import time
 
-from .inputs import STAR_KEYS, Abundances, AtmosphereGrid, Snapshot
+from .inputs import STAR_KEYS, Abundances, AtmosphereGrid, is_snapshot
 from .request import SpectrumFit, SynthRequest
 
 
@@ -299,7 +299,7 @@ def check_fit(request, *, fit_stellar=(), abund_fits=None, fit_post=None):
     nothing to fit or no window."""
     from ..departures import DepartureGrid, Departures
     atmosphere = request.atmosphere
-    if isinstance(atmosphere, Snapshot):
+    if is_snapshot(atmosphere):
         raise ValueError("Fitting is available for 1D atmospheres and grids only.")
     if isinstance(request.departures, (Departures, DepartureGrid)):
         raise ValueError("Frozen departures do not follow the trial points of a fit; "

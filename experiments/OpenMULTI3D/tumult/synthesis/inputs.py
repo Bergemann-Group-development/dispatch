@@ -1,8 +1,8 @@
 """Validated public inputs of a synthesis request.
 
 A script states what it wants in these terms: a :class:`SynthConfig` for the execution
-paths and numerical settings, an atmosphere (:class:`Atmosphere`, :class:`AtmosphereGrid`
-or :class:`Snapshot`), the stellar parameters as a :class:`Star`, the abundance overrides
+paths and numerical settings, an atmosphere (:class:`Atmosphere` or :class:`AtmosphereGrid`,
+1D or 3D by their format), the stellar parameters as a :class:`Star`, the abundance overrides
 as :class:`Abundances` and wavelength windows. :class:`~tumult.synthesis.SynthRequest`
 holds only these; the translation into namelist settings lives in
 :mod:`tumult.synthesis.operations`, in one place.
@@ -18,11 +18,12 @@ import math
 from pathlib import Path
 
 from . import presets
+from .snapshot_grid import SNAPSHOT_FORMATS
 
 STAR_KEYS = ("teff", "logg", "feh", "vmic")
 CONVENTIONS = ("[X/Fe]", "A(X)")
 # the ``atmos_format`` values the Fortran reader accepts for the ``format`` of an
-# :class:`Atmosphere`, :class:`AtmosphereGrid` or :class:`Snapshot`, in the order a
+# :class:`Atmosphere` or :class:`AtmosphereGrid`, in the order a
 # chooser offers them (MARCS, the 1D default, first). The comparison is case-insensitive
 # (see :attr:`Atmosphere.is_marcs`, :data:`tumult.synthesis.workflows.FORMAT_PATTERNS`
 # and :data:`tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`), so these spellings are
@@ -177,11 +178,14 @@ class SynthConfig:
 
 # --- stellar parameters ------------------------------------------------------------------
 @dataclass(frozen=True)
-class Star(Mapping):
+class Star:
     """Stellar parameters: ``teff`` [K], ``logg`` [cgs dex], ``feh`` [dex], ``vmic`` [km/s].
 
-    A read-only mapping, so ``dict(star)`` and ``star["teff"]`` work. ``vmic`` may be
-    omitted only for a 3D snapshot, whose velocity field replaces microturbulence.
+    ``dict(star)``, ``**star``, ``star["teff"]``, ``star.get`` and ``key in star`` read it
+    like a mapping of the given parameters. ``vmic`` may be omitted only for a 3D snapshot,
+    whose velocity field replaces microturbulence. ``str(star)`` is a matplotlib label of
+    the parameters, so ``label=star`` and ``plt.title(star)`` show them; a star is not
+    iterable, since matplotlib takes an iterable label for one label per dataset.
     """
     teff: float
     logg: float
@@ -202,16 +206,31 @@ class Star(Mapping):
         if self.vmic is not None and self.vmic < 0:
             raise ValueError("vmic must not be negative.")
 
+    def __str__(self):
+        text = (rf"$T_{{\rm eff}}$ = {self.teff:.0f} K, $\log_{{10}}\,g$ = {self.logg:.2f}, "
+                rf"[Fe/H] = {self.feh:+.2f}")
+        if self.vmic is not None:
+            text += rf", $v_{{\rm mic}}$ = {self.vmic:g} km/s"
+        return text
+
     def __getitem__(self, key):
         if key not in STAR_KEYS:
             raise KeyError(key)
         return getattr(self, key)
 
-    def __iter__(self):
-        return iter(key for key in STAR_KEYS if getattr(self, key) is not None)
+    __iter__ = None
 
-    def __len__(self):
-        return sum(1 for _ in self)
+    def keys(self):
+        return [key for key in STAR_KEYS if getattr(self, key) is not None]
+
+    def items(self):
+        return [(key, getattr(self, key)) for key in self.keys()]
+
+    def get(self, key, default=None):
+        return self[key] if key in self else default
+
+    def __contains__(self, key):
+        return key in self.keys()
 
     def tuple(self):
         return tuple(getattr(self, key) for key in STAR_KEYS)
@@ -344,7 +363,7 @@ class AtmosphereGrid:
     format: str = "Marcs"
     snapshots: str | None = None
     resolution: tuple | None = None
-    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
+    preparation: "Atmosphere | AtmosphereGrid | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "folder", Path(self.folder).expanduser())
@@ -355,6 +374,10 @@ class AtmosphereGrid:
     @property
     def is_marcs(self):
         return str(self.format).lower() == "marcs"
+
+    @property
+    def is_3d(self):
+        return str(self.format).lower() in SNAPSHOT_FORMATS
 
     def record(self, config=None):
         """The registered-grid record the execution layer reads."""
@@ -382,56 +405,43 @@ class AtmosphereGrid:
 
 @dataclass(frozen=True)
 class Atmosphere:
-    """One 1D model atmosphere file, synthesised as it is (no interpolation).
+    """One model atmosphere file, synthesised as it is (no interpolation).
 
-    Stellar parameters still come from the request: they are never read from the file.
-    ``preparation`` names the reference atmospheres of the HOP preparations
-    (:mod:`tumult.synthesis.preparation`).
+    ``format`` is the reader dispatch.x applies (``atmos_format``) and decides the
+    geometry: a 3D format (:data:`~tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`) makes
+    the file a snapshot (:attr:`is_3d`), sampled onto ``resolution`` ``(nx, ny, nz)`` or,
+    without one, onto the mesh of the request's presets (the ``3d`` preset's by default).
+    A 1D model takes no ``resolution``. Stellar parameters still come from the request:
+    they are never read from the file. ``preparation`` names the reference atmospheres of
+    the HOP preparations (:mod:`tumult.synthesis.preparation`).
     """
     path: Path
     format: str = "Marcs"
-    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
+    resolution: tuple | None = None
+    preparation: "Atmosphere | AtmosphereGrid | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "path", Path(self.path).expanduser())
+        if self.resolution is not None:
+            if not self.is_3d:
+                raise ValueError(f"A resolution samples a 3D snapshot; {self.format} is a "
+                                 "1D format.")
+            resolution = tuple(int(v) for v in self.resolution)
+            if len(resolution) != 3 or any(v <= 0 for v in resolution):
+                raise ValueError("A snapshot resolution needs three positive integers.")
+            object.__setattr__(self, "resolution", resolution)
         _coerce_preparation(self)
 
     @property
     def is_marcs(self):
         return str(self.format).lower() == "marcs"
 
+    @property
+    def is_3d(self):
+        return str(self.format).lower() in SNAPSHOT_FORMATS
+
     def to_dict(self):
         return {"kind": "atmosphere", "path": str(self.path), "format": self.format,
-                "preparation": None if self.preparation is None else self.preparation.to_dict()}
-
-    @classmethod
-    def from_dict(cls, value):
-        return cls(**{k: v for k, v in dict(value).items() if k != "kind"})
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    """One 3D snapshot sampled onto ``resolution`` ``(nx, ny, nz)``; without one, onto the
-    mesh of the request's presets (the ``3d`` preset's by default). ``preparation`` names
-    the reference atmospheres of the HOP preparations (:mod:`tumult.synthesis.preparation`)."""
-    path: Path
-    format: str
-    resolution: tuple | None = None
-    preparation: "Atmosphere | AtmosphereGrid | Snapshot | None" = None
-
-    def __post_init__(self):
-        object.__setattr__(self, "path", Path(self.path).expanduser())
-        if self.resolution is not None:
-            resolution = tuple(int(v) for v in self.resolution)
-            if len(resolution) != 3 or any(v <= 0 for v in resolution):
-                raise ValueError("Snapshot resolution needs three positive integers.")
-            object.__setattr__(self, "resolution", resolution)
-        _coerce_preparation(self)
-
-    is_marcs = False
-
-    def to_dict(self):
-        return {"kind": "snapshot", "path": str(self.path), "format": self.format,
                 "resolution": None if self.resolution is None else list(self.resolution),
                 "preparation": None if self.preparation is None else self.preparation.to_dict()}
 
@@ -440,7 +450,12 @@ class Snapshot:
         return cls(**{k: v for k, v in dict(value).items() if k != "kind"})
 
 
-ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere, "snapshot": Snapshot}
+def is_snapshot(atmosphere):
+    """Whether ``atmosphere`` is one 3D snapshot (an :class:`Atmosphere` of a 3D format)."""
+    return isinstance(atmosphere, Atmosphere) and atmosphere.is_3d
+
+
+ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere}
 
 
 def _coerce_preparation(atmosphere):
@@ -472,7 +487,7 @@ def coerce_atmosphere(value):
     if isinstance(value, (str, Path)):
         path = Path(value).expanduser()
         return AtmosphereGrid(path) if path.is_dir() else Atmosphere(path)
-    raise TypeError("atmosphere must be an Atmosphere, AtmosphereGrid, Snapshot or path.")
+    raise TypeError("atmosphere must be an Atmosphere, AtmosphereGrid or path.")
 
 
 # --- wavelength windows -------------------------------------------------------------------------

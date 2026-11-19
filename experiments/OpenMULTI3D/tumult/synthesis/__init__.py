@@ -2,7 +2,7 @@
 
 The scripting entry point is :func:`synthesize` on a :class:`SynthRequest` built from the
 inputs of :mod:`.inputs` (:class:`SynthConfig`, :class:`Star`, :class:`Abundances`,
-:class:`Atmosphere`, :class:`AtmosphereGrid`, :class:`Snapshot`)::
+:class:`Atmosphere`, :class:`AtmosphereGrid`)::
 
     from tumult import synthesis
     from tumult.synthesis import AtmosphereGrid, Star, SynthConfig, SynthRequest
@@ -25,7 +25,7 @@ from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectru
                   get_NLTE_corrections, normalise_windows, preset)
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
-from .inputs import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS, Snapshot,
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
                      Star, SynthConfig)
 from .request import ResolvedSynthRequest, SpectrumFit, SynthesisResult, SynthRequest
 from ..departures import DepartureGrid, DepartureRequest, Departures
@@ -43,7 +43,7 @@ from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default
 __all__ = [
     "SynthRequest", "SynthConfig", "Star", "Abundances", "Atmosphere", "AtmosphereGrid",
     "ATMOS_FORMATS",
-    "Snapshot", "synthesize", "synthesize_lines", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
+    "synthesize", "synthesize_lines", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
     "clear_cache",
     "DepartureGrid", "DepartureRequest",
     "PRESETS_DIR", "preset",

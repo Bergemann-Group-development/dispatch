@@ -367,7 +367,7 @@ print(lte.runs, nlte.provenance["departures"])
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
 interpolated at the star (`AtmosphereGrid("input/atmos/MARCS")`, after
-`python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (`Snapshot`), and as the input of the
+`python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (an `Atmosphere` of a 3D format such as `"M3DIS"`), and as the input of the
 abundance and stellar-parameter workflows, which the manual's Python Workflows section describes. `synthesis.clear_cache(config)` removes this example's cache, the runs and the pruned line lists, so the next call computes them again.
 
 ## Optional: a 3D snapshot
@@ -426,7 +426,7 @@ the up- and downflows Doppler-shift the contributions of the individual columns,
 average of many shifted profiles has a broader, shallower core; the granulation's
 temperature inhomogeneities change the line formation as well. A single snapshot at
 this sampling is not a converged 3D result: a 3D abundance analysis averages over
-several snapshots and checks the sampled mesh. The `Snapshot` atmosphere of the workflow
+several snapshots and checks the sampled mesh. An `Atmosphere` of a 3D format in the workflow
 interface takes the mesh as its `resolution`, a snapshot grid averages a node's spectrum
 over its selected snapshots (`tumult.synthesis.snapshot_grid`), and
 `tumult.synthesis.grid_catalog` fetches the published 3D grids per model and snapshot.

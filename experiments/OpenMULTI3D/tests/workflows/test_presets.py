@@ -11,7 +11,7 @@ import logging
 import pytest
 
 from tumult.namelist import NameList
-from tumult.synthesis import Snapshot, SynthConfig, SynthRequest, presets
+from tumult.synthesis import Atmosphere, SynthConfig, SynthRequest, presets
 from tumult.synthesis.workflows import preset_settings
 
 STAR = (5777.0, 4.44, 0.0, 1.0)
@@ -48,7 +48,7 @@ def test_the_atmosphere_selects_the_geometry_preset(tmp_path):
     config = SynthConfig(root=tmp_path)
     one_d = SynthRequest(config=config, atmosphere="a.mod", star=STAR)
     assert preset_settings(one_d)["atmos_params"] == {"nz": 64}
-    three_d = SynthRequest(config=config, atmosphere=Snapshot("cube", "M3DIS"), star=STAR)
+    three_d = SynthRequest(config=config, atmosphere=Atmosphere("cube", "M3DIS"), star=STAR)
     settings = preset_settings(three_d)
     assert settings["atmos_params"] == {"nx": 30, "ny": 30, "nz": 96, "dims": 32}
     assert settings["run_params"] == {"rotate_atmos": True}

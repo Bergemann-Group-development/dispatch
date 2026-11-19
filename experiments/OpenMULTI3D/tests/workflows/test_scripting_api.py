@@ -501,9 +501,9 @@ def test_curve_of_growth_accepts_a_snapshot(tmp_path, config, monkeypatch):
     """A curve of growth runs on whatever atmosphere the request carries: the rungs are the
     same lattice the profile fit uses, and a 3D snapshot goes through the direct path."""
     from tumult.linemask import LineMask, LineMaskSet
-    from tumult.synthesis.inputs import Snapshot
+    from tumult.synthesis.inputs import Atmosphere
     variants = _stub_fit(monkeypatch, 0.52)
-    request = SynthRequest(config=config, atmosphere=Snapshot("cube.dat", "Stagger", (4, 4, 8)),
+    request = SynthRequest(config=config, atmosphere=Atmosphere("cube.dat", "Stagger", (4, 4, 8)),
                            star=STAR, abundances={"Mg": 0.3})
     masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
     result = ab.fit(request, target=_line(0.52), line_mask=masks, method="cog",
@@ -711,3 +711,19 @@ def test_clear_cache_empties_the_cache_of_a_config(tmp_path):
     assert not any((tmp_path / "data" / "mine").iterdir())
     assert not any((tmp_path / "mine").iterdir())
     assert other.is_dir()
+
+
+def test_a_star_labels_a_plot():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    star = Star(5777, 4.44, 0.0, 1.0)
+    fig, ax = plt.subplots()
+    ax.plot([0, 1], [0, 1], label=star)
+    ax.set_title(star)
+    ax.legend()
+    fig.canvas.draw()
+    plt.close(fig)
+    assert ax.get_legend_handles_labels()[1] == [str(star)]
+    assert "5777 K" in ax.get_title() and "+0.00" in ax.get_title()
+    assert "v_{\\rm mic}" not in str(Star(5777, 4.44, 0.0))
