@@ -477,6 +477,11 @@ def build_settings(prefs, run_vals, atmos_format=None):
         settings["atmos_params"] = atmos
     if composition:
         settings["composition_params"] = composition
+    absmet = prefs.get("absmet")
+    if absmet:
+        # dispatch picks a folder's table at each run's [Fe/H]
+        folder = _resolved_path(execution_root(prefs), absmet).is_dir()
+        settings["opac_table_params"] = {"absmet_folder" if folder else "absmet_file": absmet}
 
     if nlte or atom_lines:
         atoms = run_vals.get("atoms") or []
@@ -494,37 +499,6 @@ def build_settings(prefs, run_vals, atmos_format=None):
         settings["atom_params"] = atom
 
     return settings
-
-
-# an absmet table's [Fe/H] opens its name, as in the MARCS tables: m-2.00a+0.40c+0.00...
-_ABSMET_FEH = re.compile(r"m([+-]\d+\.\d+)")
-
-
-def _absmet_files(prefs, atmos_files):
-    """Map every grid [Fe/H] to the configured absmet file (None if unset).
-
-    A single ``absmet`` file applies to all metallicities. In a folder, each [Fe/H] takes
-    the table nearest to it, the more metal-poor one on a tie, since a table carries no
-    metallicity scaling. A per-FeH dict is required because ``build_stellar_grid``
-    overrides ``composition_params.absmet_file`` per node (and would otherwise blank it).
-    """
-    absmet = prefs.get("absmet")
-    if not absmet:
-        return None
-    p = Path(absmet).expanduser()
-    fehs = {k[2] for k in atmos_files}
-    if p.is_dir():
-        tables = {}
-        for f in sorted(p.iterdir()):
-            m = _ABSMET_FEH.match(f.name)
-            if m and f.is_file():
-                tables[float(m.group(1))] = f
-        if not tables:
-            raise FileNotFoundError(f"{p} holds no absmet table named m<[Fe/H]>... "
-                                    "(e.g. m-2.00a+0.40c+0.00n+0.00o+0.40r+0.00s+0.00v+1.00.bin)")
-        table_fehs = sorted(tables)
-        return {feh: str(tables[min(table_fehs, key=lambda t: abs(t - feh))]) for feh in fehs}
-    return {feh: str(p) for feh in fehs} if fehs else None
 
 
 def _prune_spec(prefs, prune):
@@ -605,7 +579,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
     # (plan/multi-processing.md, "CPU budget").
     max_threads = config.threads or (os.cpu_count() or 1)
     common = dict(top=str(config.cache), star=star,
-                  atmos_files=atmos_files, absmet_files=_absmet_files(prefs, atmos_files),
+                  atmos_files=atmos_files,
                   method=config.interpolation,
                   max_threads=max_threads, launch_kwargs=launch_kwargs,
                   vmic_step=config.vmic_step, nlte=nlte)
@@ -676,7 +650,6 @@ def node_selector(request, store):
     from .atmos_select import _vmic_levels
     config = request.config
     atmos_files = discover_grid(request.atmosphere.record(config), config.root)
-    absmet_files = _absmet_files(config.to_prefs(), atmos_files)
     spatial = {}
 
     def select(params):
@@ -685,7 +658,7 @@ def node_selector(request, store):
         if position not in spatial:
             nodes, _ = store.select((*position, vmic), atmos_files,
                                     method=config.interpolation,
-                                    vmic_step=config.vmic_step, absmet_files=absmet_files,
+                                    vmic_step=config.vmic_step,
                                     vmic_points=2)
             # a snapshot node has no vmic lattice; its key stands as it is
             spatial[position] = (frozenset(n[0][0] for n in nodes if n[4] is not None),
@@ -829,21 +802,14 @@ def _reference_atmospheres(request, prefs, root, prefs_vmic=1.0):
     return tuple(references.values()), aliases
 
 
-def _single_atmosphere_settings(request, prefs):
-    """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`,
-    the absmet file of its [Fe/H]) for an individual atmosphere or snapshot, whose runs
-    bypass the node selection when departures are solved or read back directly."""
+def _single_atmosphere_settings(request):
+    """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`)
+    for an individual 1D atmosphere, whose runs bypass the node selection when departures
+    are solved or read back directly."""
     atmosphere, star = request.atmosphere, request.star
-    if isinstance(atmosphere, AtmosphereGrid):
+    if isinstance(atmosphere, AtmosphereGrid) or atmosphere.is_3d:
         return {}
-    feh = float(star.feh)
-    settings = {}
-    absmet = _absmet_files(prefs, {(star.teff, star.logg, feh): atmosphere.path}) or {}
-    if absmet.get(feh):
-        settings['opac_table_params'] = {'absmet_file': absmet[feh]}
-    if not atmosphere.is_3d:
-        settings["atmos_params"] = {"feh": feh, "vmic": float(star.vmic)}
-    return settings
+    return {"atmos_params": {"feh": float(star.feh), "vmic": float(star.vmic)}}
 
 
 def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
@@ -866,7 +832,7 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
     if isinstance(atmosphere, AtmosphereGrid):
         settings = update_dict(settings,
                                {'atmos_params': _grid_mesh(atmosphere.record(config))})
-    settings = update_dict(settings, _single_atmosphere_settings(request, prefs))
+    settings = update_dict(settings, _single_atmosphere_settings(request))
     settings = update_dict(settings, request.all_nml_settings)
     # A correction ladder without windows uses the model atom's frequency grid,
     # including a prepared line_grid_file. Injecting R alone requests an explicit

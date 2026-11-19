@@ -488,8 +488,7 @@ def _solve_grid(request, run_values, record, started, cancel_token):
     common, settings_list, _R = _prepare(request, [run_values], set_spectrum=False)
     settings = settings_list[0]
     nodes, _vmic = select_nodes(common["star"], common["atmos_files"],
-                                method=common["method"], vmic_step=common["vmic_step"],
-                                absmet_files=common["absmet_files"])
+                                method=common["method"], vmic_step=common["vmic_step"])
     jobs = _dep_jobs(settings, nodes, _dep_bucket(Path(common["top"]), settings))
     runs = _run_batch(jobs, common["launch_kwargs"], common["max_threads"],
                       cancel_token=cancel_token)

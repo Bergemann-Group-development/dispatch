@@ -12,7 +12,7 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab, pca_opac_grid
-  USE osmet_mod, only: osmet, eosmet
+  USE osmet_mod, only: osmet, eosmet, nearest_absmet
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
@@ -108,6 +108,7 @@ MODULE composition_patch_mod
   character(len=4096), save :: molec_file='./input/molec/molec_data_BC.txt'     !< molecular data
   character(len=4096), save :: opac_table=''                                    !< binned opacity table; sets the output spectrum
   character(len=4096), save :: absmet_file=''                                   !< metal-opacity table for the NLTE iterations
+  character(len=4096), save :: absmet_folder=''                                 !< folder whose table nearest FeH is the absmet_file
   character(len=4096), save :: linelist_folder=''                               !< folder whose files are all read as line lists
   character(len=4096), save, dimension(:), allocatable :: linelist_file         !< line-list files
 
@@ -133,7 +134,7 @@ SUBROUTINE read_composition_params ()
   disable_rad, disable_stk, disable_vdw, molecule_damping_estimates, helium_scattering, &
   hydrogen_BPO, hydrogen_profiles, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
-  ldne, ldrho, ldtemp, absmet_file
+  ldne, ldrho, ldtemp, absmet_file, absmet_folder
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
   tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file, &
   match_nlte_levels
@@ -147,6 +148,7 @@ SUBROUTINE read_composition_params ()
   write (io%namelist, composition_params)
 
   READ_NAMELIST(opac_table_params)
+  if (absmet_folder /= '') call choose_absmet_file
   write (io%namelist, opac_table_params)
 
   READ_NAMELIST(linelist_params)
@@ -179,6 +181,38 @@ SUBROUTINE read_composition_params ()
   r_process_enhancement=r_process_enhancement)
   call trace%end(itimer)
 END SUBROUTINE read_composition_params
+
+!===============================================================================
+!> Sets absmet_file to the table in absmet_folder whose [Fe/H] is nearest the run's
+!> FeH (osmet_mod's nearest_absmet). An unset FeH leaves the abundances solar, so
+!> it takes the table nearest [Fe/H] = 0.
+!===============================================================================
+SUBROUTINE choose_absmet_file
+  character(len=256), allocatable :: names(:)
+  character(len=:), allocatable :: name
+  real(8) :: run_feh
+  integer :: n
+  ! ----------------------------------------------------------------------------
+  if (absmet_file /= '') then
+    call console_error('opac_table_params: give absmet_file or absmet_folder, not both')
+    error stop 'absmet_file and absmet_folder'
+  end if
+  run_feh = merge(0d0, FeH, FeH <= -99)
+  call os%get_filenames(absmet_folder, names)
+  if (allocated(names)) then
+    allocate(name, source=nearest_absmet(names, run_feh))
+  else
+    allocate(name, source='')
+  end if
+  if (name == '') then
+    call console_error('opac_table_params: no absmet table named m<[Fe/H]>... in '// &
+                       trim(absmet_folder))
+    error stop 'absmet_folder holds no table'
+  end if
+  n = len_trim(absmet_folder)
+  if (absmet_folder(n:n) == '/') n = n - 1
+  absmet_file = absmet_folder(1:n)//'/'//name
+END SUBROUTINE choose_absmet_file
 
 !===============================================================================
 !> Pre-initialises the patch and its NLTE patch, which holds the spectra and
