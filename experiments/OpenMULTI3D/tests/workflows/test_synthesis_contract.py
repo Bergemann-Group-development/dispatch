@@ -372,3 +372,15 @@ def test_the_format_decides_whether_an_atmosphere_is_a_snapshot():
     assert not Atmosphere('sun.mod').is_3d
     with pytest.raises(ValueError, match='1D format'):
         Atmosphere('sun.mod', 'Marcs', (20, 20, 64))
+
+
+def test_absmet_is_one_table_or_a_folder_of_them(tmp_path):
+    (tmp_path / 'tables').mkdir()
+    (tmp_path / 'one.bin').touch()
+    folder = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'tables'})
+    single = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'one.bin'})
+    assert (folder.absmet_folder, folder.absmet_file) == (Path('tables'), None)
+    assert (single.absmet_file, single.absmet_folder) == (Path('one.bin'), None)
+    assert SynthConfig.from_prefs(folder.to_prefs()).absmet_folder == tmp_path / 'tables'
+    with pytest.raises(ValueError, match='not both'):
+        SynthConfig(root=tmp_path, absmet_file='one.bin', absmet_folder='tables')

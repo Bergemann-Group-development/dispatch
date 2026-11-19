@@ -91,10 +91,16 @@ def preflight(request):
     problems = []
     if not (config.root / "dispatch.x").is_file():
         problems.append(f"dispatch.x is not built in {config.root}")
-    for name in ("linelist_file", "abund_file", "absmet"):
+    for name in ("linelist_file", "abund_file", "absmet_file", "absmet_folder"):
         value = getattr(config, name)
         if value is not None and not config.resolve(value).exists():
             problems.append(f"config.{name} not found: {config.resolve(value)}")
+    if config.absmet_file is not None and config.resolve(config.absmet_file).is_dir():
+        problems.append(f"config.absmet_file is a folder; give it as absmet_folder: "
+                        f"{config.resolve(config.absmet_file)}")
+    if config.absmet_folder is not None and config.resolve(config.absmet_folder).is_file():
+        problems.append(f"config.absmet_folder is a file; give it as absmet_file: "
+                        f"{config.resolve(config.absmet_folder)}")
     if config.linelist_file is not None and request.atmosphere.preparation is not None:
         from ..prune import executable
         try:

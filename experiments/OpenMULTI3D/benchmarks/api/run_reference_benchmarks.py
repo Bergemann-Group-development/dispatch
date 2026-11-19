@@ -134,7 +134,7 @@ def inputs(args):
     """The reference assets as the scripting inputs of ``intended_api``."""
     from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig
     config = SynthConfig(root=ROOT, cache=args.cache, linelist_file=args.linelist,
-                         abund_file=args.abundances, absmet=args.absmet,
+                         abund_file=args.abundances, absmet_file=args.absmet,
                          R_sampling=args.R_sampling,
                          linelist_skirt=args.line_list_skirt,
                          abundance_step=args.abundance_step, threads=args.threads)
