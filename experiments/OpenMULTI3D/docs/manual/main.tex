@@ -437,17 +437,17 @@ Type in the experiment directory, with the virtual environment active:
 Reading atom file: ./input/atoms/atom.ba06
 NLTE frequency grid (bound-bound): 804 frequencies
 Memory estimate: peak 0.0607 GiB (rank 0)
-    iter    global  lvl           pos
-  0 / 99    0.00 %    0 [   0   0   0]
-  2 / 99   92.78 %    4 [   1   1  56]
-  5*/ 99    8.99 %    4 [   1   1  56]
- 10 / 99    1.63 %    5 [   1   1  55]
- 11 / 99    0.30 %    5 [   1   1  56]
+    iter    change  lvl           pos
+  1 / 99   91.82 %    1 [   1   1  56]
+  2 / 99   16.48 %    4 [   1   1  56]
+  6*/ 99    6.37 %    4 [   1   1  56]
+  8 / 99    0.95 %    4 [   1   1  56]
+  9 / 99    0.75 %    4 [   1   1  56]
 Peak memory: 0.061 GiB (rank 0), estimate 0.061 GiB
 OpenMULTI3D terminated successfully.
 \end{minted}
 
-Each row of the table is one NLTE iteration: the largest relative change of a level population, the level where it occurs (counted from zero) and the grid position. The change falls until it is below \fort{convlim}, here 1\,\%; an asterisk marks an iteration accelerated by Ng's method \citep{Ng1974}, which extrapolates from the previous iterations. A run that used up \fort{maxiter} without meeting \fort{convlim} ends with a warning that gives the last relative change instead of the final line. Sec.~\ref{sec:convergence} explains how to judge convergence.
+Each row of the table is one completed NLTE iteration: the largest relative change of a level population in it, the level where it occurs (counted from one, as in the per-level report) and the grid position. Once the change is below \fort{convlim}, here 1\,\%, one more iteration solves against the radiation field of the converged populations and ends the run; the last row is that iteration. An asterisk marks an iteration accelerated by Ng's method \citep{Ng1974}, which extrapolates from the previous iterations. A run that used up \fort{maxiter} without meeting \fort{convlim} ends with a warning that gives the last relative change instead of the final line. Sec.~\ref{sec:convergence} explains how to judge convergence.
 
 The results are in \File{data/examples/sun\_ba\_1d/}: the namelists actually used (\File{params.nml}), the console log (\File{rank\_00000.log}), a per-level convergence report and, in \File{save/}, the spectra, populations and atmosphere as binary files. Sec.~\ref{sec:output} lists them; \Code{tm.read} reads them, so you never open them yourself.
 
