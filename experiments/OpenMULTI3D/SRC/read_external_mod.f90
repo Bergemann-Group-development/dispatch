@@ -381,8 +381,8 @@ contains
       call read_siu_bin(file)
      case default
       call console_error ('unknown atmos_format '//trim(format)// &
-        ". Options are: 'Stagger', 'Co5bold', 'Multi', &
-      &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'.")
+        ". Options are: 'stagger', 'stagger2', 'co5bold', 'marcs', 'multi', &
+      &'m3dis', 'text', 'multi1d' and 'siu_bin'.")
       error stop
     end select
     ! A namelist vmic replaces the model's microturbulence in every format, so a 3D
