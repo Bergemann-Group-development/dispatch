@@ -8,29 +8,47 @@ SUBMODULE (rt_patch_mod) rt_solvers_smod
 contains
 
   !===============================================================================
+  !> Linear short characteristics in a 3D slab.  The upwind point takes chi and
+  !> eta = chi*Snu with the bilinear weights of the inner 2x2 cells and Inu with
+  !> the 4x4 cubic kernel, clamped from below by the inner 2x2 minimum.  chi and
+  !> eta add up over the stencil and change by up to 1e7 from cell to cell, so
+  !> negative cubic weights could make either, and their ratio, any value; the
+  !> bilinear ones keep the upwind state between its neighbours.  With inverted
+  !> lines chi changes sign between cells and the upwind Snu = eta/chi passes
+  !> through a pole.  Where chi changes sign over the interval, or an end is near
+  !> transparency (|chi| < q_eta*(chi + eta)), the step therefore integrates the
+  !> emissivity with chi held at its mean over the interval,
+  !>   Inu = Inuup*E + (W*eta_up + Psi*eta)/chi_mean,   chi_mean = dt/ds,
+  !> instead of the S form Inu = Inuup*E + W*S_up + Psi*S, which it equals for
+  !> constant chi.
+  !===============================================================================
   module subroutine short_char (self, vec)
     class(rt_patch_t) :: self
     type(ray_type) :: ray, amr_ray
     real(8), intent(in) :: vec(3)
-    real(4) :: Inuup, xxup, ssup
-    real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, Psi, kx, ky, Irem, dt, E, W, Esc
+    real(4), parameter :: q_eta = 1e-2
+    real(4) :: Inuup, xxup, ssup, etaup, eta, rchib, maser_dtau, Inu_max
+    real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, Psi, hx1, hy1, hx2, hy2, hx, hy
+    real(4) :: Irem, dt, E, W, Esc, sp
     real(8) :: ds(3)
     real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
     real(4), dimension(:), pointer, contiguous :: xkern, ykern
-    real(4), dimension(:,:), allocatable :: work_up, work_min
+    real(4), dimension(:,:), allocatable :: work_up, tw
     real(4), dimension(:,:,:,:), allocatable :: row_red
     integer :: xup_t(4,self%nx), yup_t(4,self%ny)
-    integer :: zs, ze, xup, yup, zup, i, ii, jj, upo1, upo2
-    logical :: amr_boundary, rebuild_tables, get_rates, split_rates, off
+    integer :: zs, ze, yup, zup, ii, jj, upo1, upo2, x1, x2, x3, x4, y1, y2, y3, y4
+    logical :: amr_boundary, rebuild_tables, get_rates, split_rates, off, special
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%short_char', itimer=itimer)
     allocate(work_up(self%fs:self%fe,3))
-    allocate(work_min(self%fs:self%fe,3))
+    allocate(tw(self%fs:self%fe,6))   ! dt, E, W, Psi, Esc of linear_weights; eta-step test
     allocate(row_red(self%fs:self%fe, 3, self%nx, self%ny))
     get_rates = self%compute_psi
     split_rates = self%split_rates
+    maser_dtau = -real(maser_dtau_max,4)
+    Inu_max = real(maser_Inu_max,4)
 
     zs = merge(1, self%nz, self%dir > 0)
     ze = merge(self%nz, 1, self%dir > 0)
@@ -39,6 +57,8 @@ contains
     xkernel1 = real(ray%xkern)
     ykernel1 = real(ray%ykern)
     dsup1 = 0.5*real(ray%dsup)
+    hx1 = inner_fraction(xkernel1)
+    hy1 = inner_fraction(ykernel1)
 
     amr_boundary = amr/='' .and. self%dir < 0
     if (amr_boundary) then
@@ -48,6 +68,8 @@ contains
       xkernel2 = real(amr_ray%xkern)
       ykernel2 = real(amr_ray%ykern)
       dsup2 = 0.5*real(amr_ray%dsup)
+      hx2 = inner_fraction(xkernel2)
+      hy2 = inner_fraction(ykernel2)
     endif
 
     rebuild_tables = .true.
@@ -57,12 +79,16 @@ contains
       if (amr_boundary .and. z==zs) then
         xkern => xkernel2
         ykern => ykernel2
+        hx = hx2
+        hy = hy2
         dsup05 = dsup2
         upo1 = amr_ray%upo1 - 2
         upo2 = amr_ray%upo2 - 2
       else
         xkern => xkernel1
         ykern => ykernel1
+        hx = hx1
+        hy = hy1
         dsup05 = dsup1
         upo1 = ray%upo1 - 2
         upo2 = ray%upo2 - 2
@@ -79,105 +105,122 @@ contains
       endif
 
       !--- ROW PASS: x-reduce the whole upstream plane ----------------------------
-      row_red = 0.0
+      ! slots 1 and 2: chi and eta, linear in the inner pair; slot 3: Inu, cubic
       do yup = 1, self%ny
         do x = 1, self%nx
-          do ii = 1, 4
-            xup = xup_t(ii,x)
-            kx = xkern(ii)
-            do i=1, 3
-              do f = self%fs, self%fe
-                row_red(f,i,x,yup) = row_red(f,i,x,yup) + kx*self%work(f,xup,yup,zup,i)
-              end do
-            end do
+          x1 = xup_t(1,x); x2 = xup_t(2,x); x3 = xup_t(3,x); x4 = xup_t(4,x)
+          do f = self%fs, self%fe
+            row_red(f,1,x,yup) = (1.-hx)*self%work(f,x2,yup,zup,1) + hx*self%work(f,x3,yup,zup,1)
+            row_red(f,2,x,yup) = (1.-hx)*self%work(f,x2,yup,zup,1)*self%work(f,x2,yup,zup,2) &
+                               + hx*self%work(f,x3,yup,zup,1)*self%work(f,x3,yup,zup,2)
+            row_red(f,3,x,yup) = xkern(1)*self%work(f,x1,yup,zup,3) + xkern(2)*self%work(f,x2,yup,zup,3) &
+                               + xkern(3)*self%work(f,x3,yup,zup,3) + xkern(4)*self%work(f,x4,yup,zup,3)
           end do
         end do
       end do
 
       do y=1, self%ny
+        y1 = yup_t(1,y); y2 = yup_t(2,y); y3 = yup_t(3,y); y4 = yup_t(4,y)
         do x=1, self%nx
-          work_up = 0.0
-          work_min = huge(1.0)
-
-          ! 4x4 kernel sum
-          do jj=1,4
-            yup = yup_t(jj,y)
-            ky = ykern(jj)
-            do i=1, 3
-              do f=self%fs,self%fe
-                work_up(f,i) = work_up(f,i) + ky*row_red(f,i,x,yup)
-              end do
-            end do
+          x2 = xup_t(2,x); x3 = xup_t(3,x)
+          ! Upwind chi, eta and Inu, the last clamped from below by the inner 2x2
+          ! minimum; then the optical path, whose weights linear_weights_array
+          ! evaluates out of line.  tw(:,6) < 0 marks the eta step.  The loops
+          ! fold their tests into single comparisons and select by bit mask
+          ! (lw_select): a float comparison right of .or., or an arm of merge,
+          ! is evaluated conditionally, and under gfortran's default
+          ! -ftrapping-math that keeps the loop scalar.
+!GCC$ ivdep
+          do f=self%fs,self%fe
+            xxup  = (1.-hy)*row_red(f,1,x,y2) + hy*row_red(f,1,x,y3)
+            etaup = (1.-hy)*row_red(f,2,x,y2) + hy*row_red(f,2,x,y3)
+            Inuup = ykern(1)*row_red(f,3,x,y1) + ykern(2)*row_red(f,3,x,y2) &
+                  + ykern(3)*row_red(f,3,x,y3) + ykern(4)*row_red(f,3,x,y4)
+            Inuup = max(Inuup, min(self%work(f,x2,y2,zup,3), self%work(f,x3,y2,zup,3), &
+                                   self%work(f,x2,y3,zup,3), self%work(f,x3,y3,zup,3)))
+            xx = self%work(f,x,y,z,1)
+            eta = xx*self%work(f,x,y,z,2)
+            ! the first term is < 0 where chi_up and chi are nonzero with opposite
+            ! signs, as chi_up*chi would be but without underflowing to 0
+            sp = min(max(sign(1., xxup)*xx, sign(1., xx)*xxup), abs(xxup) - q_eta*(xxup + etaup), &
+                     abs(xx) - q_eta*(xx + eta))
+            dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
+            dt = max(dt, maser_dtau)        ! cap maser amplification (chi<0 -> dt<0)
+            dt = lw_select(sign(max(abs(dt), 1e-30), dt), dt, sp < 0.)
+            work_up(f,1) = xxup
+            work_up(f,2) = etaup
+            work_up(f,3) = Inuup
+            tw(f,1) = dt
+            tw(f,6) = sp
           end do
-
-          ! 2x2 min over the inner cells
-          do jj=2,3
-            do ii=2,3
-              xup = xup_t(ii,x)
-              yup = yup_t(jj,y)
-              do i=1, 3
-                do f=self%fs,self%fe
-                  work_min(f,i) = min(work_min(f,i), self%work(f,xup,yup,zup,i))
-                end do
-              end do
-            end do
-          end do
-
-          work_up = max(work_up, work_min)
+          call linear_weights_array(tw(:,1), tw(:,2), tw(:,3), tw(:,4), tw(:,5))
 
           ! One f-loop per rate formulation, so that neither carries the other's
           ! branch.  Both are branch-free apart from selects, and vectorise.
+          ! tw(:,4) leaves them as the Psi the rates take, 0 where the point has
+          ! no preconditioning: dt<0 and chi<0 break 0<=Psi<=1, and the eta step
+          ! has no S form.
           if (split_rates) then
+!GCC$ ivdep
             do f=self%fs, self%fe
               xxup  = work_up(f,1)
-              ssup  = work_up(f,2)
+              etaup = work_up(f,2)
+              ssup  = etaup / sign(max(abs(xxup), tiny(1.0)), xxup)
               Inuup = work_up(f,3)
               xx = self%work(f,x,y,z,1)
               ss = self%work(f,x,y,z,2)
-              dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
-              dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi, Esc)
-              Inu = Inuup*E + W*ssup + Psi*ss
+              eta = xx*ss
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4); Esc = tw(f,5)
+              special = tw(f,6) < 0.
+              rchib = 2.*dsup05 / lw_select(dt, 1., dt /= 0.)
+              Inu = lw_select(Inuup*E + (W*etaup + Psi*eta)*rchib, Inuup*E + W*ssup + Psi*ss, special)
               ! Hold the non-local part and the escape factor 1-Psi on their own
               ! as well: the preconditioned rates need them, and both Inu - Psi*ss
               ! and 1 - Psi would cancel in an optically thick interval.  Psi=0
               ! switches the preconditioning off at a point, so Irem then carries
               ! the whole (clamped) intensity.
-              off = dt <= 0 .or. xx <= 0 .or. abs(Inu) > real(maser_Inu_max)
+              off = min(dt, xx, Inu_max - abs(Inu), lw_select(-1., 1., special)) <= 0.
               Irem = Inuup*E + W*ssup
-              Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
-              Psi = merge(0., Psi, off)
-              self%Irem(f,x,y,z) = merge(Inu, Irem, off)
-              self%escape(f,x,y,z) = merge(1., Esc, off)
+              Inu = max(-Inu_max, min(Inu_max, Inu))
+              self%Irem(f,x,y,z) = lw_select(Inu, Irem, off)
+              self%escape(f,x,y,z) = lw_select(1., Esc, off)
               self%work(f,x,y,z,3) = Inu
-              if (get_rates) then
-                ! 0<=Psi<=1 fails for dt<0/chi<0; no preconditioning there
-                self%Psi(f,x,y,z) = merge(Psi / xx, 0., dt > 0 .and. xx > 0)
-              endif
+              tw(f,4) = lw_select(0., Psi / sign(max(abs(xx), tiny(1.0)), xx), off)
             end do ! f-loop
           else
+!GCC$ ivdep
             do f=self%fs, self%fe
               xxup  = work_up(f,1)
-              ssup  = work_up(f,2)
+              etaup = work_up(f,2)
+              ssup  = etaup / sign(max(abs(xxup), tiny(1.0)), xxup)
               Inuup = work_up(f,3)
               xx = self%work(f,x,y,z,1)
               ss = self%work(f,x,y,z,2)
-              dt = dsup05 * ( xxup + xx )     ! upwind optical pathlength
-              dt = max(dt, -real(maser_dtau_max,4))  ! cap maser amplification (chi<0 -> dt<0)
-              call linear_weights(dt, E, W, Psi, Esc)
-              Inu = Inuup*E + W*ssup + Psi*ss
-              Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
-              self%work(f,x,y,z,3) = Inu
-              if (get_rates) then
-                ! 0<=Psi<=1 fails for dt<0/chi<0; no preconditioning there
-                self%Psi(f,x,y,z) = merge(Psi / xx, 0., dt > 0 .and. xx > 0)
-              endif
+              eta = xx*ss
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4)
+              special = tw(f,6) < 0.
+              rchib = 2.*dsup05 / lw_select(dt, 1., dt /= 0.)
+              Inu = lw_select(Inuup*E + (W*etaup + Psi*eta)*rchib, Inuup*E + W*ssup + Psi*ss, special)
+              self%work(f,x,y,z,3) = max(-Inu_max, min(Inu_max, Inu))
+              off = min(dt, xx, lw_select(-1., 1., special)) <= 0.
+              tw(f,4) = lw_select(0., Psi / sign(max(abs(xx), tiny(1.0)), xx), off)
             end do ! f-loop
           endif
+          if (get_rates) self%Psi(self%fs:self%fe,x,y,z) = tw(:,4)
         end do
       end do
     end do ! z-loop
     call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> The fractional position of the upwind point between the inner cells 2 and
+    !> 3 of a cubic kernel k: the kernel reproduces linear functions, so it is
+    !> the first moment -k(1) + k(3) + 2k(4).
+    !---------------------------------------------------------------------------
+    pure real(4) function inner_fraction (k)
+      real(4), intent(in) :: k(4)
+      inner_fraction = -k(1) + k(3) + 2.*k(4)
+    end function inner_fraction
   END SUBROUTINE short_char
 
   !===============================================================================
@@ -297,7 +340,8 @@ contains
   !> under its default -ftrapping-math it will not speculate floating-point arms,
   !> which keeps the calling loop scalar.  The work is split over exp_neg, lw_series
   !> and lw_select so that each piece, and then linear_weights, stays under
-  !> gfortran's inlining limits even in short_char and short_char_hermite.
+  !> gfortran's inlining limits in short_char_hermite.  short_char is too large
+  !> for them and calls linear_weights_array instead.
   !===============================================================================
   pure subroutine linear_weights (t, E, W, Psi, Esc)
     real(4), intent(in) :: t
@@ -313,6 +357,24 @@ contains
     Esc = lw_select(1.0 - ps, ut, thin)
     W = lw_select(u0 - ps, ut - E, thin)
   end subroutine linear_weights
+
+  !===============================================================================
+  !> linear_weights elementwise.  Kept out of line, so that linear_weights is
+  !> inlined into this loop also where the caller is too large for gfortran's
+  !> inliner.  The noinline attribute exists from gfortran 13.
+  !===============================================================================
+  pure subroutine linear_weights_array (t, E, W, Psi, Esc)
+#if __GNUC__ >= 13
+!GCC$ ATTRIBUTES noinline :: linear_weights_array
+#endif
+    real(4), intent(in), contiguous :: t(:)
+    real(4), intent(out), contiguous, dimension(:) :: E, W, Psi, Esc
+    integer :: i
+    !-----------------------------------------------------------------------------
+    do i=1, size(t)
+      call linear_weights(t(i), E(i), W(i), Psi(i), Esc(i))
+    end do
+  end subroutine linear_weights_array
 
 #include "../HOP/exp_neg.inc"
 
@@ -334,6 +396,7 @@ contains
   !> floating-point arm for gfortran to guard (see linear_weights).
   !===============================================================================
   pure real(4) function lw_select (a, b, first)
+!DIR$ ATTRIBUTES FORCEINLINE :: lw_select
     real(4), intent(in) :: a, b
     logical, intent(in) :: first
     integer :: sel
@@ -1741,7 +1804,7 @@ contains
                 Irem = Inuup*El + Wl*ssup
                 Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
                 Psi4 = merge(0., Psi4, off)
-                self%Irem(f,x,y,z) = merge(Inu, Irem, off)
+                self%Irem(f,x,y,z) = lw_select(Inu, Irem, off)
                 self%escape(f,x,y,z) = merge(1., Esc4, off)
                 self%work(f,x,y,z,3) = Inu
                 if (get_rates) then
