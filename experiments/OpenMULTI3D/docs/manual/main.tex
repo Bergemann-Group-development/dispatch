@@ -1332,7 +1332,7 @@ Composition & \File{abund\_magg22.txt} scaled to the model's [Fe/H] \citep{MaggB
 NLTE$^\dagger$ & off (\fort{convlim=0}); preconditioned ALI with automatic Ng acceleration when on & \fort{convlim} & \ref{sec:numerics}\\
 Iteration-pass background$^\dagger$ & continuum only; name a table matched to the model's [Fe/H] & \fort{absmet_file} & \ref{sec:absmet}\\
 Collision rates & those of the atom file only; classical recipes off & \fort{e_excitation}, \dots & \ref{sec:atoms}\\
-Iteration-pass rays & \fort{radau}, \fort{ntheta=2}, \fort{nphi=4}; \fort{linear} solver & \fort{angle_quad} & \ref{sec:angles}\\
+Iteration-pass rays & \fort{radau}, \fort{ntheta=2}, \fort{nphi=4}; \fort{linear2} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass rays & \fort{lobatto}, \fort{ntheta=4}, \fort{nphi=4}; \fort{quadratic} solver & \fort{angle_quad} & \ref{sec:angles}\\
 Output-pass scattering & none (\fort{maxiter=0}): $J_\nu=B_\nu$, continuum scattering acts as absorption & \fort{maxiter} & \ref{sec:physics}\\
 Line profiles & Voigt, complete redistribution & -- & \ref{sec:physics}\\
@@ -1480,7 +1480,8 @@ A snapshot extends far below the layers where the spectrum forms: the solar snap
 \toprule
 \fort{solver} & Iteration pass & Output pass & Notes\\
 \midrule
-\fort{linear} & default & yes & short characteristics in 3D, long characteristics in 1D\\
+\fort{linear} & yes & yes & short characteristics in 3D with $\chi$ and $S$ interpolated upwind (\File{multi3d} preset), long characteristics in 1D\\
+\fort{linear2} & default & -- & short characteristics in 3D with the optical path in $\tau_{500}$, long characteristics in 1D\\
 \fort{quadratic} & -- & default & \\
 \fort{hermite} & 3D & yes & needs \fort{pchip_interpolation=T} and, in 3D, \fort{rotate_atmos=T}\\
 \fort{hermite2} & -- & yes & as \fort{hermite}\\
@@ -1489,6 +1490,8 @@ A snapshot extends far below the layers where the spectrum forms: the solar snap
 \end{center}
 
 Only solvers that provide the approximate operator $\Psi$ can be used in the iterations. \fort{solver='none'} disables the output pass.
+
+In 3D the iteration-pass solvers differ in how a short characteristic reaches its upwind point. \fort{linear2} measures each step in $\tau_{500}$: it takes $\chi_{500}$ at the upwind point from the model atmosphere, finds the $\tau_{500}$ step from $\chi_{500}$ there and at the cell, and interpolates $\chi/\chi_{500}$ at the upwind point to turn it into the optical-depth step at each frequency. Where an inverted far-IR line makes $\chi$ change sign between cells, or a line is close to transparency, $S$ has a pole, and \fort{linear2} integrates the emissivity $\eta/\chi_{500}$ there instead of $S$. It fixes these frequencies per cell, from the frequencies and cells where the test fires, so that the scheme cannot switch from one iteration to the next; once the largest departure change of an iteration falls below 100\,\% it clears them once, which drops the transients of the first iterations. This keeps the iteration convergent for inverted lines in cool giants. On a saved atmosphere (\fort{atmos_format='save'}), such as the second stage of Sec.~\ref{sec:twostage} or the continuation of a stopped run (Sec.~\ref{sec:stopping}), it reads the model atmosphere named in the saved run's \File{params.nml} for $\chi_{500}$ at the upwind points; if that model cannot be read or does not fill the saved box, the run stops and names \fort{linear}, which needs no model. \fort{linear} interpolates $\chi$, $S$ and $I_\nu$ at the upwind point and takes the mean of $\chi$ along the step; the \File{multi3d} preset selects it for comparisons with Multi3D. Where $\chi$ changes sign it can fail to converge. \fort{linear2} needs more memory: $\chi_{500}$ at the upwind points, one single-precision value per cell and iteration direction of each patch, and for each slab an integer per cell plus two bytes per frequency and set for each cell with flagged frequencies. The memory estimate (Sec.~\ref{sec:memdetail}) includes neither.
 
 \subsection{Angle quadrature}\label{sec:angles}
 

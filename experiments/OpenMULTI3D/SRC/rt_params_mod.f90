@@ -109,7 +109,7 @@ CONTAINS
     else
       ! iteration-pass defaults
       call to_locals (rt_params_t(angle_quad='radau', ntheta=2, nphi=4, &
-        solver='linear', include_linelist=.false., include_absmet=.true., &
+        solver='linear2', include_linelist=.false., include_absmet=.true., &
         maxiter=maxiter_unset))
       READ_NAMELIST(rt_iteration_params)
       call from_locals (rt_iter)

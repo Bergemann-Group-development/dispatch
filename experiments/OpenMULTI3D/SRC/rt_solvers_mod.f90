@@ -8,6 +8,14 @@ SUBMODULE (rt_patch_mod) rt_solvers_smod
 contains
 
   !===============================================================================
+  !> Linear short characteristics in a 3D slab with chi, S and Inu interpolated at
+  !> the upwind point (4x4 cubic kernel, clamped from below by the inner 2x2
+  !> minimum) and the optical path of each step from the mean of chi there and at
+  !> the cell.  rt_iteration_params solver='linear' selects it, as the
+  !> Multi3D-comparison preset does.  Where chi changes sign between cells, as across
+  !> inverted far-IR lines in cool giants, S passes through a pole and the
+  !> iteration can fail to converge; short_char2 handles that case.
+  !===============================================================================
   module subroutine short_char (self, vec)
     class(rt_patch_t) :: self
     type(ray_type) :: ray, amr_ray
@@ -181,6 +189,320 @@ contains
   END SUBROUTINE short_char
 
   !===============================================================================
+  !> Linear short characteristics in a 3D slab, with the optical path of each step
+  !> measured against tau500 as in MULTI 2.3 (transp_23: DTAUQ = (X(K)+X(K-1))/2
+  !> * dTAU_std/mu, X = chi/chi_std).  The upwind point takes x = chi/chi500 and
+  !> e = eta/chi500, eta = chi*Snu, with chi500 the extinction at ref_lam, with the
+  !> bilinear weights of the inner 2x2 cells, each divided by its own chi500; Snu
+  !> with the plain bilinear weights; and Inu with the 4x4 cubic kernel, clamped
+  !> from below by the inner 2x2 minimum: chi and eta change by up to 1e7 from
+  !> cell to cell, and negative cubic weights could make either any value, while
+  !> the bilinear ones keep the upwind state between its neighbours.  chi500 at
+  !> the upwind point itself comes from the model atmosphere interpolated there
+  !> (composition_patch upwind_chi500); the ghost plane takes that of the upstream
+  !> slab's exit plane, and on the first plane of an amr slab boundary, whose
+  !> upwind point lies on it, the upwind chi500 is interpolated bilinearly in its
+  !> log over the inner 2x2 cells there.  Along the step chi500 varies
+  !> exponentially, which makes its length in tau500
+  !>   dtau500 = ds*(chi500_up - chi500)/ln(chi500_up/chi500),
+  !> and dtau = xbar*dtau500, xbar = (x_up + x)/2.  The formal solution is the
+  !> linear S step in that dtau, Inu = Inu_up*E + W*S_up + Psi*S, with S_up
+  !> interpolated directly: a ratio of interpolants e_up/x_up weights eta/chi by
+  !> 1/chi500 and destabilises the iteration in giants.  With inverted lines chi
+  !> changes sign between cells and S passes through a pole.  Where the stencil
+  !> of a step reaches a pair (f, cell) with chi <= 0 or near transparency, which
+  !> update_eta_mask has flagged in eta_mask, the step therefore integrates the
+  !> emissivity with x held at its mean over the interval,
+  !>   Inu = Inu_up*E + (W*e_up + Psi*e)/xbar,
+  !> which equals the S step for constant x.  The flags grow, apart from one
+  !> reset that clears the transients of the first iterations (update_eta_mask),
+  !> so a pair keeps its recipe once they stop growing; a cell without flags
+  !> (eta_row 0) takes the S step at every frequency without any selection.
+  !> rt_iteration_params solver='linear2' (the default) selects this solver in 3D;
+  !> the chi500 at the upwind points and the flags exist only then.
+  !===============================================================================
+  module subroutine short_char2 (self, vec, i_mu)
+    class(rt_patch_t) :: self
+    type(ray_type) :: ray, amr_ray
+    real(8), intent(in) :: vec(3)
+    integer, intent(in) :: i_mu
+    real(4) :: Inuup, xxup, eup, ssup, xx, ss, ee, chi, Inu, Psi, maser_dtau, Inu_max
+    real(4) :: hx, hy, hx1, hy1, hx2, hy2, rc, w2, w3, dt500, Irem, dt, E, W, Esc
+    real(4) :: rxb
+    real(8) :: dsup, dsup1, dsup2, ds(3), c, cu, r
+    real(4), dimension(4) :: xkern, ykern, xkernel1, ykernel1, xkernel2, ykernel2
+    real(4), dimension(:,:), allocatable :: work_up, tw, r500, g500
+    real(4), dimension(:,:,:,:), allocatable :: row_red
+    integer :: xup_t(4,self%nx), yup_t(4,self%ny)
+    integer :: zs, ze, yup, zup, ii, jj, upo1, upo2, x1, x2, x3, x4, y1, y2, y3, y4, row
+    logical :: get_rates, split_rates, off, special, amr_boundary, amr_plane, rebuild_tables
+    integer, save :: itimer=0
+    integer :: x, y, z, f
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%short_char2', itimer=itimer)
+    if (.not. allocated(self%m3d_parent%chi500_up)) &
+      error stop 'short_char2: chi500 at the upwind points is missing'
+    allocate(work_up(self%fs:self%fe,4))   ! x_up, e_up, Inu_up, S_up
+    allocate(tw(self%fs:self%fe,6))   ! dt, E, W, Psi, Esc of linear_weights; < 0 for the eta step
+    allocate(row_red(self%fs:self%fe, 4, self%nx, self%ny))
+    allocate(r500(self%nx, self%ny), g500(self%nx, self%ny))
+    get_rates = self%compute_psi
+    split_rates = self%split_rates
+    maser_dtau = -real(maser_dtau_max,4)
+    Inu_max = real(maser_Inu_max,4)
+
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
+
+    call ray%set_stencil(self%ds * scaling%l, vec)
+    xkernel1 = real(ray%xkern)
+    ykernel1 = real(ray%ykern)
+    dsup1 = ray%dsup
+    hx1 = inner_fraction(xkernel1)
+    hy1 = inner_fraction(ykernel1)
+
+    ! With amr the slab above has its own ds(3): its first plane, the ghost plane
+    ! of a downward ray, lies one of its cells above the top plane, and the first
+    ! step takes that slab's stencil.
+    amr_boundary = amr/='' .and. self%dir < 0
+    if (amr_boundary) then
+      ds = self%ds
+      if (associated(self%upstream)) ds = self%upstream%ds
+      call amr_ray%set_stencil(ds * scaling%l, vec)
+      xkernel2 = real(amr_ray%xkern)
+      ykernel2 = real(amr_ray%ykern)
+      dsup2 = amr_ray%dsup
+      hx2 = inner_fraction(xkernel2)
+      hy2 = inner_fraction(ykernel2)
+    endif
+
+    ! chi500 of the ghost plane: the exit plane of the upstream slab, or the model
+    ! one plane beyond a boundary of the domain
+    if (associated(self%upstream)) then
+      associate (uc => self%upstream%m3d_parent%composition%chi500)
+        g500 = uc(:,:,merge(size(uc,3), 1, self%dir > 0))
+      end associate
+    else
+      g500 = self%m3d_parent%chi500_ghost(:,:,merge(1, 2, self%dir > 0))
+    endif
+
+    associate (chi500 => self%m3d_parent%composition%chi500, &
+               chi500_up => self%m3d_parent%chi500_up)
+    rebuild_tables = .true.
+    do z=zs, ze, self%dir
+      zup = z - self%dir
+      amr_plane = amr_boundary .and. z==zs
+      if (amr_plane) then
+        xkern = xkernel2
+        ykern = ykernel2
+        hx = hx2
+        hy = hy2
+        dsup = dsup2
+        upo1 = amr_ray%upo1 - 2
+        upo2 = amr_ray%upo2 - 2
+      else
+        xkern = xkernel1
+        ykern = ykernel1
+        hx = hx1
+        hy = hy1
+        dsup = dsup1
+        upo1 = ray%upo1 - 2
+        upo2 = ray%upo2 - 2
+      endif
+      if (rebuild_tables) then
+        do x=1,self%nx; do ii=1,4
+          xup_t(ii,x) = modulo(ii + x + upo1, self%nx) + 1
+        end do; end do
+        do y=1,self%ny; do jj=1,4
+          yup_t(jj,y) = modulo(jj + y + upo2, self%ny) + 1
+        end do; end do
+        rebuild_tables = amr_plane
+      endif
+      if (zup < 1 .or. zup > self%nz) then
+        r500 = 1. / g500
+      else
+        r500 = 1. / chi500(:,:,zup)
+      endif
+
+      !--- ROW PASS: x-reduce the whole upstream plane ----------------------------
+      ! slots 1 and 2: x and e, linear in the inner pair; slot 3: Inu, cubic;
+      ! slot 4: S, linear in the inner pair
+      do yup = 1, self%ny
+        do x = 1, self%nx
+          x1 = xup_t(1,x); x2 = xup_t(2,x); x3 = xup_t(3,x); x4 = xup_t(4,x)
+          w2 = (1.-hx)*r500(x2,yup)
+          w3 = hx*r500(x3,yup)
+          do f = self%fs, self%fe
+            row_red(f,1,x,yup) = w2*self%work(f,x2,yup,zup,1) + w3*self%work(f,x3,yup,zup,1)
+            row_red(f,2,x,yup) = w2*self%work(f,x2,yup,zup,1)*self%work(f,x2,yup,zup,2) &
+                               + w3*self%work(f,x3,yup,zup,1)*self%work(f,x3,yup,zup,2)
+            row_red(f,3,x,yup) = xkern(1)*self%work(f,x1,yup,zup,3) + xkern(2)*self%work(f,x2,yup,zup,3) &
+                               + xkern(3)*self%work(f,x3,yup,zup,3) + xkern(4)*self%work(f,x4,yup,zup,3)
+            row_red(f,4,x,yup) = (1.-hx)*self%work(f,x2,yup,zup,2) + hx*self%work(f,x3,yup,zup,2)
+          end do
+        end do
+      end do
+
+      do y=1, self%ny
+        y1 = yup_t(1,y); y2 = yup_t(2,y); y3 = yup_t(3,y); y4 = yup_t(4,y)
+        do x=1, self%nx
+          x2 = xup_t(2,x); x3 = xup_t(3,x)
+          ! the step's length in tau500: ds times the logarithmic mean of the two
+          ! chi500, by its series below |r - 1| = 1e-3.  On the first plane of an
+          ! amr slab boundary the upwind chi500 is the ghost plane's, bilinear in
+          ! its log over the inner 2x2 cells.
+          c = chi500(x,y,z)
+          if (amr_plane) then
+            cu = exp((1d0-hy)*((1d0-hx)*log(dble(g500(x2,y2))) + hx*log(dble(g500(x3,y2)))) &
+                   + hy*((1d0-hx)*log(dble(g500(x2,y3))) + hx*log(dble(g500(x3,y3)))))
+          else
+            cu = chi500_up(x,y,z,i_mu)
+          endif
+          r = cu / c
+          if (abs(r - 1d0) < 1d-3) then
+            dt500 = real(dsup*c*(1d0 + (r - 1d0)*(0.5d0 - (r - 1d0)/12d0)), 4)
+          else
+            dt500 = real(dsup*c*(r - 1d0)/log(r), 4)
+          endif
+          rc = real(1d0/c, 4)
+          ! Upwind x, e, Inu and S, Inu clamped from below by the inner 2x2
+          ! minimum; then the optical path, whose weights linear_weights_array
+          ! evaluates out of line.  The loops select by bit mask (lw_select): a
+          ! float comparison right of .or., or an arm of merge, is evaluated
+          ! conditionally, and under gfortran's default -ftrapping-math that
+          ! keeps the loop scalar.
+!GCC$ ivdep
+          do f=self%fs,self%fe
+            xxup  = (1.-hy)*row_red(f,1,x,y2) + hy*row_red(f,1,x,y3)
+            eup   = (1.-hy)*row_red(f,2,x,y2) + hy*row_red(f,2,x,y3)
+            Inuup = ykern(1)*row_red(f,3,x,y1) + ykern(2)*row_red(f,3,x,y2) &
+                  + ykern(3)*row_red(f,3,x,y3) + ykern(4)*row_red(f,3,x,y4)
+            Inuup = max(Inuup, min(self%work(f,x2,y2,zup,3), self%work(f,x3,y2,zup,3), &
+                                   self%work(f,x2,y3,zup,3), self%work(f,x3,y3,zup,3)))
+            xx = self%work(f,x,y,z,1)*rc
+            dt = 0.5*(xxup + xx)*dt500      ! upwind optical pathlength
+            dt = max(dt, maser_dtau)        ! cap maser amplification (chi<0 -> dt<0)
+            work_up(f,1) = xxup
+            work_up(f,2) = eup
+            work_up(f,3) = Inuup
+            work_up(f,4) = (1.-hy)*row_red(f,4,x,y2) + hy*row_red(f,4,x,y3)
+            tw(f,1) = dt
+          end do
+          call linear_weights_array(tw(:,1), tw(:,2), tw(:,3), tw(:,4), tw(:,5))
+
+          ! A cell without flags (row 0) takes the S step at every frequency;
+          ! one with flags selects the eta step where eta_mask is set.  One f-loop
+          ! per rate formulation and kind of cell, so that none carries another's
+          ! branch; all are branch-free apart from selects, and vectorise.
+          ! tw(:,4) leaves them as the Psi = dInu/deta the rates take, 0 where the
+          ! point has no preconditioning: dt<0 and chi<0 break 0<=Psi<=1, and so
+          ! does x_up<=0 in the eta step.  rxb = 1/xbar.
+          row = 0
+          if (allocated(self%eta_row)) row = self%eta_row(x,y,z)
+          ! the flags as a 4-byte select: a 1-byte logical in the loops below
+          ! keeps them scalar
+          if (row > 0) tw(:,6) = merge(-1., 1., self%eta_mask(:,row,self%eta_set))
+          if (split_rates .and. row == 0) then
+!GCC$ ivdep
+            do f=self%fs, self%fe
+              Inuup = work_up(f,3)
+              ssup  = work_up(f,4)
+              chi = self%work(f,x,y,z,1)
+              ss = self%work(f,x,y,z,2)
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4); Esc = tw(f,5)
+              ! Hold the non-local part and the escape factor 1-Psi on their own
+              ! as well: the preconditioned rates need them, and both Inu - Psi*ss
+              ! and 1 - Psi would cancel in an optically thick interval.  Psi=0
+              ! switches the preconditioning off at a point, so Irem then carries
+              ! the whole (clamped) intensity.
+              Irem = Inuup*E + W*ssup
+              Inu = Irem + Psi*ss
+              off = min(dt, chi, Inu_max - abs(Inu)) <= 0.
+              Inu = max(-Inu_max, min(Inu_max, Inu))
+              self%Irem(f,x,y,z) = lw_select(Inu, Irem, off)
+              self%escape(f,x,y,z) = lw_select(1., Esc, off)
+              self%work(f,x,y,z,3) = Inu
+              tw(f,4) = lw_select(0., Psi / sign(max(abs(chi), tiny(1.0)), chi), off)
+            end do ! f-loop
+          else if (split_rates) then
+!GCC$ ivdep
+            do f=self%fs, self%fe
+              xxup  = work_up(f,1)
+              eup   = work_up(f,2)
+              Inuup = work_up(f,3)
+              ssup  = work_up(f,4)
+              chi = self%work(f,x,y,z,1)
+              ss = self%work(f,x,y,z,2)
+              xx = chi*rc
+              ee = xx*ss
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4); Esc = tw(f,5)
+              special = tw(f,6) < 0.
+              rxb = dt500 / lw_select(dt, 1., dt /= 0.)
+              ! As above; the eta step's escape factor is 1 - Psi*x/xbar.
+              Irem = lw_select(Inuup*E + W*eup*rxb, Inuup*E + W*ssup, special)
+              Inu = lw_select(Irem + Psi*ee*rxb, Irem + Psi*ss, special)
+              off = min(dt, chi, Inu_max - abs(Inu), lw_select(xxup, 1., special)) <= 0.
+              Esc = lw_select(Esc + 0.5*Psi*(xxup - xx)*rxb, Esc, special)
+              Inu = max(-Inu_max, min(Inu_max, Inu))
+              self%Irem(f,x,y,z) = lw_select(Inu, Irem, off)
+              self%escape(f,x,y,z) = lw_select(1., Esc, off)
+              self%work(f,x,y,z,3) = Inu
+              tw(f,4) = lw_select(0., lw_select(Psi*rxb*rc, Psi / sign(max(abs(chi), tiny(1.0)), chi), &
+                                                special), off)
+            end do ! f-loop
+          else if (row == 0) then
+!GCC$ ivdep
+            do f=self%fs, self%fe
+              Inuup = work_up(f,3)
+              ssup  = work_up(f,4)
+              chi = self%work(f,x,y,z,1)
+              ss = self%work(f,x,y,z,2)
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4)
+              Inu = Inuup*E + W*ssup + Psi*ss
+              self%work(f,x,y,z,3) = max(-Inu_max, min(Inu_max, Inu))
+              off = min(dt, chi) <= 0.
+              tw(f,4) = lw_select(0., Psi / sign(max(abs(chi), tiny(1.0)), chi), off)
+            end do ! f-loop
+          else
+!GCC$ ivdep
+            do f=self%fs, self%fe
+              xxup  = work_up(f,1)
+              eup   = work_up(f,2)
+              Inuup = work_up(f,3)
+              ssup  = work_up(f,4)
+              chi = self%work(f,x,y,z,1)
+              ss = self%work(f,x,y,z,2)
+              xx = chi*rc
+              ee = xx*ss
+              dt = tw(f,1); E = tw(f,2); W = tw(f,3); Psi = tw(f,4)
+              special = tw(f,6) < 0.
+              rxb = dt500 / lw_select(dt, 1., dt /= 0.)
+              Inu = lw_select(Inuup*E + (W*eup + Psi*ee)*rxb, Inuup*E + W*ssup + Psi*ss, special)
+              self%work(f,x,y,z,3) = max(-Inu_max, min(Inu_max, Inu))
+              off = min(dt, chi, lw_select(xxup, 1., special)) <= 0.
+              tw(f,4) = lw_select(0., lw_select(Psi*rxb*rc, Psi / sign(max(abs(chi), tiny(1.0)), chi), &
+                                                special), off)
+            end do ! f-loop
+          endif
+          if (get_rates) self%Psi(self%fs:self%fe,x,y,z) = tw(:,4)
+        end do
+      end do
+    end do ! z-loop
+    end associate
+    call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> The fractional position of the upwind point between the inner cells 2 and
+    !> 3 of a cubic kernel k: the kernel reproduces linear functions, so it is
+    !> the first moment -k(1) + k(3) + 2k(4).
+    !---------------------------------------------------------------------------
+    pure real(4) function inner_fraction (k)
+      real(4), intent(in) :: k(4)
+      inner_fraction = -k(1) + k(3) + 2.*k(4)
+    end function inner_fraction
+  END SUBROUTINE short_char2
+
+  !===============================================================================
   module subroutine long_char_linear (self, vec)
     class(rt_patch_t) :: self
     real(8) :: vec(3)
@@ -298,6 +620,7 @@ contains
   !> which keeps the calling loop scalar.  The work is split over exp_neg, lw_series
   !> and lw_select so that each piece, and then linear_weights, stays under
   !> gfortran's inlining limits even in short_char and short_char_hermite.
+  !> short_char2 is too large for them and calls linear_weights_array instead.
   !===============================================================================
   pure subroutine linear_weights (t, E, W, Psi, Esc)
     real(4), intent(in) :: t
