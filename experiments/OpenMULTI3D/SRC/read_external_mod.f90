@@ -24,7 +24,8 @@ MODULE read_external_mod
   USE task_list_mod
   USE experiment_mod, only: experiment_t
   USE composition_mod, only: opac_table_vmic, read_departures
-  USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
+  USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params, &
+    needs_upwind_chi500
   USE const_mod, only:cc
   USE m3d_patch_mod, only: m3d_patch_t, nz_total, use_rho, use_ne, atmos_format, amr, rotate_atmos, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
@@ -34,7 +35,7 @@ MODULE read_external_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
     log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
-    read_siu_bin, timestamp
+    read_siu_bin, timestamp, read_hint
   USE atmos_reader_mod, only: atmos_format_from_name
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
@@ -292,8 +293,7 @@ contains
 
     nz_total = patch%ze
     ! the patches' pre_init has settled rotate_atmos and the output directions
-    if (atmos_format == 'save' .and. rotate_atmos) &
-      call self%read_original_snapshot(atmos_file, 1+size(rt_out%vec,2))
+    if (atmos_format == 'save') call self%read_original_snapshot(atmos_file, 1+size(rt_out%vec,2))
     call init_rt_columns (task_list)
 
     if (console_on(ch_atmos, 2)) then
@@ -456,18 +456,22 @@ contains
   END FUNCTION saved_mean_vmic
 
   !===============================================================================
-  !> A run with rotate_atmos=T needs one ray-aligned copy of the atmosphere per
-  !> output direction.  A saved atmosphere written without rotation holds only
-  !> the unrotated copy, so the model it was computed from is read into ia, and
-  !> the composition patches interpolate the rotated copies from it.  The saved
-  !> mesh stays the mesh of the run, so the box of the model must match it.
+  !> A saved atmosphere holds only the patches' own state, so two kinds of run read
+  !> the model it was computed from into ia, from the model file in its params.nml.
+  !> A run with rotate_atmos=T on a save written without rotation interpolates the
+  !> ray-aligned copies from it, and short_char2 (needs_upwind_chi500) takes chi500
+  !> at its upwind points from it.  The model is prepared as the run that wrote the
+  !> save prepared it, and the saved mesh stays the mesh of the run, so the box of
+  !> the model must match it.
   !===============================================================================
   SUBROUTINE read_original_snapshot (self, save_dir, n_copies)
     class(read_external_t):: self
     character(len=*), intent(in):: save_dir !< run directory of the saved atmosphere
     integer, intent(in):: n_copies          !< atmosphere copies the run needs, 1 + output directions
     character(len=512) :: line, name
+    character(len=1024) :: hint
     integer :: lunit, iostat, saved_copies, sizes(6)
+    logical :: rotated, chi500
     real(8) :: box(3)
     !-----------------------------------------------------------------------------
     open(file=trim(save_dir)//'/save/atmos_meta.txt', newunit=lunit, form='FORMATTED', &
@@ -481,15 +485,26 @@ contains
     close(lunit)
     read (line, *) name, sizes                          ! bytes, n(3), slots, copies
     saved_copies = sizes(6)
-    if (saved_copies /= 1 .or. n_copies == 1) return
+    rotated = rotate_atmos .and. saved_copies == 1 .and. n_copies > 1
+    chi500 = needs_upwind_chi500()
+    if (.not. (rotated .or. chi500)) return
+    hint = ''
+    if (chi500) hint = "rt_iteration_params solver='linear2' takes chi500 at the upwind points from " // &
+      "the model of the saved atmosphere, " // trim(saved_from_file) // ", which must be readable " // &
+      "and fill the saved box; use solver='linear' without it"
     if (console_on(ch_atmos, 1)) &
-      write (console_unit,'(4a)') 'Reading ', trim(saved_from_format), &
-        ' atmosphere for the rotated copies from ', trim(saved_from_file)
+      write (console_unit,'(5a)') 'Reading ', trim(saved_from_format), ' atmosphere for ', &
+        trim(merge('the rotated copies     ', 'chi500 at upwind points', rotated)), &
+        ' from ' // trim(saved_from_file)
+    read_hint = hint
     call read_model(saved_from_format, saved_from_file, saved_from_snap, .false.)
+    read_hint = ''
     call ia%thick2thin()
+    call ia%prune_top_planes()
     call ia%scale_box(box=box, scale=scaling%l)
     if (any(abs(box - self%size) > 1d-4*abs(self%size))) then
       call console_error ('the model of the saved atmosphere does not fill its saved box')
+      if (hint /= '') call console_error (trim(hint))
       error stop
     endif
   END SUBROUTINE read_original_snapshot

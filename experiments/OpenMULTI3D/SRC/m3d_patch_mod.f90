@@ -99,6 +99,11 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: composition => null()            !< composition of the unrotated atmosphere
       type(composition_type), pointer :: tab_comp => null()               !< composition at the nodes of the opacity or EOS table
       type(composition_type), pointer :: rotated_composition(:) => null() !< compositions along the output rays
+      !> chi500 [cm^-1] at the upwind point of each cell, per iteration direction:
+      !> short_char2 takes the tau500 length of each step from it and chi500 at the cell
+      real(4), allocatable :: chi500_up(:,:,:,:)
+      !> chi500 [cm^-1] of the ghost planes below z=1 (1) and above z=nz (2)
+      real(4), allocatable :: chi500_ghost(:,:,:)
       ! Sampled background-opacity tables, owned by the composition patch and
       ! shared by all its rt_patches.  Everything a table's content depends on is
       ! a function of i_nu alone (the spectrum and the fs:fe slice), so i_nu is
@@ -228,6 +233,15 @@ MODULE m3d_patch_mod
     !> iteration table, for the verdict printed at the end of the run
     real(8), public, save :: nlte_last_change=0d0
     integer, public, save :: nlte_last_iter=0 !< for that verdict: the last iteration of any nlte_patch here
+    !> The sticky eta-step flags of short_char2 (rt_patch_t%update_eta_mask) start afresh
+    !> once, in the first iteration after a complete one whose largest departure change
+    !> (a fraction) was below eta_reset_change, so that the flags of the early, large
+    !> transients do not persist.  eta_reset_iter is that iteration, -1 until it is known;
+    !> the first nlte update of the iteration sets it, before any RT task of it runs.
+    !> A process runs one NLTE solve (the iteration pass has a single set), so it is set
+    !> at most once; the output pass's Lambda iterations do not reset their flags.
+    real(8), public, parameter :: eta_reset_change=1d0
+    integer, public, save :: eta_reset_iter=-1
     !> For the same verdict: how many nlte_patches of this rank finished because
     !> every atom there changed by less than convmax (premature_finish).  A run whose
     !> patches all finished that way never completes the iteration that would give
@@ -247,8 +261,8 @@ MODULE m3d_patch_mod
     !> iteration outright.  'largest' uses Rybicki & Hummer (1992) Sect. 2.4
     !> instead, taking the line's own share out of the local source term rather
     !> than out of the integrated rate.  Both have the same fixed point.  It needs
-    !> the linear iteration solver, which is the only one that keeps the formal
-    !> solution's non-local part; rt_patch falls back to 'original' otherwise.
+    !> the formal solution's non-local part, which every solver admitted for the
+    !> iteration pass keeps.
     character(len=16), public, save :: rate_formulation='largest'
     !> Olson-Auer-Buchler local ALI on the continuum-scattering source term.
     !> Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,

@@ -20,7 +20,7 @@ MODULE composition_patch_mod
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   rotate_atmos, decouple_continuum, n_windows, n_windows_out, out_patch_offset, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
-  n_nlte_patches, nlte_finished
+  n_nlte_patches, nlte_finished, column_by_column
   USE rt_params_mod, only: rt_iter, rt_out, pivot_z
   USE m3d_debug_mod
   USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
@@ -112,9 +112,20 @@ MODULE composition_patch_mod
   character(len=4096), save :: linelist_folder=''                               !< folder whose files are all read as line lists
   character(len=4096), save, dimension(:), allocatable :: linelist_file         !< line-list files
 
-  public :: read_composition_params, max_n_windows, set_n_windows_out
+  public :: read_composition_params, max_n_windows, set_n_windows_out, needs_upwind_chi500
 
 contains
+
+!===============================================================================
+!> The run solves short_char2 (rt_iteration_params solver='linear2' in 3D), in the
+!> NLTE iterations or in the output pass's scattering iterations, so the
+!> composition patches need chi500 at its upwind points from the model atmosphere.
+!===============================================================================
+LOGICAL FUNCTION needs_upwind_chi500 ()
+  needs_upwind_chi500 = rt_iter%solver == 'linear2' .and. size(rt_iter%vec, 2) > 0 &
+    .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0) &
+    .and. .not. (one_dimensional .or. column_by_column .or. make_eos)
+END FUNCTION needs_upwind_chi500
 
 !===============================================================================
 !> Reads composition_params, opac_table_params and linelist_params, builds the
@@ -804,6 +815,8 @@ SUBROUTINE execute (self)
       endif
     end do
 
+    if (needs_upwind_chi500()) call upwind_chi500()
+
     call ia%release()
 
     if (save_atmos) then
@@ -833,6 +846,57 @@ SUBROUTINE execute (self)
     !stop
   endif
   call trace%end(itimer)
+contains
+
+  !-----------------------------------------------------------------------------
+  !> chi500 at the upwind point of every cell for each iteration direction, and
+  !> on the two ghost planes, from the model atmosphere interpolated there and
+  !> solved for its equilibrium as the patch mesh itself is.  The upwind point
+  !> lies on the previous plane, displaced against the ray by ds(3)/|mu| along it.
+  !> short_char2 takes the ghost planes' values only at the boundaries of the domain,
+  !> and the upstream slab's chi500 elsewhere.
+  !-----------------------------------------------------------------------------
+  subroutine upwind_chi500()
+    real(8) :: ds(3), vec(3)
+    real(4), allocatable :: c500(:,:,:)
+    integer :: d, nd
+    !---------------------------------------------------------------------------
+    ! read_external reads the model of a saved atmosphere for this
+    if (.not. allocated(ia%ltemp)) error stop 'upwind_chi500: the model atmosphere is not loaded'
+    ds = self%size / n
+    nd = size(rt_iter%vec, 2)
+    allocate(self%chi500_up(n(1),n(2),n(3),nd), self%chi500_ghost(n(1),n(2),2))
+    allocate(c500(n(1),n(2),n(3)))
+    do d=1, nd
+      vec = rt_iter%vec(:,d)
+      call chi500_at(-ds(3)/abs(vec(3))*vec, c500)
+      self%chi500_up(:,:,:,d) = c500
+    end do
+    call chi500_at([0d0, 0d0, -ds(3)], c500)
+    self%chi500_ghost(:,:,1) = c500(:,:,1)
+    call chi500_at([0d0, 0d0, ds(3)], c500)
+    self%chi500_ghost(:,:,2) = c500(:,:,n(3))
+  end subroutine upwind_chi500
+
+  !-----------------------------------------------------------------------------
+  !> chi500 on the patch mesh displaced by shift.
+  !-----------------------------------------------------------------------------
+  subroutine chi500_at(shift, c500)
+    real(8), intent(in) :: shift(3)
+    real(4), intent(out) :: c500(:,:,:)
+    type(composition_type), allocatable :: cu
+    !---------------------------------------------------------------------------
+    call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
+                           shift=shift)
+    temp8 = dble(temp)
+    rho8  = dble(rho)
+    ne8   = dble(ne)
+    allocate(cu, source=composition)
+    call cu%reassign_pointer()
+    call cu%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
+    c500 = cu%chi500
+    deallocate(cu)
+  end subroutine chi500_at
 END SUBROUTINE execute
 
 !===============================================================================

@@ -1,4 +1,4 @@
-! Comparison with Multi3D: its z-mesh, angle sets and composition, with no frozen columns.
+! Comparison with Multi3D: its z-mesh, angle sets, upwind interpolation and composition, with no frozen columns.
 ! Use on its own rather than combined.
 &atmos_params
   use_ne = .true.
@@ -14,6 +14,7 @@
   convmax = 0
 /
 &rt_iteration_params
+  solver = 'linear'
   angle_quad = 'set_a4'
   sample_back_opac = .false.
 /

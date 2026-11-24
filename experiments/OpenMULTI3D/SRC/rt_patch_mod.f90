@@ -25,7 +25,8 @@ MODULE rt_patch_mod
     fixed_Jnu, n_windows, save_Jnu, &
     convlim, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
-    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file
+    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file, &
+    eta_reset_iter
   USE mpi_mod, only: mpi
   USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z, &
                            save_linelist
@@ -157,6 +158,20 @@ MODULE rt_patch_mod
     logical :: do_scat_precond = .false.               !< the continuum-scattering ALI is active for this slab
     logical :: compute_psi = .false.                   !< the formal solvers build Psi (for the rates or the ALI)
 
+    !> The frequencies at which short_char2 takes the eta step, fixed per (f, cell)
+    !> so that the recipe cannot switch between iterations (update_eta_mask).
+    !> Sparse: eta_row gives each cell's row of flags, 0 for a cell without any;
+    !> rows are appended as cells get flagged and removed only by the one reset.
+    !> Allocated only with rt_iteration_params solver='linear2' in 3D.
+    integer, allocatable :: eta_row(:,:,:)           !< (x, y, z): row of the cell's flags, 0 for none
+    logical(1), allocatable :: eta_src(:,:,:)        !< (f, row, set): the local test fired at the cell itself
+    logical(1), allocatable :: eta_mask(:,:,:)       !< (f, row, set): eta_src spread over the upwind stencils reaching the cell
+    logical(1), allocatable :: eta_gsrc(:,:,:,:)     !< (f, x, y, set): the local test fired on the upstream ghost plane
+    integer :: eta_nrow=0                            !< rows in use
+    integer :: eta_rx=1, eta_ry=1                    !< reach of an upwind stencil in cells, x and y
+    integer :: eta_set=1                             !< the set short_char2 solves
+    logical :: eta_reset_done=.false.                !< the flags have started afresh at eta_reset_iter
+
     !> Sampled background opacity table: the composition patch's shared table for
     !> this i_nu or, on the make_eos path, a private one (save_opac_table
     !> overwrites it in place).
@@ -246,6 +261,7 @@ MODULE rt_patch_mod
     procedure :: reset_array
     procedure :: back_to_work
     procedure :: work_to_transfer_units
+    procedure :: update_eta_mask
     procedure :: set_upstream_boundary
     procedure :: integrate_intensity
     procedure :: integrate_rates
@@ -254,6 +270,7 @@ MODULE rt_patch_mod
     procedure :: save_contribution_function
     procedure :: rotate_array
     procedure :: short_char
+    procedure :: short_char2
     procedure :: set_fixed_Jnu
     procedure :: long_char_linear
     procedure :: long_char_quadratic
@@ -299,6 +316,17 @@ MODULE rt_patch_mod
       class(rt_patch_t) :: self
       real(8), intent(in) :: vec(3) !< direction of the ray
     end subroutine short_char
+
+    !=============================================================================
+    !> Linear formal solution by short characteristics in a 3D slab with the
+    !> optical path in tau500 and the eta step at flagged frequencies, which builds
+    !> Psi for the iteration pass (rt_iteration_params solver='linear2').
+    !=============================================================================
+    module subroutine short_char2 (self, vec, i_mu)
+      class(rt_patch_t) :: self
+      real(8), intent(in) :: vec(3) !< direction of the ray
+      integer, intent(in) :: i_mu   !< direction index in rt_iter
+    end subroutine short_char2
 
     !=============================================================================
     !> Linear formal solution along the vertical columns of the slab (1D,
@@ -1017,6 +1045,8 @@ contains
             call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
             call self%work_to_transfer_units()
             call self%set_upstream_boundary(i_mu, i_set, ng)
+            if (rt_iter%solver == 'linear2' .and. .not. (one_dimensional .or. column_by_column)) &
+              call self%update_eta_mask(i_set)
             call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           endif
           call self%set_downstream_boundary(i_mu, i_set)
@@ -1655,19 +1685,21 @@ contains
       ! lambda iteration.  They remain available for the output pass.
       if (one_dimensional .or. column_by_column) then
         select case(rt_iter%solver)
-          case('linear')
+          case('linear', 'linear2')
             call self%long_char_linear(vec)
           case default
-            error stop 'rt_iteration_params solver: only "linear" builds Psi in 1D'
+            error stop 'rt_iteration_params solver: only "linear" and "linear2" build Psi in 1D'
         end select
       else
         select case(rt_iter%solver)
+          case('linear2')
+            call self%short_char2(vec, i_mu)
           case('linear')
             call self%short_char(vec)
           case('hermite')
             call self%short_char_hermite(comp, vec)
           case default
-            error stop 'rt_iteration_params solver: only "linear" and "hermite" build Psi in 3D'
+            error stop 'rt_iteration_params solver: only "linear", "linear2" and "hermite" build Psi in 3D'
         end select
       endif
     endif
@@ -3524,6 +3556,151 @@ contains
   END SUBROUTINE work_to_transfer_units
 
   !===============================================================================
+  !> Fixes where short_char2 takes the eta step.  A pair (f, cell) fires where chi
+  !> <= 0 or |chi| < q_eta*(chi + (1-beta)*eta), the near-transparency test of
+  !> the eta step; on the upstream ghost plane, which has no beta, with 1-beta = 1,
+  !> which fires at least as often.  A pair that fired once stays fired (eta_src),
+  !> and its flag goes to every cell whose upwind stencil reaches it: the cell
+  !> itself and the cells within eta_rx, eta_ry of it (periodically) on its own
+  !> plane and on the next one downwind, or for the ghost plane on the first plane
+  !> of the slab.  eta_rx and eta_ry cover the horizontal offset of the upwind
+  !> point plus the cell beyond it, over the slab's directions and the larger of
+  !> its own and the upstream slab's ds(3) (the amr boundary plane).  The flags
+  !> (eta_mask) only grow, so once they stop growing no pair changes its recipe,
+  !> and short_char2 needs only the downwind cell's flag.  The top of the domain,
+  !> whose ghost plane is empty (no incoming radiation), adds no flags.  At
+  !> eta_reset_iter (m3d_patch_mod) the flags of all sets are cleared once, before
+  !> that iteration's first short_char2, and accumulate again from there, so that
+  !> the transients of the first iterations do not keep their flags.
+  !===============================================================================
+  SUBROUTINE update_eta_mask (self, i_set)
+    class(rt_patch_t) :: self
+    integer, intent(in) :: i_set
+    real(4), parameter :: q_eta = 1e-2
+    logical(1), allocatable :: fire(:), new(:)
+    real(4) :: chi
+    real(8) :: dz, sx, sy
+    integer :: x, y, z, f, i, zg, z1, zn, row
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%update_eta_mask', itimer=itimer)
+    if (.not. allocated(self%eta_row)) then
+      allocate(self%eta_row(self%nx,self%ny,self%nz), source=0)
+      self%eta_nrow = 0
+      call grow_rows(max(16, self%nx*self%ny*self%nz/64))
+      allocate(self%eta_gsrc(self%fs:self%fe,self%nx,self%ny,self%n_set), source=.false._1)
+      dz = self%ds(3)
+      if (associated(self%upstream)) dz = max(dz, self%upstream%ds(3))
+      sx = 0d0; sy = 0d0
+      do i=self%mus, self%mue
+        sx = max(sx, abs(rt_iter%vec(1,i)/rt_iter%vec(3,i)))
+        sy = max(sy, abs(rt_iter%vec(2,i)/rt_iter%vec(3,i)))
+      end do
+      self%eta_rx = floor(sx*dz/self%ds(1)) + 1
+      self%eta_ry = floor(sy*dz/self%ds(2)) + 1
+    endif
+    if (i_set > size(self%eta_src,3)) error stop 'update_eta_mask: set beyond the slab''s sets'
+    ! the NLTE iteration drops the flags gathered while the populations were far
+    ! from converged, once; the output pass's Lambda iterations start after the
+    ! NLTE solve with fixed populations and an empty mask, and count their own
+    ! iterations from 0, so they keep every flag
+    if (self%do_full_sp .and. .not. self%eta_reset_done .and. eta_reset_iter >= 0 &
+        .and. self%iter >= eta_reset_iter) then
+      self%eta_row = 0
+      self%eta_nrow = 0
+      self%eta_src = .false.
+      self%eta_mask = .false.
+      self%eta_gsrc = .false.
+      self%eta_reset_done = .true.
+    endif
+    self%eta_set = i_set
+    allocate(fire(self%fs:self%fe), new(self%fs:self%fe))
+
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
+          do f=self%fs, self%fe
+            chi = self%work(f,x,y,z,1)
+            fire(f) = min(chi, abs(chi) - q_eta*(chi + (1.-self%beta(f,x,y,z))*chi*self%work(f,x,y,z,2))) <= 0.
+          end do
+          if (.not. any(fire)) cycle
+          row = self%eta_row(x,y,z)
+          if (row > 0) then
+            new = fire .and. .not. self%eta_src(:,row,i_set)
+          else
+            new = fire
+          endif
+          if (.not. any(new)) cycle
+          row = cell_row(x,y,z)
+          self%eta_src(:,row,i_set) = self%eta_src(:,row,i_set) .or. new
+          zn = z + self%dir
+          call spread_flags(x, y, z)
+          if (zn >= 1 .and. zn <= self%nz) call spread_flags(x, y, zn)
+        end do
+      end do
+    end do
+
+    ! the upstream ghost plane, which only the slab's first plane reaches
+    if (.not. self%boundaries%is_set(bits%zu)) then
+      z1 = merge(1, self%nz, self%dir > 0)
+      zg = z1 - self%dir
+      do y=1, self%ny
+        do x=1, self%nx
+          do f=self%fs, self%fe
+            chi = self%work(f,x,y,zg,1)
+            fire(f) = min(chi, abs(chi) - q_eta*(chi + chi*self%work(f,x,y,zg,2))) <= 0.
+          end do
+          new = fire .and. .not. self%eta_gsrc(:,x,y,i_set)
+          if (.not. any(new)) cycle
+          self%eta_gsrc(:,x,y,i_set) = self%eta_gsrc(:,x,y,i_set) .or. new
+          call spread_flags(x, y, z1)
+        end do
+      end do
+    endif
+
+    call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> OR the new flags into the cells within eta_rx, eta_ry of (x, y) on plane z
+    !---------------------------------------------------------------------------
+    subroutine spread_flags (x, y, z)
+      integer, intent(in) :: x, y, z
+      integer :: i, j, r
+      do j=-self%eta_ry, self%eta_ry
+        do i=-self%eta_rx, self%eta_rx
+          r = cell_row(modulo(x+i-1, self%nx)+1, modulo(y+j-1, self%ny)+1, z)
+          self%eta_mask(:,r,i_set) = self%eta_mask(:,r,i_set) .or. new
+        end do
+      end do
+    end subroutine spread_flags
+    !---------------------------------------------------------------------------
+    !> The row of a cell, appended if it has none yet
+    !---------------------------------------------------------------------------
+    integer function cell_row (x, y, z)
+      integer, intent(in) :: x, y, z
+      if (self%eta_row(x,y,z) == 0) then
+        if (self%eta_nrow == size(self%eta_src,2)) call grow_rows(2*size(self%eta_src,2))
+        self%eta_nrow = self%eta_nrow + 1
+        self%eta_row(x,y,z) = self%eta_nrow
+      endif
+      cell_row = self%eta_row(x,y,z)
+    end function cell_row
+    !---------------------------------------------------------------------------
+    !> Room for n rows, keeping the rows in use
+    !---------------------------------------------------------------------------
+    subroutine grow_rows (n)
+      integer, intent(in) :: n
+      logical(1), allocatable :: tmp(:,:,:)
+      allocate(tmp(self%fs:self%fe,n,self%n_set), source=.false._1)
+      if (allocated(self%eta_src)) tmp(:,1:self%eta_nrow,:) = self%eta_src(:,1:self%eta_nrow,:)
+      call move_alloc(tmp, self%eta_src)
+      allocate(tmp(self%fs:self%fe,n,self%n_set), source=.false._1)
+      if (allocated(self%eta_mask)) tmp(:,1:self%eta_nrow,:) = self%eta_mask(:,1:self%eta_nrow,:)
+      call move_alloc(tmp, self%eta_mask)
+    end subroutine grow_rows
+  END SUBROUTINE update_eta_mask
+
+  !===============================================================================
   !> Shifts each z-plane of array horizontally (periodically, with bilinear
   !> interpolation) so that the rays of direction vec become vertical, with the
   !> plane at pivot_z left in place.
@@ -3745,6 +3922,7 @@ contains
     logical :: cleanup
     ! ----------------------------------------------------------------------------
     call self%m3d_patch_t%finish()
+    if (allocated(self%eta_row)) deallocate(self%eta_row, self%eta_src, self%eta_mask, self%eta_gsrc)
     !-----------------------------------------------------------------------------
     ! Both twins hold a Jnu, and both are freed here, by whichever of the two
     ! finishes last.  They can reach this point at the same time, though, so the

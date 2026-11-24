@@ -34,10 +34,12 @@ MODULE nlte_patch_mod
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_windows, n_windows_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
+    eta_reset_change, eta_reset_iter, column_by_column, &
     n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
     save_net_rates
-  USE rt_params_mod, only: rt_out
+  USE rt_params_mod, only: rt_out, rt_iter
+  USE ray_mod, only: one_dimensional
   USE bftrans_mod, only: bftrans_type, H_occupation_probability
   USE osmet_mod, only: osmet_type, osmet
   USE m3d_debug_mod
@@ -705,6 +707,13 @@ contains
         sweep_active = n_nlte_patches - n_finished
         sweep_updates = 0
         last_maxerr = sweep_maxerr
+        if (eta_reset_iter < 0 .and. last_maxerr /= 0d0 .and. abs(last_maxerr) < eta_reset_change) then
+          eta_reset_iter = self%iter
+          if (rt_iter%solver == 'linear2' .and. .not. (one_dimensional .or. column_by_column) &
+              .and. console_on(ch_m3d, 2)) &
+            write(console_unit,'(a,i0)') 'eta-step flags of the 3D linear solver restart at iteration ', &
+              eta_reset_iter
+        endif
         last_epos = sweep_epos
         last_elvl = sweep_elvl
         last_eatom = sweep_eatom
