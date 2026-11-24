@@ -162,7 +162,7 @@ MODULE rt_patch_mod
     !> so that the recipe cannot switch between iterations (update_eta_mask).
     !> Sparse: eta_row gives each cell's row of flags, 0 for a cell without any;
     !> rows are appended as cells get flagged and removed only by the one reset.
-    !> Allocated only with rt_iteration_params solver='linear2' in 3D.
+    !> Allocated only with rt_iteration_params solver='linear2'.
     integer, allocatable :: eta_row(:,:,:)           !< (x, y, z): row of the cell's flags, 0 for none
     logical(1), allocatable :: eta_src(:,:,:)        !< (f, row, set): the local test fired at the cell itself
     logical(1), allocatable :: eta_mask(:,:,:)       !< (f, row, set): eta_src spread over the upwind stencils reaching the cell
@@ -272,6 +272,7 @@ MODULE rt_patch_mod
     procedure :: short_char
     procedure :: short_char2
     procedure :: set_fixed_Jnu
+    procedure :: long_char2
     procedure :: long_char_linear
     procedure :: long_char_quadratic
     procedure :: long_char_hermite
@@ -327,6 +328,16 @@ MODULE rt_patch_mod
       real(8), intent(in) :: vec(3) !< direction of the ray
       integer, intent(in) :: i_mu   !< direction index in rt_iter
     end subroutine short_char2
+
+    !=============================================================================
+    !> Linear formal solution along the vertical columns of the slab (1D and
+    !> column_by_column) with the optical path in tau500 and the eta step at
+    !> flagged frequencies, which builds Psi (rt_iteration_params solver='linear2').
+    !=============================================================================
+    module subroutine long_char2 (self, vec)
+      class(rt_patch_t) :: self
+      real(8) :: vec(3) !< direction of the ray
+    end subroutine long_char2
 
     !=============================================================================
     !> Linear formal solution along the vertical columns of the slab (1D,
@@ -1045,8 +1056,7 @@ contains
             call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
             call self%work_to_transfer_units()
             call self%set_upstream_boundary(i_mu, i_set, ng)
-            if (rt_iter%solver == 'linear2' .and. .not. (one_dimensional .or. column_by_column)) &
-              call self%update_eta_mask(i_set)
+            if (rt_iter%solver == 'linear2') call self%update_eta_mask(i_set)
             call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           endif
           call self%set_downstream_boundary(i_mu, i_set)
@@ -1685,7 +1695,9 @@ contains
       ! lambda iteration.  They remain available for the output pass.
       if (one_dimensional .or. column_by_column) then
         select case(rt_iter%solver)
-          case('linear', 'linear2')
+          case('linear2')
+            call self%long_char2(vec)
+          case('linear')
             call self%long_char_linear(vec)
           case default
             error stop 'rt_iteration_params solver: only "linear" and "linear2" build Psi in 1D'
@@ -3556,7 +3568,7 @@ contains
   END SUBROUTINE work_to_transfer_units
 
   !===============================================================================
-  !> Fixes where short_char2 takes the eta step.  A pair (f, cell) fires where chi
+  !> Fixes where short_char2 and long_char2 take the eta step.  A pair (f, cell) fires where chi
   !> <= 0 or |chi| < q_eta*(chi + (1-beta)*eta), the near-transparency test of
   !> the eta step; on the upstream ghost plane, which has no beta, with 1-beta = 1,
   !> which fires at least as often.  A pair that fired once stays fired (eta_src),
@@ -3596,8 +3608,14 @@ contains
         sx = max(sx, abs(rt_iter%vec(1,i)/rt_iter%vec(3,i)))
         sy = max(sy, abs(rt_iter%vec(2,i)/rt_iter%vec(3,i)))
       end do
-      self%eta_rx = floor(sx*dz/self%ds(1)) + 1
-      self%eta_ry = floor(sy*dz/self%ds(2)) + 1
+      if (one_dimensional .or. column_by_column) then
+        ! long characteristics: the upwind point is the previous cell of the column
+        self%eta_rx = 0
+        self%eta_ry = 0
+      else
+        self%eta_rx = floor(sx*dz/self%ds(1)) + 1
+        self%eta_ry = floor(sy*dz/self%ds(2)) + 1
+      endif
     endif
     if (i_set > size(self%eta_src,3)) error stop 'update_eta_mask: set beyond the slab''s sets'
     ! the NLTE iteration drops the flags gathered while the populations were far

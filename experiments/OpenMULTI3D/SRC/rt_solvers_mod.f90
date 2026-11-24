@@ -503,6 +503,162 @@ contains
   END SUBROUTINE short_char2
 
   !===============================================================================
+  !> Linear long characteristics along the vertical columns of the slab (1D and
+  !> column_by_column) with short_char2's treatment of the step: the optical path
+  !> measured against tau500, dtau = xbar*dtau500 with x = chi/chi500 and
+  !>   dtau500 = ds*(chi500_up - chi500)/ln(chi500_up/chi500)
+  !> for chi500 varying exponentially along the step, and at the pairs (f, cell)
+  !> that update_eta_mask has flagged, where chi <= 0 or a line is near
+  !> transparency, the emissivity step with x held at its mean over the interval,
+  !>   Inu = Inu_up*E + (W*e_up + Psi*e)/xbar,   e = eta/chi500,
+  !> in place of the S step Inu = Inu_up*E + W*S_up + Psi*S, which it equals for
+  !> constant x.  An inverted line whose chi passes through zero at the cell then
+  !> leaves Inu continuous in chi, while S = eta/chi passes through a pole.  The
+  !> upwind point is the previous cell of the column, so every value there is the
+  !> cell's own.  chi500 of the ghost plane is the upstream slab's exit plane, or
+  !> beyond a boundary of the domain the outermost cell's continued exponentially
+  !> by one cell.  rt_iteration_params solver='linear2' (the default) selects it
+  !> in 1D.
+  !===============================================================================
+  module subroutine long_char2 (self, vec)
+    class(rt_patch_t) :: self
+    real(8) :: vec(3)
+    real(4) :: Inuup, xxup, ssup, eup, xx, ss, ee, chi, Inu, Psi, Irem, Esc, dt, E, W
+    real(4) :: rxb, rc, rcu, dt500, maser_dtau, Inu_max
+    real(8) :: dsup, dsup1, dsup2, c, cu, r
+    real(4), allocatable :: g500(:,:), sel(:)
+    integer :: zs, ze, zup, row, n3
+    logical :: amr_boundary, get_rates, split_rates, off, special
+    integer, save :: itimer=0
+    integer :: x, y, z, f
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%long_char2', itimer=itimer)
+    get_rates = self%compute_psi
+    split_rates = self%split_rates
+    maser_dtau = -real(maser_dtau_max,4)
+    Inu_max = real(maser_Inu_max,4)
+    allocate(g500(self%nx,self%ny), sel(self%fs:self%fe))
+
+    dsup1 = self%ds(3) * scaling%l / abs(vec(3))
+    amr_boundary = amr/='' .and. self%dir < 0
+    if (amr_boundary) then
+      dsup2 = dsup1
+      if (associated(self%upstream)) dsup2 = self%upstream%ds(3) * scaling%l / abs(vec(3))
+    endif
+
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
+
+    associate (chi500 => self%m3d_parent%composition%chi500)
+    if (associated(self%upstream)) then
+      associate (uc => self%upstream%m3d_parent%composition%chi500)
+        g500 = uc(:,:,merge(size(uc,3), 1, self%dir > 0))
+      end associate
+    else
+      n3 = size(chi500,3)
+      if (n3 < 2) error stop 'long_char2: a domain boundary slab needs two cells'
+      if (self%dir > 0) then
+        g500 = chi500(:,:,1)**2 / chi500(:,:,2)
+      else
+        g500 = chi500(:,:,n3)**2 / chi500(:,:,n3-1)
+      endif
+    endif
+
+    do z=zs, ze, self%dir
+      zup = z - self%dir
+      dsup = dsup1
+      if (amr_boundary .and. z == zs) dsup = dsup2
+
+      do y=1, self%ny
+        do x=1, self%nx
+          ! the step's length in tau500: ds times the logarithmic mean of the two
+          ! chi500, by its series below |r - 1| = 1e-3
+          c = chi500(x,y,z)
+          if (zup < 1 .or. zup > self%nz) then
+            cu = g500(x,y)
+          else
+            cu = chi500(x,y,zup)
+          endif
+          r = cu / c
+          if (abs(r - 1d0) < 1d-3) then
+            dt500 = real(dsup*c*(1d0 + (r - 1d0)*(0.5d0 - (r - 1d0)/12d0)), 4)
+          else
+            dt500 = real(dsup*c*(r - 1d0)/log(r), 4)
+          endif
+          rc = real(1d0/c, 4)
+          rcu = real(1d0/cu, 4)
+          ! the flags as a 4-byte select: < 0 takes the eta step
+          row = 0
+          if (allocated(self%eta_row)) row = self%eta_row(x,y,z)
+          if (row > 0) then
+            sel = merge(-1., 1., self%eta_mask(:,row,self%eta_set))
+          else
+            sel = 1.
+          endif
+          ! One f-loop per rate formulation, so that neither carries the other's
+          ! branch.  Psi leaves them as dInu/deta, 0 where the point has no
+          ! preconditioning: dt<0 and chi<0 break 0<=Psi<=1, and so does x_up<=0
+          ! in the eta step.  rxb = 1/xbar.
+          if (split_rates) then
+            do f=self%fs, self%fe
+              xxup  = self%work(f,x,y,zup,1)*rcu
+              ssup  = self%work(f,x,y,zup,2)
+              Inuup = self%work(f,x,y,zup,3)
+              eup = xxup*ssup
+              chi = self%work(f,x,y,z,1)
+              ss  = self%work(f,x,y,z,2)
+              xx = chi*rc
+              ee = xx*ss
+              dt = max(0.5*(xxup + xx)*dt500, maser_dtau)   ! cap maser amplification
+              call linear_weights(dt, E, W, Psi, Esc)
+              special = sel(f) < 0.
+              rxb = dt500 / lw_select(dt, 1., dt /= 0.)
+              ! Hold the non-local part and the escape factor 1-Psi on their own
+              ! as well: the preconditioned rates need them, and both Inu - Psi*ss
+              ! and 1 - Psi would cancel in an optically thick interval.  Psi=0
+              ! switches the preconditioning off at a point, so Irem then carries
+              ! the whole (clamped) intensity.  The eta step's escape factor is
+              ! 1 - Psi*x/xbar.
+              Irem = lw_select(Inuup*E + W*eup*rxb, Inuup*E + W*ssup, special)
+              Inu = lw_select(Irem + Psi*ee*rxb, Irem + Psi*ss, special)
+              off = min(dt, chi, Inu_max - abs(Inu), lw_select(xxup, 1., special)) <= 0.
+              Esc = lw_select(Esc + 0.5*Psi*(xxup - xx)*rxb, Esc, special)
+              Inu = max(-Inu_max, min(Inu_max, Inu))
+              self%Irem(f,x,y,z) = lw_select(Inu, Irem, off)
+              self%escape(f,x,y,z) = lw_select(1., Esc, off)
+              self%work(f,x,y,z,3) = Inu
+              if (get_rates) self%Psi(f,x,y,z) = lw_select(0., lw_select(Psi*rxb*rc, &
+                Psi / sign(max(abs(chi), tiny(1.0)), chi), special), off)
+            end do ! f-loop
+          else
+            do f=self%fs, self%fe
+              xxup  = self%work(f,x,y,zup,1)*rcu
+              ssup  = self%work(f,x,y,zup,2)
+              Inuup = self%work(f,x,y,zup,3)
+              eup = xxup*ssup
+              chi = self%work(f,x,y,z,1)
+              ss  = self%work(f,x,y,z,2)
+              xx = chi*rc
+              ee = xx*ss
+              dt = max(0.5*(xxup + xx)*dt500, maser_dtau)   ! cap maser amplification
+              call linear_weights(dt, E, W, Psi, Esc)
+              special = sel(f) < 0.
+              rxb = dt500 / lw_select(dt, 1., dt /= 0.)
+              Inu = lw_select(Inuup*E + (W*eup + Psi*ee)*rxb, Inuup*E + W*ssup + Psi*ss, special)
+              self%work(f,x,y,z,3) = max(-Inu_max, min(Inu_max, Inu))
+              off = min(dt, chi, lw_select(xxup, 1., special)) <= 0.
+              if (get_rates) self%Psi(f,x,y,z) = lw_select(0., lw_select(Psi*rxb*rc, &
+                Psi / sign(max(abs(chi), tiny(1.0)), chi), special), off)
+            end do ! f-loop
+          endif
+        end do
+      end do
+    end do ! z-loop
+    end associate
+    call trace%end(itimer)
+  END SUBROUTINE long_char2
+
+  !===============================================================================
   module subroutine long_char_linear (self, vec)
     class(rt_patch_t) :: self
     real(8) :: vec(3)
