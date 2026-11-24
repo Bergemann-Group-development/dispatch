@@ -4,7 +4,7 @@
 !===============================================================================
 MODULE read_external_mod
   USE io_mod
-  USE namelist_check_mod, only: namelist_error
+  USE namelist_check_mod, only: namelist_error, trim_namelist_values
   USE os_mod
   USE mpi_coords_mod
   USE mpi_mod
@@ -82,7 +82,8 @@ contains
     !-----------------------------------------------------------------------------
     class(experiment_t), pointer:: patch
     class(link_t), pointer:: link, next
-    integer :: lunit, iostat, k, ip
+    integer :: lunit, sunit, iostat, k, ip
+    character(len=512) :: iomsg
     real(4) :: vmic_mean
     integer :: patches_per_mpi=1
     integer :: dims=1, nx=-1, ny=-1, nz=-1, snap=0
@@ -165,9 +166,19 @@ contains
     if (atmos_format == 'save') then
       save_file = atmos_file
       read_departures_local = read_departures
-      open(file=trim(save_file)//'/params.nml', newunit=lunit, form='FORMATTED')
-      read (lunit, nml=atmos_params, iostat=iostat)
+      ! the saved group is read from a copy without the padding of its file names,
+      ! which the Intel runtime cannot read (see trim_namelist_values)
+      open(file=trim(save_file)//'/params.nml', newunit=lunit, form='FORMATTED', status='old')
+      open(newunit=sunit, status='scratch', form='FORMATTED')
+      call trim_namelist_values (lunit, sunit)
       close(lunit)
+      rewind (sunit)
+      read (sunit, nml=atmos_params, iostat=iostat, iomsg=iomsg)
+      close(sunit)
+      if (iostat /= 0) then
+        call console_error ('cannot read &atmos_params from '//trim(save_file)//'/params.nml: '//trim(iomsg))
+        error stop
+      end if
       saved_from_file = atmos_file
       saved_from_format = lowercase(atmos_format)
       saved_from_snap = snap
