@@ -35,7 +35,7 @@ experiments/OpenMULTI3D/*
 !experiments/OpenMULTI3D/HOP
 !experiments/OpenMULTI3D/SRC
 !experiments/OpenMULTI3D/TumultStudio
-!experiments/OpenMULTI3D/TumultStudio2
+experiments/OpenMULTI3D/TumultStudio/tmp/
 *.ipynb
 *.lock
 *.eps
@@ -50,9 +50,7 @@ dispatch.x.*
 *temp_directory*
 *.so
 
-# OpenMULTI3D install docs + data-fetch script (override the broad experiments/* and *.txt rules above)
+# OpenMULTI3D install guide (overrides the broad experiments/* rule above)
 !experiments/OpenMULTI3D/README_INSTALL.md
-!experiments/OpenMULTI3D/requirements.txt
-!experiments/OpenMULTI3D/fetch_input_data.py
 __pycache__/
 .claude/worktrees/
