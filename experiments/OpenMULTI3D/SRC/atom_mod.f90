@@ -73,6 +73,14 @@ MODULE atom_mod
       logical :: converged=.false.                       !< maxerr is below convmax
       integer :: elvl                                    !< level of maxerr
       integer :: epos(3)                                 !< mesh point of maxerr, local to the patch
+      !> The (line, cell) pairs whose split preconditioned rates take psi = 0 at all
+      !> their points (bound_bound_rates), one bit each: line kr is bit
+      !> mod(kr-1,32) of word (kr-1)/32+1.  Slot 1 holds the pairs in force, slot 2
+      !> those the RT tasks of the current iteration raised; the slab's nlte_patch
+      !> folds slot 2 into slot 1 at each update (fold_psi_flags).  Allocated only
+      !> for preconditioned split rates in an NLTE iteration.
+      integer(4), dimension(:,:,:,:,:), allocatable :: psi_flags
+      logical :: psi_reset_done=.false.                  !< psi_flags have started afresh at eta_reset_iter
     end type atom_data_t
 
     !===============================================================================

@@ -35,7 +35,7 @@ MODULE nlte_patch_mod
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
     stall_iter, stalled, nlte_best_change, nlte_best_iter, &
-    eta_reset_change, eta_reset_iter, &
+    eta_reset_change, eta_reset_iter, preconditioning, rate_formulation, &
     n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
     save_net_rates
@@ -90,6 +90,7 @@ MODULE nlte_patch_mod
     procedure :: save_abundance_to_file
     procedure :: save_convergence_report
     procedure :: check_mem_NaN
+    procedure :: fold_psi_flags
   end type nlte_patch_t
 
   ! Population convergence is judged per iteration (see execute).  The largest
@@ -103,6 +104,10 @@ MODULE nlte_patch_mod
   logical, save :: sweep_ng=.false. !< an Ng step was applied in the iteration under way
   real(8), save :: last_maxerr=0d0  !< largest change in the previous, complete iteration
   integer, save :: last_epos(3)=0, last_elvl=0, last_eatom=1
+  !> The (line, cell) pairs in force in psi_flags, per line and atom over all slabs
+  !> (finished ones included), and those put in force in the iteration under way
+  integer(8), save, allocatable :: psi_pairs(:,:)
+  integer(8), save :: psi_new=0
 
   logical, save :: exclude_from_line_list=.true. !< drop the atoms' species from the line list (atom_params)
   !> With exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
@@ -729,6 +734,7 @@ contains
       do i=1, self%natom
         if (self%atoms(i)%ng_applied(self%iter)) sweep_ng = .true.
       end do
+      call self%fold_psi_flags()
       sweep_updates = sweep_updates + 1
       last = sweep_updates == sweep_active
       if (last) then
@@ -742,6 +748,7 @@ contains
         ! which may recover, so the stall window starts again after it.
         if (abs(sweep_maxerr) > max(max_update, 1d0) - 1d0) nlte_best_iter = self%iter
         call print_iteration_line(self%iter, self%maxiter)
+        call print_psi_flags()
       endif
       !$omp end critical (nlte_sweep)
       self%global = last_maxerr
@@ -768,6 +775,7 @@ contains
 
     if (self%iter == 0) then
       call self%init_departures()
+      call self%fold_psi_flags()
       ! a stop request left over from an earlier run in this folder is void
       !$omp critical (stop_flag)
       if (.not. stale_stop_checked) then
@@ -850,9 +858,81 @@ contains
       endif
       output = output + cell*bytes
       if (self%maxiter > 0) bytes = bytes + 2*4d0*self%atoms(i)%nrad
+      if (self%maxiter > 0 .and. preconditioning .and. rate_formulation == 'largest') &
+        bytes = bytes + 2*4d0*((self%atoms(i)%nline + 31)/32)
       nlte = nlte + cell*bytes
     end do
   END SUBROUTINE estimate_atom_memory
+
+  !===============================================================================
+  !> The (line, cell) pairs whose split preconditioned rates take psi = 0 at all
+  !> their points (atom_data_t psi_flags, bound_bound_rates).  At iteration 0 the
+  !> flags are allocated; at each later update, inside the nlte_sweep critical
+  !> section, the pairs the RT tasks of the previous iteration raised are put in
+  !> force.  Every RT task of that iteration has finished and none of the next
+  !> has started, so the flags do not depend on the order of the tasks.  The
+  !> pairs raised while the populations are far from converged are dropped once,
+  !> with both slots, at eta_reset_iter (as the linear2 eta flags are).
+  !===============================================================================
+  SUBROUTINE fold_psi_flags (self)
+    class(nlte_patch_t) :: self
+    class(atom_data_t), pointer :: adata
+    integer(4), allocatable :: new(:,:,:)
+    integer :: k, w, b, kr, nline
+    !-----------------------------------------------------------------------------
+    if (.not. preconditioning .or. rate_formulation /= 'largest' .or. self%maxiter <= 0) return
+    do k=1, self%natom
+      adata => self%atoms(k)%data
+      if (.not. associated(adata)) cycle
+      if (.not. allocated(adata%b)) cycle
+      nline = self%atoms(k)%nline
+      if (nline == 0) cycle
+      if (.not. allocated(adata%psi_flags)) then
+        if (self%iter /= 0) cycle
+        allocate(adata%psi_flags(size(adata%b,1),size(adata%b,2),size(adata%b,3),(nline+31)/32,2), &
+                 source=0)
+        !$omp critical (psi_pairs_alloc)
+        if (.not. allocated(psi_pairs)) allocate(psi_pairs(maxval(self%atoms%nline),self%natom), source=0_8)
+        !$omp end critical (psi_pairs_alloc)
+        cycle
+      endif
+      if (.not. adata%psi_reset_done .and. eta_reset_iter >= 0 .and. self%iter >= eta_reset_iter) then
+        do kr=1, nline
+          w = (kr-1)/32 + 1
+          b = mod(kr-1, 32)
+          psi_pairs(kr,k) = psi_pairs(kr,k) - count(btest(adata%psi_flags(:,:,:,w,1), b))
+        end do
+        adata%psi_flags = 0
+        adata%psi_reset_done = .true.
+      endif
+      allocate(new(size(adata%psi_flags,1),size(adata%psi_flags,2),size(adata%psi_flags,3)))
+      do w=1, size(adata%psi_flags,4)
+        new = iand(adata%psi_flags(:,:,:,w,2), not(adata%psi_flags(:,:,:,w,1)))
+        do b=0, min(31, nline-(w-1)*32-1)
+          kr = (w-1)*32 + b + 1
+          psi_pairs(kr,k) = psi_pairs(kr,k) + count(btest(new, b))
+        end do
+        psi_new = psi_new + sum(int(popcnt(new), 8))
+        adata%psi_flags(:,:,:,w,1) = ior(adata%psi_flags(:,:,:,w,1), adata%psi_flags(:,:,:,w,2))
+        adata%psi_flags(:,:,:,w,2) = 0
+      end do
+      deallocate(new)
+    end do
+  END SUBROUTINE fold_psi_flags
+
+  !===============================================================================
+  !> At console level 2, the (line, cell) pairs of psi_flags in force for the next
+  !> iteration, those that came into force at this iteration's folds, and the
+  !> number of lines they belong to.
+  !===============================================================================
+  SUBROUTINE print_psi_flags ()
+    !-----------------------------------------------------------------------------
+    if (allocated(psi_pairs) .and. console_on(ch_m3d, 2)) then
+      write(console_unit,'(a,i0,a,i0,a,i0,a)') '  unpreconditioned (line, cell) pairs: ', &
+        sum(psi_pairs), ' in force, ', psi_new, ' new, on ', count(psi_pairs > 0), ' lines'
+    endif
+    psi_new = 0
+  END SUBROUTINE print_psi_flags
 
   !===============================================================================
   !> Finishes the patch: moves the departure coefficients to the departures the
