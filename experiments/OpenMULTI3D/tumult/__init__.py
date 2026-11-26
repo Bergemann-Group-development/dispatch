@@ -21,6 +21,8 @@ Public entry points by domain:
                      (ctypes interface to libhop.so)
 - plotting:          IDL_DASHES (IDL's LINESTYLE 0-5 as matplotlib dash tuples)
 - constants:         the `const` submodule (frozen CGS; see its docstring)
+- downloads:         the `downloads` submodule: table and fetch the published input data
+                     and model-atmosphere grids
 """
 from . import const
 from .run import Run, RunGrid, read_list
@@ -84,3 +86,12 @@ __all__ = [
     "kpno_spectral_filter", "const", "Atom", "read_atom",
     "HopEOS", "HopError", "logstep", "wavelength_grid", "IDL_DASHES",
 ]
+
+
+def __getattr__(name):
+    # tm.downloads is imported on first access, so that `python -m tumult.downloads` does
+    # not find the module already imported by the package.
+    if name == "downloads":
+        import importlib
+        return importlib.import_module(".downloads", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

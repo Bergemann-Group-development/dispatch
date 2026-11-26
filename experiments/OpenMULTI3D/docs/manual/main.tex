@@ -387,13 +387,13 @@ The repository tracks a minimal data set in \File{input/}: five MARCS models (dw
 
 The datasets the examples of this manual use, about 0.8\,GB, are fetched with
 \begin{minted}{bash}
-python -m tumult.synthesis.input_data fetch atoms absmet linemasks kpno
+python -m tumult.downloads fetch atoms absmet linemasks kpno
 \end{minted}
 and the MARCS grid, which the Python workflows of Sec.~\ref{sec:pyabund} interpolate for stars other than the Sun, with
 \begin{minted}{bash}
-python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS
+python -m tumult.downloads fetch marcs
 \end{minted}
-(\Code{grid\_catalog list} names the grids; the 3D grids are fetched per model and snapshot, with \Code{--model} and \Code{--snapshots}). The \Code{input\_data} datasets come from one MPCDF Keeper share. Without \Code{--dest}, \Code{input\_data} writes each dataset to the folder in the last column of the table, where the code and the examples read it. \Code{list} shows the files, \Code{--file NAME} selects single files (\Code{Mg/mg-lmask.txt} for a line mask) and \Code{--dry-run} prints the plan. Downloaded files are not tracked by git.
+The MARCS grid is one archive and comes whole; a 3D grid is fetched per model and snapshot, the model given by its exact parameters (\Code{--teff 5777 --logg 4.4 --feh 0 --snapshots 2}), and a missing model is answered with its nearest neighbours along each parameter. The datasets of files come from one MPCDF Keeper share. Without \Code{--dest}, each dataset and grid goes to the folder in the last column of the table, where the code and the examples read it. \Code{list} names the datasets and grids, \Code{list ID} shows the files or models of one with their sizes and what is on disk, and \Code{--file NAME} selects single files (\Code{Mg/mg-lmask.txt} for a line mask). In Python, \Code{tm.downloads.table(ID)} returns the same listing as a DataFrame and \Code{tm.downloads.fetch(ID, ...)} the paths of the fetched files, for example the atmosphere file of a 3D model with \Code{tm.downloads.fetch("stagger-dwarfs", teff=5777, logg=4.4, feh=0.0)}. Downloaded files are not tracked by git.
 
 
 \subsection{Updating}
@@ -515,7 +515,7 @@ The output is arranged in \emph{sets}: an NLTE run writes the NLTE spectrum, its
 The demo computes the Ba line alone. A spectrum to compare with observations adds the lines of other species, and gives the NLTE iterations a line-blanketed background: the absorption by millions of weak metal lines, which shapes the ultraviolet radiation that photo-ionises the atoms. Download the metal-opacity tables that supply it (Sec.~\ref{sec:inputdata}):
 
 \begin{minted}{bash}
-python -m tumult.synthesis.input_data fetch absmet
+python -m tumult.downloads fetch absmet
 \end{minted}
 
 The download holds four tables: \File{m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin} for solar metallicity and \File{m-1.00a+0.40\dots}, \File{m-2.00\dots} and \File{m-3.00\dots} for $[\mathrm{Fe/H}]=-1$, $-2$ and $-3$ with $[\alpha/\mathrm{Fe}]=+0.4$; a run uses the one nearest to the model's [Fe/H] (Sec.~\ref{sec:absmet}). Copy \File{examples/sun\_ba\_1d.nml} to \File{sun\_ba\_blends.nml}, remove the \texttt{!} before the last two lines and add the solar table, so that the file reads
@@ -808,7 +808,7 @@ The worked example that follows applies these checks to a real case.
 This section follows an NLTE analysis from the model atom to an abundance, and produces Fig.~\ref{fig:mg_spectra} of the introduction on the way. It uses the Mg\,\textsc{i} lines at 5172.7, 5528.4 and 5711.1\,{\AA} in the solar flux spectrum, the 86-level atom \File{atom.mg86g} and the solar MARCS model, whose microturbulence is 1\,\si{\km\per\s}. The observed spectrum is the KPNO solar flux atlas \citep{Kurucz2005}, in air wavelengths and normalised to the continuum. Fetch it, the metal-opacity tables and the line mask first (Sec.~\ref{sec:inputdata}):
 
 \begin{minted}{bash}
-python -m tumult.synthesis.input_data fetch kpno absmet linemasks
+python -m tumult.downloads fetch kpno absmet linemasks
 \end{minted}
 
 The steps are: compute a reference run and an abundance ladder; inspect the departure coefficients; compare the spectra with the atlas; check where the lines form; and derive abundances and NLTE corrections from the curves of growth. \File{docs/manual/figs/science\_case.py} runs every step and draws the figures of this section; the code below is taken from it. The eight 1D runs take about 15\,s on a laptop.

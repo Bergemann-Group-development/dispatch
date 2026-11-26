@@ -14,19 +14,13 @@ files for MARCS, one folder per model holding its snapshots for the 3D grids. On
 files the Fortran readers open are fetched (``atm3d``/``mesh`` pairs for Stagger,
 ``.atmos``/``.mesh`` pairs for M3DIS); a grid's EOS and opacity-binning tables are not.
 One snapshot is 33 MB for Stagger and 100 to 200 MB for M3DIS, so a whole grid at one
-snapshot per model is a few GB for Stagger and about 30 GB for M3DIS; a stellar
-parameter box and a snapshot count keep a download small.
+snapshot per model is a few GB for Stagger and about 30 GB for M3DIS; a choice of models
+and a snapshot count keep a download small.
 
-Command line::
-
-    python -m tumult.synthesis.grid_catalog list
-    python -m tumult.synthesis.grid_catalog models m3dis-plato
-    python -m tumult.synthesis.grid_catalog plan  m3dis-plato DEST --snapshots 2 --teff 5000:6500
-    python -m tumult.synthesis.grid_catalog fetch m3dis-plato DEST --model PLATO_t57.77g44.40m0.000_v1.0
+The command line and the Python entry point are :mod:`tumult.downloads`.
 """
 from __future__ import annotations
 
-import argparse
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -38,7 +32,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import sys
 
 import pandas as pd
 
@@ -522,74 +515,3 @@ def delete_grid(spec, root):
 
 
 # --- command line -----------------------------------------------------------------------
-
-def _range(text):
-    lo, _, hi = text.partition(":")
-    return (float(lo) if lo else None, float(hi) if hi else None)
-
-
-def _in_box(model, box):
-    """Whether ``model`` lies in ``box``: ``{"teff": (lo, hi), ...}`` with either bound
-    ``None`` for open; a missing key is unconstrained."""
-    for key in STAR_KEYS:
-        lo, hi = box.get(key) or (None, None)
-        value = getattr(model, key)
-        if (lo is not None and value < lo) or (hi is not None and value > hi):
-            return False
-    return True
-
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="Fetch a published model-atmosphere grid.")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("list", help="the grids in the catalogue")
-    sub.add_parser("models", help="the models of a grid").add_argument(
-        "grid", choices=sorted(CATALOG))
-    for name in ("plan", "fetch"):
-        p = sub.add_parser(name)
-        p.add_argument("grid", choices=sorted(CATALOG))
-        p.add_argument("dest", type=Path, help="the grid folder to fill")
-        p.add_argument("--snapshots", type=int, default=None,
-                       help=f"snapshots per model (default {DEFAULT_SNAPSHOTS})")
-        p.add_argument("--model", action="append", default=[], metavar="NAME",
-                       help="a model to fetch (repeatable; default: every model)")
-        for key in ("teff", "logg", "feh"):
-            p.add_argument(f"--{key}", type=_range, metavar="LO:HI",
-                           help=f"keep models with {key} in LO:HI (either side open)")
-    args = ap.parse_args(argv)
-    if args.cmd == "list":
-        for spec in CATALOG.values():
-            print(f"{spec.id:16s} {spec.name:32s} {spec.format:9s} {spec.page}")
-        return 0
-    listing = list_models(args.grid)
-    if args.cmd == "models":
-        for model in listing.models:
-            print(f"{model.name:32s} {model.teff:6.0f} {model.logg:5.2f} {model.feh:+5.2f} "
-                  f"snapshots {model.available}")
-        return 0
-    box = {k: getattr(args, k) for k in ("teff", "logg", "feh") if getattr(args, k)}
-    names = [m.name for m in listing.models
-             if (not args.model or m.name in args.model) and _in_box(m, box)]
-    p = plan(listing, args.dest, args.snapshots, names)
-    print(p.summary())
-    if args.cmd == "plan":
-        for model in p.models:
-            print(f"  {model.name:32s} snapshots {p.chosen[model.name]} "
-                  f"of {model.available}")
-        return 0
-    last = [None]
-
-    def progress(done, total, label):
-        pct = 100 * done / total if total else 0
-        line = f"\r{pct:5.1f}%  {human(done)}/{human(total)}  {label}"
-        if line != last[0]:
-            sys.stdout.write(line.ljust(100))
-            sys.stdout.flush()
-            last[0] = line
-    record = fetch(p, progress=progress)
-    print(f"\nregistered-grid record: {json.dumps(record)}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

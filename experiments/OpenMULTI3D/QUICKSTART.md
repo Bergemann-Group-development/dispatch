@@ -362,12 +362,12 @@ plt.show()
 print(lte.runs, nlte.provenance["departures"])
 ```
 
-`preparation` names the model HOP prunes the line list on, with `True` the MARCS model itself; without it the runs read the full list. The stellar parameters are always given explicitly, since the workflow never reads them from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects: `.spectrum` is the normalised flux over the window, `.runs` the native run folders under `data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance` records the line-list pruning and whether departures were solved or reused. `.crop()` crops the spectrum again from its runs and takes the arguments of a run's `crop` (step 3); an NLTE run also computes the LTE spectrum, so `nlte.crop(LTE=True)` is the LTE comparison without a second synthesis. The first call takes a few seconds; repeating either call returns the cached result at once. The NLTE request solves the barium departures once and applies them in the formal solution that produces the spectrum; the LTE request skips the solve. The configuration names no metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs the downloaded tables (`python -m tumult.synthesis.input_data fetch absmet`) and `absmet_folder="input/absmet_files"` in `SynthConfig`, as in the manual.
+`preparation` names the model HOP prunes the line list on, with `True` the MARCS model itself; without it the runs read the full list. The stellar parameters are always given explicitly, since the workflow never reads them from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects: `.spectrum` is the normalised flux over the window, `.runs` the native run folders under `data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance` records the line-list pruning and whether departures were solved or reused. `.crop()` crops the spectrum again from its runs and takes the arguments of a run's `crop` (step 3); an NLTE run also computes the LTE spectrum, so `nlte.crop(LTE=True)` is the LTE comparison without a second synthesis. The first call takes a few seconds; repeating either call returns the cached result at once. The NLTE request solves the barium departures once and applies them in the formal solution that produces the spectrum; the LTE request skips the solve. The configuration names no metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs the downloaded tables (`python -m tumult.downloads fetch absmet`) and `absmet_folder="input/absmet_files"` in `SynthConfig`, as in the manual.
 
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
 interpolated at the star (`AtmosphereGrid("input/atmos/MARCS")`, after
-`python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (an `Atmosphere` of a 3D format such as `"M3DIS"`), and as the input of the
+`python -m tumult.downloads fetch marcs`), on a 3D snapshot (an `Atmosphere` of a 3D format such as `"M3DIS"`), and as the input of the
 abundance and stellar-parameter workflows, which the manual's Python Workflows section describes. `synthesis.clear_cache(config)` removes this example's cache, the runs and the pruned line lists, so the next call computes them again.
 
 ## Optional: a 3D snapshot
@@ -429,4 +429,4 @@ this sampling is not a converged 3D result: a 3D abundance analysis averages ove
 several snapshots and checks the sampled mesh. An `Atmosphere` of a 3D format in the workflow
 interface takes the mesh as its `resolution`, a snapshot grid averages a node's spectrum
 over its selected snapshots (`tumult.synthesis.snapshot_grid`), and
-`tumult.synthesis.grid_catalog` fetches the published 3D grids per model and snapshot.
+`tumult.downloads` fetches the published 3D grids per model and snapshot.
