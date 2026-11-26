@@ -2869,8 +2869,8 @@ contains
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
-    integer :: i, fs, fe, index
-    logical :: split_rates, per_direction, own_norm, do_scat
+    integer :: i, fs, fe, index, pw, pb
+    logical :: split_rates, per_direction, own_norm, do_scat, use_flags, in_force, raise
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
     integer, save :: itimer=0
@@ -2901,6 +2901,10 @@ contains
     do_scat = self%do_line_scat
     ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
     per_direction = .not. (self%do_full_sp .and. fixed_Jnu > 0)
+    ! the (line, cell) pairs of the NLTE iteration that take unpreconditioned rates
+    ! (atom_data_t psi_flags); the output pass does not iterate the populations
+    use_flags = .false.
+    if (self%do_full_sp .and. associated(atom%data)) use_flags = allocated(atom%data%psi_flags)
     wtot = sum(rt_iter%wmu)
     allocate(wmunu(self%fs:self%fe), vph(self%fs:self%fe), wqf(self%fs:self%fe))
     ! The preconditioning correction has to subtract the same local term the formal
@@ -3035,17 +3039,32 @@ contains
             ! 1 - Psi*chi_t is built the same way, as (chi_other + escape*chi_t)/chi
             ! with escape = 1 - Psi*chi from the solver: in the core of a very
             ! thick line both 1 - Psi*chi and 1 - chi_t/chi are near the fp32
-            ! rounding of one, and so is their true value, 1/dtau.  Where Psi is
-            ! zero (fixed_Jnu) the unpreconditioned integrands are taken, and so
-            ! they are where the transition itself is inverted (chi_t < 0) under
-            ! a positive total extinction: its local operator then amplifies the
-            ! change of its own populations, and the iterations settle into a
-            ! period-2 cycle of the inverted pair instead of converging.  The
-            ! tracked contributions carry no beta, and the line-scattering
-            ! emissivity is not among them: it emits into the source term but
-            ! adds no extinction of its own.
+            ! rounding of one, and so is their true value, 1/dtau.  The tracked
+            ! contributions carry no beta, and the line-scattering emissivity is
+            ! not among them: it emits into the source term but adds no
+            ! extinction of its own.
+            !
+            ! Where psi is zero the unpreconditioned integrands are taken: where
+            ! the solver leaves Psi = 0 (fixed_Jnu, or a point its local test
+            ! excludes), and where the transition itself is inverted (chi_t < 0),
+            ! whose local operator would amplify the change of its own
+            ! populations.  Switching per point lets a pair's operator change
+            ! between iterations as a point near the switch crosses it, and the
+            ! iterations then cycle between the two branches: Mg 5g1G-7h1H, which
+            ! overlaps its inverted triplet twin 5g3G-7h3H, alternated with
+            ! period 2 at 0.5-1 % in 3D.  So a (line, cell) pair with psi = 0 at
+            ! any of its points, in any direction, is raised in psi_flags, and
+            ! from the next iteration on takes the unpreconditioned integrands at
+            ! all its points (atom_data_t, nlte_patch fold_psi_flags).
             if (split_rates .and. preconditioning) then
               index = self%split_offset(iatom) + i
+              in_force = .false.
+              if (use_flags) then
+                pw = (line%ntrans-1)/32 + 1
+                pb = mod(line%ntrans-1, 32)
+                in_force = btest(atom%data%psi_flags(x,y,z,pw,1), pb)
+              endif
+              raise = .false.
               do f=fs, fe
                 psi = self%Psi(f,x,y,z)
                 eta_u = vph(f)*eta_coef
@@ -3057,7 +3076,8 @@ contains
                   self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z)) - eta_other
                 other = eta_other
                 if (do_scat) other = other + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
-                if (chi_t < 0.) psi = 0.
+                if (chi_t < 0. .or. in_force) psi = 0.
+                raise = raise .or. psi == 0.
                 up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
@@ -3066,6 +3086,13 @@ contains
                 sum_T = sum_T + vvv*spont*(nb*inv_nref)
                 sum_U = sum_U + vvv*(up - nb*spont)
               end do
+              ! the rt_patches of the slab raise into the same word concurrently
+              if (use_flags .and. raise .and. .not. in_force) then
+                if (.not. btest(atom%data%psi_flags(x,y,z,pw,2), pb)) then
+                  !$omp atomic
+                  atom%data%psi_flags(x,y,z,pw,2) = ior(atom%data%psi_flags(x,y,z,pw,2), ishft(1, pb))
+                endif
+              endif
             else if (split_rates) then
               do f=fs, fe
                 vvv = vph(f) * wmunu(f)
