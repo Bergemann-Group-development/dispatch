@@ -34,7 +34,7 @@ from pathlib import Path
 
 from .namelist import NameList
 
-CHECKOUT = Path(__file__).resolve().parents[1]
+from .launch import CHECKOUT
 EXECUTABLE = Path('HOP') / 'standalone' / 'build' / 'hop_prune.x'
 SAMPLE_COUNT = 8      # depths sampled per 1D atmosphere; see hop_prune.f90 &prune_params
 PROVENANCE_SUFFIX = '.provenance.nml'

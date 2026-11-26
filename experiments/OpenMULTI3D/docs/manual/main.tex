@@ -1059,17 +1059,17 @@ To summarise: the example solved the statistical equilibrium of Mg, confirmed co
 
 \subsection{Launching single runs}\label{sec:launching}
 
-\py{tm.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}:
+\py{tm.launch} layers a dictionary of namelist settings over default namelists, later ones winning, writes it and runs \File{dispatch.x}. A default is a preset name (Sec.~\ref{sec:presets}), a namelist file or the folder of an earlier run, whose \File{params.nml} it takes:
 
 \begin{minted}{Python}
 folder, ran = tm.launch(
     "ba_test",
-    default=[tm.preset("1d"), tm.preset("nlte")],
+    default=["1d", "nlte"],
     nml_settings=dict(atom_params=dict(abundance=2.41)),
 )
 \end{minted}
 
-It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). A run that \File{dispatch.x} ends with an error raises a \py{RuntimeError} that quotes the error report of the log. \py{tm.monitor(folder)} reports progress as the pair (done, total). \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tm.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
+It sets \Code{OMP\_STACKSIZE} and returns the run folder and whether a run was done (\py{ran=False}: a complete run of that name existed). A run that \File{dispatch.x} ends with an error raises a \py{RuntimeError} that quotes the error report of the log. \py{tm.monitor(folder)} reports progress as the pair (done, total). With \py{run_async=True} it returns at once with a \py{tm.Job} in place of \py{ran}: \py{job.progress()} gives the same pair, \py{job.tail()} the last lines of the log, \py{job.running} whether it still runs, and \py{job.read()} the finished run, or the error report when it has failed. Shown in a notebook, the job states how far it is. \py{tm.CHECKOUT} is the OpenMULTI3D directory, where \File{dispatch.x} runs and relative input paths start. \Code{tumult.namelist.NameList} reads and writes namelist files. \py{tm.preset(name)} finds a preset (Sec.~\ref{sec:presets}).
 
 \subsection{Requests}\label{sec:primer}
 

@@ -16,12 +16,11 @@ these datasets and the atmosphere grids of :mod:`.grid_catalog` alike.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+from ..launch import CHECKOUT
 from . import linelist_catalog
 from .linelist_catalog import ShareFolder
 
-CHECKOUT = Path(__file__).resolve().parents[2]
 _KEEPER = dict(server=linelist_catalog.SOURCE.server, token=linelist_catalog.SOURCE.token,
                citation=linelist_catalog.SOURCE.citation)
 
