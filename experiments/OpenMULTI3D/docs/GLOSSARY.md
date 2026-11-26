@@ -225,7 +225,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   interpolate like a 1D grid's, each node's spectrum being the mean over its selected
   snapshots; there is no vmic lattice, since the velocity field replaces microturbulence.
 - *snapshot count*: the policy `snapshots="k"` of a snapshot grid, and the `--snapshots k`
-  of a grid download (`tumult.synthesis.grid_catalog`). Both take the first `k` entries of
+  of a grid download (`tumult.downloads`). Both take the first `k` entries of
   `snapshot_grid.halton_order`, an Owen-scrambled base-2 Halton ordering of the node's
   available snapshots with a fixed seed: prefixes nest (fetching or selecting `k + 1`
   keeps the `k`) and spread over the time series without equal spacing, which would alias

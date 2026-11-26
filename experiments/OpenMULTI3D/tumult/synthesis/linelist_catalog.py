@@ -11,7 +11,7 @@ resumable transfer per file. Downloading into the folder the synthesis reads its
 list from makes each list available as soon as it is complete: the readers take a
 folder's direct children, and a transfer is a ``.part`` file until it is whole.
 
-The command line is :mod:`.input_data`, which serves this and the other share folders.
+The command line and the Python entry point are :mod:`tumult.downloads`.
 """
 from __future__ import annotations
 

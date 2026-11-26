@@ -21,7 +21,7 @@ atmospheres, `atom.mg86g`, the solar line list, the Fe masks and a default 4000â
 range. It preflights what the selected workflows need, times each calculation and writes a
 `benchmark.json` beside its saved result, reporting computational completion separately
 from the scientific outcome (termination, convergence, exclusions by flag). The target is
-the KPNO atlas in `input/spectra/` (`python -m tumult.synthesis.input_data fetch kpno`):
+the KPNO atlas in `input/spectra/` (`python -m tumult.downloads fetch kpno`):
 
 ```sh
 python -m benchmarks.api.run_reference_benchmarks \

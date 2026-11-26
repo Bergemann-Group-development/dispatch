@@ -1,4 +1,4 @@
-"""The published input data that does not live in git, and a command line to fetch it.
+"""The published input data that does not live in git: the Keeper share folders.
 
 Besides the atmosphere grids (:mod:`.grid_catalog`), OpenMULTI3D's larger inputs are
 folders of plain files on one public Seafile share (MPCDF Keeper): the master line lists,
@@ -10,24 +10,14 @@ under the checkout's ``input/`` directory; the line masks keep their per-element
 sub-folders. The listing, planning and resumable transfer are those of
 :mod:`.linelist_catalog`, which also serve the TumultStudio Preferences pages.
 
-Command line::
-
-    python -m tumult.synthesis.input_data list [KIND ...]
-    python -m tumult.synthesis.input_data fetch KIND [KIND ...] [--file NAME ...] [--dry-run]
-    python -m tumult.synthesis.input_data fetch atoms --dest DIR
-
-``KIND`` is ``linelists``, ``ges``, ``atoms``, ``absmet``, ``linemasks``, ``windows``,
-``kpno``, ``iag`` or ``gbs``. A ``--file`` in ``linemasks`` names its sub-folder, as in ``Mg/mg-lmask.txt``. Without ``--dest`` the files go to the
-dataset's folder under ``input/``; a file already complete there is not fetched again.
+The command line and the Python entry point are :mod:`tumult.downloads`, which serves
+these datasets and the atmosphere grids of :mod:`.grid_catalog` alike.
 """
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
-import sys
 
-from .grid_catalog import human
 from . import linelist_catalog
 from .linelist_catalog import ShareFolder
 
@@ -68,45 +58,3 @@ DATASETS = {d.id: d for d in (
     Dataset("gbs", ShareFolder(id="keeper-gbs", name="Gaia FGK benchmark stars v3",
                                path="/spectra/GBSv3/", **_KEEPER), "spectra/GBSv3"),
 )}
-
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="fetch the published OpenMULTI3D input data")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    ls = sub.add_parser("list", help="list the files of one or more datasets")
-    ls.add_argument("kinds", nargs="*", choices=list(DATASETS), default=[],
-                    help="datasets to list; default: all")
-    f = sub.add_parser("fetch", help="download datasets")
-    f.add_argument("kinds", nargs="+", choices=list(DATASETS))
-    f.add_argument("--dest", type=Path, help="destination folder (one dataset only)")
-    f.add_argument("--file", action="append", help="a file name; default: every file")
-    f.add_argument("--dry-run", action="store_true", help="print the plan only")
-    args = ap.parse_args(argv)
-    kinds = args.kinds or list(DATASETS)
-    if args.cmd == "fetch" and args.dest is not None and len(kinds) > 1:
-        ap.error("--dest takes a single dataset")
-
-    for kind in kinds:
-        dataset = DATASETS[kind]
-        listing = linelist_catalog.list_files(dataset.source)
-        if args.cmd == "list":
-            print(f"{dataset.source.name} ({kind}):")
-            for entry in listing.files:
-                print(f"  {human(entry.size):>10}  {entry.name}")
-            print(f"  {human(listing.size):>10}  total, {len(listing.files)} files")
-            continue
-        p = linelist_catalog.plan(listing, args.dest or dataset.default_dest, args.file)
-        print(p.summary())
-        if args.dry_run:
-            continue
-
-        def progress(done, total, name):
-            sys.stdout.write(f"\r{100 * done / total:5.1f}%  {name:<40}")
-            sys.stdout.flush()
-        linelist_catalog.fetch(p, progress=progress)
-        print()
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
