@@ -2,8 +2,9 @@
 
 Each :class:`GridSpec` names a grid, its archive and the registered-grid record that
 reads it once on disk (``format`` and ``pattern``, see :mod:`.workflows`). A download is
-planned before any bytes move: :func:`list_models` reads the remote grid once,
-:func:`plan` takes the chosen models and the snapshot count, checks what the destination
+planned before any bytes move: :func:`list_models` reads the remote grid once
+(:meth:`Listing.table` shows its models, :meth:`Listing.select` picks one by its
+parameters), :func:`plan` takes the chosen models and the snapshot count, checks what the destination
 already holds and totals the transfer, and :func:`fetch` carries the plan out, resumably,
 recording the result in the grid folder's manifest. Raising the snapshot count later only
 adds snapshots, since :func:`snapshot_grid.halton_order` picks nested prefixes.
@@ -32,17 +33,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import gzip
 import json
+import math
 import os
 from pathlib import Path
 import re
 import shutil
 import sys
 
+import pandas as pd
+
 from .snapshot_grid import DEFAULT_SNAPSHOTS, halton_order
 from .workflows import DEFAULT_PATTERN, M3DIS_PATTERN, STAGGER_PATTERN, compile_pattern
 from . import remote
 
 MANIFEST = "grid_manifest.json"
+STAR_KEYS = ("teff", "logg", "feh")     # the parameters that place a model in a grid
 
 
 @dataclass(frozen=True)
@@ -223,6 +228,44 @@ class Listing:
 
     def find(self, name):
         return next((m for m in self.models if m.name == name), None)
+
+    def table(self):
+        """The models as a DataFrame, one row per model: ``name``, ``teff``, ``logg``,
+        ``feh``, ``snapshots`` (the number available) and ``size`` (the bytes of one
+        snapshot). Empty for a 1D grid."""
+        return pd.DataFrame(
+            [(m.name, m.teff, m.logg, m.feh, len(m.snapshots), m.size(1)) for m in self.models],
+            columns=["name", "teff", "logg", "feh", "snapshots", "size"])
+
+    def select(self, teff, logg, feh):
+        """The model at exactly ``teff``, ``logg`` and ``feh``, the values its name
+        carries (``t5777g44m00``: 5777, 4.4, 0.0). Without one it raises
+        :class:`LookupError` naming the nearest models below and above along each
+        parameter, with the other two held."""
+        star = {"teff": teff, "logg": logg, "feh": feh}
+
+        def matches(model, keys):
+            return all(math.isclose(getattr(model, k), star[k], abs_tol=1e-6) for k in keys)
+
+        model = next((m for m in self.models if matches(m, STAR_KEYS)), None)
+        if model is not None:
+            return model
+        lines = []
+        for key in STAR_KEYS:
+            row = [m for m in self.models if matches(m, [k for k in STAR_KEYS if k != key])]
+            below = max((m for m in row if getattr(m, key) < star[key]),
+                        key=lambda m: getattr(m, key), default=None)
+            above = min((m for m in row if getattr(m, key) > star[key]),
+                        key=lambda m: getattr(m, key), default=None)
+            names = [f"{m.name} ({key}={getattr(m, key):g})" for m in (below, above) if m]
+            if names:
+                lines.append(f"  {key}: " + ", ".join(names))
+        text = f"{self.spec.name} has no model at teff={teff:g}, logg={logg:g}, feh={feh:+g}"
+        if lines:
+            text += "; the nearest along one parameter:\n" + "\n".join(lines)
+        else:
+            text += ", and none shares two of these parameters"
+        raise LookupError(text)
 
 
 def list_models(grid_id, cancel=None):
@@ -488,7 +531,7 @@ def _range(text):
 def _in_box(model, box):
     """Whether ``model`` lies in ``box``: ``{"teff": (lo, hi), ...}`` with either bound
     ``None`` for open; a missing key is unconstrained."""
-    for key in ("teff", "logg", "feh"):
+    for key in STAR_KEYS:
         lo, hi = box.get(key) or (None, None)
         value = getattr(model, key)
         if (lo is not None and value < lo) or (hi is not None and value > hi):
