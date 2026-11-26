@@ -26,13 +26,14 @@ PROGRAM dispatch
   USE timer_mod
   USE mpi_debug_mod
   USE m3d_patch_mod, only: write_linelist_out, n_nlte_patches, converged, convlim, convmax, &
-    nlte_last_change, nlte_last_iter, n_convmax_finished, stop_requested, stop_exit
+    nlte_last_change, nlte_last_iter, n_convmax_finished, stop_requested, stop_exit, &
+    stalled, nlte_best_change, nlte_best_iter, stall_iter
   USE rt_params_mod, only: rt_iter
   USE rt_column_mod, only: report_memory_estimate, check_memory_limit
   class(task_list_t), pointer:: task_list => null()
   real(8):: memory_estimate
-  character(len=160):: text
-  character(len=16):: peak, estimate, nit, change, limit
+  character(len=320):: text
+  character(len=16):: peak, estimate, nit, change, limit, best, nbest, nstall
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
@@ -65,6 +66,17 @@ PROGRAM dispatch
     text = 'OpenMULTI3D stopped on request after ' // trim(nit) // ' NLTE iterations (largest ' // &
       'relative change ' // trim(adjustl(change)) // ' %); departures written'
     if (stop_exit) text = trim(text) // ', no output spectrum'
+    call console_warn (ch_m3d, trim(text))
+  else if (stalled) then
+    write(change,'(es10.2)') abs(nlte_last_change)*100
+    write(limit,'(es10.2)') convlim*100
+    write(best,'(es10.2)') nlte_best_change*100
+    write(nbest,'(i0)') nlte_best_iter
+    write(nstall,'(i0)') stall_iter
+    text = 'OpenMULTI3D terminated, but the NLTE iterations did not converge: they stalled after ' // &
+      trim(nit) // ' iterations, with no change below ' // trim(adjustl(best)) // ' % (iteration ' // &
+      trim(nbest) // ') in ' // trim(nstall) // ' iterations; the last change was ' // &
+      trim(adjustl(change)) // ' % (convlim ' // trim(adjustl(limit)) // ' %)'
     call console_warn (ch_m3d, trim(text))
   else if (n_nlte_patches == 0 .or. rt_iter%maxiter == 0 .or. converged .or. &
       (nlte_last_change /= 0d0 .and. abs(nlte_last_change) < convlim)) then
