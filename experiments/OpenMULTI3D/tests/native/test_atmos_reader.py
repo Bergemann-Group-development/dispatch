@@ -42,3 +42,20 @@ def test_missing_file_raises_with_the_reader_message():
     from hopacity import HopError, read_atmosphere
     with pytest.raises(HopError, match='File not found'):
         read_atmosphere('no_such_model.mod')
+
+
+def test_tumult_reads_a_model_file_like_a_run():
+    """tm.read_atmosphere holds a model file as run.atmos holds a run's atmosphere,
+    deepest point first and heights in Mm above tau_500 = 1; its tau_500, integrated from
+    HOP's opacity, follows the MARCS model's own lgTau5 to 0.1 dex."""
+    import tumult as tm
+    lines = MARCS.read_text().splitlines()
+    i = next(j for j, line in enumerate(lines) if 'Number of depth points' in line)
+    nz = int(lines[i].split()[0])
+    ltau5 = np.array([lines[i + 3 + k].split()[2] for k in range(nz)], float)[::-1]
+    atmos = tm.read_atmosphere(MARCS)
+    assert atmos.dim == '1D' and atmos.temp.shape == (nz,)
+    assert np.all(np.diff(atmos.zz) > 0) and np.all(np.diff(atmos.ltau) < 0)
+    assert abs(np.interp(0.0, atmos.ltau[::-1], atmos.height[::-1])) < 0.01
+    inner = (ltau5 > -4) & (ltau5 < 1)
+    np.testing.assert_allclose(atmos.ltau[inner], ltau5[inner], atol=0.1)

@@ -47,8 +47,9 @@ it falls short:
 
 - `tumult.Run`: `plot_depart`, `plot_resolved`, `plot_cog_corr`, `plot_line_labels`,
   `plot_line_stem`, `plot_cntrbf`, `plot_cntrbf_map`
-- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_mean`, `plot_ltau_cube`,
-  `plot_geo_cube`, `plot_ltau_hist`, the transition's `plot_clv` and `plot_resolved`,
+- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_slice`, `plot_ltau_mean`,
+  `plot_ltau_cube`, `plot_geo_cube`, `plot_ltau_hist` (all take `ax=`; `run.atmos`, or
+  `tm.read_atmosphere(path)` for a model file without a run), the transition's `plot_clv` and `plot_resolved`,
   the atom's `plot_grotrian`
 - `tumult/plotting_scripts.py`: `comparison_scatter`, `scatter_density`, `quickplot`,
   `plot_line_annotations`, `plot_arrow`

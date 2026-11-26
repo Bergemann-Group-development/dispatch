@@ -1620,7 +1620,18 @@ atmos.plot_ltau_mean("temp")
 atmos.plot_ltau_hist(0, "temp", show_mean=True)
 \end{minted}
 
-\py{plot_slice} draws a horizontal (\py{iz}) or vertical (\py{ix}, \py{iy}) cut, \py{plot_ltau_cube} every point against $\log\tau_{500}$, \py{plot_ltau_mean} the mean on surfaces of constant $\tau_{500}$, and \py{plot_ltau_hist} the distribution on one such surface; \py{plot_geo_mean} and \py{plot_geo_cube} use the height instead of $\log\tau_{500}$. At $\log\tau_{500}=0$ the hot granules and the cooler intergranular lanes make the temperature distribution bimodal, between about 5900 and 7300\,K, and the spread around the mean stratification is largest just below the surface.
+A model file is read the same way without a run. \py{tm.read_atmosphere(path, atmos_format, feh)} reads a 3D snapshot or a 1D model at its own resolution with the reader of \File{dispatch.x} and integrates $\tau_{500}$ from HOP's continuum opacity at the metallicity \py{feh}, by default the file's own; Stagger2 files do not state it. The result holds the same quantities and plot methods as \py{run.atmos}, so a snapshot can be compared with the 1D model of a run before any 3D run:
+
+\begin{minted}{Python}
+atmos3d = tm.read_atmosphere(snapshot, "stagger2", feh=0.0)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), layout="constrained")
+atmos3d.plot_ltau_cube("temp", density=True, ax=axes[0])
+atmos3d.plot_ltau_mean("temp", ax=axes[0], color="black")
+run.atmos.plot_ltau_mean("temp", ax=axes[0], color="tomato", ls="--")
+atmos3d.plot_ltau_slice("temp", ltau=0, ax=axes[1])
+\end{minted}
+
+\py{plot_slice} draws a horizontal (\py{iz}) or vertical (\py{ix}, \py{iy}) cut, \py{plot_ltau_slice} a map on a surface of constant $\tau_{500}$ (\py{ltau=0} by default), \py{plot_ltau_cube} every point against $\log\tau_{500}$ (\py{density=True}: their number as an image), \py{plot_ltau_mean} the mean on surfaces of constant $\tau_{500}$, and \py{plot_ltau_hist} the distribution on one such surface; \py{plot_geo_mean} and \py{plot_geo_cube} use the height instead of $\log\tau_{500}$. Each method draws into the axes \py{ax}, by default the current ones, and labels the axes it draws into while they have no label. At $\log\tau_{500}=0$ the hot granules and the cooler intergranular lanes make the temperature distribution bimodal, between about 5900 and 7300\,K, and the spread around the mean stratification is largest just below the surface.
 
 
 %%%%%%%%%%%%%%%%%%%%%%
