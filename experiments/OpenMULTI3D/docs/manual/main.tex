@@ -1927,7 +1927,7 @@ For profiling, DISPATCH's timer lists the procedures that take more than \Code{\
          TOTAL updates, thread time           1.00       65.8          100.
 \end{minted}
 
-The table is printed by the task list around the task loop and at the end of the run when \Code{\&timer\_params\%verbose}$>0$; \fort{sec_per_report} sets the interval of periodic reports. The rows are the instrumented procedures of the radiative transfer, which show where a configuration spends its time (line opacities, rates, formal solutions).
+The table is printed by the task list around the task loop and at the end of the run when \Code{\&timer\_params\%verbose}$>0$; \fort{sec_per_report} sets the interval of periodic reports in seconds, by default $10^8$, so that a run prints none. The rows are the instrumented procedures of the radiative transfer, which show where a configuration spends its time (line opacities, rates, formal solutions).
 
 \manualpart{Appendix}{The structure of the code, for developers.}
 \appendix
