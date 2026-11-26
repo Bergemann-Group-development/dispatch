@@ -3606,8 +3606,12 @@ contains
   !> point plus the cell beyond it, over the slab's directions and the larger of
   !> its own and the upstream slab's ds(3) (the amr boundary plane).  The flags
   !> (eta_mask) only grow, so once they stop growing no pair changes its recipe,
-  !> and short_char2 needs only the downwind cell's flag.  The top of the domain,
-  !> whose ghost plane is empty (no incoming radiation), adds no flags.  At
+  !> and short_char2 needs only the downwind cell's flag.  Only a ghost plane that
+  !> holds an upstream slab's cells adds flags.  At the top of the domain it is
+  !> empty (no incoming radiation); at the bottom it is extrapolated from the
+  !> first three planes with chi clamped at 0, which says nothing about the sign
+  !> of chi there, and an eta step from it misses S in the optically thick first
+  !> plane by the factor 2x/(x_up + x), up to 2 where the clamp sets x_up = 0.  At
   !> eta_reset_iter (m3d_patch_mod) the flags of all sets are cleared once, before
   !> that iteration's first short_char2, and accumulate again from there, so that
   !> the transients of the first iterations do not keep their flags.
@@ -3685,8 +3689,10 @@ contains
       end do
     end do
 
-    ! the upstream ghost plane, which only the slab's first plane reaches
-    if (.not. self%boundaries%is_set(bits%zu)) then
+    ! the upstream ghost plane, which only the slab's first plane reaches, where
+    ! it holds an upstream slab's cells: not at the bottom of the domain for
+    ! upward rays, nor at its top for downward rays
+    if (.not. self%boundaries%is_set(merge(bits%zl, bits%zu, self%dir > 0))) then
       z1 = merge(1, self%nz, self%dir > 0)
       zg = z1 - self%dir
       do y=1, self%ny
