@@ -32,7 +32,7 @@ MODULE timer_mod
     integer:: istack=0
     real(8):: out_next=0d0, out_time=0d0
     real(8):: bytes_recv=0.0_8
-    real(8):: sec_per_report=10d0
+    real(8):: sec_per_report=1d8
     real(8):: time, prev=0d0
     real(8):: t_particles=0d0, n_particles=0d0
     integer(8):: n_master(4)=0
@@ -93,7 +93,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true., detailed=.false.
   integer:: ignore, i
   logical:: omp_timer_sync
-  real(8):: sec_per_report=10.
+  real(8):: sec_per_report=1d8
   !.............................................................................¨
   omp_timer_sync = omp_timer%sync
   if (omp_in_parallel()) then
@@ -112,7 +112,7 @@ SUBROUTINE init_parallel (self)
   logical, save:: detailed=.false.
   integer:: iostat, i, nthreads
   logical:: omp_timer_sync
-  real(8):: sec_per_report=10.
+  real(8):: sec_per_report=1d8
   logical:: toc
   namelist /timer_params/ sec_per_report, min_fraction, verbose, toc, &
     omp_timer_sync, detailed
