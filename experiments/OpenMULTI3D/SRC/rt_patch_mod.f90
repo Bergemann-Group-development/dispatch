@@ -3689,9 +3689,10 @@ contains
       end do
     end do
 
-    ! the upstream ghost plane of a slab with an upstream neighbour, which only
-    ! the slab's first plane reaches
-    if (.not. (self%boundaries%is_set(bits%zu) .or. self%boundaries%is_set(bits%zl))) then
+    ! the upstream ghost plane, which only the slab's first plane reaches, where
+    ! it holds an upstream slab's cells: not at the bottom of the domain for
+    ! upward rays, nor at its top for downward rays
+    if (.not. self%boundaries%is_set(merge(bits%zl, bits%zu, self%dir > 0))) then
       z1 = merge(1, self%nz, self%dir > 0)
       zg = z1 - self%dir
       do y=1, self%ny
