@@ -3,7 +3,7 @@
 Public entry points by domain:
 
 - reading runs:      read, read_list, combine, RunGrid  (the run class itself: Run)
-- running dispatch:  launch, monitor
+- running dispatch:  launch (run_async=True returns a Job), monitor, CHECKOUT
 - data containers:   Spectrum, SpectrumGrid, LineList
 - reading spectra:   load_spectrum, load_file, is_run, load_run
 - atmospheres:       read_atmosphere (a model file, plotted as a run's atmos)
@@ -27,7 +27,7 @@ Public entry points by domain:
 """
 from . import const
 from .run import Run, RunGrid, read_list
-from .launch import launch, monitor
+from .launch import CHECKOUT, Job, launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
 from .spectrum_io import load_spectrum, load_file, is_run, load_run
@@ -68,7 +68,7 @@ def load_ipython_extension(ipython):
 
 __all__ = [
     "read", "read_list", "combine", "Run", "RunGrid",
-    "launch", "monitor",
+    "launch", "monitor", "Job", "CHECKOUT",
     "Spectrum", "SpectrumGrid", "LineList",
     "load_spectrum", "load_file", "is_run", "load_run", "read_atmosphere",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",

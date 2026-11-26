@@ -35,8 +35,7 @@ worked reference for combining these methods in one figure.
 - Rates: `tumult.atom_rates.read_rates(run_dir, atom_id)` reads the files written with
   `&output_params save_net_rates=T` (first column of the run only); `net_rates` and
   `transition_relevance` in the same module reduce them.
-- Convergence: `run.conv_report` holds the `convergence_report_*.txt` tables (set when
-  `run.atoms` is first read), and
+- Convergence: `run.conv_report` holds the `convergence_report_*.txt` tables, and
   `Departures.convergence_levels()` the final correction per level. The per-iteration
   history is only in the console log (`rank_NNNNN.log`).
 

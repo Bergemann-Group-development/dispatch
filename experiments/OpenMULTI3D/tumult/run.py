@@ -96,6 +96,16 @@ class Run(object):
     def atoms(self, value):
         self._atoms = value
 
+    @property
+    def conv_report(self):
+        """The NLTE convergence tables, one DataFrame per ``convergence_report_*.txt``
+        (one per model atom), read on first access."""
+        if not hasattr(self, '_conv_report'):
+            run = self.runs[0] if hasattr(self, 'runs') else self
+            reports = sorted(run.folder.glob('convergence_report_*.txt'))
+            self._conv_report = [pd.read_csv(r, sep=r'\s+') for r in reports]
+        return self._conv_report
+
     @classmethod
     #=================================================================
     def read(cls, folder, verbose=0, **kwargs):
@@ -243,12 +253,6 @@ class Run(object):
                 atoms.append(atom)
 
         atoms = np.array(atoms)[np.argsort([atom.id for atom in atoms])]
-        reports = self.folder.glob('convergence_report_*.txt')
-        self.conv_report = []
-        for report in reports:
-            df = pd.read_csv(report, sep=r'\s+')
-            self.conv_report.append(df)
-
         return atoms
 
     #=====================================================================

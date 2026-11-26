@@ -1075,3 +1075,36 @@ def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path
     with pytest.raises(RuntimeError, match='interrupted'):
         found[1].result()
     assert [h.id for h in submission.discover_workflows(tmp_path / 'synth', limit=1)] == [handle.id]
+
+
+def test_async_launch_returns_a_job_that_reports_its_end(tmp_path):
+    """run_async=True returns a Job: it runs, then reports the failure with the error
+    lines of its log, and read() raises that report instead of reading a broken run."""
+    from tumult import launch, Job
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    _stub_dispatch(execution, 'print(" setting up")\nprint("ERROR: no atom file")\nsys.exit(2)\n')
+    output, job = launch('cache/job', cwd=execution, verbose=0, run_async=True)
+    assert isinstance(job, Job) and job.folder == output
+    job.wait(timeout=30)
+    assert not job.running and job.returncode == 2
+    assert 'failed with status 2' in repr(job)
+    assert job.tail(1) == 'ERROR: no atom file'
+    with pytest.raises(RuntimeError, match='ERROR: no atom file'):
+        job.read()
+
+
+def test_defaults_name_presets_and_namelist_files(tmp_path):
+    """A default is a preset name, or a namelist file relative to the directory the run
+    starts in, as dispatch.x reads the paths inside it."""
+    from tumult.launch import prepare_input
+    from tumult.synthesis import presets
+    from tumult.namelist import NameList
+
+    (tmp_path / 'base.nml').write_text("&atom_params abundance=2.17 /\n")
+    nml = prepare_input({'nlte_params': {'convlim': 1e-2}}, ['base.nml', '3d'], cwd=tmp_path)
+    three_d = NameList.from_file(presets.find('3d'))
+    assert nml['atom_params']['abundance'] == 2.17
+    assert nml['atmos_params']['nx'] == three_d['atmos_params']['nx']
+    assert nml['nlte_params']['convlim'] == 1e-2

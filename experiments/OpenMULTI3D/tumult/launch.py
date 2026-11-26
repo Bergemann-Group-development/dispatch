@@ -6,23 +6,33 @@ import numpy as np
 import pathlib
 from tumult.namelist import NameList
 
-def _load_default(item):
+#: the OpenMULTI3D checkout, the directory dispatch.x runs in and reads input/ from
+CHECKOUT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _load_default(item, cwd='.'):
     """Load one default into a NameList-compatible mapping.
 
-    ``item`` may be a NameList, a path to a .nml file, or a directory containing
-    ``params.nml``.
+    ``item`` may be a NameList, a run folder (its ``params.nml``), a .nml file or the
+    name of a preset (``"3d"``, :func:`tumult.synthesis.presets.find`). A relative path
+    is taken relative to ``cwd`` when it exists there, as dispatch.x reads the paths
+    inside a namelist.
     """
     if isinstance(item, NameList):
         return item
-    p = pathlib.Path(item)
-    params = p / 'params.nml' if p.is_dir() else p
-    return NameList.from_file(params)
+    from tumult.synthesis import presets
+    p = pathlib.Path(item).expanduser()
+    if not p.is_absolute() and (pathlib.Path(cwd) / p).exists():
+        p = pathlib.Path(cwd) / p
+    if p.is_dir():
+        return NameList.from_file(p / 'params.nml')
+    return NameList.from_file(presets.find(p))
 
-def prepare_input(nml_settings, default):
+def prepare_input(nml_settings, default, cwd='.'):
     """Handles logic for creating the NameList configuration.
 
-    ``default`` may be a single default (NameList, .nml path, or directory) or a
-    list/tuple of them, applied in order so each later entry overrides earlier ones.
+    ``default`` may be a single default (NameList, run folder, .nml path or preset name)
+    or a list/tuple of them, applied in order so each later entry overrides earlier ones.
     """
     input_data = NameList()
 
@@ -30,7 +40,7 @@ def prepare_input(nml_settings, default):
     if default is not None:
         items = default if isinstance(default, (list, tuple)) else [default]
         for item in items:
-            update_dict(input_data, _load_default(item))
+            update_dict(input_data, _load_default(item, cwd))
 
     # Apply specific overrides
     if nml_settings is not None:
@@ -99,7 +109,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     executable = cwd / 'dispatch.x'
 
     # Build configuration and determine output folder
-    nml = prepare_input(nml_settings, default)
+    nml = prepare_input(nml_settings, default, cwd)
     datadir = nml.get('io_params', {}).get('datadir', 'data').strip()
     output_folder = cwd / datadir / input_path
 
@@ -164,7 +174,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         if run_async:
             process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
             jobrecord.write(output_folder, nml, pid=process.pid, state='submitted')
-            return output_folder, process
+            return output_folder, Job(process, output_folder, log_file)
 
         if slurm_script:
             process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
@@ -213,6 +223,69 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             log_handle.close()
 
     return output_folder, True
+
+
+class Job:
+    """A dispatch.x run started with ``launch(..., run_async=True)``: its process, output
+    folder and log. Its repr says how far the run is, so a notebook cell that shows it
+    follows the run."""
+
+    def __init__(self, process, folder, log_file=None):
+        self.process = process
+        self.folder = pathlib.Path(folder)
+        self.log_file = pathlib.Path(log_file) if log_file else None
+
+    @property
+    def pid(self):
+        return self.process.pid
+
+    @property
+    def returncode(self):
+        return self.process.poll()
+
+    @property
+    def running(self):
+        return self.process.poll() is None
+
+    def poll(self):
+        return self.process.poll()
+
+    def wait(self, timeout=None):
+        return self.process.wait(timeout)
+
+    def kill(self):
+        self.process.kill()
+
+    def progress(self):
+        """``(done, total)`` steps, an estimate (:func:`monitor`)."""
+        return monitor(self.folder, self.log_file)
+
+    def tail(self, n=6):
+        """The last ``n`` lines of the log."""
+        if self.log_file is None or not self.log_file.is_file():
+            return ''
+        return '\n'.join(self.log_file.read_text(errors='replace').splitlines()[-n:])
+
+    def read(self, **kwargs):
+        """The finished run (:meth:`tumult.Run.read`); raises while it runs or when it
+        has failed, with the error report of its log."""
+        status = self.process.poll()
+        if status is None:
+            raise RuntimeError(f'{self.folder} is still running: {self.status()}')
+        if status:
+            raise RuntimeError(_failure_message(status, self.log_file))
+        from tumult.run import Run
+        return Run.read(self.folder, **kwargs)
+
+    def status(self):
+        status = self.process.poll()
+        if status is None:
+            done, total = self.progress()
+            return f'running, step {done} of about {max(done, total)}'
+        return 'finished' if status == 0 else f'failed with status {status}'
+
+    def __repr__(self):
+        return f'<Job {self.folder.name}: {self.status()}>'
 
 
 # The per-atom convergence line dispatch.x writes once per iteration:
