@@ -6,6 +6,7 @@ Public entry points by domain:
 - running dispatch:  launch, monitor
 - data containers:   Spectrum, SpectrumGrid, LineList
 - reading spectra:   load_spectrum, load_file, is_run, load_run
+- atmospheres:       read_atmosphere (a model file, plotted as a run's atmos)
 - scripting:         the domain modules `synthesis` (synthesize, fit, SynthRequest), `departures`
                      (solve, request), `abundance` (fit, nlte_corrections) and `sparams`
                      (ionbalance); see the manual's Python Workflows section
@@ -30,6 +31,7 @@ from .launch import launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
 from .spectrum_io import load_spectrum, load_file, is_run, load_run
+from .atmos import read_atmosphere
 from .spectrum_grid import SpectrumGrid
 from .synthesis import (get_NLTE_correction, get_NLTE_corrections, build_stellar_grid,
                         compute_spectrum, PRESETS_DIR, preset, CancelToken, CancelledError,
@@ -68,7 +70,7 @@ __all__ = [
     "read", "read_list", "combine", "Run", "RunGrid",
     "launch", "monitor",
     "Spectrum", "SpectrumGrid", "LineList",
-    "load_spectrum", "load_file", "is_run", "load_run",
+    "load_spectrum", "load_file", "is_run", "load_run", "read_atmosphere",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",
     "get_NLTE_corrections", "preset", "PRESETS_DIR", "CancelToken", "CancelledError",
     "SynthesisResult", "Departures", "SynthRequest", "WorkflowHandle", "resolve_request",

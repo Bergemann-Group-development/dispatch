@@ -113,13 +113,15 @@ def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
 #=====================================================================
 def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
             xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', bins=None,
-            **kwargs):
+            ax=None, **kwargs):
   """Image of the number of points (log scale) on a grid of nodes spanning xmin..xmax and
-  ymin..ymax. Each point is shared bilinearly between its four neighbouring nodes. bins
-  (an int or (nx, ny)) sets the number of nodes; by default there is one per pixel of the
-  current axes at the figure's dpi, so set it when the figure is drawn at another size."""
+  ymin..ymax, drawn into ``ax`` (default: the current axes). Each point is shared
+  bilinearly between its four neighbouring nodes. bins (an int or (nx, ny)) sets the
+  number of nodes; by default there is one per pixel of the axes at the figure's dpi, so
+  set it when the figure is drawn at another size."""
   #-----------------------------------------------------------------
-  plt = get_plt()
+  if ax is None:
+    ax = get_plt().gca()
 
   mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
   xx = xx[~mask]
@@ -131,8 +133,8 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
   if ymax is None: ymax = yy.max()
 
   if bins is None:
-    fig = plt.gcf()
-    bbox = plt.gca().get_position()
+    fig = ax.figure
+    bbox = ax.get_position()
     nx, ny = np.ceil([bbox.width, bbox.height] * fig.get_size_inches() * fig.get_dpi()).astype(int)
   else:
     nx, ny = np.broadcast_to(bins, 2)
@@ -171,7 +173,7 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
 
   if vmax is None: vmax = image.max()
   # each node at the centre of its pixel
-  return plt.imshow(image.T, origin='lower',
+  return ax.imshow(image.T, origin='lower',
                     extent=(xmin-dx/2, xmax+dx/2, ymin-dy/2, ymax+dy/2),
                     vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
                     interpolation=interpolation, **kwargs)
