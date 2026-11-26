@@ -2,6 +2,7 @@
 import numpy as np
 from .atom_rows import LevelPair
 from .const import CC
+from .linelist import ion_dict
 from .plotting_scripts import set_legend, set_title
 from scipy.signal import argrelextrema
 
@@ -18,6 +19,11 @@ class Transition(LevelPair):
     @property
     def run(self):
         return self.atom.run
+
+    @property
+    def species(self):
+        """The atom's element and the ion stage of the lower level, e.g. 'Ba II'."""
+        return f'{self.atom.id} {ion_dict[int(self.lower.ion)]}'
 
     @property
     def title(self):

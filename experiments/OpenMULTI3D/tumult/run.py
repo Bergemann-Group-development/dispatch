@@ -462,18 +462,35 @@ class Run(object):
         return ltau, dep
 
     #=====================================================================
-    def plot_depart(self, ilvl=0, iatom=0, mean=True, **kwargs):
-        """Draw the departure coefficient of one level (see :meth:`get_depart`)."""
+    def plot_depart(self, ilvl=None, iatom=0, mean=True, ax=None, **kwargs):
+        """Draw the departure coefficient of level ``ilvl`` against log tau_500 (see
+        :meth:`get_depart`) into ``ax`` (default: the current axes). Without ``ilvl``
+        it draws every level of atom ``iatom``, in black with the IDL line style of the
+        level's index (:data:`tumult.IDL_DASHES`) and labelled with the level label of
+        the model atom, unless ``kwargs`` set these. Returns the lines."""
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from .plotting_scripts import IDL_DASHES
+        ax = plt.gca() if ax is None else ax
         if isinstance(ilvl, Level):
             ilvl, iatom = ilvl.i, ilvl.atom.id
         atomid = self.atoms[iatom].id if type(iatom) is int else iatom
-        xx, yy = self.get_depart(ilvl, atomid, mean=mean)
-        plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
-        plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
-        plt.xlabel(r'$\log_{10}\tau_{500}$')
-        return plt.plot(xx.ravel(), yy.ravel(), **kwargs)
+        ax.set_ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
+        ax.set_xlabel(r'$\log_{10}\tau_{500}$')
+        if ilvl is not None:
+            xx, yy = self.get_depart(ilvl, atomid, mean=mean)
+            ax.set_title(f'Departure coefficient of {atomid:} level {ilvl:}')
+            return ax.plot(xx.ravel(), yy.ravel(), **kwargs)
+
+        atom, = [a for a in self.atoms if a.id == atomid]
+        ax.set_title(f'Departure coefficients of {atomid}')
+        lines = []
+        for i, lvl in enumerate(atom.levels):
+            xx, yy = self.get_depart(i, atomid, mean=mean)
+            style = dict(color='black', linestyle=IDL_DASHES[i % len(IDL_DASHES)],
+                         label=lvl.label) | kwargs
+            lines += ax.plot(xx.ravel(), yy.ravel(), **style)
+        return lines
 
 
     #=====================================================================
@@ -546,8 +563,10 @@ class Run(object):
 
     #=====================================================================
     def plot_line_labels(self, offset=None, tol=0.02, show_atom=False,
-                         show_llist=True, dry=False, xmin=None, xmax=None, query=None, **kwargs):
-        """Labels the species of the strongest lines inside the current axes and returns the labels.
+                         show_llist=True, dry=False, xmin=None, xmax=None, query=None, ax=None,
+                         **kwargs):
+        """Labels the species of the strongest lines inside ``ax`` (default: the current
+        axes) and returns the labels.
 
         The line list's transitions are labelled by default. show_atom=True adds the
         model atoms' transitions, labelled with their species (the atom id and the ion
@@ -559,8 +578,8 @@ class Run(object):
         #-----------------------------------------------------------------
         import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         from .plotting_scripts import plot_line_annotations
+        ax = plt.gca() if ax is None else ax
         if xmin is None or xmax is None:
-            ax = plt.gca()
             xmin, xmax = ax.get_xlim()
             if offset is not None:
                 xmin = xmin - offset
@@ -637,7 +656,8 @@ class Run(object):
             if query is not None: llist = llist.query(query).reset_index(drop=True)
             if offset is not None: llist['lam0'] = llist['lam0'] + offset
             if not dry:
-                plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
+                plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values,
+                                      ax=ax, **kwargs)
 
         return llist
 

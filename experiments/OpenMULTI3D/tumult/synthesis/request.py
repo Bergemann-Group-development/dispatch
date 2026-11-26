@@ -168,7 +168,7 @@ class SynthesisResult:
 
     def plot_line_labels(self, **kwargs):
         """Label the strongest lines between ``xmin`` and ``xmax``, by default the limits
-        of the current axes, with :meth:`tumult.run.Run.plot_line_labels`, which takes the
+        of ``ax`` or the current axes, with :meth:`tumult.run.Run.plot_line_labels`, which takes the
         other arguments. The lines of each window in that range come from its spectrum
         run: the run of an individual atmosphere, or the node of the grid with the largest
         interpolation weight. Returns the labelled lines."""
@@ -176,7 +176,7 @@ class SynthesisResult:
         xmin, xmax = kwargs.pop("xmin", None), kwargs.pop("xmax", None)
         if xmin is None or xmax is None:
             import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
-            left, right = sorted(plt.gca().get_xlim())
+            left, right = sorted((kwargs.get("ax") or plt.gca()).get_xlim())
             xmin = left if xmin is None else xmin
             xmax = right if xmax is None else xmax
         lists = []

@@ -299,10 +299,11 @@ def assign_label_slots(xx, strength, nslot, xmin, xmax):
 #=====================================================================
 def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
                       rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
-                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', **kwargs):
+                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', ax=None,
+                      **kwargs):
     #-----------------------------------------------------------------
     plt = get_plt()
-    ax = plt.gca()
+    ax = plt.gca() if ax is None else ax
     xmn, xmx = ax.get_xlim()
     ymn, ymx = ax.get_ylim()
     if xmin is None: xmin = xmn
@@ -316,7 +317,7 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     labels = np.array(labels)[mask]
     if weights is not None: weights = weights[mask]
 
-    plt.gcf().draw_without_rendering()
+    ax.figure.draw_without_rendering()
     t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
     bbox = t.get_window_extent().transformed(ax.transData.inverted())
     t.remove()
@@ -360,10 +361,10 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     xl = np.vstack([newx, newx, oldx, oldx])
     yl = ymax*nn + np.vstack([h*nn, 0.8*h*nn, 0.2*h*nn, 0*nn])
 
-    plt.plot(xl, yl, color=color, linewidth=linewidth)
+    ax.plot(xl, yl, color=color, linewidth=linewidth)
 
     for x, label in zip(newx, labels):
-        plt.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
+        ax.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
                   fontfamily=fontfamily, color=color, **kwargs)
 
     if rotation == 90:
@@ -371,7 +372,7 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     else:
         pad = 2.5
 
-    plt.ylim(top=ymax+1.2*h + bbox.height*pad)
+    ax.set_ylim(top=ymax+1.2*h + bbox.height*pad)
 
 
 def quickplot(x, y, ax=None, color=None, trendline=None, xerr=None, yerr=None,
