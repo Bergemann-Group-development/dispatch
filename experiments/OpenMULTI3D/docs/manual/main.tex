@@ -1545,6 +1545,7 @@ An NLTE run iterates until the largest relative population change falls below \f
 \begin{itemize}
     \item \textbf{Stuck at a large change.} A level whose correction is cut by the limiter \fort{max_update} (default 100) reports a change of about \fort{max_update}$-1$, thousands of percent, which can never fall below \fort{convlim}. Look up the level in the report; the safeguards are described in the \fort{&nlte_params} table.
     \item \textbf{Alternating changes.} Population updates that alternate in sign point to the acceleration: lower \fort{ng_step} or switch it off (\fort{ng_step=-1}) and check that \fort{preconditioning=T}.
+    \item \textbf{Stalled.} Iterations whose largest change has not reached a new minimum for \fort{stall_iter} iterations (default 10) end early with a warning that names the smallest change and its iteration, instead of running on to \fort{maxiter}. Raise \fort{stall_iter}, or set it to 0, to let such a run continue.
 \end{itemize}
 
 \subsection{Per-patch convergence}
@@ -1979,7 +1980,7 @@ The column scheduler does not use MPI: the program stops with an error if starte
     \item \textbf{NLTE iterations}: the NLTE patches update the populations from the rates of the previous iteration. Then the RT columns of the internal spectrum compute background opacity, line opacity, source function and formal solution, and accumulate the radiative rates. Convergence is judged once per iteration. Once the change falls below \fort{convlim}, every patch performs one more solution against the converged radiation field.
     \item \textbf{Write populations and departures}, then release the output tasks.
     \item \textbf{Output pass}: \Code{\&rt\_output\_params\%maxiter} scattering iterations at fixed populations, followed by the final solution along each output ray, which writes intensities and flux.
-    \item \textbf{Finish}: write \File{linelist\_out.txt}, print memory and timing summaries and \Code{OpenMULTI3D terminated successfully} (LTE, NLTE iterations that met \fort{convlim}, or every patch at \fort{convmax}) or the non-convergence warning
+    \item \textbf{Finish}: write \File{linelist\_out.txt}, print memory and timing summaries and \Code{OpenMULTI3D terminated successfully} (LTE, NLTE iterations that met \fort{convlim}, or every patch at \fort{convmax}) or the non-convergence warning, which also reports iterations stopped by \fort{stall_iter}
 \end{enumerate}
 
 \subsection{HOP}\label{sec:hop}

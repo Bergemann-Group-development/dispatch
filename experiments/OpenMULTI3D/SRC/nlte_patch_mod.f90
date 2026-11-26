@@ -15,7 +15,7 @@ MODULE nlte_patch_mod
   USE handyfuncs_mod
   USE mpi_mod, only: mpi
   USE atom_convert_mod, only: classic_atom_t, read_classic_atom, write_pandas_atom
-  USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, &
+  USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, max_update, &
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
@@ -34,6 +34,7 @@ MODULE nlte_patch_mod
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_windows, n_windows_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
+    stall_iter, stalled, nlte_best_change, nlte_best_iter, &
     eta_reset_change, eta_reset_iter, &
     n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
@@ -79,6 +80,7 @@ MODULE nlte_patch_mod
     procedure :: init_departures
     procedure :: write_populations
     procedure :: check_stop_request
+    procedure :: stall_stop
     procedure :: get_osmet_nu
     procedure :: exclude_double_continua
     procedure :: exclude_double_lines
@@ -731,6 +733,14 @@ contains
       last = sweep_updates == sweep_active
       if (last) then
         nlte_last_change = sweep_maxerr
+        if (nlte_best_iter == 0 .or. abs(sweep_maxerr) < nlte_best_change) then
+          nlte_best_change = abs(sweep_maxerr)
+          nlte_best_iter = self%iter
+        endif
+        ! A change above max_update-1 can only come from a correction the limiter
+        ! has cut (update_populations): the iterations are still in a transient,
+        ! which may recover, so the stall window starts again after it.
+        if (abs(sweep_maxerr) > max(max_update, 1d0) - 1d0) nlte_best_iter = self%iter
         call print_iteration_line(self%iter, self%maxiter)
       endif
       !$omp end critical (nlte_sweep)
@@ -741,6 +751,9 @@ contains
       endif
       if (last .and. .not. converged .and. self%iter < self%maxiter) &
         call self%check_stop_request()
+      if (last .and. .not. converged .and. self%iter < self%maxiter .and. stall_iter > 0 &
+          .and. self%iter - nlte_best_iter >= stall_iter) &
+        call self%stall_stop()
     endif
 
     ! locally_converged is population/convmax-based (premature_finish shortcut);
@@ -1125,6 +1138,32 @@ contains
         ': departures are written, then the output pass runs')
     endif
   END SUBROUTINE check_stop_request
+
+  !===============================================================================
+  !> Ends the NLTE iterations that are going nowhere: the largest relative change
+  !> of the last stall_iter iterations has not fallen below its smallest earlier
+  !> value, as in a run that oscillates or sits on a floor above convlim.  An
+  !> iteration whose largest change is at the population limiter (max_update)
+  !> restarts that count.  It ends
+  !> them as check_stop_request does: every depth patch writes its departures and
+  !> the output pass runs.  A run that converges, however slowly, keeps reaching
+  !> new minima and is not stopped.
+  !===============================================================================
+  SUBROUTINE stall_stop (self)
+    class(nlte_patch_t), intent(in) :: self
+    character(len=16) :: nit, nbest, nstall
+    character(len=16) :: best
+    !-----------------------------------------------------------------------------
+    stalled = .true.
+    converged = .true.
+    write (nit, '(i0)') self%iter
+    write (nbest, '(i0)') nlte_best_iter
+    write (nstall, '(i0)') stall_iter
+    write (best, '(es10.2)') nlte_best_change*100
+    call console_warn (ch_m3d, 'NLTE iterations stalled after iteration '//trim(nit)//': no change below '// &
+      trim(adjustl(best))//' % (iteration '//trim(nbest)//') in '//trim(nstall)// &
+      ' iterations; departures are written, then the output pass runs')
+  END SUBROUTINE stall_stop
 
   !===============================================================================
   !> Projects the departure coefficients onto the ray-aligned mesh of each output

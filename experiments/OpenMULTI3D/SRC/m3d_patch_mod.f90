@@ -252,6 +252,16 @@ MODULE m3d_patch_mod
     !> departures.
     logical, public, save :: stop_requested=.false.
     logical, public, save :: stop_exit=.false.        !< skip the output pass as well after a stop request
+    !> Stall stop: the NLTE iterations end, as after a stop request, once the largest
+    !> relative change of an iteration has not fallen below its smallest earlier value
+    !> for stall_iter iterations in a row (0 switches the test off); an iteration whose
+    !> largest change is at the population limiter restarts the count.  nlte_best_change
+    !> and nlte_best_iter are that smallest value and its iteration, kept by the last
+    !> nlte_patch of each iteration; stalled tells the closing verdict.
+    integer, public, save :: stall_iter=10
+    logical, public, save :: stalled=.false.
+    real(8), public, save :: nlte_best_change=0d0
+    integer, public, save :: nlte_best_iter=0
     logical, public, save :: flux_convergence=.false. !< converge on the emergent flux instead of the populations
     logical, public, save :: preconditioning=.true.   !< preconditioned rates (Rybicki & Hummer 1992)
     logical, public, save :: binned_opac=.false.      !< opac_table gives a binned opacity table
@@ -378,7 +388,7 @@ MODULE m3d_patch_mod
     ng_step, ng_start, ng_global, cswitch, lse_solver, &
     ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, ng_cond_min, &
     ng_max_change, ng_min_gap, &
-    convlim, convmax, premature_finish, &
+    convlim, convmax, stall_iter, premature_finish, &
     max_update, min_pop_frac, conv_pop_floor, sor_w, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
 
