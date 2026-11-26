@@ -55,3 +55,8 @@ def test_a_view_displays_and_queries_as_its_table():
     atom = three_level_atom()
     assert repr(atom.colls) == repr(atom.col)
     assert len(atom.levels.query('ion == 1')) == 2
+
+
+def test_a_transition_names_its_species_from_the_lower_level():
+    tran = three_level_atom().bbtrans[0]
+    assert tran.species == 'Na I'

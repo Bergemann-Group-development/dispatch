@@ -476,7 +476,7 @@ run.plot_depart(line.upper, label=line.upper.label + " (upper)")
 plt.legend()
 \end{minted}
 
-\py{line.lower} and \py{line.upper} are the levels of the transition (here 6s\,$^2$S and 6p\,$^2$P$^\circ_{3/2}$, levels 1 and 4 of the atom counted from zero), and \py{label} is the label the model atom gives a level. \py{plot_depart} draws the departure coefficient $b$ of a level against $\log\tau_{500}$; \py{plot_depart(1)} selects the lower level by its index. Above $\log\tau_{500}\approx-2$ the upper level falls below LTE while the lower level stays close to it, so $b_\mathrm{u}<b_\mathrm{l}$ and the line source function lies below the Planck function where the core forms. The six-level atom describes the line as a single transition without hyperfine or isotopic structure, which a Ba abundance analysis needs; the demo shows how the code works, and its numbers are no science result.
+\py{line.lower} and \py{line.upper} are the levels of the transition (here 6s\,$^2$S and 6p\,$^2$P$^\circ_{3/2}$, levels 1 and 4 of the atom counted from zero), and \py{label} is the label the model atom gives a level. \py{plot_depart} draws the departure coefficient $b$ of a level against $\log\tau_{500}$; \py{plot_depart(1)} selects the lower level by its index, and \py{plot_depart()} draws every level of the atom in black, each with the IDL line style of its index. \py{line.species} names the species of the line, here \py{'Ba II'}. Above $\log\tau_{500}\approx-2$ the upper level falls below LTE while the lower level stays close to it, so $b_\mathrm{u}<b_\mathrm{l}$ and the line source function lies below the Planck function where the core forms. The six-level atom describes the line as a single transition without hyperfine or isotopic structure, which a Ba abundance analysis needs; the demo shows how the code works, and its numbers are no science result.
 
 \begin{figure}[!ht]
     \centering
@@ -734,7 +734,7 @@ best, fitted = run.fit(obs.crop(window=win), fit=["zeta_rt", "vshift"], vrot=1.8
 
 \subsection{Plotting}\label{sec:plotting}
 
-The plotting methods below draw into the current matplotlib axes and pass further keywords (\py{color}, \py{label}, \dots) to matplotlib, so a figure combines them with plain matplotlib calls.
+The plotting methods below draw into the current matplotlib axes and pass further keywords (\py{color}, \py{label}, \dots) to matplotlib, so a figure combines them with plain matplotlib calls. \py{Spectrum.plot}, \py{run.plot_line_labels}, \py{run.plot_depart} and the atmosphere's methods take the axes to draw into as \py{ax}.
 
 \begin{center}
 \begin{tblr}{colspec={Q[l]X[l]Q[l]Q[r]}, width=\linewidth, row{even}={bg=rowshade}}
@@ -743,7 +743,7 @@ Method & Draws & Needs & Example\\
 \midrule
 \py{Spectrum.plot} & a spectrum from \py{crop} or \py{load_spectrum} & -- & Fig.~\ref{fig:mg_spectra}\\
 \py{run.plot_line_labels} & the species of the strongest lines above the spectrum & line list & Fig.~\ref{fig:mg_lines}\\
-\py{run.plot_depart} & a departure coefficient against $\log\tau_{500}$ & NLTE run & Fig.~\ref{fig:mg_depart}\\
+\py{run.plot_depart} & a departure coefficient against $\log\tau_{500}$, or without a level those of all levels & NLTE run & Fig.~\ref{fig:mg_depart}\\
 \py{run.plot_cog_corr} & the NLTE correction of a line on the LTE curve of growth & abundance ladder & Fig.~\ref{fig:mg_cog_corr}\\
 \py{atom.plot_grotrian} & the levels and radiative transitions of an atom & atom & Fig.~\ref{fig:mg_grotrian}\\
 {\py{run.plot_cntrbf},\\\py{run.plot_cntrbf_map}} & contribution functions & \fort{save_cntrbf} & Fig.~\ref{fig:mg_cntrbf}\\
