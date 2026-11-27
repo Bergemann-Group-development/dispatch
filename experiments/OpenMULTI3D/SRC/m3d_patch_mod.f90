@@ -90,6 +90,19 @@ MODULE m3d_patch_mod
     end type bg_opac_t
 
     !===============================================================================
+    !> The model one plane below the bottom of the domain, at the cells of one
+    !> composition, where the LTE ghost plane of set_upstream_boundary sits.
+    !> Shape (nx,ny).
+    !===============================================================================
+    type, public :: bottom_ghost_t
+      real(4), dimension(:,:), allocatable :: temp    !< temperature [K]
+      real(4), dimension(:,:), allocatable :: chi500  !< chi500 [cm^-1]
+      real(4), dimension(:,:), allocatable :: pe      !< electron pressure [dyn cm^-2]
+      real(4), dimension(:,:), allocatable :: dlnt_dz !< d ln T/dz per code length, along the composition's columns
+      real(4), dimension(:,:), allocatable :: dpe_dz  !< dPe/dz per code length, along the composition's columns
+    end type bottom_ghost_t
+
+    !===============================================================================
     !> A task of OpenMULTI3D: a composition, NLTE or RT patch of one depth slab,
     !> with its frequency window i_nu and direction i_mu.
     !===============================================================================
@@ -102,8 +115,11 @@ MODULE m3d_patch_mod
       !> chi500 [cm^-1] at the upwind point of each cell, per iteration direction:
       !> short_char2 takes the tau500 length of each step from it and chi500 at the cell
       real(4), allocatable :: chi500_up(:,:,:,:)
-      !> chi500 [cm^-1] of the ghost planes below z=1 (1) and above z=nz (2)
-      real(4), allocatable :: chi500_ghost(:,:,:)
+      !> chi500 [cm^-1] of the ghost plane above z=nz
+      real(4), allocatable :: chi500_top(:,:)
+      !> the model below the bottom of the domain, per composition (1 unrotated,
+      !> 1+i_mu along output direction i_mu); allocated on the bottom slab only
+      type(bottom_ghost_t), allocatable :: bottom_ghost(:)
       ! Sampled background-opacity tables, owned by the composition patch and
       ! shared by all its rt_patches.  Everything a table's content depends on is
       ! a function of i_nu alone (the spectrum and the fs:fe slice), so i_nu is

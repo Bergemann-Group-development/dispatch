@@ -25,7 +25,7 @@ MODULE read_external_mod
   USE experiment_mod, only: experiment_t
   USE composition_mod, only: opac_table_vmic, read_departures
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params, &
-    needs_upwind_chi500
+    needs_upwind_chi500, needs_bottom_ghost
   USE const_mod, only:cc
   USE m3d_patch_mod, only: m3d_patch_t, nz_total, use_rho, use_ne, atmos_format, amr, rotate_atmos, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
@@ -456,11 +456,13 @@ contains
   END FUNCTION saved_mean_vmic
 
   !===============================================================================
-  !> A saved atmosphere holds only the patches' own state, so two kinds of run read
-  !> the model it was computed from into ia, from the model file in its params.nml.
-  !> A run with rotate_atmos=T on a save written without rotation interpolates the
-  !> ray-aligned copies from it, and short_char2 (needs_upwind_chi500) takes chi500
-  !> at its upwind points from it.  The model is prepared as the run that wrote the
+  !> A saved atmosphere holds only the patches' own state, so three kinds of run
+  !> read the model it was computed from into ia, from the model file in its
+  !> params.nml.  A run with rotate_atmos=T on a save written without rotation
+  !> interpolates the ray-aligned copies from it, short_char2 (needs_upwind_chi500)
+  !> takes chi500 at its upwind points from it, and linear2 and the hermite solvers
+  !> (needs_bottom_ghost) take the LTE ghost plane below the bottom of the domain
+  !> from it.  The model is prepared as the run that wrote the
   !> save prepared it, and the saved mesh stays the mesh of the run, so the box of
   !> the model must match it.
   !===============================================================================
@@ -471,7 +473,7 @@ contains
     character(len=512) :: line, name
     character(len=1024) :: hint
     integer :: lunit, iostat, saved_copies, sizes(6)
-    logical :: rotated, chi500
+    logical :: rotated, model
     real(8) :: box(3)
     !-----------------------------------------------------------------------------
     open(file=trim(save_dir)//'/save/atmos_meta.txt', newunit=lunit, form='FORMATTED', &
@@ -486,15 +488,16 @@ contains
     read (line, *) name, sizes                          ! bytes, n(3), slots, copies
     saved_copies = sizes(6)
     rotated = rotate_atmos .and. saved_copies == 1 .and. n_copies > 1
-    chi500 = needs_upwind_chi500()
-    if (.not. (rotated .or. chi500)) return
+    model = needs_upwind_chi500() .or. needs_bottom_ghost()
+    if (.not. (rotated .or. model)) return
     hint = ''
-    if (chi500) hint = "rt_iteration_params solver='linear2' takes chi500 at the upwind points from " // &
-      "the model of the saved atmosphere, " // trim(saved_from_file) // ", which must be readable " // &
-      "and fill the saved box; use solver='linear' without it"
+    if (model) hint = "the solvers 'linear2', 'hermite' and 'hermite2' take the model below the " // &
+      "domain and at the upwind points from the model of the saved atmosphere, " // &
+      trim(saved_from_file) // ", which must be readable and fill the saved box; use solver=" // &
+      "'linear' (rt_iteration_params) and 'linear' or 'quadratic' (rt_output_params) without it"
     if (console_on(ch_atmos, 1)) &
       write (console_unit,'(5a)') 'Reading ', trim(saved_from_format), ' atmosphere for ', &
-        trim(merge('the rotated copies     ', 'chi500 at upwind points', rotated)), &
+        trim(merge('the rotated copies ', 'the LTE ghost plane', rotated)), &
         ' from ' // trim(saved_from_file)
     read_hint = hint
     call read_model(saved_from_format, saved_from_file, saved_from_snap, .false.)

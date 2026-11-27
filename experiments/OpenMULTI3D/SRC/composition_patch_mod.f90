@@ -16,12 +16,12 @@ MODULE composition_patch_mod
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, composition, line_margin, &
+  USE m3d_patch_mod,   only: m3d_patch_t, bottom_ghost_t, composition, line_margin, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   rotate_atmos, decouple_continuum, n_windows, n_windows_out, out_patch_offset, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
   n_nlte_patches, nlte_finished, column_by_column
-  USE rt_params_mod, only: rt_iter, rt_out, pivot_z
+  USE rt_params_mod, only: rt_iter, rt_out, pivot_z, lte_ghost_solver
   USE m3d_debug_mod
   USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
   USE interpol_mod, only: pchip_slopes
@@ -112,7 +112,8 @@ MODULE composition_patch_mod
   character(len=4096), save :: linelist_folder=''                               !< folder whose files are all read as line lists
   character(len=4096), save, dimension(:), allocatable :: linelist_file         !< line-list files
 
-  public :: read_composition_params, max_n_windows, set_n_windows_out, needs_upwind_chi500
+  public :: read_composition_params, max_n_windows, set_n_windows_out, needs_upwind_chi500, &
+            needs_bottom_ghost
 
 contains
 
@@ -126,6 +127,15 @@ LOGICAL FUNCTION needs_upwind_chi500 ()
     .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0) &
     .and. .not. (one_dimensional .or. column_by_column .or. make_eos)
 END FUNCTION needs_upwind_chi500
+
+!===============================================================================
+!> A pass of the run starts its upward rays from the LTE ghost plane
+!> (lte_ghost_solver), so the bottom slab needs the model one plane below it.
+!===============================================================================
+LOGICAL FUNCTION needs_bottom_ghost ()
+  needs_bottom_ghost = .not. make_eos .and. (lte_ghost_solver(.true.) .or. &
+    (lte_ghost_solver(.false.) .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0)))
+END FUNCTION needs_bottom_ghost
 
 !===============================================================================
 !> Reads composition_params, opac_table_params and linelist_params, builds the
@@ -816,6 +826,12 @@ SUBROUTINE execute (self)
     end do
 
     if (needs_upwind_chi500()) call upwind_chi500()
+    if (needs_bottom_ghost() .and. self%patch%boundaries%is_set(bits%zl)) then
+      allocate(self%bottom_ghost(self%nw))
+      do i=1, self%nw
+        call bottom_ghost_state(i, self%bottom_ghost(i))
+      end do
+    endif
 
     call ia%release()
 
@@ -850,11 +866,11 @@ contains
 
   !-----------------------------------------------------------------------------
   !> chi500 at the upwind point of every cell for each iteration direction, and
-  !> on the two ghost planes, from the model atmosphere interpolated there and
-  !> solved for its equilibrium as the patch mesh itself is.  The upwind point
-  !> lies on the previous plane, displaced against the ray by ds(3)/|mu| along it.
-  !> short_char2 takes the ghost planes' values only at the boundaries of the domain,
-  !> and the upstream slab's chi500 elsewhere.
+  !> on the ghost plane above the slab, from the model atmosphere interpolated
+  !> there and solved for its equilibrium as the patch mesh itself is.  The
+  !> upwind point lies on the previous plane, displaced against the ray by
+  !> ds(3)/|mu| along it.  short_char2 takes the ghost plane's value only at the
+  !> top of the domain, and the upstream slab's chi500 elsewhere.
   !-----------------------------------------------------------------------------
   subroutine upwind_chi500()
     real(8) :: ds(3), vec(3)
@@ -865,17 +881,15 @@ contains
     if (.not. allocated(ia%ltemp)) error stop 'upwind_chi500: the model atmosphere is not loaded'
     ds = self%size / n
     nd = size(rt_iter%vec, 2)
-    allocate(self%chi500_up(n(1),n(2),n(3),nd), self%chi500_ghost(n(1),n(2),2))
+    allocate(self%chi500_up(n(1),n(2),n(3),nd), self%chi500_top(n(1),n(2)))
     allocate(c500(n(1),n(2),n(3)))
     do d=1, nd
       vec = rt_iter%vec(:,d)
       call chi500_at(-ds(3)/abs(vec(3))*vec, c500)
       self%chi500_up(:,:,:,d) = c500
     end do
-    call chi500_at([0d0, 0d0, -ds(3)], c500)
-    self%chi500_ghost(:,:,1) = c500(:,:,1)
     call chi500_at([0d0, 0d0, ds(3)], c500)
-    self%chi500_ghost(:,:,2) = c500(:,:,n(3))
+    self%chi500_top = c500(:,:,n(3))
   end subroutine upwind_chi500
 
   !-----------------------------------------------------------------------------
@@ -897,6 +911,70 @@ contains
     c500 = cu%chi500
     deallocate(cu)
   end subroutine chi500_at
+
+  !-----------------------------------------------------------------------------
+  !> The model one plane below the bottom of composition i (1 unrotated, 1+i_mu
+  !> along output direction i_mu), interpolated as the composition itself and
+  !> solved for its equilibrium.  The mesh holds the ghost plane and the first
+  !> two planes of the slab, so that with use_ne=.false. the Pe gradient at the
+  !> ghost comes from pe_gradients_from_grid, one-sided as at the composition's
+  !> own ends.  Below the bottom of the model the interpolant extrapolates its
+  !> end interval, in ln T, ln Pe and ln rho with log_interpolation.
+  !-----------------------------------------------------------------------------
+  subroutine bottom_ghost_state(i, ghost)
+    integer, intent(in) :: i
+    type(bottom_ghost_t), intent(out) :: ghost
+    integer :: m(3)
+    real(8) :: ds(3), sub(3), pos(3)
+    real(4), dimension(:,:,:), allocatable :: t3, ne3, rho3, vx3, vy3, vz3, vmic3, gtz3, gpz3, gpx3, gpy3
+    real(8), dimension(:,:,:), allocatable :: t8, ne8_3, rho8_3
+    type(composition_type), allocatable :: cu
+    !---------------------------------------------------------------------------
+    if (.not. allocated(ia%ltemp)) error stop 'bottom_ghost_state: the model atmosphere is not loaded'
+    ds = self%size / n
+    m = [n(1), n(2), 3]
+    sub = [self%size(1), self%size(2), 3*ds(3)]
+    ! interpolate_atmos puts plane k at lower(3) + k*ds(3): the ghost plane, one
+    ! below the slab's first, is at the slab's lower(3)
+    pos = self%position
+    pos(3) = self%position(3) - 0.5d0*self%size(3) + 0.5d0*ds(3)
+    allocate(t3(m(1),m(2),3), ne3(m(1),m(2),3), rho3(m(1),m(2),3), vx3(m(1),m(2),3), &
+             vy3(m(1),m(2),3), vz3(m(1),m(2),3), vmic3(m(1),m(2),3), gtz3(m(1),m(2),3), &
+             gpz3(m(1),m(2),3), gpx3(m(1),m(2),3), gpy3(m(1),m(2),3))
+    gtz3 = 0.
+    gpz3 = 0.
+    if (i == 1) then
+      if (need_gradients) then
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               dlnt_dz=gtz3, dpe_dz=gpz3)
+      else
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3)
+      endif
+    else
+      if (need_gradients) then
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               vec=rt_out%vec(:,i-1), bot2pivot=pivot_z, &
+                               dlnt_dz=gtz3, dpe_dz=gpz3)
+      else
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               vec=rt_out%vec(:,i-1), bot2pivot=pivot_z)
+      endif
+    endif
+    allocate(t8, source=dble(t3))
+    allocate(ne8_3, source=dble(ne3))
+    allocate(rho8_3, source=dble(rho3))
+    allocate(cu, source=composition)
+    call cu%reassign_pointer()
+    call cu%load_state_variables(t8, ne8_3, rho8_3, use_rho=use_rho, use_ne=use_ne)
+    if (need_gradients .and. .not. use_ne) &
+      call pe_gradients_from_grid(cu, ds, gpx3, gpy3, gpz3, horizontal=.false.)
+    allocate(ghost%temp, source=real(cu%temp(:,:,1), 4))
+    allocate(ghost%chi500, source=cu%chi500(:,:,1))
+    allocate(ghost%pe, source=real(cu%pe(:,:,1), 4))
+    allocate(ghost%dlnt_dz, source=gtz3(:,:,1))
+    allocate(ghost%dpe_dz, source=gpz3(:,:,1))
+    deallocate(cu)
+  end subroutine bottom_ghost_state
 END SUBROUTINE execute
 
 !===============================================================================
