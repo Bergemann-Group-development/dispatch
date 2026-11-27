@@ -149,6 +149,7 @@ MODULE atom_mod
       !> target is allocated once on the master atom and the pointer survives the
       !> copy, so all patches accumulate into one object.
       type(ng_state_t), pointer :: ng => null()
+      integer :: ng_iter_done=-1 !< last iteration in which this patch copy extrapolated
 
     contains
       procedure :: init_atom_data
@@ -2458,12 +2459,19 @@ MODULE atom_mod
   !> In both modes application trails accumulation by one iteration, because a
   !> patch cannot know when the other patches have finished contributing to the
   !> Gram matrix.
+  !>
+  !> A patch copy whose own change in this iteration is already below convlim
+  !> (extrapolate false) takes part in the decision but does not extrapolate.
+  !> An iteration whose largest change is below convlim then extrapolated
+  !> nowhere, so it can end the run: the populations it delivers carry no
+  !> extrapolation whose change was not measured.
   !===============================================================================
-  SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
+  SUBROUTINE ng_acceleration (self, iter, err, convlim, extrapolate, emax, epos)
     class(atom_type):: self
     integer, intent(in) :: iter     !< iteration
     real(8), intent(in) :: err      !< current convergence measure
     real(8), intent(in) :: convlim  !< its target, for the headroom test
+    logical, intent(in) :: extrapolate !< this copy may extrapolate
     real(8), intent(out) :: emax    !< largest change by the extrapolation, 0 without one
     integer, intent(out) :: epos(4) !< its (level, x, y, z)
     logical :: fire, applied, apply_here
@@ -2515,9 +2523,10 @@ MODULE atom_mod
       apply_here = ng%coeff_valid .and. ng%iter_fired == iter
       !$omp end critical (ng_shared)
 
-      if (apply_here) then
+      if (apply_here .and. extrapolate) then
         call ng_extrapolate(ng, adata%b, adata%oldb, adata%nstar, adata%totn, &
                             self%nlevel, emax, epos, applied)
+        self%ng_iter_done = iter
       endif
 
       ! Feed this iteration's differences in for the next decision.  Skipped on
@@ -2534,15 +2543,14 @@ MODULE atom_mod
   END SUBROUTINE ng_acceleration
 
   !===============================================================================
-  !> True when the Ng extrapolation was applied to this atom's populations in
-  !> iteration iter.
+  !> True when the Ng extrapolation was applied to this patch copy's populations
+  !> in iteration iter.
   !===============================================================================
   LOGICAL FUNCTION ng_applied (self, iter)
     class(atom_type), intent(in) :: self
     integer, intent(in) :: iter !< iteration
     !-----------------------------------------------------------------------------
-    ng_applied = .false.
-    if (associated(self%ng)) ng_applied = self%ng%coeff_valid .and. self%ng%iter_fired == iter
+    ng_applied = self%ng_iter_done == iter
   END FUNCTION ng_applied
 
 END MODULE atom_mod
