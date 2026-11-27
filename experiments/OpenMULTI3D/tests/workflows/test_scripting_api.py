@@ -50,10 +50,10 @@ def test_departure_state_selects_the_calculation(tmp_path, config, atom):
     one = Atmosphere("one.mod")
     lte = SynthRequest(config=config, atmosphere=one, star=STAR, windows=(5160, 5190))
     assert run_values(lte)["mode"] == "LTE"
-    ondemand = lte.update(departures=departures.request(lte, atom=atom, line_grid=False))
+    ondemand = lte.update(departures=departures.request(lte, atom=atom))
     assert run_values(ondemand)["mode"] == "NLTE"
     assert run_values(ondemand)["atoms"] == [str(atom)]
-    prepared = lte.update(departures=departures.request(lte, atom=atom))
+    prepared = lte.update(departures=departures.request(lte, atom=atom, line_grid=True))
     with pytest.raises(ValueError, match="not prepared"):
         run_values(prepared)
     frozen = run_values(lte.update(departures=_saved_departures(tmp_path)))
@@ -135,7 +135,7 @@ def test_requests_departures_and_results_reopen(tmp_path, config, atom):
 
 
 # --- synthesis and departures ----------------------------------------------------------------
-def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, monkeypatch):
+def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, atom, monkeypatch):
     from tumult.synthesis import workflows
     from tumult.synthesis.request import SynthesisResult
     monkeypatch.setattr(SynthRequest, "check", lambda self: self)
@@ -151,7 +151,13 @@ def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, mon
     lte = synthesis.synthesize(request)
     assert lte.request is request
     assert lte.provenance["calculation"] == "LTE" and lte.provenance["departures"] == "none"
-    assert lte.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
+    assert lte.provenance["preparation_atmospheres"] == []
+    prepared = synthesis.synthesize(request.update(
+        atmosphere=Atmosphere("one.mod", preparation=True)))
+    assert prepared.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
+    with pytest.raises(ValueError, match="preparation"):
+        synthesis.synthesize(request.update(
+            departures=departures.request(request, atom=atom, line_grid=True)))
     nlte = synthesis.synthesize(request.update(departures=_saved_departures(tmp_path)))
     assert nlte.provenance["departures"] == "loaded"
     assert seen[-1].values["mode"] == "NLTE"
@@ -495,9 +501,9 @@ def test_curve_of_growth_accepts_a_snapshot(tmp_path, config, monkeypatch):
     """A curve of growth runs on whatever atmosphere the request carries: the rungs are the
     same lattice the profile fit uses, and a 3D snapshot goes through the direct path."""
     from tumult.linemask import LineMask, LineMaskSet
-    from tumult.synthesis.inputs import Snapshot
+    from tumult.synthesis.inputs import Atmosphere
     variants = _stub_fit(monkeypatch, 0.52)
-    request = SynthRequest(config=config, atmosphere=Snapshot("cube.dat", "Stagger", (4, 4, 8)),
+    request = SynthRequest(config=config, atmosphere=Atmosphere("cube.dat", "Stagger", (4, 4, 8)),
                            star=STAR, abundances={"Mg": 0.3})
     masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
     result = ab.fit(request, target=_line(0.52), line_mask=masks, method="cog",
@@ -533,7 +539,8 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     monkeypatch.setattr(ab, "run_nlte_corrections", rungs)
     request = SynthRequest(config=config, atmosphere="one.mod", star=STAR,
                            abundances={"Mg": 0.2, "Ca": 0.1})
-    request = request.update(departures=departures.request(request, atom=atom))
+    request = request.update(departures=departures.request(request, atom=atom,
+                                                           line_grid=True))
     result = ab.nlte_corrections(request, method="cog", background_lines=False,
                                  uid="listed12")
     assert calls["prepare"] == 1
@@ -543,6 +550,9 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     assert result.uid == "listed12"       # the result the caller listed continues
     with pytest.raises(ValueError, match="departures.request"):
         ab.nlte_corrections(request.update(departures=None))
+    own = request.update(departures=departures.request(request, atom=atom))
+    with pytest.raises(ValueError, match="line_grid=True"):
+        ab.nlte_corrections(own)
 
 
 def test_correction_rungs_move_the_element_on_top_of_the_composition(tmp_path, monkeypatch):
@@ -687,3 +697,33 @@ def test_complete_edited_result_preserves_abundance_convention(config, monkeypat
     if balance:
         # completing the rungs updates the diagnostics, not the solved parameters
         assert set(result.stale_reasons()) == {'lines'}
+
+
+def test_clear_cache_empties_the_cache_of_a_config(tmp_path):
+    config = SynthConfig(root=tmp_path, cache="mine")
+    run = tmp_path / "data" / "mine" / "bucket" / "run"
+    prepared = tmp_path / "mine" / "_preparation" / "linelist.txt"
+    other = tmp_path / "data" / "other" / "run"
+    for folder in (run, prepared.parent, other):
+        folder.mkdir(parents=True)
+    prepared.write_text("")
+    synthesis.clear_cache(config)
+    assert not any((tmp_path / "data" / "mine").iterdir())
+    assert not any((tmp_path / "mine").iterdir())
+    assert other.is_dir()
+
+
+def test_a_star_labels_a_plot():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    star = Star(5777, 4.44, 0.0, 1.0)
+    fig, ax = plt.subplots()
+    ax.plot([0, 1], [0, 1], label=star)
+    ax.set_title(star)
+    ax.legend()
+    fig.canvas.draw()
+    plt.close(fig)
+    assert ax.get_legend_handles_labels()[1] == [str(star)]
+    assert "5777 K" in ax.get_title() and "+0.00" in ax.get_title()
+    assert "v_{\\rm mic}" not in str(Star(5777, 4.44, 0.0))

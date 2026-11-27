@@ -49,7 +49,7 @@ wavelength it reads to standard air, whatever its range.
 ## 2. Run the calculation
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
+$ ./dispatch.x examples/sun_ba_1d.nml
 ```
 
 `dispatch.x` takes one namelist and writes its run under `data/<namelist path without .nml>/`,
@@ -65,8 +65,7 @@ OpenMULTI3D terminated successfully.
 ```
 
 after about one second on eight cores. The installation check created the same run;
-running it again overwrites it. `OMP_STACKSIZE` gives the OpenMP threads the stack the
-solver needs; the Python launcher used in step 6 sets it for you.
+running it again overwrites it.
 
 Before execution, `Memory estimate: peak ...` reports the expected peak of the memory
 Dispatch registers on each MPI rank, in GiB (2³⁰ bytes). The equation-of-state setup,
@@ -209,7 +208,7 @@ the new namelist is written under the name you give:
 
 ```python
 folder, ran = tm.launch("quickstart_ba_rich", default="examples/sun_ba_1d.nml",
-                        nml_settings={"atom_params": {"abundance": 2.41}},
+                        nml_settings=dict(atom_params=dict(abundance=2.41)),
                         verbose=1)
 rich = tm.read(folder)
 print(rich.abundances["Ba"])
@@ -225,7 +224,7 @@ This writes `quickstart_ba_rich.nml` here, runs it with the console output in
 `atom_params` `abundance` entry overrides the atom file's abundance, so A(Ba) rises by
 0.3 dex. `ran` is `False` when a finished run of that name already exists, in which case
 nothing is recomputed. Any namelist entry can be overridden the same way, for example
-`{"nlte_params": {"convlim": 1e-3}}` for a tighter convergence limit. Editing a copy of
+`dict(nlte_params=dict(convlim=1e-3))` for a tighter convergence limit. Editing a copy of
 `examples/sun_ba_1d.nml` by hand and running the copy with `dispatch.x` is equivalent.
 
 ```python
@@ -329,10 +328,7 @@ the profile comparison in step 5 is only meaningful at the same broadening.
 
 Steps 2 and 6 drove `dispatch.x` through namelists. The analysis workflows (`tumult.synthesis`,
 `tumult.departures`, `tumult.abundance`, `tumult.sparams`) and the GUI describe a
-calculation as a `SynthRequest` instead: a configuration, an atmosphere, stellar
-parameters, wavelength windows and, for NLTE, the model atoms to solve. The layer writes
-the namelists, prunes the line list to the windows, caches every native run by its inputs
-and returns `Spectrum` objects.
+calculation as a `SynthRequest` instead: a configuration, an atmosphere, stellar parameters, wavelength windows and, for NLTE, the model atoms to solve. The layer writes the namelists, prunes the line list to the windows on the atmosphere's `preparation`, caches every native run by its inputs and returns `Spectrum` objects.
 
 This example synthesises the same Ba II 4554 Å region on the same MARCS model, now
 with the blends of the tracked line list `input/linelists/SIU_masterline_Bergemann2026.txt`. The list has no
@@ -344,11 +340,11 @@ from tumult import departures, synthesis
 from tumult.synthesis import Atmosphere, Star, SynthConfig, SynthRequest
 
 config = SynthConfig(root=".", cache="quickstart_synth",
-                     linelist="input/linelists/SIU_masterline_Bergemann2026.txt",
-                     abundances="input/abund/abund_magg22.txt",
+                     linelist_file="input/linelists/SIU_masterline_Bergemann2026.txt",
+                     abund_file="input/abund/abund_magg22.txt",
                      R_sampling=200_000,
-                     expert={"linelist_params": {"match_nlte_levels": True}})
-marcs = Atmosphere("input/atmos/sun.mod")
+                     nml_settings=dict(linelist_params=dict(match_nlte_levels=True)))
+marcs = Atmosphere("input/atmos/sun.mod", preparation=True)
 request = SynthRequest(config=config, atmosphere=marcs,
                        star=Star(teff=5777, logg=4.44, feh=0.0, vmic=1.0),
                        windows=(4550, 4558))
@@ -366,24 +362,13 @@ plt.show()
 print(lte.runs, nlte.provenance["departures"])
 ```
 
-The stellar parameters are always given explicitly, since the workflow never reads them
-from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17
-here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects:
-`.spectrum` is the normalised flux over the window, `.runs` the native run folders under
-`data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance`
-records the line-list pruning and whether departures were solved or reused. The first
-call takes a few seconds; repeating either call returns the cached result at once. The
-NLTE request solves the barium departures once and applies them in the formal solution
-that produces the spectrum; the LTE request skips the solve. The configuration names no
-metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs
-the downloaded tables (`python -m tumult.synthesis.input_data fetch absmet`) and
-`absmet="input/absmet_files"` in `SynthConfig`, as in the manual.
+`preparation` names the model HOP prunes the line list on, with `True` the MARCS model itself; without it the runs read the full list. The stellar parameters are always given explicitly, since the workflow never reads them from a model file; `abund_magg22` is the standard composition, so Ba is at A(Ba) = 2.17 here rather than the atom file's 2.11. `lte` and `nlte` are `SynthesisResult` objects: `.spectrum` is the normalised flux over the window, `.runs` the native run folders under `data/quickstart_synth/` (readable with `tm.read`, as in step 3) and `.provenance` records the line-list pruning and whether departures were solved or reused. `.crop()` crops the spectrum again from its runs and takes the arguments of a run's `crop` (step 3); an NLTE run also computes the LTE spectrum, so `nlte.crop(LTE=True)` is the LTE comparison without a second synthesis. The first call takes a few seconds; repeating either call returns the cached result at once. The NLTE request solves the barium departures once and applies them in the formal solution that produces the spectrum; the LTE request skips the solve. The configuration names no metal-opacity table, so the NLTE solve here has no line blanketing; a result for use needs the downloaded tables (`python -m tumult.downloads fetch absmet`) and `absmet_folder="input/absmet_files"` in `SynthConfig`, as in the manual.
 
 An abundance change is an `abundances=` entry of the request, in [X/Fe] by default:
 `request.update(abundances={"Ba": 0.3})`. The same request runs unchanged on a MARCS grid
 interpolated at the star (`AtmosphereGrid("input/atmos/MARCS")`, after
-`python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS`), on a 3D snapshot (`Snapshot`), and as the input of the
-abundance and stellar-parameter workflows, which the manual's Python Workflows section describes. `rm -rf quickstart_synth data/quickstart_synth` removes this example's cache.
+`python -m tumult.downloads fetch marcs`), on a 3D snapshot (an `Atmosphere` of a 3D format such as `"M3DIS"`), and as the input of the
+abundance and stellar-parameter workflows, which the manual's Python Workflows section describes. `synthesis.clear_cache(config)` removes this example's cache, the runs and the pruned line lists, so the next call computes them again.
 
 ## Optional: a 3D snapshot
 
@@ -414,7 +399,7 @@ The snapshot is a 160 × 160 × 159 cube; `examples/sun_ba_3d.nml` samples it on
 demonstration. Run it:
 
 ```
-$ OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_3d.nml
+$ ./dispatch.x examples/sun_ba_3d.nml
 ```
 
 The iteration blocks look like the 1D ones, and each takes far longer: every iteration
@@ -441,7 +426,7 @@ the up- and downflows Doppler-shift the contributions of the individual columns,
 average of many shifted profiles has a broader, shallower core; the granulation's
 temperature inhomogeneities change the line formation as well. A single snapshot at
 this sampling is not a converged 3D result: a 3D abundance analysis averages over
-several snapshots and checks the sampled mesh. The `Snapshot` atmosphere of the workflow
+several snapshots and checks the sampled mesh. An `Atmosphere` of a 3D format in the workflow
 interface takes the mesh as its `resolution`, a snapshot grid averages a node's spectrum
 over its selected snapshots (`tumult.synthesis.snapshot_grid`), and
-`tumult.synthesis.grid_catalog` fetches the published 3D grids per model and snapshot.
+`tumult.downloads` fetches the published 3D grids per model and snapshot.

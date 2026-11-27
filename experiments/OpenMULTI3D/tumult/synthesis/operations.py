@@ -17,7 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 import time
 
-from .inputs import STAR_KEYS, Abundances, Atmosphere, AtmosphereGrid, Snapshot
+from .inputs import STAR_KEYS, Abundances, AtmosphereGrid, is_snapshot
 from .request import SpectrumFit, SynthRequest
 
 
@@ -72,25 +72,16 @@ def departure_run_values(request):
     return departures.run_values(request, quadrature), quadrature, atmosphere
 
 
-def quadrature_atmosphere(request):
-    """The MARCS atmosphere a model atom's wavelength quadrature is prepared on.
-
-    An individual MARCS atmosphere is used directly. A MARCS grid gives the node nearest the
-    star; any other format needs its ``preparation`` grid, whose nearest node is used.
-    """
-    from .workflows import nearest_marcs_atmosphere
-    config, atmosphere, star = request.config, request.atmosphere, request.star
-    if isinstance(atmosphere, Atmosphere) and atmosphere.is_marcs:
-        return str(config.resolve(atmosphere.path))
-    grid = atmosphere if isinstance(atmosphere, AtmosphereGrid) and atmosphere.is_marcs \
-        else atmosphere.preparation
-    if grid is None or not grid.is_marcs:
-        raise ValueError(f"A {atmosphere.format} atmosphere needs a MARCS preparation grid "
-                         "for the model atom's wavelength quadrature; set its "
-                         "`preparation=AtmosphereGrid(...)`.")
+def preparation_reference(request):
+    """The :class:`~.preparation.Reference` the atmosphere's ``preparation`` gives at the
+    request's star, or None without a preparation."""
+    from .preparation import reference_atmosphere
+    atmosphere, star = request.atmosphere, request.star
+    if atmosphere.preparation is None:
+        return None
     vmic = star.vmic if star.vmic is not None else 1.0
-    return nearest_marcs_atmosphere(grid.record(config), (star.teff, star.logg, star.feh, vmic),
-                                    config.to_prefs())
+    return reference_atmosphere(atmosphere.preparation,
+                                (star.teff, star.logg, star.feh, vmic), request.config)
 
 
 def preflight(request):
@@ -100,11 +91,17 @@ def preflight(request):
     problems = []
     if not (config.root / "dispatch.x").is_file():
         problems.append(f"dispatch.x is not built in {config.root}")
-    for name in ("linelist", "abundances", "absmet"):
+    for name in ("linelist_file", "abund_file", "absmet_file", "absmet_folder"):
         value = getattr(config, name)
         if value is not None and not config.resolve(value).exists():
             problems.append(f"config.{name} not found: {config.resolve(value)}")
-    if config.linelist is not None and config.linelist_skirt > 0:
+    if config.absmet_file is not None and config.resolve(config.absmet_file).is_dir():
+        problems.append(f"config.absmet_file is a folder; give it as absmet_folder: "
+                        f"{config.resolve(config.absmet_file)}")
+    if config.absmet_folder is not None and config.resolve(config.absmet_folder).is_file():
+        problems.append(f"config.absmet_folder is a file; give it as absmet_file: "
+                        f"{config.resolve(config.absmet_folder)}")
+    if config.linelist_file is not None and request.atmosphere.preparation is not None:
         from ..prune import executable
         try:
             executable(config.root)
@@ -136,7 +133,7 @@ def _preset_problems(request):
     which name no model atom to solve."""
     from . import presets
     problems = []
-    for name in request.presets:
+    for name in request.all_presets:
         try:
             item = presets.load(name)
         except FileNotFoundError as exc:
@@ -189,11 +186,21 @@ def departure_status(runs, root, started):
     return states.pop() if len(states) == 1 else "mixed"
 
 
+def clear_cache(config):
+    """Delete the cache of ``config`` (a :class:`~tumult.synthesis.SynthConfig`): the native
+    runs under ``<root>/data/<cache>``, their namelists under ``<root>/<cache>`` and the HOP
+    preparations (pruned line lists, line quadratures, <3D> averages) there. Returns the
+    number of runs removed."""
+    from .workflows import clear_cache as clear
+    return clear(config.to_prefs())
+
+
 def synthesize(request, *, background_lines=True, cancel_token=None):
     """Synthesize the spectra ``request`` describes, one per window.
 
     Without windows the whole range of the line list (or of the model atoms) is synthesised.
-    The line list is pruned per atmosphere when ``config.linelist_skirt`` is positive.
+    The line list is pruned when the atmosphere names a ``preparation``
+    (:mod:`tumult.synthesis.preparation`), over the windows widened by ``config.prune_margin``.
     ``background_lines=False`` synthesises only the model atoms' transitions of an NLTE
     request.
 
@@ -228,14 +235,14 @@ def synthesize_lines(request, lines, *, pad=2.0, lam_tol=0.02, background_lines=
         lines = lines.to_dict("records")
     config = request.config
     folder = config.resolve(config.cache) / "linelists"
-    base = config.resolve(config.linelist) if config.linelist is not None else None
+    base = config.resolve(config.linelist_file) if config.linelist_file is not None else None
     tmp = override_lines(lines, folder / f".partial-{time.time_ns()}.txt", base=base,
                          lam_tol=lam_tol)
     digest = hashlib.sha1(tmp.read_bytes()).hexdigest()[:12]
     llist = tmp.replace(folder / f"{digest}.txt")
     wins = request.windows or tuple((float(l["lam0"]) - pad, float(l["lam0"]) + pad)
                                     for l in lines)
-    request = request.update(config=replace(config, linelist=llist), windows=wins)
+    request = request.update(config=replace(config, linelist_file=llist), windows=wins)
     return synthesize(request, background_lines=background_lines, cancel_token=cancel_token)
 
 
@@ -261,7 +268,7 @@ def _synthesize(request, background_lines, cancel_token):
         state = departure_status(result.runs, resolved.execution_root, started)
     provenance = {
         "calculation": "LTE" if departures is None else "NLTE",
-        "preparation_atmospheres": list(resolved.preparation_references),
+        "preparation_atmospheres": [path for path, _fmt in resolved.preparation_references],
         "pruned": result.preparation is not None,
         "departures": state,
         "quadrature": quadrature.to_dict() if quadrature is not None else None,
@@ -298,7 +305,7 @@ def check_fit(request, *, fit_stellar=(), abund_fits=None, fit_post=None):
     nothing to fit or no window."""
     from ..departures import DepartureGrid, Departures
     atmosphere = request.atmosphere
-    if isinstance(atmosphere, Snapshot):
+    if is_snapshot(atmosphere):
         raise ValueError("Fitting is available for 1D atmospheres and grids only.")
     if isinstance(request.departures, (Departures, DepartureGrid)):
         raise ValueError("Frozen departures do not follow the trial points of a fit; "

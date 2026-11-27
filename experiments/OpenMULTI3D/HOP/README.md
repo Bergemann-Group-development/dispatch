@@ -50,12 +50,12 @@ python -m pip install --upgrade pip
 The [releases](https://github.com/Bergemann-Group-development/hopacity/releases) of this repository carry ready-built wheels for Linux x86_64 and macOS on Apple silicon (macOS 15 and later). They contain the compiled library, its Fortran and OpenMP runtimes and HOP's default input data, so no compiler is needed. Download the one for your platform and install it:
 
 ```bash
-pip install hopacity-0.1.0-py3-none-macosx_14_0_arm64.whl     # the file you downloaded
+pip install hopacity-0.2.0-py3-none-macosx_14_0_arm64.whl     # the file you downloaded
 ```
 
 ### From the source code
 
-On other platforms, or to build from a clone, you need a Fortran compiler and `make`: gfortran (`brew install gcc` on macOS, `sudo apt install gfortran make` on Debian or Ubuntu), or the Intel compilers with `COMPILER=ifort` or `COMPILER=ifx` set in the environment. In the activated environment:
+On other platforms, or to build from a clone, you need a Fortran compiler and `make`: gfortran 11 or later (`brew install gcc` on macOS, `sudo apt install gfortran make` on Debian or Ubuntu), or Intel's `ifort` with `COMPILER=ifort` set in the environment (its last release, 2021.13 from oneAPI 2024.2; `COMPILER=ifx` also works). In the activated environment:
 
 ```bash
 git clone https://github.com/Bergemann-Group-development/hopacity.git
@@ -87,6 +87,7 @@ It prints the electron density of a solar-photosphere state, `[2.02576419e+13]` 
 | `pe`, `pg` | electron and gas pressure | dyn cm⁻² |
 | `energy` | internal energy | erg g⁻¹ |
 | `chi500` | extinction at 5000 Å (air) | cm⁻¹ |
+| `log_p6` | log₁₀ of the van der Waals perturber pressure P(H I) + 0.41 P(He I) + 0.85 P(H₂) | dyn cm⁻² |
 
 `species_density('Fe I')` returns the number density [cm⁻³] of one atom, ion or molecule; pass `species=['Fe I', 'CO']` to `load_state` to keep the ones you will ask for. Instead of `rho` you can give `ne`, and `rho` is then solved for.
 
@@ -120,7 +121,7 @@ It takes about a second.
 
 ### Composition and options
 
-`HopEOS` sets the chemical composition. `feh` scales the solar abundances (Magg et al. 2022 by default) of all elements heavier than Li to a metallicity [Fe/H]; `alpha_enhancement` is added to the α elements O, Ne, Mg, Si, S, Ar, Ca and Ti; `abundances='Mg=7.70 Fe=7.40'` sets single elements to absolute abundances log ε (on the scale log ε(H) = 12), or adds the values to the scaled ones if you also pass `relative_abundances=True`. `abund_file`, `absdat_file`, `isotope_file` and `molec_file` replace the bundled abundance, continuum, isotope and molecular data. Any other HOP setting is a keyword argument too, and `hop.option_names()` lists them.
+`HopEOS` sets the chemical composition. `feh` scales the solar abundances (Magg et al. 2022 by default) of all elements heavier than Li to a metallicity [Fe/H]; `alpha_enhancement` is added to the α elements O, Ne, Mg, Si, S, Ar, Ca and Ti; `abundances='Mg=7.70 Fe=7.40'` sets single elements to absolute abundances log ε (on the scale log ε(H) = 12), or adds the values to the scaled ones if you also pass `relative_abundances=True`. `abund_file`, `absdat_file`, `isotope_file` and `molec_file` replace the bundled abundance, continuum, isotope and molecular data. Any other HOP setting is a keyword argument too, and `hop.option_names()` lists them. `hop.abundances` returns the abundances log ε that result, by atomic number Z (index Z − 1), with −99 for elements HOP does not carry.
 
 HOP keeps its state in the process, so only one `HopEOS` can be open at a time. Use it in a `with` block, as here, or call `close()` before opening the next.
 
@@ -183,7 +184,7 @@ python -m hopacity.linelists fetch linelists                        # all of the
 
 `fetch` puts the files in the folder you name (here `linelists`), skips files that are already complete there, and resumes an interrupted download when run again. From Python, `hopacity.linelists.fetch('linelists', ['vald_atoms.txt'])` does the same.
 
-Give `opacity` a line-list file, a list of files, or a folder (meaning all files in it), and with `dlam` the distance in Å from the wavelength range within which lines are read in, so that the wings of lines just outside it are included:
+Give `opacity` a line-list file, a list of files, or a folder (meaning all files in it), and with `line_margin` the distance in Å from the wavelength range within which lines are read in, so that the wings of lines just outside it are included:
 
 ```python
 import matplotlib.pyplot as plt
@@ -201,7 +202,7 @@ def main():
     with HopEOS(feh=0.0) as hop:
         hop.load_state(temp, rho=rho)
         cnt, _ = hop.opacity(lam, nprocs=4)
-        chi, scat = hop.opacity(lam, linelist=llist, dlam=10.0, vmic=1.0, nprocs=4)
+        chi, scat = hop.opacity(lam, linelist=llist, line_margin=10.0, vmic=1.0, nprocs=4)
 
     i, j = np.searchsorted(tab_temp, 6000.0), np.searchsorted(tab_rho, 1e-7)
     fig, ax = plt.subplots(layout='constrained')
@@ -228,7 +229,7 @@ A line-list file is in [Turbospectrum](https://github.com/bertrandplez/Turbospec
 `nprocs` runs the calculation in that many processes, each computing part of the wavelength range. The cost grows with the number of wavelengths times the number of cells, so for large tables set `nprocs` to the number of cores. Two things follow from the separate processes:
 
 - A script that passes `nprocs` > 1 must put its work in a function called under `if __name__ == '__main__':`, as in the examples above. Each process imports the script, and without that guard each would start the calculation again. Jupyter notebooks do not need it.
-- Each process reads the lines within `dlam` of its own part of the wavelength range. Far wings of strong lines more than `dlam` away from a part are missing there, so choose `dlam` larger than the wings you need. With `nprocs=1` all lines within `dlam` of the whole range contribute everywhere.
+- Each process reads the lines within `line_margin` of its own part of the wavelength range. Far wings of strong lines more than `line_margin` away from a part are missing there, so choose `line_margin` larger than the wings you need. With `nprocs=1` all lines within `line_margin` of the whole range contribute everywhere.
 
 If HOP stops with an error inside one of these processes (for example on a missing data file), `opacity` raises `HopError`, and HOP's message is printed above the Python traceback. With `nprocs=1` the same error ends the Python process itself, after printing the message.
 
@@ -242,7 +243,7 @@ from hopacity import HopEOS, wavelength_grid
 lam = wavelength_grid(5165.0, 5190.0, R_sampling=100000)
 with HopEOS(feh=0.0) as hop:
     hop.load_state([4500.0, 5000.0, 5800.0, 6500.0], rho=[1e-8, 5e-8, 2e-7, 3e-7])
-    lines = hop.line_strengths(lam, 'linelists/vald_atoms.txt', dlam=2.0, vmic=1.0)
+    lines = hop.line_strengths(lam, 'linelists/vald_atoms.txt', line_margin=2.0, vmic=1.0)
 print(lines.sort_values('strength', ascending=False).head())
 ```
 
@@ -255,7 +256,7 @@ print(lines.sort_values('strength', ascending=False).head())
 163  Fe I  5171.596  1.485 -1.793    7913.413086
 ```
 
-The four states roughly follow a solar photosphere. `strength` is evaluated at the line centre, so the wavelength grid need not resolve the lines; it only sets the range, widened by `dlam`, from which lines are taken. The strengths accumulate over calls with the same line list, so compute a wavelength band in one call to get exactly its lines.
+The four states roughly follow a solar photosphere. `strength` is evaluated at the line centre, so the wavelength grid need not resolve the lines; it only sets the range, widened by `line_margin`, from which lines are taken. The strengths accumulate over calls with the same line list, so compute a wavelength band in one call to get exactly its lines.
 
 ## Line-list pruning
 
@@ -266,14 +267,14 @@ Its input is the run's own namelist groups plus `&prune_params`:
 ```fortran
 &atmos_params        atmos_format='marcs' atmos_file='model.mod' vmic=1.0 use_abnd=.true. /
 &composition_params  abundances='Fe=+1.0' relative_abundances=.true. /
-&linelist_params     linelist_file='master.txt' dlam=5.0 /
+&linelist_params     linelist_file='master.txt' line_margin=5.0 /
 &spectrum_params     window_file='windows.txt' R_sampling=300000.0 /
 &prune_params        output_file='pruned.txt' sample_count=8 /
 ```
 
 - The atmosphere is read with the reader `dispatch.x` uses (MARCS, text 1D and MULTI 1D; 3D models are refused). `sample_count` depths spread over the model are evaluated (0 means every depth).
 - The composition is applied in the run's order: the abundance file scaled by `feh`, replaced by the model's own abundances with `use_abnd`, then `abundances`. Prune at the highest abundance of a series, since an element's lines grow with its abundance.
-- Lines are read inside the windows widened by `dlam` and kept if their opacity on the run's wavelength grid passes HOP's negligibility test on the sampled depths, so `dlam` and `R_sampling` have to match the runs.
+- Lines are read inside the windows widened by `line_margin` and kept if their opacity on the run's wavelength grid passes HOP's negligibility test on the sampled depths, so `line_margin` and `R_sampling` have to match the runs.
 - Each record ends with the line's strength and its reach, the distance in Å out to which its extinction exceeds the tolerance times the continuum. A run reading a list whose lines carry a reach evaluates each line only where it reaches.
 - The output is written to `<output_file>.<pid>.partial` and renamed when complete. `<output_file>.provenance.nml` records every input group the selection used and a `&prune_result` group with the sampled depths, the effective vmic and [Fe/H], the windows and the line count. Invalid input exits with status 1 and one line on stderr.
 

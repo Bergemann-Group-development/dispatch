@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from tumult import Spectrum
-from tumult.synthesis import (Atmosphere, AtmosphereGrid, ResolvedSynthRequest, Snapshot,
+from tumult.synthesis import (Atmosphere, AtmosphereGrid, ResolvedSynthRequest,
                               SynthConfig, SynthesisResult, SynthRequest, workflows)
 
 
@@ -22,7 +22,7 @@ def _request(atmosphere, tmp_path, windows=(), star=(5750, 4.5, 0, 1), **config)
 def test_all_atmosphere_kinds_roundtrip(tmp_path):
     requests = [_request(AtmosphereGrid('grid'), tmp_path, [(4999.5, 5001.5)]),
                 _request(Atmosphere('one.mod'), tmp_path, [(4999.5, 5001.5)]),
-                _request(Snapshot('cube.dat', 'Stagger', (8, 8, 16)), tmp_path,
+                _request(Atmosphere('cube.dat', 'Stagger', (8, 8, 16)), tmp_path,
                          [(4999.5, 5001.5)], star=(5750, 4.5, 0))]
     for request in requests:
         reopened = SynthRequest.from_json(request.to_json())
@@ -56,13 +56,13 @@ def test_preparation_cache_tracks_changed_inputs(tmp_path, monkeypatch):
         return [path for path, _nml in jobs]
 
     monkeypatch.setattr('tumult.prune.prune_batch', prune_batch)
-    a = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    a = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
-    b = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    b = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
     assert a.folder == b.folder and len(calls) == 1
     master.write_text('changed master input')
-    c = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    c = linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                       [(5000, 5002)], R=50000)
     assert c.folder != a.folder and len(calls) == 2
 
@@ -102,7 +102,7 @@ def test_preparation_expands_a_linelist_folder_for_the_standalone_pruner(tmp_pat
             Path(path).write_text('prepared')
 
     monkeypatch.setattr('tumult.prune.prune_batch', prune_batch)
-    linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
+    linestrength.prepare_linelist(tmp_path / 'cache', [(atmos, 'marcs')], master,
                                   [(5000, 5002)], R=50000)
     assert seen == [[str(master / 'Fe.txt'), str(master / 'Mg.txt')]]
 
@@ -119,13 +119,39 @@ def test_individual_atmosphere_resolves_nearest_marcs_reference(tmp_path, monkey
     atmosphere = Atmosphere('science.mod', 'Text', preparation=AtmosphereGrid(marcs))
     resolved = workflows.resolve_request(
         _request(atmosphere, tmp_path, star=(5700, 4.4, 0.0, 1.0)))
-    assert resolved.preparation_references == (str(solar.resolve()),)
+    assert resolved.preparation_references == ((str(solar.resolve()), 'Marcs'),)
     assert resolved.preparation_aliases[str((tmp_path / 'science.mod').resolve())] == \
         str(solar.resolve())
 
 
+def test_only_a_named_preparation_prepares(tmp_path, monkeypatch):
+    """Without ``preparation`` nothing is pruned, a MARCS model included; a snapshot
+    preparation is prepared on its <3D> average."""
+    from tumult.synthesis import preparation, workflows
+    plain = workflows.resolve_request(_request(Atmosphere('science.mod'), tmp_path))
+    assert plain.preparation_references == () and plain.preparation_aliases == {}
+    science = Atmosphere('science.mod', 'Text', preparation=True)
+    assert science.preparation == Atmosphere('science.mod', 'Text')
+    assert Atmosphere.from_dict(science.to_dict()) == science
+    itself = workflows.resolve_request(_request(science, tmp_path))
+    assert itself.preparation_references == ((str(tmp_path / 'science.mod'), 'Text'),)
+    averaged = []
+
+    def mean_3d(snapshot, atmos_format, feh, root):
+        averaged.append((Path(snapshot).name, atmos_format))
+        return preparation.Reference(str(tmp_path / 'mean.txt'), 'text')
+
+    monkeypatch.setattr(preparation, 'mean_3d', mean_3d)
+    cube = Atmosphere('cube.atmos', 'M3DIS', preparation=Atmosphere('cube.atmos', 'M3DIS'))
+    resolved = workflows.resolve_request(_request(cube, tmp_path))
+    assert averaged == [('cube.atmos', 'M3DIS')]
+    assert resolved.preparation_references == ((str(tmp_path / 'mean.txt'), 'text'),)
+
+
 def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monkeypatch):
-    """A snapshot is one run over every window, read through a window file."""
+    """A snapshot is one run over every window, read through a window file. It takes the
+    star's [Fe/H], which dispatch needs for any non-solar composition and absmet table,
+    and no vmic, since its velocity field replaces microturbulence."""
     from tumult.synthesis import snapshot, workflows
     run = type('Run', (), {'folder': tmp_path / 'run',
                            'crop': lambda self, **kwargs: ('spectrum', kwargs)})()
@@ -137,10 +163,12 @@ def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monke
 
     monkeypatch.setattr(snapshot, 'synthesise_snapshot', direct)
     windows = [(4999.5, 5001.5), (6100.0, 6102.0)]
-    request = _request(Snapshot('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
-                       windows, star=(5750, 4.5, 0))
+    request = _request(Atmosphere('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
+                       windows, star=(5750, 4.5, -3))
     result = workflows.execute_request(request)
     assert result.geometry == '3d' and len(seen) == 1
+    assert seen[0][2]['settings']['atmos_params']['feh'] == -3
+    assert 'vmic' not in seen[0][2]['settings']['atmos_params']
     assert [kwargs['window'] for _name, kwargs in result.spectra] == windows
     assert seen[0][1] == (tmp_path / 'cube.dat').resolve()
     assert seen[0][2]['resolution'] == (4, 5, 6)
@@ -214,7 +242,7 @@ def test_unsupported_combinations_are_refused_before_a_record_exists(tmp_path):
     with pytest.raises(ValueError, match='model atoms'):
         workflows.resolve_request(one, {'mode': 'NLTE'})
     with pytest.raises(ValueError, match='prepared'):
-        workflows.resolve_request(one.update(departures=DepartureRequest('mg.atom')))
+        workflows.resolve_request(one.update(departures=DepartureRequest('mg.atom', line_grid=True)))
     with pytest.raises(ValueError, match='unknown operation'):
         submission.submit_operation('synthesis.compute', one, root=tmp_path / 'jobs')
     assert not (tmp_path / 'jobs').exists()      # nothing was recorded for a refused request
@@ -228,7 +256,7 @@ def test_fit_refuses_what_fitting_does_not_support(tmp_path):
 
     one = _request(Atmosphere('one.mod'), tmp_path, windows)
     with pytest.raises(ValueError, match='1D atmospheres and grids'):
-        check_fit(_request(Snapshot('cube.dat', 'Stagger', (4, 4, 8)), tmp_path, windows,
+        check_fit(_request(Atmosphere('cube.dat', 'Stagger', (4, 4, 8)), tmp_path, windows,
                            star=(5750, 4.5, 0)), fit_post={'vshift': 0})
     with pytest.raises(ValueError, match='Frozen departures'):
         check_fit(one.update(departures=_saved_departures(tmp_path)), abund_fits={'Mg': 0.0})
@@ -242,12 +270,12 @@ def test_fit_refuses_what_fitting_does_not_support(tmp_path):
 
 def test_fit_synthesises_each_trial_point_as_the_request_over_the_span(tmp_path, monkeypatch):
     """Every trial point is the fit's own request at that point, over one span window, so
-    the configuration, expert settings, sampling and padding reach dispatch unchanged; the
+    the configuration, namelist settings, sampling and padding reach dispatch unchanged; the
     observation is compared only inside the fit windows."""
     from tumult.synthesis import Abundances, api, operations, snapshot_grid
     request = _request(AtmosphereGrid('grid'), tmp_path, [(5000, 5001), (5002, 5003)],
                        abundance_step=0.5, preferences={'fit_max_rounds': 3},
-                       expert={'spectrum_params': {'daa': 0.01}})
+                       nml_settings={'spectrum_params': {'daa': 0.01}})
     request = request.update(abundances={'Ca': 0.1})
     executed = []
 
@@ -303,8 +331,8 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
 
     atom = tmp_path / 'atom.ba'
     line_grid = tmp_path / 'line_grid.txt'
-    request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
-                       star=(4548, 3.964, 0), R_sampling=1e6, linelist_skirt=0)
+    request = _request(Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
+                       star=(4548, 3.964, 0), R_sampling=1e6, prune_margin=0)
     run_values = {'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)}
     resolved = workflows.resolve_request(request, run_values)
@@ -326,13 +354,13 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_R_sampling(
     assert windowed.settings['spectrum_params']['R_sampling'] == 1e6
 
 
-def test_snapshot_sampled_opacity_defaults_allow_expert_override(tmp_path):
-    expert = {
+def test_snapshot_sampled_opacity_defaults_allow_nml_settings_override(tmp_path):
+    nml_settings = {
         'rt_iteration_params': {'sample_back_opac': False, 'sample_linelist': False},
         'rt_output_params': {'sample_back_opac': False, 'sample_linelist': False},
     }
-    request = _request(Snapshot('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
-                       star=(4548, 3.964, 0), expert=expert)
+    request = _request(Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)), tmp_path,
+                       star=(4548, 3.964, 0), nml_settings=nml_settings)
     settings = workflows.resolve_request(request, {}).settings
     for section in ('rt_iteration_params', 'rt_output_params'):
         assert settings[section]['sample_back_opac'] is False
@@ -341,3 +369,22 @@ def test_snapshot_sampled_opacity_defaults_allow_expert_override(tmp_path):
     one_d = workflows.resolve_request(_request(Atmosphere('one.mod'), tmp_path), {}).settings
     assert 'rt_iteration_params' not in one_d
     assert 'rt_output_params' not in one_d
+
+
+def test_the_format_decides_whether_an_atmosphere_is_a_snapshot():
+    assert Atmosphere('cube.atmos', 'M3DIS', (20, 20, 64)).is_3d
+    assert not Atmosphere('sun.mod').is_3d
+    with pytest.raises(ValueError, match='1D format'):
+        Atmosphere('sun.mod', 'Marcs', (20, 20, 64))
+
+
+def test_absmet_is_one_table_or_a_folder_of_them(tmp_path):
+    (tmp_path / 'tables').mkdir()
+    (tmp_path / 'one.bin').touch()
+    folder = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'tables'})
+    single = SynthConfig.from_prefs({'dispatch_cwd': str(tmp_path), 'absmet': 'one.bin'})
+    assert (folder.absmet_folder, folder.absmet_file) == (Path('tables'), None)
+    assert (single.absmet_file, single.absmet_folder) == (Path('one.bin'), None)
+    assert SynthConfig.from_prefs(folder.to_prefs()).absmet_folder == tmp_path / 'tables'
+    with pytest.raises(ValueError, match='not both'):
+        SynthConfig(root=tmp_path, absmet_file='one.bin', absmet_folder='tables')

@@ -3,6 +3,7 @@
 \fort{&opac_table_params} & Meaning\\
 \midrule
 \fort{absmet_file} & Unformatted table of metal bound-bound opacity, used as LTE background in the NLTE iterations.\\
+\fort{absmet_folder} & Folder of such tables, named by their [Fe/H] as \File{m-2.00a+0.40...}. The run takes the table nearest its \fort{FeH} (the model's when \fort{&atmos_params} gives none, else $[\mathrm{Fe/H}]=0$), the more metal-poor one on a tie, and records it as \fort{absmet_file} in \File{params.nml}. Give either key, not both.\\
 \fort{opac_table}, \fort{pca_opac} & Binned opacity table and its PCA grid in $(\ln T,\ln n_\mathrm{e})$.\\
 \fort{opac_table_vmic} & Microturbulence in \si{\km\per\s} of the line profiles in the tabulated opacities, such as the sampled line list. One value for all cells. Default: the mean microturbulence of the atmosphere, also of a \fort{save} atmosphere; with none (3D models), thermal broadening only.\\
 \bottomrule

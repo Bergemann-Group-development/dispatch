@@ -15,7 +15,7 @@ MODULE nlte_patch_mod
   USE handyfuncs_mod
   USE mpi_mod, only: mpi
   USE atom_convert_mod, only: classic_atom_t, read_classic_atom, write_pandas_atom
-  USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, &
+  USE atom_mod, only: atom_type, atomic_spectrum_type, kramer_bf, max_update, &
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
@@ -34,10 +34,12 @@ MODULE nlte_patch_mod
     rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_windows, n_windows_out, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_final_counter, nlte_finished, nlte_last_change, nlte_last_iter, n_convmax_finished, &
+    stall_iter, stalled, nlte_best_change, nlte_best_iter, &
+    eta_reset_change, eta_reset_iter, preconditioning, rate_formulation, &
     n_nlte_patches, release_output_tasks, &
     save_populations, bound_free_in_output, save_rates, save_every, stop_requested, stop_exit, &
     save_net_rates
-  USE rt_params_mod, only: rt_out
+  USE rt_params_mod, only: rt_out, rt_iter
   USE bftrans_mod, only: bftrans_type, H_occupation_probability
   USE osmet_mod, only: osmet_type, osmet
   USE m3d_debug_mod
@@ -60,6 +62,9 @@ MODULE nlte_patch_mod
     real(8) :: maxerr=0                 !< largest weighted change of the departures in the last update, signed
     real(8) :: global=0                 !< largest such change over all NLTE patches in the previous, complete iteration
     real(8) :: local                    !< change of level lvlcheck at the debug point in the last update
+    integer :: epos(3)=0                !< mesh point of maxerr, in the global mesh
+    integer :: elvl=0                   !< level of maxerr
+    integer :: eatom=1                  !< atom of maxerr
     integer :: natom=0                  !< number of model atoms
     logical :: atom_allocated=.false.   !< pre_init_atom has allocated the atoms
     logical :: pop_meta_written=.false. !< this patch has its rows in `pop_<atom>_meta.txt`
@@ -75,6 +80,7 @@ MODULE nlte_patch_mod
     procedure :: init_departures
     procedure :: write_populations
     procedure :: check_stop_request
+    procedure :: stall_stop
     procedure :: get_osmet_nu
     procedure :: exclude_double_continua
     procedure :: exclude_double_lines
@@ -84,19 +90,24 @@ MODULE nlte_patch_mod
     procedure :: save_abundance_to_file
     procedure :: save_convergence_report
     procedure :: check_mem_NaN
+    procedure :: fold_psi_flags
   end type nlte_patch_t
 
-  integer, save :: epos(3) !< mesh point of the largest change, in the global mesh
-  integer, save :: elvl    !< level of the largest change
-  integer, save :: eatom=1 !< atom of the largest change
-
-  ! Population convergence is judged per iteration (see execute).
+  ! Population convergence is judged per iteration (see execute).  The largest
+  ! change of an iteration carries its mesh point, level and atom.
   integer, save :: sweep_iter=-1    !< iteration under way
   integer, save :: sweep_active=0   !< number of NLTE patches that update in it
   integer, save :: sweep_updates=0  !< number of them that have updated
   integer, save :: n_finished=0     !< number of finished NLTE patches
   real(8), save :: sweep_maxerr=0d0 !< largest change in the iteration under way
+  integer, save :: sweep_epos(3)=0, sweep_elvl=0, sweep_eatom=1
+  logical, save :: sweep_ng=.false. !< an Ng step was applied in the iteration under way
   real(8), save :: last_maxerr=0d0  !< largest change in the previous, complete iteration
+  integer, save :: last_epos(3)=0, last_elvl=0, last_eatom=1
+  !> The (line, cell) pairs in force in psi_flags, per line and atom over all slabs
+  !> (finished ones included), and those put in force in the iteration under way
+  integer(8), save, allocatable :: psi_pairs(:,:)
+  integer(8), save :: psi_new=0
 
   logical, save :: exclude_from_line_list=.true. !< drop the atoms' species from the line list (atom_params)
   !> With exclude_trace_cont, also replace the table 'H BF' continua (n = 1..5) whose
@@ -623,9 +634,9 @@ contains
         adata%converged = abs(adata%maxerr) < convmax
         if (abs(self%maxerr) < abs(adata%maxerr)) then
           self%maxerr = adata%maxerr
-          epos = adata%epos + [0,0,self%zs-1]
-          elvl = adata%elvl
-          eatom = k
+          self%epos = adata%epos + [0,0,self%zs-1]
+          self%elvl = adata%elvl
+          self%eatom = k
         endif
 
         if (do_ng .and. .not. adata%converged) then
@@ -687,7 +698,9 @@ contains
     ! this iteration and the next iteration's nlte updates are then skipped
     ! (m3d_patch_t%pre_update), and each patch finishes with this solve.  The
     ! count is taken before a patch finishes early (below), which must not
-    ! remove it from the iteration it has just solved.
+    ! remove it from the iteration it has just solved.  The last patch of an
+    ! iteration also reports it: the iteration-table line and the change the
+    ! closing verdict quotes are this iteration's own.
     !---------------------------------------------------------------------------
     if (self%iter > 0) then
       !$omp critical (nlte_sweep)
@@ -700,12 +713,43 @@ contains
         sweep_active = n_nlte_patches - n_finished
         sweep_updates = 0
         last_maxerr = sweep_maxerr
+        if (eta_reset_iter < 0 .and. last_maxerr /= 0d0 .and. abs(last_maxerr) < eta_reset_change) then
+          eta_reset_iter = self%iter
+          if (rt_iter%solver == 'linear2' .and. console_on(ch_m3d, 2)) &
+            write(console_unit,'(a,i0)') 'eta-step flags of the linear2 solver restart at iteration ', &
+              eta_reset_iter
+        endif
+        last_epos = sweep_epos
+        last_elvl = sweep_elvl
+        last_eatom = sweep_eatom
         sweep_maxerr = 0d0
+        sweep_ng = .false.
       endif
-      if (abs(self%maxerr) > abs(sweep_maxerr)) sweep_maxerr = self%maxerr
+      if (abs(self%maxerr) > abs(sweep_maxerr)) then
+        sweep_maxerr = self%maxerr
+        sweep_epos = self%epos
+        sweep_elvl = self%elvl
+        sweep_eatom = self%eatom
+      endif
+      do i=1, self%natom
+        if (self%atoms(i)%ng_applied(self%iter)) sweep_ng = .true.
+      end do
+      call self%fold_psi_flags()
       sweep_updates = sweep_updates + 1
       last = sweep_updates == sweep_active
-      if (last) nlte_last_change = last_maxerr
+      if (last) then
+        nlte_last_change = sweep_maxerr
+        if (nlte_best_iter == 0 .or. abs(sweep_maxerr) < nlte_best_change) then
+          nlte_best_change = abs(sweep_maxerr)
+          nlte_best_iter = self%iter
+        endif
+        ! A change above max_update-1 can only come from a correction the limiter
+        ! has cut (update_populations): the iterations are still in a transient,
+        ! which may recover, so the stall window starts again after it.
+        if (abs(sweep_maxerr) > max(max_update, 1d0) - 1d0) nlte_best_iter = self%iter
+        call print_iteration_line(self%iter, self%maxiter)
+        call print_psi_flags()
+      endif
       !$omp end critical (nlte_sweep)
       self%global = last_maxerr
       if (last .and. abs(self%global) > 0 .and. abs(self%global) < convlim &
@@ -714,6 +758,9 @@ contains
       endif
       if (last .and. .not. converged .and. self%iter < self%maxiter) &
         call self%check_stop_request()
+      if (last .and. .not. converged .and. self%iter < self%maxiter .and. stall_iter > 0 &
+          .and. self%iter - nlte_best_iter >= stall_iter) &
+        call self%stall_stop()
     endif
 
     ! locally_converged is population/convmax-based (premature_finish shortcut);
@@ -728,6 +775,7 @@ contains
 
     if (self%iter == 0) then
       call self%init_departures()
+      call self%fold_psi_flags()
       ! a stop request left over from an earlier run in this folder is void
       !$omp critical (stop_flag)
       if (.not. stale_stop_checked) then
@@ -810,9 +858,81 @@ contains
       endif
       output = output + cell*bytes
       if (self%maxiter > 0) bytes = bytes + 2*4d0*self%atoms(i)%nrad
+      if (self%maxiter > 0 .and. preconditioning .and. rate_formulation == 'largest') &
+        bytes = bytes + 2*4d0*((self%atoms(i)%nline + 31)/32)
       nlte = nlte + cell*bytes
     end do
   END SUBROUTINE estimate_atom_memory
+
+  !===============================================================================
+  !> The (line, cell) pairs whose split preconditioned rates take psi = 0 at all
+  !> their points (atom_data_t psi_flags, bound_bound_rates).  At iteration 0 the
+  !> flags are allocated; at each later update, inside the nlte_sweep critical
+  !> section, the pairs the RT tasks of the previous iteration raised are put in
+  !> force.  Every RT task of that iteration has finished and none of the next
+  !> has started, so the flags do not depend on the order of the tasks.  The
+  !> pairs raised while the populations are far from converged are dropped once,
+  !> with both slots, at eta_reset_iter (as the linear2 eta flags are).
+  !===============================================================================
+  SUBROUTINE fold_psi_flags (self)
+    class(nlte_patch_t) :: self
+    class(atom_data_t), pointer :: adata
+    integer(4), allocatable :: new(:,:,:)
+    integer :: k, w, b, kr, nline
+    !-----------------------------------------------------------------------------
+    if (.not. preconditioning .or. rate_formulation /= 'largest' .or. self%maxiter <= 0) return
+    do k=1, self%natom
+      adata => self%atoms(k)%data
+      if (.not. associated(adata)) cycle
+      if (.not. allocated(adata%b)) cycle
+      nline = self%atoms(k)%nline
+      if (nline == 0) cycle
+      if (.not. allocated(adata%psi_flags)) then
+        if (self%iter /= 0) cycle
+        allocate(adata%psi_flags(size(adata%b,1),size(adata%b,2),size(adata%b,3),(nline+31)/32,2), &
+                 source=0)
+        !$omp critical (psi_pairs_alloc)
+        if (.not. allocated(psi_pairs)) allocate(psi_pairs(maxval(self%atoms%nline),self%natom), source=0_8)
+        !$omp end critical (psi_pairs_alloc)
+        cycle
+      endif
+      if (.not. adata%psi_reset_done .and. eta_reset_iter >= 0 .and. self%iter >= eta_reset_iter) then
+        do kr=1, nline
+          w = (kr-1)/32 + 1
+          b = mod(kr-1, 32)
+          psi_pairs(kr,k) = psi_pairs(kr,k) - count(btest(adata%psi_flags(:,:,:,w,1), b))
+        end do
+        adata%psi_flags = 0
+        adata%psi_reset_done = .true.
+      endif
+      allocate(new(size(adata%psi_flags,1),size(adata%psi_flags,2),size(adata%psi_flags,3)))
+      do w=1, size(adata%psi_flags,4)
+        new = iand(adata%psi_flags(:,:,:,w,2), not(adata%psi_flags(:,:,:,w,1)))
+        do b=0, min(31, nline-(w-1)*32-1)
+          kr = (w-1)*32 + b + 1
+          psi_pairs(kr,k) = psi_pairs(kr,k) + count(btest(new, b))
+        end do
+        psi_new = psi_new + sum(int(popcnt(new), 8))
+        adata%psi_flags(:,:,:,w,1) = ior(adata%psi_flags(:,:,:,w,1), adata%psi_flags(:,:,:,w,2))
+        adata%psi_flags(:,:,:,w,2) = 0
+      end do
+      deallocate(new)
+    end do
+  END SUBROUTINE fold_psi_flags
+
+  !===============================================================================
+  !> At console level 2, the (line, cell) pairs of psi_flags in force for the next
+  !> iteration, those that came into force at this iteration's folds, and the
+  !> number of lines they belong to.
+  !===============================================================================
+  SUBROUTINE print_psi_flags ()
+    !-----------------------------------------------------------------------------
+    if (allocated(psi_pairs) .and. console_on(ch_m3d, 2)) then
+      write(console_unit,'(a,i0,a,i0,a,i0,a)') '  unpreconditioned (line, cell) pairs: ', &
+        sum(psi_pairs), ' in force, ', psi_new, ' new, on ', count(psi_pairs > 0), ' lines'
+    endif
+    psi_new = 0
+  END SUBROUTINE print_psi_flags
 
   !===============================================================================
   !> Finishes the patch: moves the departure coefficients to the departures the
@@ -1100,6 +1220,32 @@ contains
   END SUBROUTINE check_stop_request
 
   !===============================================================================
+  !> Ends the NLTE iterations that are going nowhere: the largest relative change
+  !> of the last stall_iter iterations has not fallen below its smallest earlier
+  !> value, as in a run that oscillates or sits on a floor above convlim.  An
+  !> iteration whose largest change is at the population limiter (max_update)
+  !> restarts that count.  It ends
+  !> them as check_stop_request does: every depth patch writes its departures and
+  !> the output pass runs.  A run that converges, however slowly, keeps reaching
+  !> new minima and is not stopped.
+  !===============================================================================
+  SUBROUTINE stall_stop (self)
+    class(nlte_patch_t), intent(in) :: self
+    character(len=16) :: nit, nbest, nstall
+    character(len=16) :: best
+    !-----------------------------------------------------------------------------
+    stalled = .true.
+    converged = .true.
+    write (nit, '(i0)') self%iter
+    write (nbest, '(i0)') nlte_best_iter
+    write (nstall, '(i0)') stall_iter
+    write (best, '(es10.2)') nlte_best_change*100
+    call console_warn (ch_m3d, 'NLTE iterations stalled after iteration '//trim(nit)//': no change below '// &
+      trim(adjustl(best))//' % (iteration '//trim(nbest)//') in '//trim(nstall)// &
+      ' iterations; departures are written, then the output pass runs')
+  END SUBROUTINE stall_stop
+
+  !===============================================================================
   !> Projects the departure coefficients onto the ray-aligned mesh of each output
   !> direction and sets the populations of the rotated atom copies from them,
   !> renormalised to the rotated total number density.
@@ -1212,17 +1358,37 @@ contains
   END SUBROUTINE save_convergence_report
 
   !===============================================================================
-  !> Prints the progress line of the iteration: the largest change, its level and
-  !> mesh point, and an asterisk after Ng-accelerated iterations. At console level 2
-  !> it prints the debug point's values and the flux convergence instead.
+  !> Prints the progress line of a complete iteration: its largest change over the
+  !> NLTE patches that updated in it, that change's level and mesh point, and an
+  !> asterisk if an Ng step was applied in it.  Called by the last patch of the
+  !> iteration, inside the nlte_sweep critical region; console level 2 replaces it
+  !> by the debug point's output (print_post_update_info).
+  !===============================================================================
+  SUBROUTINE print_iteration_line (iter, maxiter)
+    integer, intent(in) :: iter, maxiter
+    character(len=1) :: ng_mark
+    logical, save :: first_time = .true.
+    !-----------------------------------------------------------------------------
+    if (.not. console_on(ch_m3d, 0) .or. console_on(ch_m3d, 2)) return
+    if (first_time) then
+      first_time = .false.
+      write(console_unit, '(A8, A10, A5, A14)') 'iter', 'change', 'lvl', 'pos'
+    endif
+    ng_mark = merge('*', ' ', sweep_ng)
+    write(console_unit, '(I3, A1, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
+      iter, ng_mark, maxiter, abs(sweep_maxerr*100), sweep_elvl, sweep_epos
+    flush(console_unit)
+  END SUBROUTINE print_iteration_line
+
+  !===============================================================================
+  !> At console level 2, prints the debug point's values after each update of the
+  !> patch that holds it, with the largest change of the previous complete
+  !> iteration and where it occurred, and the flux convergence.
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(nlte_patch_t):: self
-    class(atom_data_t), pointer :: adata
     character(len=64) :: text
-    character(len=1) :: ng_mark
-    integer :: i, flux_pos
-    logical, save :: first_time = .true.
+    integer :: flux_pos
     !-----------------------------------------------------------------------------
     if (console_on(ch_m3d, 2, all_ranks=.true.)) then
       if (self%iter == 0) then
@@ -1239,32 +1405,18 @@ contains
         call self%print_to_stdout()
       endif
     endif
-    if (associated(self%atoms) .and. console_on(ch_m3d, 0, all_ranks=.true.)) then
-      if (.not. console_on(ch_m3d, 2, all_ranks=.true.)) then
-        if (first_time) then
-          first_time = .false.
-          write(console_unit, '(A8, A10, A5, A14)') 'iter', 'global', 'lvl', 'pos'
-        endif
-        ! an asterisk after the iteration number marks an Ng-accelerated iteration
-        ng_mark = ' '
-        do i=1, self%natom
-          if (self%atoms(i)%ng_applied(self%iter)) ng_mark = '*'
-        end do
-        write(console_unit, '(I3, A1, "/", I3, F8.2, " %", I5, " [", 3I4, "]")') &
-          self%iter, ng_mark, self%maxiter, abs(self%global*100), elvl, epos
-      else
-        write(console_unit,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
-          '  local =', self%local,  ', global =', self%global, &
-          ', lvl =', elvl, ', pos=', epos, self%atoms(eatom)%id
-        flux_pos = global_flux_pos%update(+0)
-        if (flux_pos >= 0) then
-          write(console_unit,'(A, ES12.4, A, I4, A, F10.2, A)') &
-            '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
-            ', lambda =', global_flux_lambda%update(0.d0), ' AA'
-        endif
-        write(console_unit,'(1X, A80)') &
-          '................................................................................'
+    if (associated(self%atoms) .and. console_on(ch_m3d, 2, all_ranks=.true.)) then
+      write(console_unit,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
+        '  local =', self%local,  ', global =', self%global, &
+        ', lvl =', last_elvl, ', pos=', last_epos, self%atoms(last_eatom)%id
+      flux_pos = global_flux_pos%update(+0)
+      if (flux_pos >= 0) then
+        write(console_unit,'(A, ES12.4, A, I4, A, F10.2, A)') &
+          '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
+          ', lambda =', global_flux_lambda%update(0.d0), ' AA'
       endif
+      write(console_unit,'(1X, A80)') &
+        '................................................................................'
     endif
   END SUBROUTINE print_post_update_info
 

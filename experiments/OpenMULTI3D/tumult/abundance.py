@@ -788,7 +788,7 @@ def measure_reference_lines(request, atom, *, opts=None, quadrature=None, cancel
 
     windows, run_atom = {}, atom
     if opts.line_grid and quadrature is None:
-        quadrature, _atmosphere = DepartureRequest((atom,)).prepare(request)
+        quadrature, _atmosphere = DepartureRequest((atom,), line_grid=True).prepare(request)
     if not opts.line_grid:
         quadrature = None
     if quadrature is not None:
@@ -1380,7 +1380,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     """
     from .synthesis import workflows as synth
     from .synthesis.api import NodeStore
-    from .synthesis.inputs import Snapshot
+    from .synthesis.inputs import is_snapshot
     from .synthesis.operations import run_values as complete_values
 
     opts = opts or CorrectionOpts()
@@ -1389,7 +1389,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     request = request.update(departures=None)
     symbol = result.symbol
     step = request.config.abundance_step
-    snapshot = isinstance(request.atmosphere, Snapshot)
+    snapshot = is_snapshot(request.atmosphere)
 
     # the grid and atom copy stage 1 prepared, so both stages see the same line windows
     run_atom, line_grid = atom, None
@@ -1541,7 +1541,7 @@ class _LatticeContext:
         from .departures import DepartureGrid, Departures
         from .synthesis import workflows as synth
         from .synthesis.api import NodeStore
-        from .synthesis.inputs import Snapshot
+        from .synthesis.inputs import is_snapshot
         from .synthesis.operations import departure_run_values, run_values
 
         self.departure_values, self.quadrature, self.quadrature_atmosphere = \
@@ -1550,7 +1550,7 @@ class _LatticeContext:
         self.solved_departures = isinstance(request.departures, (Departures, DepartureGrid))
         # snapshots and solved departures run through execute_request, which reads them;
         # the batch path schedules every variant's runs together on 1D atmospheres
-        self.direct = self.solved_departures or isinstance(request.atmosphere, Snapshot)
+        self.direct = self.solved_departures or is_snapshot(request.atmosphere)
         self.lte_request = request.update(departures=None)
         base = run_values(request, **self.departure_values)
         self.prefs = request.config.to_prefs()
@@ -1833,8 +1833,8 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
             # measured into the identity the caller holds (the result is listed already)
             stage("Measuring windows", 0)
         measured_now = measure_lines(mset, spectrum,
-                                     linelist=str(config.resolve(config.linelist))
-                                     if config.linelist else None,
+                                     linelist=str(config.resolve(config.linelist_file))
+                                     if config.linelist_file else None,
                                      profile=profile, snr=snr, cont_pct=cont_pct)
         if result is None:
             result = measured_now
@@ -1897,19 +1897,15 @@ def _provenance(request, context, background_lines):
 
 def _reference_atmosphere(request, reference_atmosphere):
     """The 1D atmosphere or grid the LTE reference of a correction is computed on."""
-    from .synthesis.inputs import AtmosphereGrid, Snapshot, coerce_atmosphere
-    from .synthesis.snapshot_grid import SNAPSHOT_FORMATS
+    from .synthesis.inputs import coerce_atmosphere
     if reference_atmosphere is not None:
         reference = coerce_atmosphere(reference_atmosphere)
     else:
         reference = request.atmosphere
-        three_d = isinstance(reference, Snapshot) or (
-            isinstance(reference, AtmosphereGrid)
-            and str(reference.format).lower() in SNAPSHOT_FORMATS)
-        if three_d:
+        if reference.is_3d:
             raise ValueError("A 3D NLTE correction needs a 1D LTE reference; pass "
                              "reference_atmosphere=AtmosphereGrid(...) or Atmosphere(...).")
-    if isinstance(reference, Snapshot):
+    if reference.is_3d:
         raise ValueError("The LTE reference atmosphere must be 1D.")
     return reference
 
@@ -1921,8 +1917,10 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     """Equilibrium NLTE abundance corrections ``A(NLTE) - A(LTE)`` of a model atom's lines.
 
     ``request`` carries the atom as requested departures (``departures.request``) and the
-    NLTE atmosphere. The atom's wavelength quadrature is prepared once, at the request's
-    star and composition, and shared by every synthesis of the operation. The LTE reference
+    NLTE atmosphere. With their ``line_grid``, the atom's wavelength quadrature is prepared
+    once, at the request's star and composition, and shared by every synthesis of the
+    operation; its line windows are where the integrating default profile (``"trapz"``)
+    measures, so a fitted profile is needed without it. The LTE reference
     is synthesised on ``reference_atmosphere`` (the request's atmosphere when that is 1D)
     at the request's composition, and its atom lines stronger than ``ew_min`` mÅ are
     measured over the quadrature's line windows (:func:`measure_reference_lines`). The
@@ -1955,6 +1953,10 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     if request.windows:
         raise ValueError("NLTE corrections measure the atom's own line windows; clear the "
                          "request's windows.")
+    if not departures.line_grid and not get_profile_class(profile).fitted:
+        raise ValueError(f"The {profile!r} profile measures each line over its window from "
+                         "a prepared quadrature; request the departures with line_grid=True "
+                         "or choose a fitted profile.")
     reference = _reference_atmosphere(request, reference_atmosphere)
     request.check()
     lte_request = request.update(atmosphere=reference, departures=None)

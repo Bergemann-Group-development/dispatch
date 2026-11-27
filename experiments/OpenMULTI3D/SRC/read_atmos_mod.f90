@@ -71,6 +71,8 @@ MODULE read_atmos_mod
   logical, public, save :: log_interpolation=.true.   !< interpolate ln T, ln Pe and ln rho
   logical, public, save :: pchip_interpolation=.true. !< monotone cubic interpolation, else linear
   type(input_atmos_t), public, save, target :: ia     !< the snapshot of this rank
+  !> Added to the error of a failed model read, to say what the model was needed for
+  character(len=1024), public, save :: read_hint=''
 
   public :: read_stagger
   public :: read_stagger2
@@ -231,6 +233,7 @@ contains
     !-----------------------------------------------------------------------------
     if (ierr /= 0) then
       call console_error (trim(msg))
+      if (read_hint /= '') call console_error (trim(read_hint))
       error stop 'atmosphere read failed'
     endif
     call ia%allocate(atmos%nx, atmos%ny, atmos%nz)
@@ -583,10 +586,12 @@ contains
   !> along-ray derivative parameterized by z, and the horizontal partials are
   !> unavailable.  With use_ne=.false. there is no Pe field, and the Pe
   !> gradient outputs are zeroed; the caller is expected to rebuild them from
-  !> Pe = n_e*k_B*T after the thermal equilibrium is solved.
+  !> Pe = n_e*k_B*T after the thermal equilibrium is solved.  shift displaces the
+  !> mesh as a whole; short_char2's upwind points form the mesh displaced by one
+  !> plane against the ray.
   !===============================================================================
   SUBROUTINE interpolate_atmos(n, sub, pos, temp, ne, rho, vx, vy, vz, vmic, vec, bot2pivot, &
-                               dlnt_dx, dlnt_dy, dlnt_dz, dpe_dx, dpe_dy, dpe_dz)
+                               dlnt_dx, dlnt_dy, dlnt_dz, dpe_dx, dpe_dy, dpe_dz, shift)
     integer, intent(in) :: n(3)                                 !< patch mesh points
     real(8), intent(in) :: sub(3)                               !< patch size
     real(8), intent(in) :: pos(3)                               !< patch centre
@@ -605,6 +610,7 @@ contains
     real(4), intent(out), dimension(:,:,:), optional :: dpe_dx  !< dPe/dx [dyn cm^-2]
     real(4), intent(out), dimension(:,:,:), optional :: dpe_dy  !< dPe/dy [dyn cm^-2]
     real(4), intent(out), dimension(:,:,:), optional :: dpe_dz  !< dPe/dz [dyn cm^-2]
+    real(8), intent(in), optional :: shift(3)                   !< displacement of the mesh
     real(4), dimension(:,:,:), pointer, contiguous :: rho_in, pe_in, temp_in
     real(4), dimension(:,:,:), allocatable :: pe
     real(4), dimension(:), allocatable :: newz
@@ -631,6 +637,7 @@ contains
 
     ds = sub / n
     lower = pos - 0.5d0*sub
+    if (present(shift)) lower = lower + shift
     lower(1:2) = lower(1:2) + ray_offset*ds(1:2)
     do_pchip = pchip_interpolation
 

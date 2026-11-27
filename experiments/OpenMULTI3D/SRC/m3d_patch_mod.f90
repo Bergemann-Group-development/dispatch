@@ -90,6 +90,19 @@ MODULE m3d_patch_mod
     end type bg_opac_t
 
     !===============================================================================
+    !> The model one plane below the bottom of the domain, at the cells of one
+    !> composition, where the LTE ghost plane of set_upstream_boundary sits.
+    !> Shape (nx,ny).
+    !===============================================================================
+    type, public :: bottom_ghost_t
+      real(4), dimension(:,:), allocatable :: temp    !< temperature [K]
+      real(4), dimension(:,:), allocatable :: chi500  !< chi500 [cm^-1]
+      real(4), dimension(:,:), allocatable :: pe      !< electron pressure [dyn cm^-2]
+      real(4), dimension(:,:), allocatable :: dlnt_dz !< d ln T/dz per code length, along the composition's columns
+      real(4), dimension(:,:), allocatable :: dpe_dz  !< dPe/dz per code length, along the composition's columns
+    end type bottom_ghost_t
+
+    !===============================================================================
     !> A task of OpenMULTI3D: a composition, NLTE or RT patch of one depth slab,
     !> with its frequency window i_nu and direction i_mu.
     !===============================================================================
@@ -99,6 +112,14 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: composition => null()            !< composition of the unrotated atmosphere
       type(composition_type), pointer :: tab_comp => null()               !< composition at the nodes of the opacity or EOS table
       type(composition_type), pointer :: rotated_composition(:) => null() !< compositions along the output rays
+      !> chi500 [cm^-1] at the upwind point of each cell, per iteration direction:
+      !> short_char2 takes the tau500 length of each step from it and chi500 at the cell
+      real(4), allocatable :: chi500_up(:,:,:,:)
+      !> chi500 [cm^-1] of the ghost plane above z=nz
+      real(4), allocatable :: chi500_top(:,:)
+      !> the model below the bottom of the domain, per composition (1 unrotated,
+      !> 1+i_mu along output direction i_mu); allocated on the bottom slab only
+      type(bottom_ghost_t), allocatable :: bottom_ghost(:)
       ! Sampled background-opacity tables, owned by the composition patch and
       ! shared by all its rt_patches.  Everything a table's content depends on is
       ! a function of i_nu alone (the spectrum and the fs:fe slice), so i_nu is
@@ -228,6 +249,15 @@ MODULE m3d_patch_mod
     !> iteration table, for the verdict printed at the end of the run
     real(8), public, save :: nlte_last_change=0d0
     integer, public, save :: nlte_last_iter=0 !< for that verdict: the last iteration of any nlte_patch here
+    !> The sticky eta-step flags of short_char2 (rt_patch_t%update_eta_mask) start afresh
+    !> once, in the first iteration after a complete one whose largest departure change
+    !> (a fraction) was below eta_reset_change, so that the flags of the early, large
+    !> transients do not persist.  eta_reset_iter is that iteration, -1 until it is known;
+    !> the first nlte update of the iteration sets it, before any RT task of it runs.
+    !> A process runs one NLTE solve (the iteration pass has a single set), so it is set
+    !> at most once; the output pass's Lambda iterations do not reset their flags.
+    real(8), public, parameter :: eta_reset_change=1d0
+    integer, public, save :: eta_reset_iter=-1
     !> For the same verdict: how many nlte_patches of this rank finished because
     !> every atom there changed by less than convmax (premature_finish).  A run whose
     !> patches all finished that way never completes the iteration that would give
@@ -238,6 +268,16 @@ MODULE m3d_patch_mod
     !> departures.
     logical, public, save :: stop_requested=.false.
     logical, public, save :: stop_exit=.false.        !< skip the output pass as well after a stop request
+    !> Stall stop: the NLTE iterations end, as after a stop request, once the largest
+    !> relative change of an iteration has not fallen below its smallest earlier value
+    !> for stall_iter iterations in a row (0 switches the test off); an iteration whose
+    !> largest change is at the population limiter restarts the count.  nlte_best_change
+    !> and nlte_best_iter are that smallest value and its iteration, kept by the last
+    !> nlte_patch of each iteration; stalled tells the closing verdict.
+    integer, public, save :: stall_iter=10
+    logical, public, save :: stalled=.false.
+    real(8), public, save :: nlte_best_change=0d0
+    integer, public, save :: nlte_best_iter=0
     logical, public, save :: flux_convergence=.false. !< converge on the emergent flux instead of the populations
     logical, public, save :: preconditioning=.true.   !< preconditioned rates (Rybicki & Hummer 1992)
     logical, public, save :: binned_opac=.false.      !< opac_table gives a binned opacity table
@@ -247,8 +287,8 @@ MODULE m3d_patch_mod
     !> iteration outright.  'largest' uses Rybicki & Hummer (1992) Sect. 2.4
     !> instead, taking the line's own share out of the local source term rather
     !> than out of the integrated rate.  Both have the same fixed point.  It needs
-    !> the linear iteration solver, which is the only one that keeps the formal
-    !> solution's non-local part; rt_patch falls back to 'original' otherwise.
+    !> the formal solution's non-local part, which every solver admitted for the
+    !> iteration pass keeps.
     character(len=16), public, save :: rate_formulation='largest'
     !> Olson-Auer-Buchler local ALI on the continuum-scattering source term.
     !> Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
@@ -317,7 +357,7 @@ MODULE m3d_patch_mod
     logical, public, save :: save_chi=.false.                 !< write the opacity
     logical, public, save :: save_Snu=.false.                 !< write the source function
     logical, public, save :: save_Jnu=.false.                 !< write the mean intensity
-    real(8), public, save :: dlam=100.                        !< distance from a window up to which line wings are followed [AA]
+    real(8), public, save :: line_margin=100.                        !< distance from a window up to which line wings are followed [AA]
     real(8), public, dimension(:), allocatable :: rank_lvlerr !< largest relative change of each level on this rank
     character(len=128), save :: save_patch_kind=''            !< kinds of the tasks that save their output
     !> Optional input manifest for an extended output set axis (abundance ladder).
@@ -364,7 +404,7 @@ MODULE m3d_patch_mod
     ng_step, ng_start, ng_global, cswitch, lse_solver, &
     ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, ng_cond_min, &
     ng_max_change, ng_min_gap, &
-    convlim, convmax, premature_finish, &
+    convlim, convmax, stall_iter, premature_finish, &
     max_update, min_pop_frac, conv_pop_floor, sor_w, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
 

@@ -347,7 +347,9 @@ SUBROUTINE ng_extrapolate (self, bpop, oldb, nstar, totn, nlevel, emax, epos, ap
     end do
     end do
     end do
-    if (exp(worst) - 1d0 > ng_max_change) then
+    ! Written so that a NaN step is vetoed too: a non-finite Gram matrix gives
+    ! NaN coefficients, and max() may drop a NaN argument.
+    if (.not. (exp(worst) - 1d0 <= ng_max_change .and. abs(a) <= huge(a) .and. abs(b) <= huge(b))) then
       if (console_on(ch_m3d, 1)) then
         !$omp critical (ng_print)
         write(console_unit,'(A,ES10.3,A,ES10.3,A,2F9.4)') &

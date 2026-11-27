@@ -16,8 +16,10 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
-from .presets import STEP_PRESETS
-from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
+import numpy as np
+
+from . import presets
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Star, SynthConfig, is_snapshot,
                      coerce_atmosphere, coerce_windows)
 
 
@@ -27,6 +29,48 @@ def _json_windows(windows):
 
 def _read_windows(values):
     return tuple(None if window is None else tuple(window) for window in values)
+
+
+# crop arguments that select wavelengths themselves (Run.crop and Spectrum.crop), and those
+# among them that SynthesisResult.crop replaces by xmin/xmax for each window of a selection
+_SELECTIONS = {"window", "xmin", "xmax", "x0", "dx", "width", "slc", "line", "newx"}
+_RANGE_KEYS = {"window", "xmin", "xmax", "x0", "dx", "width", "newx"}
+
+
+def _angstrom(value):
+    """A wavelength, number or Quantity (spectral units), in Å; plain numbers are Å."""
+    import astropy.units as u
+    if isinstance(value, u.Quantity):
+        return value.to_value(u.AA, equivalencies=u.spectral())
+    return np.asarray(value, dtype=float) if np.ndim(value) else float(value)
+
+
+def _selection_range(kwargs):
+    """The wavelength range (Å) a crop selection asks for; unbounded without one."""
+    lo, hi = -math.inf, math.inf
+    if kwargs.get("window") is not None:
+        lo, hi = (_angstrom(value) for value in kwargs["window"])
+    elif kwargs.get("x0") is not None and (kwargs.get("dx") is not None
+                                           or kwargs.get("width") is not None):
+        x0 = _angstrom(kwargs["x0"])
+        half = (_angstrom(kwargs["dx"]) if kwargs.get("dx") is not None
+                else _angstrom(kwargs["width"]) / 2)
+        lo, hi = x0 - half, x0 + half
+    elif kwargs.get("newx") is not None:
+        newx = _angstrom(kwargs["newx"])
+        lo, hi = float(np.min(newx)), float(np.max(newx))
+    elif kwargs.get("line") is not None:
+        lo = hi = float(kwargs["line"].lam0)
+    if kwargs.get("xmin") is not None:
+        lo = _angstrom(kwargs["xmin"])
+    if kwargs.get("xmax") is not None:
+        hi = _angstrom(kwargs["xmax"])
+    return min(lo, hi), max(lo, hi)
+
+
+def _describe(windows):
+    return ", ".join("full range" if bounds is None else f"{bounds[0]:g}-{bounds[1]:g}"
+                     for bounds in windows)
 
 
 @dataclass(frozen=True)
@@ -39,6 +83,8 @@ class SynthesisResult:
     ``resolved_settings`` are the runs' namelist settings, ``preparation`` the pruned line
     list, ``departures`` the frozen departures read back, ``runs`` the run folders and
     ``provenance`` what the operation recorded about preparation and departures.
+    ``sources`` holds, per window, what its spectrum was cropped from
+    (:class:`~tumult.synthesis.api.CropSource`), which :meth:`crop` crops again.
     """
     spectra: tuple[Any, ...]
     windows: tuple
@@ -49,16 +95,104 @@ class SynthesisResult:
     departures: Any | None = None
     runs: tuple[str, ...] = ()
     provenance: dict = field(default_factory=dict)
+    sources: tuple = ()
 
     @property
     def geometry(self):
-        return "3d" if isinstance(self.request.atmosphere, Snapshot) else "1d"
+        return "3d" if is_snapshot(self.request.atmosphere) else "1d"
 
     @property
     def spectrum(self):
         if len(self.spectra) != 1:
             raise ValueError("Result contains more than one spectrum; use spectra/windows.")
         return self.spectra[0]
+
+    def crop(self, LTE=False, **kwargs):
+        """The spectrum over a wavelength selection, cropped again from the runs it came from.
+
+        This delegates to the spectrum run of an individual atmosphere
+        (:meth:`tumult.run.Run.crop`) or to the node grid interpolated at the star
+        (:meth:`tumult.spectrum_grid.SpectrumGrid.crop`) and takes their arguments
+        (``window=(xmin, xmax)``, ``xmin``/``xmax``, ``x0`` with ``dx`` or ``width``,
+        ``newx``, ``line``, ``norm``, ...). ``LTE`` gives the LTE spectrum that an NLTE run
+        computes alongside its NLTE spectrum; an LTE result has only that one.
+
+        The selection picks the windows of the result it overlaps; without one, the crop
+        covers every window. A selection inside one window is cropped from it with the
+        arguments as given. One that spans several is cropped from each over its part of
+        the selection and returned as one spectrum with a segment per window
+        (:meth:`~tumult.spectrum.Spectrum.split_segments`). ``slc`` indexes the run of a
+        single window and ``relative`` needs one centre, so both need a selection inside
+        one window.
+        """
+        lte = LTE or not self.request.is_nlte
+        lo, hi = _selection_range(kwargs)
+        chosen = self._overlapping(lo, hi)
+        if not chosen:
+            raise ValueError(f"The selection {lo:g}-{hi:g} Å overlaps no window of the "
+                             f"result ({_describe(self.windows)}).")
+        if len(chosen) == 1:
+            index = chosen[0]
+            bounds = self.windows[index]
+            if bounds is not None and not _SELECTIONS & set(kwargs):
+                kwargs.update(xmin=bounds[0], xmax=bounds[1])
+            elif bounds is not None and {"xmin", "xmax"} & set(kwargs):
+                kwargs.setdefault("xmin", bounds[0])
+                kwargs.setdefault("xmax", bounds[1])
+            return self.sources[index].crop(LTE=lte, **kwargs)
+        if "slc" in kwargs or kwargs.get("relative"):
+            raise ValueError("slc and relative need a selection inside one window; this one "
+                             f"spans {len(chosen)} windows.")
+        newx = kwargs.get("newx")
+        if newx is not None and not hasattr(newx, "unit"):
+            newx = np.asarray(newx, dtype=float)
+        base = {key: value for key, value in kwargs.items() if key not in _RANGE_KEYS}
+        pieces, segments, first = [], [], 1
+        for index in chosen:
+            blue, red = max(lo, self.windows[index][0]), min(hi, self.windows[index][1])
+            part = dict(base, xmin=blue, xmax=red)
+            if newx is not None:
+                inside = (_angstrom(newx) >= blue) & (_angstrom(newx) <= red)
+                if not inside.any():
+                    continue
+                part["newx"] = newx[inside]
+            piece = self.sources[index].crop(LTE=lte, **part)
+            pieces.append(piece)
+            segments.append({"first": first, "last": first + len(piece.xdata) - 1,
+                             "blue": blue, "red": red})
+            first += len(piece.xdata)
+        from ..spectrum import Spectrum
+        return Spectrum(np.concatenate([piece.xdata for piece in pieces]),
+                        np.concatenate([piece.ydata for piece in pieces]),
+                        xref=pieces[0].xref, segments=segments)
+
+    def plot_line_labels(self, **kwargs):
+        """Label the strongest lines between ``xmin`` and ``xmax``, by default the limits
+        of ``ax`` or the current axes, with :meth:`tumult.run.Run.plot_line_labels`, which takes the
+        other arguments. The lines of each window in that range come from its spectrum
+        run: the run of an individual atmosphere, or the node of the grid with the largest
+        interpolation weight. Returns the labelled lines."""
+        import pandas as pd
+        xmin, xmax = kwargs.pop("xmin", None), kwargs.pop("xmax", None)
+        if xmin is None or xmax is None:
+            import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+            left, right = sorted((kwargs.get("ax") or plt.gca()).get_xlim())
+            xmin = left if xmin is None else xmin
+            xmax = right if xmax is None else xmax
+        lists = []
+        for index in self._overlapping(xmin, xmax):
+            bounds = self.windows[index] or (xmin, xmax)
+            lists.append(self.sources[index].run.plot_line_labels(
+                xmin=max(xmin, bounds[0]), xmax=min(xmax, bounds[1]), **kwargs))
+        lists = [labels for labels in lists if len(labels)]
+        return pd.concat(lists, ignore_index=True) if lists else pd.DataFrame()
+
+    def _overlapping(self, lo, hi):
+        """The positions of the windows that overlap lo-hi (Å); a None window is unbounded."""
+        if len(self.sources) != len(self.spectra):
+            raise ValueError("This result keeps no runs; use spectra.")
+        return [index for index, bounds in enumerate(self.windows)
+                if bounds is None or (bounds[1] >= lo and bounds[0] <= hi)]
 
     @property
     def frozen_composition_changed(self):
@@ -81,7 +215,8 @@ class SynthesisResult:
                 "resolved_settings": deepcopy(self.resolved_settings),
                 "preparation": item(self.preparation),
                 "departures": to_record(self.departures),
-                "runs": list(self.runs)}
+                "runs": list(self.runs),
+                "sources": [source.to_dict() for source in self.sources]}
 
     def save(self, folder):
         """Save replay metadata and consumer-ready spectra for later reopening."""
@@ -111,6 +246,7 @@ class SynthesisResult:
         import numpy as np
         from astropy import units as u
         from ..spectrum import Spectrum
+        from .api import CropSource
         path = Path(path)
         manifest = path if path.is_file() else path / 'result.json'
         value = json.loads(manifest.read_text())
@@ -132,7 +268,8 @@ class SynthesisResult:
         return cls(tuple(spectra), _read_windows(value.get('windows', ())),
                    SynthRequest.from_dict(value['request']), value.get('run_values') or {},
                    value.get('resolved_settings', {}), preparation, departure,
-                   tuple(value.get('runs', ())), value.get('provenance') or {})
+                   tuple(value.get('runs', ())), value.get('provenance') or {},
+                   tuple(CropSource.from_dict(item) for item in value.get('sources', ())))
 
 
 @dataclass(frozen=True)
@@ -144,7 +281,7 @@ class ResolvedSynthRequest:
     settings: dict
     windows: tuple[tuple[float, float], ...]
     padded_windows: tuple[tuple[float, float], ...]
-    preparation_references: tuple[str, ...]
+    preparation_references: tuple[tuple[str, str], ...]   # (path, atmos_format)
     preparation_aliases: dict
     execution_root: str
     output_root: str
@@ -161,7 +298,7 @@ class ResolvedSynthRequest:
                 "settings": deepcopy(self.settings),
                 "windows": [list(window) for window in self.windows],
                 "padded_windows": [list(window) for window in self.padded_windows],
-                "preparation_references": list(self.preparation_references),
+                "preparation_references": [list(ref) for ref in self.preparation_references],
                 "preparation_aliases": deepcopy(self.preparation_aliases),
                 "execution_root": self.execution_root, "output_root": self.output_root}
 
@@ -179,7 +316,8 @@ class ResolvedSynthRequest:
                    settings=value.get('settings', {}),
                    windows=tuple(tuple(w) for w in value.get('windows', ())),
                    padded_windows=tuple(tuple(w) for w in value.get('padded_windows', ())),
-                   preparation_references=tuple(value.get('preparation_references', ())),
+                   preparation_references=tuple(
+                       tuple(ref) for ref in value.get('preparation_references', ())),
                    preparation_aliases=dict(value.get('preparation_aliases') or {}),
                    execution_root=str(value['execution_root']),
                    output_root=str(value['output_root']))
@@ -226,11 +364,11 @@ class SynthRequest:
     """Everything needed to produce synthetic spectra.
 
     ``config`` (:class:`~tumult.synthesis.inputs.SynthConfig`) states paths and numerical
-    settings; ``atmosphere`` an :class:`~tumult.synthesis.inputs.Atmosphere`,
-    :class:`~tumult.synthesis.inputs.AtmosphereGrid` or
-    :class:`~tumult.synthesis.inputs.Snapshot` (a path is taken as a MARCS file or grid);
-    ``star`` the stellar parameters, which are required for every atmosphere and never read
-    from a model file; ``windows`` the wavelength ranges of a requested spectrum (one
+    settings; ``atmosphere`` an :class:`~tumult.synthesis.inputs.Atmosphere` or
+    :class:`~tumult.synthesis.inputs.AtmosphereGrid`, 1D or 3D by its format (a path is
+    taken as a MARCS file or grid); ``star`` the stellar parameters, which are required
+    for every atmosphere and never read from a model file (a 3D snapshot needs no
+    ``vmic``); ``windows`` the wavelength ranges of a requested spectrum (one
     ``(blue, red)`` pair or several, Angstrom or astropy quantities); ``abundances`` the
     overrides of the standard composition, applied in every synthesis an operation issues.
 
@@ -240,22 +378,25 @@ class SynthRequest:
     :class:`~tumult.departures.DepartureRequest` is NLTE with departures solved for each
     effective request.
 
-    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) applied to every
-    run, later ones winning, on top of the geometry preset the atmosphere selects (``1d``
-    or ``3d``); the request's own settings and ``config.expert`` override them. The NLTE
-    step presets are applied by the calculation the departures select and are not listed
-    here.
+    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) and
+    ``nml_settings`` namelist sections for every run of the request, on top of those of
+    ``config``. A run's namelist stacks, later layers winning: the geometry preset the
+    atmosphere selects (``1d`` or ``3d``), the presets (:attr:`all_presets`, later ones
+    winning), the settings the request itself implies (line list, composition, atoms,
+    sampling) and the namelist sections (:attr:`all_nml_settings`). The NLTE step presets
+    are applied by the calculation the departures select and are not listed here.
 
     The request is immutable; :meth:`update` returns a changed copy. Balance and abundance
     results may be passed for ``star`` and ``abundances``.
     """
     config: SynthConfig
-    atmosphere: Atmosphere | AtmosphereGrid | Snapshot
+    atmosphere: Atmosphere | AtmosphereGrid
     star: Star
     windows: tuple = ()
     abundances: Abundances | None = None
     departures: Any | None = None
     presets: tuple = ()
+    nml_settings: dict = field(default_factory=dict)
 
     def __post_init__(self):
         from ..departures import DepartureGrid, DepartureRequest, Departures
@@ -270,20 +411,15 @@ class SynthRequest:
         set_("abundances", Abundances.coerce(self.abundances))
         if self.abundances is not None and not self.abundances:
             set_("abundances", None)
-        names = (self.presets,) if isinstance(self.presets, (str, Path)) else self.presets
-        set_("presets", tuple(str(name) for name in (names or ())))
-        steps = [name for name in self.presets if Path(name).stem in STEP_PRESETS
-                 and len(Path(name).parts) == 1]
-        if steps:
-            raise ValueError(f"{', '.join(steps)}: the NLTE step presets follow from "
-                             "`departures`; request departures instead of listing them.")
+        set_("presets", presets.coerce_names(self.presets))
+        set_("nml_settings", presets.coerce_settings(self.nml_settings))
         departures = self.departures
         if not isinstance(departures, (type(None), Departures, DepartureGrid,
                                        DepartureRequest)):
             raise TypeError("departures must be Departures, a DepartureGrid, a "
                             "DepartureRequest (departures.request) or None.")
         atmosphere = self.atmosphere
-        if self.star.vmic is None and not isinstance(atmosphere, Snapshot):
+        if self.star.vmic is None and not is_snapshot(atmosphere):
             raise ValueError("A 1D atmosphere needs vmic in the stellar parameters.")
         if isinstance(departures, Departures):
             if isinstance(atmosphere, AtmosphereGrid):
@@ -303,7 +439,7 @@ class SynthRequest:
     def _check_star(self, solved, what):
         if not solved:
             return
-        mismatch = {key: (solved.get(key), self.star[key]) for key in self.star
+        mismatch = {key: (solved.get(key), self.star[key]) for key in self.star.keys()
                     if solved.get(key) is not None
                     and not math.isclose(float(solved[key]), self.star[key], abs_tol=1e-9)}
         if mismatch:
@@ -314,7 +450,8 @@ class SynthRequest:
 
     def update(self, **changes):
         """A new request with ``changes`` (``star``, ``abundances``, ``windows``,
-        ``departures``, ``atmosphere``, ``config``, ``presets``) applied and validated.
+        ``departures``, ``atmosphere``, ``config``, ``presets``, ``nml_settings``) applied
+        and validated.
 
         ``star`` may be a balance result and ``abundances`` an abundance result; both are
         reduced to their lightweight form. The request this is called on is unchanged.
@@ -327,6 +464,17 @@ class SynthRequest:
     @property
     def is_nlte(self):
         return self.departures is not None
+
+    @property
+    def all_presets(self):
+        """The presets of the configuration, then those of the request."""
+        return self.config.presets + self.presets
+
+    @property
+    def all_nml_settings(self):
+        """The namelist sections of the configuration, updated by those of the request."""
+        from ..auxfuncs import update_dict
+        return update_dict(deepcopy(self.config.nml_settings), deepcopy(self.nml_settings))
 
     def check(self):
         """Preflight the inputs this request names before any calculation.
@@ -346,7 +494,7 @@ class SynthRequest:
                 "windows": [list(window) for window in self.windows],
                 "abundances": None if self.abundances is None else self.abundances.to_dict(),
                 "departures": to_record(self.departures),
-                "presets": list(self.presets)}
+                "presets": list(self.presets), "nml_settings": self.nml_settings}
 
     def to_json(self, path=None):
         text = json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str)
@@ -365,7 +513,8 @@ class SynthRequest:
                    star=Star.coerce(value["star"]), windows=value.get("windows") or (),
                    abundances=Abundances.coerce(value.get("abundances")),
                    departures=from_record(value.get("departures")),
-                   presets=tuple(value.get("presets") or ()))
+                   presets=tuple(value.get("presets") or ()),
+                   nml_settings=value.get("nml_settings") or {})
 
     @classmethod
     def from_json(cls, value):

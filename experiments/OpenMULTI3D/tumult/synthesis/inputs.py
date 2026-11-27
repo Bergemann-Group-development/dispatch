@@ -1,8 +1,8 @@
 """Validated public inputs of a synthesis request.
 
 A script states what it wants in these terms: a :class:`SynthConfig` for the execution
-paths and numerical settings, an atmosphere (:class:`Atmosphere`, :class:`AtmosphereGrid`
-or :class:`Snapshot`), the stellar parameters as a :class:`Star`, the abundance overrides
+paths and numerical settings, an atmosphere (:class:`Atmosphere` or :class:`AtmosphereGrid`,
+1D or 3D by their format), the stellar parameters as a :class:`Star`, the abundance overrides
 as :class:`Abundances` and wavelength windows. :class:`~tumult.synthesis.SynthRequest`
 holds only these; the translation into namelist settings lives in
 :mod:`tumult.synthesis.operations`, in one place.
@@ -17,21 +17,24 @@ from dataclasses import dataclass, field, fields, replace
 import math
 from pathlib import Path
 
+from . import presets
+from .snapshot_grid import SNAPSHOT_FORMATS
+
 STAR_KEYS = ("teff", "logg", "feh", "vmic")
 CONVENTIONS = ("[X/Fe]", "A(X)")
 # the ``atmos_format`` values the Fortran reader accepts for the ``format`` of an
-# :class:`Atmosphere`, :class:`AtmosphereGrid` or :class:`Snapshot`, in the order a
+# :class:`Atmosphere` or :class:`AtmosphereGrid`, in the order a
 # chooser offers them (MARCS, the 1D default, first). The comparison is case-insensitive
 # (see :attr:`Atmosphere.is_marcs`, :data:`tumult.synthesis.workflows.FORMAT_PATTERNS`
 # and :data:`tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`), so these spellings are
 # the canonical ones rather than the only accepted ones.
 ATMOS_FORMATS = ("Marcs", "Stagger", "Stagger2", "Co5bold", "M3DIS", "Text", "save")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
-PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
-               "abund_file": "abundances", "absmet": "absmet", "R": "R_sampling",
-               "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
+PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist_file",
+               "abund_file": "abund_file", "R": "R_sampling",
+               "prune_margin_aa": "prune_margin", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
-               "max_threads": "threads", "expert_settings": "expert"}
+               "max_threads": "threads", "nml_settings": "nml_settings"}
 
 
 def _path(value):
@@ -56,50 +59,63 @@ class SynthConfig:
     input tree. ``cache`` holds the native runs and the HOP preparations; it may be shared
     between scripts, since every cached item is keyed by what produced it.
 
-    ``linelist`` is the transition list every synthesis draws from (a file or folder),
-    ``abundances`` the standard composition, ``absmet`` the background opacity table (a
-    file for every metallicity or a folder keyed by [Fe/H]). ``R_sampling`` sets the
-    spectrum sampling, ``linelist_skirt`` how far outside a window a transition may still
-    contribute when the line list is pruned per atmosphere (0 disables pruning),
+    A field that sets one namelist setting has its name: ``linelist_file`` is the
+    transition list every synthesis draws from (a file, or a folder whose files it lists),
+    ``abund_file`` the standard composition, ``absmet_file`` the metal-opacity table of
+    every run and ``R_sampling`` the spectrum sampling. ``absmet_folder`` instead holds
+    tables named by their [Fe/H] (``m-1.00a+0.40...``), from which every run, departure
+    solves included, takes the one nearest the [Fe/H] of its atmosphere (the more
+    metal-poor on a tie); at most one of the two is given. ``prune_margin`` how far outside a window a transition may still
+    contribute when the line list is pruned on the atmosphere's preparation,
     ``abundance_step`` the lattice every abundance ladder is placed on, ``vmic_step`` the
     microturbulence lattice of a grid, ``interpolation`` the grid node selection and
     ``threads`` the CPU budget of one operation (``None`` uses every core).
 
-    ``expert`` holds namelist sections merged into every run's settings last, e.g.
-    ``{"nlte_params": {"convlim": 1e-3}}``; ``preferences`` holds further entries of the
-    GUI preference dictionary (``fit_max_rounds``, ...). Both are escape hatches
-    and are recorded with every result.
+    ``presets`` names namelist presets (:mod:`tumult.synthesis.presets`) and
+    ``nml_settings`` namelist sections, as in :func:`tumult.launch`, e.g.
+    ``dict(nlte_params=dict(convlim=1e-3))``, for every request on this configuration; a
+    :class:`~tumult.synthesis.SynthRequest` adds its own of both, which win
+    (:attr:`~tumult.synthesis.SynthRequest.all_presets`,
+    :attr:`~tumult.synthesis.SynthRequest.all_nml_settings`). ``preferences`` holds
+    further entries of the GUI preference dictionary (``fit_max_rounds``, ...), recorded
+    with every result.
     """
     root: Path = Path(".")
     cache: Path = Path("synth")
-    linelist: Path | None = None
-    abundances: Path | None = None
-    absmet: Path | None = None
+    linelist_file: Path | None = None
+    abund_file: Path | None = None
+    absmet_file: Path | None = None
+    absmet_folder: Path | None = None
     R_sampling: float = 300_000.0
-    linelist_skirt: float = 5.0
+    prune_margin: float = 5.0
     abundance_step: float = 0.25
     vmic_step: float = 0.5
     interpolation: str = "NaturalNeighbor"
     threads: int | None = None
-    expert: dict = field(default_factory=dict)
+    presets: tuple = ()
+    nml_settings: dict = field(default_factory=dict)
     preferences: dict = field(default_factory=dict)
 
     def __post_init__(self):
         set_ = lambda name, value: object.__setattr__(self, name, value)
         set_("root", Path(self.root).expanduser().resolve())
         set_("cache", Path(self.cache).expanduser())
-        for name in ("linelist", "abundances", "absmet"):
+        for name in ("linelist_file", "abund_file", "absmet_file", "absmet_folder"):
             set_(name, _path(getattr(self, name)))
+        if self.absmet_file is not None and self.absmet_folder is not None:
+            raise ValueError("Give absmet_file (one table) or absmet_folder (a table per "
+                             "[Fe/H]), not both.")
         set_("R_sampling", float(self.R_sampling))
-        set_("linelist_skirt", _aa(self.linelist_skirt))
+        set_("prune_margin", _aa(self.prune_margin))
         set_("abundance_step", float(self.abundance_step))
         set_("vmic_step", float(self.vmic_step))
-        set_("expert", {str(k): dict(v) for k, v in dict(self.expert or {}).items()})
+        set_("presets", presets.coerce_names(self.presets))
+        set_("nml_settings", presets.coerce_settings(self.nml_settings))
         set_("preferences", dict(self.preferences or {}))
         if not self.R_sampling > 0:
             raise ValueError("R_sampling must be positive.")
-        if self.linelist_skirt < 0:
-            raise ValueError("linelist_skirt must not be negative.")
+        if self.prune_margin < 0:
+            raise ValueError("prune_margin must not be negative.")
         if not (self.abundance_step > 0 and self.vmic_step > 0):
             raise ValueError("abundance_step and vmic_step must be positive.")
         if self.interpolation not in ("NaturalNeighbor", "Delaunay"):
@@ -118,13 +134,13 @@ class SynthConfig:
         """The preference dictionary the execution layer reads."""
         prefs = {
             "dispatch_cwd": str(self.root), "synth_output_dir": str(self.cache),
-            "R": self.R_sampling, "linelist_skirt_aa": self.linelist_skirt,
+            "R": self.R_sampling, "prune_margin_aa": self.prune_margin,
             "abund_step": self.abundance_step, "vmic_step": self.vmic_step,
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
-            "expert_settings": self.expert,
+            "nml_settings": self.nml_settings,
         }
-        for key, name in (("linelist", "linelist"), ("abund_file", "abundances"),
-                          ("absmet", "absmet")):
+        for key, name in (("linelist", "linelist_file"), ("abund_file", "abund_file"),
+                          ("absmet", "absmet_file"), ("absmet", "absmet_folder")):
             value = getattr(self, name)
             if value is not None:
                 prefs[key] = str(self.resolve(value))
@@ -134,22 +150,30 @@ class SynthConfig:
     def from_prefs(cls, prefs):
         """The configuration a preference dictionary describes; the inverse of
         :meth:`to_prefs`. Keys without a field of their own go to ``preferences``, and an
-        empty path or a zero thread count means unset."""
+        empty path or a zero thread count means unset. The ``absmet`` preference is the
+        ``absmet_folder`` when it names a folder, else the ``absmet_file``."""
         prefs = dict(prefs)
         values = {}
         for key, name in PREF_FIELDS.items():
             if key in prefs:
                 values[name] = prefs.pop(key)
-        for name in ("linelist", "abundances", "absmet"):
+        absmet = str(prefs.pop("absmet", "") or "").strip()
+        if absmet:
+            root = Path(values.get("root") or ".").expanduser()
+            path = Path(absmet).expanduser()
+            folder = (path if path.is_absolute() else root / path).is_dir()
+            values["absmet_folder" if folder else "absmet_file"] = absmet
+        for name in ("linelist_file", "abund_file"):
             if isinstance(values.get(name), str) and not values[name].strip():
                 values[name] = None
         if "threads" in values:
             values["threads"] = int(values["threads"] or 0) or None
-        values["expert"] = values.get("expert") or {}
+        values["nml_settings"] = values.get("nml_settings") or {}
         return cls(**values, preferences=prefs)
 
     def to_dict(self):
         value = {f.name: getattr(self, f.name) for f in fields(self)}
+        value["presets"] = list(self.presets)
         return {k: (str(v) if isinstance(v, Path) else v) for k, v in value.items()}
 
     @classmethod
@@ -167,11 +191,14 @@ class SynthConfig:
 
 # --- stellar parameters ------------------------------------------------------------------
 @dataclass(frozen=True)
-class Star(Mapping):
+class Star:
     """Stellar parameters: ``teff`` [K], ``logg`` [cgs dex], ``feh`` [dex], ``vmic`` [km/s].
 
-    A read-only mapping, so ``dict(star)`` and ``star["teff"]`` work. ``vmic`` may be
-    omitted only for a 3D snapshot, whose velocity field replaces microturbulence.
+    ``dict(star)``, ``**star``, ``star["teff"]``, ``star.get`` and ``key in star`` read it
+    like a mapping of the given parameters. ``vmic`` may be omitted only for a 3D snapshot,
+    whose velocity field replaces microturbulence. ``str(star)`` is a matplotlib label of
+    the parameters, so ``label=star`` and ``plt.title(star)`` show them; a star is not
+    iterable, since matplotlib takes an iterable label for one label per dataset.
     """
     teff: float
     logg: float
@@ -192,16 +219,31 @@ class Star(Mapping):
         if self.vmic is not None and self.vmic < 0:
             raise ValueError("vmic must not be negative.")
 
+    def __str__(self):
+        text = (rf"$T_{{\rm eff}}$ = {self.teff:.0f} K, $\log_{{10}}\,g$ = {self.logg:.2f}, "
+                rf"[Fe/H] = {self.feh:+.2f}")
+        if self.vmic is not None:
+            text += rf", $v_{{\rm mic}}$ = {self.vmic:g} km/s"
+        return text
+
     def __getitem__(self, key):
         if key not in STAR_KEYS:
             raise KeyError(key)
         return getattr(self, key)
 
-    def __iter__(self):
-        return iter(key for key in STAR_KEYS if getattr(self, key) is not None)
+    __iter__ = None
 
-    def __len__(self):
-        return sum(1 for _ in self)
+    def keys(self):
+        return [key for key in STAR_KEYS if getattr(self, key) is not None]
+
+    def items(self):
+        return [(key, getattr(self, key)) for key in self.keys()]
+
+    def get(self, key, default=None):
+        return self[key] if key in self else default
+
+    def __contains__(self, key):
+        return key in self.keys()
 
     def tuple(self):
         return tuple(getattr(self, key) for key in STAR_KEYS)
@@ -326,26 +368,29 @@ class AtmosphereGrid:
     ``pattern`` recovers the stellar parameters from each path (see
     :func:`tumult.synthesis.workflows.compile_pattern`); it defaults to the stock pattern of
     ``format``. A snapshot grid names its ``snapshots`` policy and the ``resolution`` its
-    cubes are sampled onto. ``preparation`` is the MARCS grid that HOP preparations use
-    when this grid is not MARCS itself.
+    cubes are sampled onto. ``preparation`` names the reference atmospheres of the HOP
+    preparations (:mod:`tumult.synthesis.preparation`).
     """
     folder: Path
     pattern: str | None = None
     format: str = "Marcs"
     snapshots: str | None = None
     resolution: tuple | None = None
-    preparation: "AtmosphereGrid | None" = None
+    preparation: "Atmosphere | AtmosphereGrid | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "folder", Path(self.folder).expanduser())
         if self.resolution is not None:
             object.__setattr__(self, "resolution", tuple(int(v) for v in self.resolution))
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
+        _coerce_preparation(self)
 
     @property
     def is_marcs(self):
         return str(self.format).lower() == "marcs"
+
+    @property
+    def is_3d(self):
+        return str(self.format).lower() in SNAPSHOT_FORMATS
 
     def record(self, config=None):
         """The registered-grid record the execution layer reads."""
@@ -373,56 +418,43 @@ class AtmosphereGrid:
 
 @dataclass(frozen=True)
 class Atmosphere:
-    """One 1D model atmosphere file, synthesised as it is (no interpolation).
+    """One model atmosphere file, synthesised as it is (no interpolation).
 
-    Stellar parameters still come from the request: they are never read from the file.
-    ``preparation`` is the MARCS grid HOP preparations use when ``format`` is not MARCS.
+    ``format`` is the reader dispatch.x applies (``atmos_format``) and decides the
+    geometry: a 3D format (:data:`~tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`) makes
+    the file a snapshot (:attr:`is_3d`), sampled onto ``resolution`` ``(nx, ny, nz)`` or,
+    without one, onto the mesh of the request's presets (the ``3d`` preset's by default).
+    A 1D model takes no ``resolution``. Stellar parameters still come from the request:
+    they are never read from the file. ``preparation`` names the reference atmospheres of
+    the HOP preparations (:mod:`tumult.synthesis.preparation`).
     """
     path: Path
     format: str = "Marcs"
-    preparation: AtmosphereGrid | None = None
+    resolution: tuple | None = None
+    preparation: "Atmosphere | AtmosphereGrid | None" = None
 
     def __post_init__(self):
         object.__setattr__(self, "path", Path(self.path).expanduser())
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
+        if self.resolution is not None:
+            if not self.is_3d:
+                raise ValueError(f"A resolution samples a 3D snapshot; {self.format} is a "
+                                 "1D format.")
+            resolution = tuple(int(v) for v in self.resolution)
+            if len(resolution) != 3 or any(v <= 0 for v in resolution):
+                raise ValueError("A snapshot resolution needs three positive integers.")
+            object.__setattr__(self, "resolution", resolution)
+        _coerce_preparation(self)
 
     @property
     def is_marcs(self):
         return str(self.format).lower() == "marcs"
 
+    @property
+    def is_3d(self):
+        return str(self.format).lower() in SNAPSHOT_FORMATS
+
     def to_dict(self):
         return {"kind": "atmosphere", "path": str(self.path), "format": self.format,
-                "preparation": None if self.preparation is None else self.preparation.to_dict()}
-
-    @classmethod
-    def from_dict(cls, value):
-        return cls(**{k: v for k, v in dict(value).items() if k != "kind"})
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    """One 3D snapshot sampled onto ``resolution`` ``(nx, ny, nz)``; without one, onto the
-    mesh of the request's presets (the ``3d`` preset's by default)."""
-    path: Path
-    format: str
-    resolution: tuple | None = None
-    preparation: AtmosphereGrid | None = None
-
-    def __post_init__(self):
-        object.__setattr__(self, "path", Path(self.path).expanduser())
-        if self.resolution is not None:
-            resolution = tuple(int(v) for v in self.resolution)
-            if len(resolution) != 3 or any(v <= 0 for v in resolution):
-                raise ValueError("Snapshot resolution needs three positive integers.")
-            object.__setattr__(self, "resolution", resolution)
-        if isinstance(self.preparation, Mapping):
-            object.__setattr__(self, "preparation", AtmosphereGrid.from_dict(self.preparation))
-
-    is_marcs = False
-
-    def to_dict(self):
-        return {"kind": "snapshot", "path": str(self.path), "format": self.format,
                 "resolution": None if self.resolution is None else list(self.resolution),
                 "preparation": None if self.preparation is None else self.preparation.to_dict()}
 
@@ -431,7 +463,25 @@ class Snapshot:
         return cls(**{k: v for k, v in dict(value).items() if k != "kind"})
 
 
-ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere, "snapshot": Snapshot}
+def is_snapshot(atmosphere):
+    """Whether ``atmosphere`` is one 3D snapshot (an :class:`Atmosphere` of a 3D format)."""
+    return isinstance(atmosphere, Atmosphere) and atmosphere.is_3d
+
+
+ATMOSPHERE_KINDS = {"grid": AtmosphereGrid, "atmosphere": Atmosphere}
+
+
+def _coerce_preparation(atmosphere):
+    """``preparation=True`` is the atmosphere itself and ``False`` none; anything else is
+    coerced as an atmosphere input."""
+    value = atmosphere.preparation
+    if value is True:
+        value = replace(atmosphere, preparation=None)
+    elif value is False:
+        value = None
+    elif value is not None:
+        value = coerce_atmosphere(value)
+    object.__setattr__(atmosphere, "preparation", value)
 
 
 def coerce_atmosphere(value):
@@ -450,7 +500,7 @@ def coerce_atmosphere(value):
     if isinstance(value, (str, Path)):
         path = Path(value).expanduser()
         return AtmosphereGrid(path) if path.is_dir() else Atmosphere(path)
-    raise TypeError("atmosphere must be an Atmosphere, AtmosphereGrid, Snapshot or path.")
+    raise TypeError("atmosphere must be an Atmosphere, AtmosphereGrid or path.")
 
 
 # --- wavelength windows -------------------------------------------------------------------------

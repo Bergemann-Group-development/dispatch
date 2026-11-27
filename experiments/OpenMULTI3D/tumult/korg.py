@@ -264,7 +264,7 @@ class Korg(SpectrumTable):
         # a step in the middle, and a comparison sensitive to that should interpolate.
         lam = np.asarray(run.lam)
         lmin, lmax, npoints = float(lam[0]), float(lam[-1]), lam.size
-        lpad = nml['linelist_params']['dlam']
+        lpad = nml['linelist_params']['line_margin']
 
         input = {
                 'ATMOSPHERE': nml['atmos_params']['atmos_file'],

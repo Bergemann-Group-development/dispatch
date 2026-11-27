@@ -73,6 +73,14 @@ MODULE atom_mod
       logical :: converged=.false.                       !< maxerr is below convmax
       integer :: elvl                                    !< level of maxerr
       integer :: epos(3)                                 !< mesh point of maxerr, local to the patch
+      !> The (line, cell) pairs whose split preconditioned rates take psi = 0 at all
+      !> their points (bound_bound_rates), one bit each: line kr is bit
+      !> mod(kr-1,32) of word (kr-1)/32+1.  Slot 1 holds the pairs in force, slot 2
+      !> those the RT tasks of the current iteration raised; the slab's nlte_patch
+      !> folds slot 2 into slot 1 at each update (fold_psi_flags).  Allocated only
+      !> for preconditioned split rates in an NLTE iteration.
+      integer(4), dimension(:,:,:,:,:), allocatable :: psi_flags
+      logical :: psi_reset_done=.false.                  !< psi_flags have started afresh at eta_reset_iter
     end type atom_data_t
 
     !===============================================================================
@@ -223,8 +231,8 @@ MODULE atom_mod
     real(8), public :: min_pop_frac=1d-30
     !> Population fraction above which a level carries full weight in the convergence
     !> decision, so that convlim and convmax are not held hostage by levels with no
-    !> effect on any opacity.
-    real(8), public :: conv_pop_floor=1d-8
+    !> effect on any opacity. 0 (the default) weights every level fully.
+    real(8), public :: conv_pop_floor=0d0
     !---------------------------------------------------------------------------
     !> A transition whose threshold lies above cut_x kT cannot be formed in
     !> real(4): beta = exp(-h nu/kT) is clamped at tiny(1.0) from 87.3 kT on.  For
@@ -661,14 +669,17 @@ MODULE atom_mod
               ! keep the full per-level record for the convergence report
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
 
-              ! The convergence decision, on the other hand, weights each level by the
-              ! share of the atoms it actually holds.  The top levels of the last ion
-              ! are radiatively controlled by a near-zero radiation field, so they swing
-              ! by orders of magnitude while holding 1e-10 of the iron or less; on an
-              ! unweighted maximum they own convlim and convmax outright and the run
-              ! never terminates.  Levels above conv_pop_floor keep their full weight,
-              ! so this cannot mask a level that contributes to an opacity or a rate.
-              ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              ! With conv_pop_floor > 0 the convergence decision weights each level by
+              ! the share of the atoms it holds.  The top levels of the last ion are
+              ! radiatively controlled by a near-zero radiation field, so they can swing
+              ! by orders of magnitude while holding 1e-10 of the iron or less, and on
+              ! the unweighted maximum they own convlim and convmax.  Levels above
+              ! conv_pop_floor keep their full weight.
+              if (conv_pop_floor > 0d0) then
+                ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              else
+                ework = abs(e)
+              end if
               i = maxloc(ework, dim=1)
               if (ework(i) > abs(maxerr)) then
                 maxerr = sign(ework(i), e(i))
@@ -2512,7 +2523,10 @@ MODULE atom_mod
       ! Feed this iteration's differences in for the next decision.  Skipped on
       ! an iteration that extrapolated: b no longer belongs to the same
       ! geometric sequence as oldb, so the differences would be meaningless.
-      if (ng%iter_fired /= iter .and. allocated(adata%oldb)) then
+      ! normalize_profiles shifts one iterate into oldb per iteration, so oldb
+      ! holds three (the oldest being the start populations) only from
+      ! iteration 3 on; before that its unfilled slots are not populations.
+      if (iter >= 3 .and. ng%iter_fired /= iter .and. allocated(adata%oldb)) then
         call ng_accumulate(ng, adata%b, adata%oldb, self%nlevel)
       endif
     end associate

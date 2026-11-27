@@ -172,7 +172,7 @@ contains
       wts = wts / 8
     else
       wts = wts / 4
-      wts = wts * vec(:,3)
+      wts = wts * vec(3,:)
     endif
   END SUBROUTINE set_carlson_quadratures
 

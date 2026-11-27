@@ -2,15 +2,16 @@
 
 What is load-bearing: a user file replaces the shipped preset of its name; later presets
 win and the conflict is reported; the atmosphere selects the geometry preset; the request's
-own settings, a grid's mesh and ``config.expert`` override presets; and a request preset
-refines an NLTE step rather than being overridden by it.
+own settings, a grid's mesh and the namelist sections override presets; the request's presets
+and namelist sections override the configuration's; and a request preset refines an NLTE
+step rather than being overridden by it.
 """
 import logging
 
 import pytest
 
 from tumult.namelist import NameList
-from tumult.synthesis import Snapshot, SynthConfig, SynthRequest, presets
+from tumult.synthesis import Atmosphere, SynthConfig, SynthRequest, presets
 from tumult.synthesis.workflows import preset_settings
 
 STAR = (5777.0, 4.44, 0.0, 1.0)
@@ -47,7 +48,7 @@ def test_the_atmosphere_selects_the_geometry_preset(tmp_path):
     config = SynthConfig(root=tmp_path)
     one_d = SynthRequest(config=config, atmosphere="a.mod", star=STAR)
     assert preset_settings(one_d)["atmos_params"] == {"nz": 64}
-    three_d = SynthRequest(config=config, atmosphere=Snapshot("cube", "M3DIS"), star=STAR)
+    three_d = SynthRequest(config=config, atmosphere=Atmosphere("cube", "M3DIS"), star=STAR)
     settings = preset_settings(three_d)
     assert settings["atmos_params"] == {"nx": 30, "ny": 30, "nz": 96, "dims": 32}
     assert settings["run_params"] == {"rotate_atmos": True}
@@ -58,15 +59,31 @@ def test_the_atmosphere_selects_the_geometry_preset(tmp_path):
 def test_request_settings_and_expert_override_presets(tmp_path, user_dir):
     from tumult.synthesis.workflows import resolve_request
     (user_dir / "wide.nml").write_text(
-        "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 dlam=50 /\n")
+        "&spectrum_params R_sampling=1000 /\n&linelist_params tolerance=1e-3 line_margin=50 /\n")
     config = SynthConfig(root=tmp_path, R_sampling=50_000,
-                         expert={"linelist_params": {"dlam": 20}})
+                         nml_settings={"linelist_params": {"line_margin": 20}})
     request = SynthRequest(config=config, atmosphere="a.mod", star=STAR,
                            windows=[(5000, 5010)], presets=["wide"])
     settings = resolve_request(request).settings
     assert settings["linelist_params"]["tolerance"] == 1e-3
-    assert settings["linelist_params"]["dlam"] == 20
+    assert settings["linelist_params"]["line_margin"] == 20
     assert settings["atmos_params"]["nz"] == 64
+
+
+def test_the_request_layers_override_the_configuration(tmp_path, user_dir):
+    from tumult.synthesis.workflows import resolve_request
+    (user_dir / "coarse.nml").write_text("&atmos_params nz=48 /\n")
+    (user_dir / "fine.nml").write_text("&atmos_params nz=128 /\n")
+    config = SynthConfig(root=tmp_path, presets="coarse",
+                         nml_settings={"linelist_params": {"line_margin": 20, "tolerance": 1e-3}})
+    request = SynthRequest(config=config, atmosphere="a.mod", star=STAR, windows=[(5000, 5010)],
+                           presets=["fine"], nml_settings={"linelist_params": {"line_margin": 30}})
+    assert request.all_presets == ("coarse", "fine")
+    settings = resolve_request(request).settings
+    assert settings["atmos_params"]["nz"] == 128
+    assert settings["linelist_params"]["line_margin"] == 30
+    assert settings["linelist_params"]["tolerance"] == 1e-3
+    assert SynthRequest.from_dict(request.to_dict()) == request
 
 
 def test_a_request_preset_refines_the_departure_solve(tmp_path, user_dir, monkeypatch):
@@ -100,9 +117,9 @@ def test_step_presets_are_chosen_by_the_departures(tmp_path):
 
 
 def test_a_comment_may_hold_an_apostrophe():
-    text = "! the atom's own lines\n&linelist_params linelist_file='' dlam=5 /\n"
+    text = "! the atom's own lines\n&linelist_params linelist_file='' line_margin=5 /\n"
     assert NameList.from_string(text) == {"linelist_params": {"linelist_file": "",
-                                                              "dlam": 5}}
+                                                              "line_margin": 5}}
 
 
 def test_detail_preset_blankets_the_coupled_set_from_a_line_list():

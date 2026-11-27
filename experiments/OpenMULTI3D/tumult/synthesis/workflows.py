@@ -25,7 +25,7 @@ import re
 import shutil
 from pathlib import Path
 
-from .api import (compute_spectrum, compute_spectra,
+from .api import (CropSource, compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   normalise_windows, write_window_file,
                   PROVENANCE_NAME)
@@ -33,9 +33,9 @@ from ..abundance import (
     SYNTH_PAD_AA, read_solar_abundances, xfe_to_abund,
 )
 from .cancel import CancelToken, CancelledError
-from .inputs import Atmosphere, AtmosphereGrid, Snapshot
+from .inputs import AtmosphereGrid, is_snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
-from .snapshot_grid import SNAPSHOT_FORMATS, discover_grid
+from .snapshot_grid import discover_grid
 from ..auxfuncs import update_dict
 from ..launch import run_file
 from . import presets
@@ -477,6 +477,11 @@ def build_settings(prefs, run_vals, atmos_format=None):
         settings["atmos_params"] = atmos
     if composition:
         settings["composition_params"] = composition
+    absmet = prefs.get("absmet")
+    if absmet:
+        # dispatch picks a folder's table at each run's [Fe/H]
+        folder = _resolved_path(execution_root(prefs), absmet).is_dir()
+        settings["opac_table_params"] = {"absmet_folder" if folder else "absmet_file": absmet}
 
     if nlte or atom_lines:
         atoms = run_vals.get("atoms") or []
@@ -496,33 +501,10 @@ def build_settings(prefs, run_vals, atmos_format=None):
     return settings
 
 
-def _absmet_files(prefs, atmos_files):
-    """Map every grid [Fe/H] to the configured absmet file (None if unset).
-
-    A single ``absmet`` file applies to all metallicities; a folder is parsed per-FeH.
-    Returning a per-FeH dict is required because ``build_stellar_grid`` overrides
-    ``composition_params.absmet_file`` per node (and would otherwise blank it).
-    """
-    absmet = prefs.get("absmet")
-    if not absmet:
-        return None
-    p = Path(absmet).expanduser()
-    fehs = {round(k[2], 4) for k in atmos_files}
-    if p.is_dir():
-        found = {}
-        for k in atmos_files:
-            feh = k[2]
-            cand = sorted(p.glob(f"*{feh:+.2f}*"))
-            if cand:
-                found[feh] = str(cand[0])
-        return found or None
-    return {k[2]: str(p) for k in atmos_files} if fehs else None
-
-
 def _prune_spec(prefs, prune):
     """The per-node line-list pruning descriptor for the API, or None for no pruning.
 
-    Splits the decision in two: the skirt is a preference (``linelist_skirt_aa``, 0 to switch
+    Splits the decision in two: the margin is a preference (``prune_margin_aa``, 0 to switch
     pruning off), because how far outside a window a line may still matter is a property of
     the physics and not of any one caller; the composition the selection is made at is the
     caller's (see :func:`tumult.synthesis.api._node_linelists`). A caller passing
@@ -530,10 +512,10 @@ def _prune_spec(prefs, prune):
     """
     if prune is None:
         return None
-    skirt = float(prefs.get("linelist_skirt_aa") or 0.0)
-    if not skirt > 0:
+    margin = float(prefs.get("prune_margin_aa") or 0.0)
+    if not margin > 0:
         return None
-    return {"skirt": skirt, "abundances": str(prune.get("abundances") or ""),
+    return {"margin": margin, "abundances": str(prune.get("abundances") or ""),
             "relative_abundances": bool(prune.get("relative_abundances", True))}
 
 
@@ -581,7 +563,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
         settings = update_dict(deepcopy(layer),
                                build_settings(prefs, values, atmos_format=atmosphere.format))
         settings = update_dict(settings, {"atmos_params": mesh})
-        settings = update_dict(settings, deepcopy(config.expert))
+        settings = update_dict(settings, request.all_nml_settings)
         if set_spectrum:
             sampling = settings.setdefault("spectrum_params", {})
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
@@ -597,7 +579,7 @@ def _prepare(request, run_values_list, extra_presets=None, *, set_spectrum=True,
     # (plan/multi-processing.md, "CPU budget").
     max_threads = config.threads or (os.cpu_count() or 1)
     common = dict(top=str(config.cache), star=star,
-                  atmos_files=atmos_files, absmet_files=_absmet_files(prefs, atmos_files),
+                  atmos_files=atmos_files,
                   method=config.interpolation,
                   max_threads=max_threads, launch_kwargs=launch_kwargs,
                   vmic_step=config.vmic_step, nlte=nlte)
@@ -668,7 +650,6 @@ def node_selector(request, store):
     from .atmos_select import _vmic_levels
     config = request.config
     atmos_files = discover_grid(request.atmosphere.record(config), config.root)
-    absmet_files = _absmet_files(config.to_prefs(), atmos_files)
     spatial = {}
 
     def select(params):
@@ -677,7 +658,7 @@ def node_selector(request, store):
         if position not in spatial:
             nodes, _ = store.select((*position, vmic), atmos_files,
                                     method=config.interpolation,
-                                    vmic_step=config.vmic_step, absmet_files=absmet_files,
+                                    vmic_step=config.vmic_step,
                                     vmic_points=2)
             # a snapshot node has no vmic lattice; its key stands as it is
             spatial[position] = (frozenset(n[0][0] for n in nodes if n[4] is not None),
@@ -737,7 +718,7 @@ def _grid_mesh(grid):
 
 def preset_settings(request, report=True):
     """The namelist settings of ``request``'s presets: the geometry preset of its
-    atmosphere, then ``request.presets`` in order. Conflicts between them are logged
+    atmosphere, then ``request.all_presets`` in order. Conflicts between them are logged
     unless ``report`` is false.
 
     The ``3d`` preset samples the background and the LTE line opacity from tables in both
@@ -753,10 +734,9 @@ def preset_settings(request, report=True):
     (:func:`tumult.synthesis.api._foldable_ladder`).
     """
     atmosphere = request.atmosphere
-    is_3d = (isinstance(atmosphere, Snapshot)
-             or str(atmosphere.format).lower() in SNAPSHOT_FORMATS)
+    is_3d = atmosphere.is_3d
     geometry = presets.geometry(atmosphere.format, is_3d)
-    names = ([geometry] if geometry else []) + list(request.presets)
+    names = ([geometry] if geometry else []) + list(request.all_presets)
     settings, conflicts = presets.stack(names)
     if report:
         presets.report(conflicts)
@@ -767,17 +747,6 @@ def preset_settings(request, report=True):
 def _resolved_path(root, value):
     path = Path(value).expanduser()
     return (path if path.is_absolute() else root / path).resolve()
-
-
-def _preparation_grid(request):
-    """The MARCS grid record HOP preparations draw their reference atmospheres from: the
-    atmosphere's ``preparation`` grid, else a MARCS grid itself, else none."""
-    atmosphere, config = request.atmosphere, request.config
-    if atmosphere.preparation is not None:
-        return atmosphere.preparation.record(config)
-    if isinstance(atmosphere, AtmosphereGrid) and atmosphere.is_marcs:
-        return atmosphere.record(config)
-    return {}
 
 
 def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
@@ -793,21 +762,6 @@ def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
                                     - float(vmic)), str(item[1])))[1]
 
 
-def nearest_marcs_atmosphere(grid, target, prefs):
-    """The MARCS model of ``grid`` nearest to ``target`` (teff, logg, feh[, vmic]).
-
-    Used by preparations that need one representative 1D model of a star, such as the
-    bound-bound grid for its NLTE corrections; ``grid`` must be a MARCS-format grid record.
-    """
-    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
-        raise ValueError('A MARCS-format grid is needed to pick a reference model.')
-    root = execution_root(prefs).resolve()
-    atmospheres = discover_atmos_grid(_resolved_path(root, grid['folder']),
-                                      grid.get('pattern') or DEFAULT_PATTERN)
-    vmic = float(target[3]) if len(target) > 3 else 0.0
-    return str(_resolved_path(root, _nearest_grid_path(atmospheres, target, vmic)))
-
-
 def preparation_root(prefs):
     """Where HOP preparations (pruned line lists, bound-bound grids) are cached."""
     root = execution_root(prefs).resolve()
@@ -815,61 +769,52 @@ def preparation_root(prefs):
 
 
 def _reference_atmospheres(request, prefs, root, prefs_vmic=1.0):
-    """The MARCS atmospheres HOP preparations use, and which synthesis atmosphere each serves.
-
-    An individual MARCS atmosphere and the nodes of a MARCS grid are prepared on
-    themselves. Other formats use the nearest node of their preparation grid.
+    """The reference atmospheres the line list is pruned on, and which synthesis atmosphere
+    each serves: ``(references, aliases)``, with ``references`` the distinct ``(path,
+    format)`` pairs (:func:`.preparation.reference_atmosphere`) and ``aliases`` mapping each
+    synthesis atmosphere or grid node to its reference path. Both are empty when the
+    atmosphere names no ``preparation``.
     """
-    atmosphere, star = request.atmosphere, request.star
-    if isinstance(atmosphere, Atmosphere) and atmosphere.is_marcs:
-        source = str(_resolved_path(root, atmosphere.path))
-        return (source,), {source: source}
-    grid = _preparation_grid(request)
-    if not grid.get('folder'):
+    from .preparation import reference_atmosphere
+    atmosphere, star, config = request.atmosphere, request.star, request.config
+    preparation = atmosphere.preparation
+    if preparation is None:
         return (), {}
-    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
-        raise ValueError('The automatic HOP preparation reference grid must use MARCS format.')
-    references = discover_atmos_grid(
-        _resolved_path(root, grid['folder']), grid.get('pattern') or DEFAULT_PATTERN)
+    references, aliases = {}, {}
     if isinstance(atmosphere, AtmosphereGrid):
         from .atmos_select import select_nodes
-        synthesis_grid = discover_grid(atmosphere.record(request.config), root)
+        synthesis_grid = discover_grid(atmosphere.record(config), root)
         stellar = star.tuple() if star.vmic is not None else star.tuple()[:3]
         nodes, _ = select_nodes(stellar, synthesis_grid,
                                 method=prefs.get('interp_method', 'NaturalNeighbor'),
                                 vmic_step=float(prefs.get('vmic_step') or 0.5))
-        aliases = {}
         for node in nodes:
-            source = str(_resolved_path(root, node[6]))
-            # a snapshot node has no vmic; its MARCS reference takes the request's
+            # a snapshot node has no vmic; its reference takes the request's
             vmic = node[4] if node[4] is not None else float(prefs_vmic)
-            reference = str(_resolved_path(
-                root, _nearest_grid_path(references, node[1:4], vmic)))
-            aliases[source] = reference
-        return tuple(dict.fromkeys(aliases.values())), aliases
+            reference = reference_atmosphere(preparation, (*node[1:4], vmic), config)
+            references[reference.path] = (reference.path, reference.format)
+            aliases[str(_resolved_path(root, node[6]))] = reference.path
+    else:
+        vmic = star.vmic if star.vmic is not None else 0.0
+        reference = reference_atmosphere(preparation, (*star.tuple()[:3], vmic), config)
+        references[reference.path] = (reference.path, reference.format)
+        aliases[str(_resolved_path(root, atmosphere.path))] = reference.path
+    return tuple(references.values()), aliases
 
-    vmic = star.vmic if star.vmic is not None else 0.0
-    reference = str(_resolved_path(root, _nearest_grid_path(references, star.tuple()[:3],
-                                                            vmic)))
-    source = str(_resolved_path(root, atmosphere.path))
-    return (reference,), {source: reference}
 
-
-def _single_atmosphere_settings(request, prefs):
-    """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`,
-    the absmet file of its [Fe/H]) for an individual atmosphere or snapshot, whose runs
-    bypass the node selection when departures are solved or read back directly."""
+def _single_atmosphere_settings(request):
+    """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`)
+    for an individual atmosphere, whose runs bypass the node selection when departures are
+    solved or read back directly: the star's [Fe/H], which scales the abundances and picks
+    the table of an ``absmet_folder``, and for a 1D atmosphere its vmic. A snapshot's
+    velocity field replaces microturbulence."""
     atmosphere, star = request.atmosphere, request.star
     if isinstance(atmosphere, AtmosphereGrid):
         return {}
-    feh = float(star.feh)
-    settings = {}
-    absmet = _absmet_files(prefs, {(star.teff, star.logg, feh): atmosphere.path}) or {}
-    if absmet.get(feh):
-        settings['opac_table_params'] = {'absmet_file': absmet[feh]}
-    if isinstance(atmosphere, Atmosphere):
-        settings['atmos_params'] = {'feh': feh, 'vmic': float(star.vmic)}
-    return settings
+    atmos = {"feh": float(star.feh)}
+    if not atmosphere.is_3d:
+        atmos["vmic"] = float(star.vmic)
+    return {"atmos_params": atmos}
 
 
 def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
@@ -892,8 +837,8 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
     if isinstance(atmosphere, AtmosphereGrid):
         settings = update_dict(settings,
                                {'atmos_params': _grid_mesh(atmosphere.record(config))})
-    settings = update_dict(settings, _single_atmosphere_settings(request, prefs))
-    settings = update_dict(settings, deepcopy(config.expert))
+    settings = update_dict(settings, _single_atmosphere_settings(request))
+    settings = update_dict(settings, request.all_nml_settings)
     # A correction ladder without windows uses the model atom's frequency grid,
     # including a prepared line_grid_file. Injecting R alone requests an explicit
     # spectrum grid without supplying its bounds, which DISPATCH cannot construct.
@@ -907,10 +852,6 @@ def resolve_request(request, run_values=None) -> ResolvedSynthRequest:
                    for window in windows)
     references, aliases = _reference_atmospheres(
         request, prefs, root, prefs_vmic=float(values.get('vmic') or 1.0))
-    if (not values.get('only_atom') and config.linelist_skirt > 0 and config.linelist
-            and not references):
-        raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
-                         'Configure a reference grid or set linelist_skirt=0 to use the full list.')
     return ResolvedSynthRequest(request, extra, settings, windows, padded, references,
                                 aliases, str(root), str(output_root(prefs)))
 
@@ -921,14 +862,14 @@ def _prepare_artifact(resolved, cancel_token=None):
         return None
     config, windows = resolved.request.config, resolved.padded_windows
     prefs = config.to_prefs()
-    skirt = config.linelist_skirt
-    if not (skirt > 0 and windows and resolved.preparation_references and prefs.get('linelist')):
+    if not (windows and resolved.preparation_references and prefs.get('linelist')):
         return None
     from ..linestrength import prepare_linelist
     settings = resolved.settings.get('composition_params', {}) or {}
     return prepare_linelist(preparation_root(prefs),
                             resolved.preparation_references, prefs['linelist'], windows,
-                            R=float(resolved.settings['spectrum_params']['R_sampling']), dlam=skirt,
+                            R=float(resolved.settings['spectrum_params']['R_sampling']),
+                            line_margin=config.prune_margin,
                             vmic=float(values.get('vmic', 1.0)),
                             feh=float(values.get('feh', 0.0)),
                             abundances=settings.get('abundances', ''),
@@ -963,9 +904,9 @@ def execute_request(request, run_values=None, *, cancel_token=None):
     departures = (request.departures
                   if isinstance(request.departures, (Departures, DepartureGrid)) else None)
     dep_dirs = departures.folders() if isinstance(departures, DepartureGrid) else None
-    if isinstance(atmosphere, Snapshot) or (departures is not None and dep_dirs is None):
+    if is_snapshot(atmosphere) or (departures is not None and dep_dirs is None):
         from .snapshot import solve_departures, synthesise, synthesise_snapshot
-        resolution = atmosphere.resolution if isinstance(atmosphere, Snapshot) else None
+        resolution = atmosphere.resolution if is_snapshot(atmosphere) else None
         if nlte and departures is None:
             departures = solve_departures(top, path, settings, resolution=resolution,
                                           atmos_format=atmosphere.format,
@@ -990,6 +931,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
         runs.append(str(Path(run.folder).resolve()))
         spectra.extend(run.crop(window=window) if window is not None else run.crop()
                        for window in (resolved.windows or (None,)))
+        sources = [CropSource(run)] * len(spectra)
     else:
         extra = [resolved.run_values]
         if resolved.windows:
@@ -1007,15 +949,16 @@ def execute_request(request, run_values=None, *, cancel_token=None):
                                                 dep_dirs=dep_dirs)
             spectra.append(value)
             runs.extend(str(path) for path in run_paths)
+        sources = [spectrum.source for spectrum in spectra]
     windows = resolved.windows or (None,)
     return SynthesisResult(tuple(spectra), windows, request, resolved.run_values, settings,
-                           artifact, departures, tuple(runs))
+                           artifact, departures, tuple(runs), sources=tuple(sources))
 
 
 def solve_request_departures(request, run_values, *, cancel_token=None):
     """Solve only the departures of ``request`` with NLTE ``run_values`` on its individual
     atmosphere or snapshot; the request's windows and line-list pruning do not enter."""
-    config = replace(request.config, linelist_skirt=0.0)
+    config = replace(request.config, prune_margin=0.0)
     resolved = resolve_request(request.update(config=config, windows=()), run_values)
     request, atmosphere = resolved.request, resolved.request.atmosphere
     if isinstance(atmosphere, AtmosphereGrid):
@@ -1025,7 +968,7 @@ def solve_request_departures(request, run_values, *, cancel_token=None):
     launch_kwargs = {'overwrite': False, 'verbose': 0, 'default': [str(_BASE_LAYER)],
                      'cwd': resolved.execution_root}
     from .snapshot import solve_departures
-    resolution = atmosphere.resolution if isinstance(atmosphere, Snapshot) else None
+    resolution = atmosphere.resolution if is_snapshot(atmosphere) else None
     return solve_departures(str(request.config.cache),
                             _resolved_path(Path(resolved.execution_root), atmosphere.path),
                             resolved.settings, resolution=resolution,

@@ -77,6 +77,12 @@ def _node_atmos(atmos_path, feh_i, v):
     return override
 
 
+def _node_absmet(absmet_file):
+    """The per-node ``opac_table_params`` override of a node given its own absmet table;
+    none without one, which keeps the table or folder of the shared settings."""
+    return {'opac_table_params': {'absmet_file': absmet_file}} if absmet_file else {}
+
+
 def _dep_jobs(base, nodes, departures_top):
     """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: the
     ``departures`` preset under ``base``, no line list and no output spectrum
@@ -88,8 +94,8 @@ def _dep_jobs(base, nodes, departures_top):
         dep_nml.pop('spectrum_params', None)
         dep_nml = update_dict(dep_nml, {
             'atmos_params': dict(_node_atmos(atmos_path, feh_i, v), save_atmos=True),
-            'opac_table_params': {'absmet_file': absmet_file},
             'rt_output_params': {'angle_quad': 'none'},
+            **_node_absmet(absmet_file),
         })
         jobs.append((jkey, Path(departures_top) / _node_name(jkey, teff_i, logg_i, feh_i, v),
                      dep_nml))
@@ -121,7 +127,7 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
         node_base = presets.fill(base, presets.STEP_READ) if nlte else copy.deepcopy(base)
         nml_i = update_dict(node_base, {
             'atmos_params': atmos_override,
-            'opac_table_params': {'absmet_file': absmet_file},
+            **_node_absmet(absmet_file),
             **extra,
         })
         jobs.append((jkey, Path(top) / _node_name(jkey, teff_i, logg_i, feh_i, v), nml_i))
@@ -135,7 +141,7 @@ def _prune_digest(base, windows, prune):
     """Cache identity of a per-node pruned line list.
 
     Everything the pruning depends on except the atmosphere node, which the file name carries:
-    the master list, the windows, the skirt, the sampling the selection was made at and the
+    the master list, the windows, the margin, the sampling the selection was made at and the
     abundances it was made for. This goes into the *runs'* digest as well as into the name of
     the pruned lists' directory, because two runs on the same node with the same namelist but
     different pruned lists are different runs -- without it the second would be served the
@@ -149,8 +155,8 @@ def _prune_digest(base, windows, prune):
         sort_keys=True, default=str).encode()).hexdigest()[:8]
 
 
-# composition_patch_mod's default line-list read margin (&linelist_params dlam)
-DEFAULT_DLAM_AA = 100.0
+# composition_patch_mod's default line-list read margin (&linelist_params line_margin)
+DEFAULT_LINE_MARGIN_AA = 100.0
 
 
 def _resolved_masters(files, launch_kwargs):
@@ -180,11 +186,11 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     (``HOP/linelist_reader_mod.f90``), so finding the records costs the selection rather
     than the list.
 
-    ``prune`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
+    ``prune`` is the caller's descriptor: ``margin`` in Angstrom (how far outside a window a
     line may still contribute; 0 or absent disables pruning altogether) and the
     ``abundances`` / ``relative_abundances`` the selection is made at, which is the
     composition itself -- a ladder's rungs share their node's selection rather than each
-    getting its own. Hydrogen lines, whose Stark wings reach far beyond the skirt, bypass
+    getting its own. Hydrogen lines, whose Stark wings reach far beyond the prune margin, bypass
     the prune and are read as the master lists give them. Each node then maps to the list
     of its files.
 
@@ -207,7 +213,7 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     files = [f for f in linelist.get('linelist_file') or [] if f]
     if not files:
         return None
-    if not prune or not float(prune.get('skirt') or 0.0) > 0.0:
+    if not prune or not float(prune.get('margin') or 0.0) > 0.0:
         return None                   # nothing to select per node; every run shares the list
     R = float((base.get('spectrum_params') or {}).get('R_sampling') or 0.0)
     if R <= 0:
@@ -215,8 +221,8 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
     from .. import prune as hop_prune
     from ..linestrength import _window_text
 
-    skirt = float(prune['skirt'])
-    padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
+    margin = float(prune['margin'])
+    padded = sorted((float(min(w)) - margin, float(max(w)) + margin) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
     out_dir = (cwd / top / '_linelists' / _prune_digest(base, windows, prune)).resolve()
     # HOP loads the files in this order for the prune as a run would for itself, so the
@@ -244,7 +250,7 @@ def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation
         if not jobs:
             window_file.write_text(_window_text(padded))
         jobs.append((path, hop_prune.prune_namelist(
-            path, atmos, masters, window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
+            path, atmos, masters, window_file, R=R, line_margin=margin, vmic=v, feh=feh_i,
             abundances=abundances, relative_abundances=relative, base=base,
             exclude_elements='H')))
     hop_prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
@@ -348,7 +354,8 @@ def _dep_bucket(top, settings):
 
 def _interp_crop(grid, xmin, xmax, method):
     """Interpolate a node grid at its target point and crop to the window — the shared tail
-    of ``compute_spectrum``/``compute_spectra``."""
+    of ``compute_spectrum``/``compute_spectra``. The spectrum carries the grid as its
+    ``source`` (:class:`CropSource`), so a result can crop it again."""
     # a run can finish yet emit no spectrum (e.g. no R_sampling/daa/nnu/lam_file set, or
     # angle_quad='none'); flag it clearly instead of failing later on a missing attribute.
     no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
@@ -365,6 +372,7 @@ def _interp_crop(grid, xmin, xmax, method):
         raise RuntimeError(
             f"Interpolated spectrum is empty over [{xmin}, {xmax}] Å — the synthesis "
             f"did not cover the requested window.")
+    spec.source = CropSource(grid, method)
     return spec
 
 
@@ -462,23 +470,120 @@ def _foldable_ladder(settings_list, launch_kwargs, nlte):
     return base, manifest
 
 
+# The set of a folded NLTE run that holds the LTE spectrum at the ladder's base composition
+# (continuum, NLTE, LTE, then the variants; see _foldable_ladder).
+_LADDER_LTE_SET = 2
+
+
+def _ladder_lte_set(nlte, slot, index):
+    """The set holding the LTE spectrum of ladder variant ``slot`` read from set ``index``:
+    that set itself in an LTE run; in an NLTE run the base composition's LTE set, which
+    only the first variant shares (None for the others). None when ``index`` is None."""
+    if index is None or not nlte:
+        return index
+    return _LADDER_LTE_SET if slot == 0 else None
+
+
 class _LadderRunView:
     """One node spectrum as :class:`SpectrumGrid` expects it: set ``index`` of a folded run,
-    or the run's own spectrum when ``index`` is None. ``output`` is the run's resolved
+    or the run's own spectrum when ``index`` is None. ``lte_index`` is the set holding the
+    variant's LTE spectrum (see :func:`_ladder_lte_set`). ``output`` is the run's resolved
     folder as :func:`job_output` names it."""
-    def __init__(self, run, index=None, output=None):
+    def __init__(self, run, index=None, output=None, lte_index=None):
         self.run = run
         self.index = index
+        self.lte_index = lte_index
         self.has_spectrum = getattr(run, 'has_spectrum', False)
         self.mode = getattr(run, 'mode', 'LTE')
         self.folder = run.folder
         self.output = output
 
     @instance_cache
-    def crop(self, **kwargs):
-        """``run.crop`` of this node's spectrum; a workflow crops the same node to the same
-        window at every trial star and lattice round, so the result is kept."""
+    def crop(self, LTE=False, **kwargs):
+        """``run.crop`` of this node's spectrum, its LTE spectrum with ``LTE``; a workflow
+        crops the same node to the same window at every trial star and lattice round, so
+        the result is kept."""
+        if self.index is None:
+            return self.run.crop(LTE=LTE, **kwargs)
+        if LTE and self.mode != 'LTE':
+            if self.lte_index is None:
+                raise ValueError("A folded NLTE ladder holds an LTE spectrum only at its "
+                                 "base composition.")
+            return self.run.crop(index=self.lte_index, **kwargs)
         return self.run.crop(index=self.index, **kwargs)
+
+
+def _view_record(view):
+    """A node spectrum of a grid as a JSON record (see :class:`CropSource`)."""
+    if isinstance(view, _SnapshotMeanView):
+        return {'mean': [_view_record(run) for run in view.runs]}
+    if isinstance(view, _LadderRunView):
+        return {'folder': str(view.folder), 'index': view.index,
+                'lte_index': view.lte_index}
+    return {'folder': str(view.folder), 'index': None, 'lte_index': None}
+
+
+def _open_view(record):
+    """The inverse of :func:`_view_record`, reading the runs again."""
+    if 'mean' in record:
+        return _SnapshotMeanView([_open_view(item) for item in record['mean']])
+    return _LadderRunView(tm.read(record['folder']), record['index'],
+                          lte_index=record['lte_index'])
+
+
+class CropSource:
+    """What a synthesised spectrum was cropped from, to crop it again with other arguments:
+    the spectrum run of an individual atmosphere (:meth:`tumult.run.Run.crop`), or the node
+    grid interpolated at the star with ``method`` (:meth:`tumult.spectrum_grid.SpectrumGrid.crop`).
+    """
+    def __init__(self, source, method=None):
+        self.source = source
+        self.method = method
+
+    @property
+    def is_grid(self):
+        return isinstance(self.source, tm.SpectrumGrid)
+
+    def crop(self, **kwargs):
+        if self.is_grid:
+            return self.source.crop(method=self.method, **kwargs)
+        return self.source.crop(**kwargs)
+
+    @property
+    def run(self):
+        """The spectrum run itself, or for a grid the run of its node with the largest
+        interpolation weight (the first run of a snapshot node)."""
+        if not self.is_grid:
+            return self.source
+        weights = self.source.interp_weights
+        node = self.source.spectra[0 if weights is None else int(np.argmax(weights))]
+        if isinstance(node, _SnapshotMeanView):
+            node = node.runs[0]
+        return getattr(node, 'run', node)
+
+    def to_dict(self):
+        if not self.is_grid:
+            return {'kind': 'run', 'folder': str(self.source.folder)}
+        grid = self.source
+        weights = grid.interp_weights
+        return {'kind': 'grid', 'method': self.method,
+                'nodes': [_view_record(view) for view in grid.spectra],
+                'params': {name: [float(v) for v in grid.params[name]]
+                           for name in grid.params.columns},
+                'separable': grid.separable,
+                'p0': {name: float(v) for name, v in grid.p0.items()},
+                'weights': None if weights is None else [float(w) for w in weights]}
+
+    @classmethod
+    def from_dict(cls, value):
+        if value['kind'] == 'run':
+            return cls(tm.read(value['folder']))
+        grid = tm.RunGrid([_open_view(item) for item in value['nodes']],
+                          separable=value['separable'], **value['params'])
+        grid.p0 = dict(value['p0'])
+        if value['weights'] is not None:
+            grid.interp_weights = np.asarray(value['weights'], dtype=float)
+        return cls(grid, value['method'])
 
 
 class NodeStore:
@@ -936,8 +1041,9 @@ def _run_plans(plans, nodes, selections, stars, *, top, launch_kwargs, max_threa
                 key = node[0]
                 view = stored.get((gi, key))
                 if view is None:
-                    view = _LadderRunView(runs[(gi, key)], set_index(nlte, slot),
-                                          outputs[key])
+                    index = set_index(nlte, slot)
+                    view = _LadderRunView(runs[(gi, key)], index, outputs[key],
+                                          _ladder_lte_set(nlte, slot, index))
                     if store is not None:
                         new_entries.append((node, abundances[vi], view))
                 views[(vi, key)] = view
@@ -1222,7 +1328,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         first_ladder = 3 if nlte_v else 2
         results = []
         for vi in range(len(settings_list)):
-            views = {key: _LadderRunView(runs[key], first_ladder + vi)
+            views = {key: _LadderRunView(runs[key], first_ladder + vi, lte_index=
+                                         _ladder_lte_set(nlte_v, vi, first_ladder + vi))
                      for key in job_keys}
             grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
                                   job_params, vmic_points)

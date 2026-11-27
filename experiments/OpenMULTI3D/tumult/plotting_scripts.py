@@ -112,9 +112,16 @@ def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
 
 #=====================================================================
 def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
-            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', **kwargs):
+            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', bins=None,
+            ax=None, **kwargs):
+  """Image of the number of points (log scale) on a grid of nodes spanning xmin..xmax and
+  ymin..ymax, drawn into ``ax`` (default: the current axes). Each point is shared
+  bilinearly between its four neighbouring nodes. bins (an int or (nx, ny)) sets the
+  number of nodes; by default there is one per pixel of the axes at the figure's dpi, so
+  set it when the figure is drawn at another size."""
   #-----------------------------------------------------------------
-  plt = get_plt()
+  if ax is None:
+    ax = get_plt().gca()
 
   mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
   xx = xx[~mask]
@@ -125,39 +132,31 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
   if ymin is None: ymin = yy.min()
   if ymax is None: ymax = yy.max()
 
-  fig = plt.gcf()
-  nx, ny = fig.get_size_inches() * fig.get_dpi()
-
-  # Get the bounding box of the axes in figure-relative coordinates
-  bbox = plt.gca().get_position()
-
-  # Compute the size of the axes in inches
-  nx = bbox.width * nx
-  ny = bbox.height * ny
-
-  nx = np.ceil(nx).astype(int)
-  ny = np.ceil(ny).astype(int)
+  if bins is None:
+    fig = ax.figure
+    bbox = ax.get_position()
+    nx, ny = np.ceil([bbox.width, bbox.height] * fig.get_size_inches() * fig.get_dpi()).astype(int)
+  else:
+    nx, ny = np.broadcast_to(bins, 2)
   dx = (xmax - xmin) / (nx-1)
   dy = (ymax - ymin) / (ny-1)
   
   ix = (xx - xmin) / dx
   iy = (yy - ymin) / dy
-  iix = np.floor(ix).astype(int)
-  iiy = np.floor(iy).astype(int)
-  mask = (iix >= 0) & (iix < nx-1) & (iiy >= 0) & (iiy < ny-1)
+  mask = (ix >= 0) & (ix <= nx-1) & (iy >= 0) & (iy <= ny-1)
   ix = ix[mask]
   iy = iy[mask]
-  iix = iix[mask]
-  iiy = iiy[mask]
+  # lower neighbour node; a point on the last node goes to the cell below it with weight 1
+  iix = np.minimum(np.floor(ix).astype(int), nx-2)
+  iiy = np.minimum(np.floor(iy).astype(int), ny-2)
   fx = ix - iix
   fy = iy - iiy
 
-  # Image
-  image = np.zeros((nx, ny))  # Replace with your actual image
-  np.add.at(image, (iix-1, iiy-1), (1-fx)*(1-fy))
-  np.add.at(image, (iix, iiy-1), fx*(1-fy))
-  np.add.at(image, (iix-1, iiy), (1-fx)*fy)
-  np.add.at(image, (iix, iiy), fx*fy)
+  image = np.zeros((nx, ny))
+  np.add.at(image, (iix, iiy), (1-fx)*(1-fy))
+  np.add.at(image, (iix+1, iiy), fx*(1-fy))
+  np.add.at(image, (iix, iiy+1), (1-fx)*fy)
+  np.add.at(image, (iix+1, iiy+1), fx*fy)
 
   if radius > 0:
     # Circle convolution kernel
@@ -173,7 +172,9 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
     image = np.log(image)
 
   if vmax is None: vmax = image.max()
-  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax),
+  # each node at the centre of its pixel
+  return ax.imshow(image.T, origin='lower',
+                    extent=(xmin-dx/2, xmax+dx/2, ymin-dy/2, ymax+dy/2),
                     vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
                     interpolation=interpolation, **kwargs)
 
@@ -298,10 +299,11 @@ def assign_label_slots(xx, strength, nslot, xmin, xmax):
 #=====================================================================
 def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
                       rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
-                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', **kwargs):
+                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', ax=None,
+                      **kwargs):
     #-----------------------------------------------------------------
     plt = get_plt()
-    ax = plt.gca()
+    ax = plt.gca() if ax is None else ax
     xmn, xmx = ax.get_xlim()
     ymn, ymx = ax.get_ylim()
     if xmin is None: xmin = xmn
@@ -315,7 +317,7 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     labels = np.array(labels)[mask]
     if weights is not None: weights = weights[mask]
 
-    plt.gcf().draw_without_rendering()
+    ax.figure.draw_without_rendering()
     t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
     bbox = t.get_window_extent().transformed(ax.transData.inverted())
     t.remove()
@@ -359,10 +361,10 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     xl = np.vstack([newx, newx, oldx, oldx])
     yl = ymax*nn + np.vstack([h*nn, 0.8*h*nn, 0.2*h*nn, 0*nn])
 
-    plt.plot(xl, yl, color=color, linewidth=linewidth)
+    ax.plot(xl, yl, color=color, linewidth=linewidth)
 
     for x, label in zip(newx, labels):
-        plt.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
+        ax.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
                   fontfamily=fontfamily, color=color, **kwargs)
 
     if rotation == 90:
@@ -370,7 +372,7 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     else:
         pad = 2.5
 
-    plt.ylim(top=ymax+1.2*h + bbox.height*pad)
+    ax.set_ylim(top=ymax+1.2*h + bbox.height*pad)
 
 
 def quickplot(x, y, ax=None, color=None, trendline=None, xerr=None, yerr=None,

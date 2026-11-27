@@ -14,8 +14,10 @@ ifeq ($(strip $(MPI)),mpi)
 else
   FC = ifx
 endif
-F90 = $(FC) -cpp -assume byterecl,protect_parens -diag-disable remark -diag-disable=16219 -module $(BUILD)
+F90 = $(FC) -cpp -assume byterecl,protect_parens,norealloc_lhs -diag-disable remark -diag-disable=16219 -module $(BUILD)
 LD  = $(FC) -module $(BUILD)
+# ifx 2026 compiles some OpenMP atomics to libatomic calls (__atomic_store)
+LIBS += -latomic
 
 # Set openmp compiler flags if needed
 ifeq ($(strip $(OMP)),yes)

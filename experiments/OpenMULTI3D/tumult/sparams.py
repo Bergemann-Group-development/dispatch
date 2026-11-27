@@ -196,21 +196,23 @@ def entry_star(params):
     return refstars.nearest(params["teff"], params["logg"], params["feh"])
 
 
-def identify_catalog(star, lo, hi, linelist, atmosphere=None):
+def identify_catalog(star, lo, hi, linelist, reference=None):
     """``(frame, note)``: the transitions in ``[lo, hi]`` Å ranked for ``star``.
 
     HOP strengths on a model atmosphere are what makes the identification a statement about
-    *this* star: on ``atmosphere`` (a MARCS model) when given, else on the reference
-    atmosphere ``star`` resolves to through the registered MARCS grid. The master line list
+    *this* star: on ``reference`` (a :class:`~tumult.synthesis.preparation.Reference`) when
+    given, else on the reference atmosphere ``star`` resolves to through the registered MARCS
+    grid. The master line list
     is the fallback when HOP cannot be run, and then the note says so, because a log
     gf-ordered identification is a much weaker claim.
     """
     from . import linestrength
     from .linelist import load_master
     try:
-        if atmosphere is not None:
-            frame = linestrength.band_on_atmosphere(atmosphere, str(linelist), lo, hi)
-            label = f"HOP strengths on {Path(atmosphere).name}"
+        if reference is not None:
+            frame = linestrength.band_on_atmosphere(reference.path, str(linelist), lo, hi,
+                                                    atmos_format=reference.format)
+            label = f"HOP strengths on {Path(reference.path).name}"
         else:
             frame = linestrength.compute_band(star, str(linelist),
                                               *linestrength.band_bounds(lo, hi))
@@ -226,11 +228,12 @@ def identify_catalog(star, lo, hi, linelist, atmosphere=None):
         return None, "no line list — identities unknown"
 
 
-def measure_balance_lines(result, masks, spec, linelist, atmosphere=None):
+def measure_balance_lines(result, masks, spec, linelist, reference=None):
     """Fill ``result.lines`` from the windows, identified on the entry point's atmosphere.
 
-    ``atmosphere`` names that MARCS model; without it the reference star nearest the entry
-    point is used (see :func:`identify_catalog`).
+    ``reference`` (:class:`~tumult.synthesis.preparation.Reference`) names that model, the
+    request's preparation; without it the reference star nearest the entry point is used
+    (see :func:`identify_catalog`).
 
     Raises :class:`ValueError` when no window could be identified as either stage of the
     element: the balance reads the *stage* off this identification, and the mask set's
@@ -239,14 +242,14 @@ def measure_balance_lines(result, masks, spec, linelist, atmosphere=None):
     the flag stays visible and the caller's toggle overrides it.
     """
     from . import linediag
-    star = entry_star(result.params0) if atmosphere is None else None
+    star = entry_star(result.params0) if reference is None else None
     lo = min(m.lmin for m in masks)
     hi = max(m.lmax for m in masks)
-    catalog, note = identify_catalog(star, lo, hi, linelist, atmosphere)
+    catalog, note = identify_catalog(star, lo, hi, linelist, reference)
     lines = linediag.measure_masks(spec, masks, profile=result.profile, snr=result.snr,
                                    cont_pct=result.cont_pct, catalog=catalog,
                                    element=result.element)
-    result.ident_star = star.label if star is not None else Path(atmosphere).name
+    result.ident_star = star.label if star is not None else Path(reference.path).name
     result.ident_note = note
 
     for ln in lines:
@@ -547,7 +550,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
                               mask_key)
     from .synthesis.api import NodeStore
     from .synthesis.inputs import AtmosphereGrid
-    from .synthesis.operations import quadrature_atmosphere
+    from .synthesis.operations import preparation_reference
     from .synthesis.request import SynthRequest
     from .synthesis.workflows import abund_table, node_selector
 
@@ -595,14 +598,14 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     if mset is not None:
         stage("Measuring windows", 0)
         measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
-                              str(config.resolve(config.linelist)) if config.linelist else None,
-                              atmosphere=quadrature_atmosphere(request))
+                              str(config.resolve(config.linelist_file)) if config.linelist_file else None,
+                              reference=preparation_reference(request))
     stage(steps[0], 0)
 
     solar = abund_table(config.to_prefs())
     solar_x = solar.get(element)
     if solar_x is None:
-        raise ValueError(f"No solar {element} abundance; configure config.abundances.")
+        raise ValueError(f"No solar {element} abundance; configure config.abund_file.")
     result.solar_x = float(solar_x)
     result.termination, result.converged = "running", False
 

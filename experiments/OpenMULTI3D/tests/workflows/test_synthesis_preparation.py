@@ -11,11 +11,13 @@ from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest, workflow
 def calls(monkeypatch, tmp_path):
     recorded = []
     monkeypatch.setattr(synth, 'discover_atmos_grid', lambda *a: {(5750,4.5,0.): tmp_path/'a.mod'})
-    monkeypatch.setattr(synth, '_absmet_files', lambda *a: None)
     def record(**kwargs):
         recorded.append(kwargs)
-        # execute_request unpacks (spectra per window, runs) from a window batch
-        return ([[kwargs] * len(kwargs['windows'])], ()) if kwargs.get('return_runs') else kwargs
+        # execute_request unpacks (spectra per window, runs) from a window batch; each
+        # spectrum carries the source it was cropped from
+        spectrum = SimpleNamespace(source=None)
+        return (([[spectrum] * len(kwargs['windows'])], ()) if kwargs.get('return_runs')
+                else kwargs)
     for name in ('compute_spectrum', 'compute_spectra', '_compute_window_batch'):
         monkeypatch.setattr(synth, name, record)
     return recorded
@@ -118,7 +120,7 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     base = {'linelist_params': {'linelist_file': ['master.txt']},
             'spectrum_params': {'R_sampling': 300000.}}
     windows = [(5000., 5002.)]
-    prune = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
+    prune = {'margin': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
     nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]
 
     # nothing named, nothing on disk: the readers stay on what the settings say
@@ -152,8 +154,8 @@ def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     # the prune reads the master itself: HOP bisects it for the windows it is given
     sources, = [a[1] for _n, a, _kw in named]
     assert [Path(f) for f in sources] == [master]
-    # the skirt, the windows and the rung the pruning was made at all key the pruning
-    for changed in ({**prune, 'skirt': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
+    # the margin, the windows and the rung the pruning was made at all key the pruning
+    for changed in ({**prune, 'margin': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
         assert api._prune_digest(base, windows, changed) != api._prune_digest(base, windows, prune)
     assert api._prune_digest(base, [(5000., 5003.)], prune) != api._prune_digest(base, windows, prune)
 
@@ -277,3 +279,16 @@ def test_probe_stars_share_the_target_runs_and_add_only_their_own_nodes(tmp_path
     target, probe = results
     assert target[0][0] == (5750., [('a', 1.0)])
     assert probe[1][0] == (5850., [('a', 1.0), ('b', 1.0)])
+
+
+def test_absmet_reaches_the_namelist_as_a_table_or_a_folder(tmp_path):
+    """dispatch.x picks a folder's table at each run's [Fe/H], so the configured folder
+    reaches every run as ``absmet_folder`` and a single table as ``absmet_file``."""
+    (tmp_path / "tables").mkdir()
+    (tmp_path / "one.bin").touch()
+    for config, key, path in ((SynthConfig(root=tmp_path, absmet_folder="tables"),
+                               "absmet_folder", tmp_path / "tables"),
+                              (SynthConfig(root=tmp_path, absmet_file="one.bin"),
+                               "absmet_file", tmp_path / "one.bin")):
+        settings = synth.build_settings(config.to_prefs(), {"mode": "LTE"})
+        assert settings["opac_table_params"] == {key: str(path)}

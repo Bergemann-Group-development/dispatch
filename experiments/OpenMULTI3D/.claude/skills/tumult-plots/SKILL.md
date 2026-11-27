@@ -35,8 +35,7 @@ worked reference for combining these methods in one figure.
 - Rates: `tumult.atom_rates.read_rates(run_dir, atom_id)` reads the files written with
   `&output_params save_net_rates=T` (first column of the run only); `net_rates` and
   `transition_relevance` in the same module reduce them.
-- Convergence: `run.conv_report` holds the `convergence_report_*.txt` tables (set when
-  `run.atoms` is first read), and
+- Convergence: `run.conv_report` holds the `convergence_report_*.txt` tables, and
   `Departures.convergence_levels()` the final correction per level. The per-iteration
   history is only in the console log (`rank_NNNNN.log`).
 
@@ -47,8 +46,9 @@ it falls short:
 
 - `tumult.Run`: `plot_depart`, `plot_resolved`, `plot_cog_corr`, `plot_line_labels`,
   `plot_line_stem`, `plot_cntrbf`, `plot_cntrbf_map`
-- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_mean`, `plot_ltau_cube`,
-  `plot_geo_cube`, `plot_ltau_hist`, the transition's `plot_clv` and `plot_resolved`,
+- `Spectrum.plot`, the atmosphere's `plot_slice`, `plot_ltau_slice`, `plot_ltau_mean`,
+  `plot_ltau_cube`, `plot_geo_cube`, `plot_ltau_hist` (all take `ax=`; `run.atmos`, or
+  `tm.read_atmosphere(path)` for a model file without a run), the transition's `plot_clv` and `plot_resolved`,
   the atom's `plot_grotrian`
 - `tumult/plotting_scripts.py`: `comparison_scatter`, `scatter_density`, `quickplot`,
   `plot_line_annotations`, `plot_arrow`

@@ -133,10 +133,10 @@ def _save_analysis(value, folder):
 def inputs(args):
     """The reference assets as the scripting inputs of ``intended_api``."""
     from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig
-    config = SynthConfig(root=ROOT, cache=args.cache, linelist=args.linelist,
-                         abundances=args.abundances, absmet=args.absmet,
+    config = SynthConfig(root=ROOT, cache=args.cache, linelist_file=args.linelist,
+                         abund_file=args.abundances, absmet_file=args.absmet,
                          R_sampling=args.R_sampling,
-                         linelist_skirt=args.line_list_skirt,
+                         prune_margin=args.prune_margin,
                          abundance_step=args.abundance_step, threads=args.threads)
     stars = [(Star(*stellar), Atmosphere(path)) for stellar, path in REFERENCE_STARS]
     return {"config": config, "grid": AtmosphereGrid(args.atmosphere_grid), "stars": stars,
@@ -303,7 +303,7 @@ def parser():
     p.add_argument("--wavelength", type=float, nargs=2, default=(4000.0, 9000.0),
                    metavar=("BLUE_AA", "RED_AA"))
     p.add_argument("--R-sampling", type=float, default=100_000.0)
-    p.add_argument("--line-list-skirt", type=float, default=5.0)
+    p.add_argument("--prune-margin", type=float, default=5.0)
     p.add_argument("--abundance-step", type=float, default=0.25)
     p.add_argument("--correction-limit", type=float, default=1.0)
     p.add_argument("--profile", default="voigt")
@@ -314,7 +314,7 @@ def parser():
     p.add_argument("--atom", default="input/atoms/atom.mg86g")
     p.add_argument("--linelist", default="input/linelists/sun_3000-9000.txt")
     p.add_argument("--abundances", default="input/abund/abund_magg22.txt")
-    p.add_argument("--absmet", default="input/absmet_files/absmet")
+    p.add_argument("--absmet", default="input/absmet_files/m+0.00a+0.00c+0.00n+0.00o+0.00r+0.00s+0.00v+1.00.bin")
     p.add_argument("--abundance-masks", default="input/linemasks/Fe/fe-lmask.txt")
     p.add_argument("--balance-masks", default="input/linemasks/Fe/fe-balance-test.txt")
     p.add_argument("--analysis-masks", default="input/linemasks/Mg/mg-lmask.txt",

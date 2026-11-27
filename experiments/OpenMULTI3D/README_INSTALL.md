@@ -30,9 +30,7 @@ You need:
 
 - macOS or Linux. The commands below were verified on macOS 15 (Apple silicon, Homebrew
   GCC 15); Linux x86-64 uses the same commands.
-- A Fortran compiler: `gfortran`, `ifort` or `ifx`. On Apple silicon use gfortran: the
-  macOS Intel compilers produce x86-64 code only, which runs slower under Rosetta, and an
-  x86-64 HOP library cannot be loaded by an arm64 Python at all.
+- A Fortran compiler: gfortran 11 or later, or Intel's `ifort`. Intel has discontinued `ifort`; its last release (2021.13, oneAPI HPC Toolkit 2024.2) is the recommended Intel compiler and stays fixed. `ifx` builds the code too. The build is tested with gfortran 11.5, 12.4, 13.4, 14.4, 15.3 and 16.2, ifort 2021.11 and 2021.13, and ifx 2024.0 and 2026.2. On Apple silicon use gfortran: the macOS Intel compilers produce x86-64 code only, which runs slower under Rosetta, and an x86-64 HOP library cannot be loaded by an arm64 Python at all.
 - `make` and `perl` (the build scans module dependencies with a Perl script).
 - Python 3.11 or later (verified with 3.14), with `venv` and `pip`.
 
@@ -71,6 +69,14 @@ The build produces
 
 `make clean && make -j` rebuilds everything from scratch; `make -C HOP/standalone` rebuilds the HOP library alone.
 
+The OpenMP threads of `dispatch.x` need a larger stack than the system default, set by the environment variable `OMP_STACKSIZE`. Set it once in the shell profile (`~/.zshrc` on macOS, `~/.bashrc` on most Linux systems) and open a new terminal:
+
+```bash
+echo 'export OMP_STACKSIZE=256M' >> ~/.zshrc
+```
+
+`tm.launch` and the Python workflows set it for the runs they start.
+
 ## 4. Input data
 
 The repository tracks a minimal data set in `input/`, which includes everything the verification below needs: five MARCS models (dwarfs and giants, including the Sun), four model atoms (Ba, Fe, Mg, O), abundance tables, continuum and molecular opacity data and `input/linelists/SIU_masterline_Bergemann2026.txt`, a line list of atoms and the common molecules, most of its lines between 3000 and 9000 Å.
@@ -81,29 +87,26 @@ already complete, so an interrupted download resumes.
 
 | Data | Size | TumultStudio page | Command line |
 |---|---|---|---|
-| Per-species master line lists | about 1 GB | Preferences → Line lists | `python -m tumult.synthesis.input_data fetch linelists` |
-| Gaia-ESO NLTE line list | 4.4 MB | | `python -m tumult.synthesis.input_data fetch ges` |
-| Public model atoms (17 atoms) | 81 MB | Preferences → Model atoms | `python -m tumult.synthesis.input_data fetch atoms` |
-| Metal-opacity (absmet) tables | four files of 182 MB | Preferences → Opacity tables | `python -m tumult.synthesis.input_data fetch absmet` |
-| Line masks (17 elements) | 84 kB | | `python -m tumult.synthesis.input_data fetch linemasks` |
-| Survey window files (4MOST, GALAH, APOGEE, Gaia-ESO, WEAVE, Gaia RVS) | 5 kB | | `python -m tumult.synthesis.input_data fetch windows` |
-| KPNO solar flux atlas, 4000–9000 Å | 15 MB | | `python -m tumult.synthesis.input_data fetch kpno` |
-| IAG disc-resolved solar spectra, 14 μ values | 850 MB | | `python -m tumult.synthesis.input_data fetch iag` |
-| Gaia FGK benchmark stars v3 spectra | 450 MB in 110 files | | `python -m tumult.synthesis.input_data fetch gbs` |
-| MARCS grid, standard composition | about 400 MB | Preferences → Atmosphere grids | `python -m tumult.synthesis.grid_catalog fetch marcs input/atmos/MARCS` |
-| Stagger and M3DIS 3D grids | per model and snapshot | Preferences → Atmosphere grids | `python -m tumult.synthesis.grid_catalog fetch <grid> <dest> --snapshots N` |
+| Per-species master line lists | about 1 GB | Preferences → Line lists | `python -m tumult.downloads fetch linelists` |
+| Gaia-ESO NLTE line list | 4.4 MB | | `python -m tumult.downloads fetch ges` |
+| Public model atoms (17 atoms) | 81 MB | Preferences → Model atoms | `python -m tumult.downloads fetch atoms` |
+| Metal-opacity (absmet) tables | four files of 182 MB | Preferences → Opacity tables | `python -m tumult.downloads fetch absmet` |
+| Line masks (17 elements) | 84 kB | | `python -m tumult.downloads fetch linemasks` |
+| Survey window files (4MOST, GALAH, APOGEE, Gaia-ESO, WEAVE, Gaia RVS) | 5 kB | | `python -m tumult.downloads fetch windows` |
+| KPNO solar flux atlas, 4000–9000 Å | 15 MB | | `python -m tumult.downloads fetch kpno` |
+| IAG disc-resolved solar spectra, 14 μ values | 850 MB | | `python -m tumult.downloads fetch iag` |
+| Gaia FGK benchmark stars v3 spectra | 450 MB in 110 files | | `python -m tumult.downloads fetch gbs` |
+| MARCS grid, standard composition | about 400 MB | Preferences → Atmosphere grids | `python -m tumult.downloads fetch marcs` |
+| Stagger and M3DIS 3D grids | per model and snapshot | Preferences → Atmosphere grids | `python -m tumult.downloads fetch <grid> --teff T --logg G --feh F --snapshots N` |
 
-The `input_data` datasets come from one MPCDF Keeper share
-(<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>). Without `--dest`, `input_data`
-puts each dataset where the code and the documentation's examples look for it:
-`input/linelists/master_linelists/`, `input/linelists/`, `input/atoms/public/`,
-`input/absmet_files/`, `input/linemasks/<element>/`, `input/windows/`, `input/spectra/`,
-`input/spectra/IAG/` and `input/spectra/GBSv3/`. `list` shows the files and sizes, `fetch` takes `--file NAME`
-(repeatable, `Mg/mg-lmask.txt` for a line mask) to download only some, and `--dry-run`
-prints the plan.
-`python -m tumult.synthesis.grid_catalog list` names the grids; its module docstring
-describes the model and snapshot selection. Downloaded files are git-ignored. The
-verification below needs none of them.
+The datasets of files come from one MPCDF Keeper share (<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>). Without `--dest`, each dataset and grid goes where the code and the documentation's examples look for it: `input/linelists/master_linelists/`, `input/linelists/`, `input/atoms/public/`, `input/absmet_files/`, `input/linemasks/<element>/`, `input/windows/`, `input/spectra/`, `input/spectra/IAG/`, `input/spectra/GBSv3/` and `input/atmos/<grid>/`. `python -m tumult.downloads list` names the datasets and grids, and `list ID` shows the files or models of one with their sizes and what is on disk. `fetch` takes `--file NAME` (repeatable, `Mg/mg-lmask.txt` for a line mask) to download only some files of a dataset, and the exact `--teff`, `--logg` and `--feh` of a 3D model; without them it fetches the whole dataset or grid. The MARCS grid is one archive and comes whole. Downloaded files are git-ignored. The verification below needs none of them.
+
+In Python the same is `tm.downloads.table(ID)` and `tm.downloads.fetch(ID, ...)`, which return a DataFrame and the paths of the fetched files:
+
+```python
+import tumult as tm
+snapshot, = tm.downloads.fetch("stagger-dwarfs", teff=5777, logg=4.4, feh=0.0, verbose=True)
+```
 
 In TumultStudio each page lists the share when opened and offers a download or delete
 button per file, or for all files. The Line lists and Opacity tables pages download into
@@ -116,13 +119,13 @@ folder above when that preference is a single file. The Model atoms page always 
 Run the demo namelist:
 
 ```bash
-OMP_STACKSIZE=256M ./dispatch.x examples/sun_ba_1d.nml
+./dispatch.x examples/sun_ba_1d.nml
 ```
 
 `examples/sun_ba_1d.nml` synthesises the four Ba II lines of a six-level toy model atom
 (`input/atoms/atom.ba06`: 4554, 4934, 5853 and 6497 Å) in a MARCS solar model, in LTE
 and NLTE, without a background line list. It takes well under a minute (about one second
-on eight cores). `tm.launch` sets the same `OMP_STACKSIZE` for every run it starts.
+on eight cores).
 The run succeeded when the last line of the output is
 
 ```

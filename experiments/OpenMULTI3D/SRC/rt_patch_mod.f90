@@ -14,8 +14,8 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type, radiative_cut
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
-  USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, &
-    dlam, out_patch_offset, &
+  USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, bottom_ghost_t, &
+    line_margin, out_patch_offset, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
@@ -25,10 +25,11 @@ MODULE rt_patch_mod
     fixed_Jnu, n_windows, save_Jnu, &
     convlim, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
-    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file
+    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file, &
+    eta_reset_iter
   USE mpi_mod, only: mpi
   USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z, &
-                           save_linelist
+                           save_linelist, lte_ghost_solver
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
@@ -157,6 +158,20 @@ MODULE rt_patch_mod
     logical :: do_scat_precond = .false.               !< the continuum-scattering ALI is active for this slab
     logical :: compute_psi = .false.                   !< the formal solvers build Psi (for the rates or the ALI)
 
+    !> The frequencies at which short_char2 takes the eta step, fixed per (f, cell)
+    !> so that the recipe cannot switch between iterations (update_eta_mask).
+    !> Sparse: eta_row gives each cell's row of flags, 0 for a cell without any;
+    !> rows are appended as cells get flagged and removed only by the one reset.
+    !> Allocated only with rt_iteration_params solver='linear2'.
+    integer, allocatable :: eta_row(:,:,:)           !< (x, y, z): row of the cell's flags, 0 for none
+    logical(1), allocatable :: eta_src(:,:,:)        !< (f, row, set): the local test fired at the cell itself
+    logical(1), allocatable :: eta_mask(:,:,:)       !< (f, row, set): eta_src spread over the upwind stencils reaching the cell
+    logical(1), allocatable :: eta_gsrc(:,:,:,:)     !< (f, x, y, set): the local test fired on the upstream ghost plane
+    integer :: eta_nrow=0                            !< rows in use
+    integer :: eta_rx=1, eta_ry=1                    !< reach of an upwind stencil in cells, x and y
+    integer :: eta_set=1                             !< the set short_char2 solves
+    logical :: eta_reset_done=.false.                !< the flags have started afresh at eta_reset_iter
+
     !> Sampled background opacity table: the composition patch's shared table for
     !> this i_nu or, on the make_eos path, a private one (save_opac_table
     !> overwrites it in place).
@@ -246,7 +261,9 @@ MODULE rt_patch_mod
     procedure :: reset_array
     procedure :: back_to_work
     procedure :: work_to_transfer_units
+    procedure :: update_eta_mask
     procedure :: set_upstream_boundary
+    procedure :: bottom_ghost_at
     procedure :: integrate_intensity
     procedure :: integrate_rates
     procedure :: set_downstream_boundary
@@ -254,7 +271,9 @@ MODULE rt_patch_mod
     procedure :: save_contribution_function
     procedure :: rotate_array
     procedure :: short_char
+    procedure :: short_char2
     procedure :: set_fixed_Jnu
+    procedure :: long_char2
     procedure :: long_char_linear
     procedure :: long_char_quadratic
     procedure :: long_char_hermite
@@ -301,6 +320,27 @@ MODULE rt_patch_mod
     end subroutine short_char
 
     !=============================================================================
+    !> Linear formal solution by short characteristics in a 3D slab with the
+    !> optical path in tau500 and the eta step at flagged frequencies, which builds
+    !> Psi for the iteration pass (rt_iteration_params solver='linear2').
+    !=============================================================================
+    module subroutine short_char2 (self, vec, i_mu)
+      class(rt_patch_t) :: self
+      real(8), intent(in) :: vec(3) !< direction of the ray
+      integer, intent(in) :: i_mu   !< direction index in rt_iter
+    end subroutine short_char2
+
+    !=============================================================================
+    !> Linear formal solution along the vertical columns of the slab (1D and
+    !> column_by_column) with the optical path in tau500 and the eta step at
+    !> flagged frequencies, which builds Psi (rt_iteration_params solver='linear2').
+    !=============================================================================
+    module subroutine long_char2 (self, vec)
+      class(rt_patch_t) :: self
+      real(8) :: vec(3) !< direction of the ray
+    end subroutine long_char2
+
+    !=============================================================================
     !> Linear formal solution along the vertical columns of the slab (1D,
     !> column_by_column or a ray-aligned atmosphere), which builds Psi.
     !=============================================================================
@@ -333,22 +373,24 @@ MODULE rt_patch_mod
     !> Cubic Hermite formal solution along the vertical columns, with the slopes of
     !> chi and Snu from the composition gradients by the chain rule.
     !=============================================================================
-    module subroutine long_char_hermite (self, comp, vec, comp_up)
+    module subroutine long_char_hermite (self, comp, vec, comp_up, i_mu)
       class(rt_patch_t), target :: self
       class(composition_type) :: comp             !< composition of the slab
       class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
       real(8), intent(in) :: vec(3)               !< direction of the ray
+      integer, intent(in) :: i_mu                 !< direction
     end subroutine long_char_hermite
 
     !=============================================================================
     !> long_char_hermite's optical depth with long_char_quadratic's source
     !> treatment, which needs only the Pe gradients.
     !=============================================================================
-    module subroutine long_char_hermite2 (self, comp, vec, comp_up)
+    module subroutine long_char_hermite2 (self, comp, vec, comp_up, i_mu)
       class(rt_patch_t), target :: self
       class(composition_type) :: comp             !< composition of the slab
       class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
       real(8), intent(in) :: vec(3)               !< direction of the ray
+      integer, intent(in) :: i_mu                 !< direction
     end subroutine long_char_hermite2
 
     !=============================================================================
@@ -1017,6 +1059,7 @@ contains
             call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
             call self%work_to_transfer_units()
             call self%set_upstream_boundary(i_mu, i_set, ng)
+            if (rt_iter%solver == 'linear2') call self%update_eta_mask(i_set)
             call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           endif
           call self%set_downstream_boundary(i_mu, i_set)
@@ -1387,7 +1430,7 @@ contains
       ! (b) departure-carrying species in detail, with departures + velocity
       if (associated(departures)) then
         associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
             departures=departures, only_departures=.true., i_set=i_set, &
             window_lam=window_lam)
         end associate
@@ -1406,14 +1449,14 @@ contains
               self%one_m_eps(:,:,:,:,1))
             call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
               self%one_m_eps(:,:,:,:,2))
-            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
               only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
               one_m_eps=self%one_m_eps, chi_scat=scat_lte, beta=self%beta, &
               i_set=i_set, window_lam=window_lam)
             self%chi_scat = self%chi_scat + scat_lte
             deallocate(scat_lte)
           else
-            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+            call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
               only_departures=.true., lte_of=self%m3d_parent%departures(:,i), &
               i_set=i_set, window_lam=window_lam)
           endif
@@ -1488,12 +1531,12 @@ contains
             self%one_m_eps(:,:,:,:,1))
           call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
             self%one_m_eps(:,:,:,:,2))
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
             departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
             beta=self%beta, i_set=i_set, window_lam=window_lam, &
             chi_lines=chi_lines, eta_lines=eta_lines)
         else
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, &
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, line_margin, vproj, &
                                            departures=departures, i_set=i_set, &
                                            window_lam=window_lam, &
                                            chi_lines=chi_lines, eta_lines=eta_lines)
@@ -1524,10 +1567,9 @@ contains
       lock => self%m3d_parent%ll_point_locks(self%i_nu)
       filled_here = .false.
       call lock%set('ll_point_table')
-      associate(table => self%m3d_parent%ll_point_tables(self%i_nu))
-        if (.not. allocated(table%set)) allocate(table%set(self%n_set))
-        store => table%set(i_set)
-      end associate
+      if (.not. allocated(self%m3d_parent%ll_point_tables(self%i_nu)%set)) &
+        allocate(self%m3d_parent%ll_point_tables(self%i_nu)%set(self%n_set))
+      store => self%m3d_parent%ll_point_tables(self%i_nu)%set(i_set)
       if (.not. store%initialised) then
         allocate(store%chi(self%fs:self%fe,self%nx,self%ny,self%nz), &
                  store%eta(self%fs:self%fe,self%nx,self%ny,self%nz))
@@ -1640,11 +1682,11 @@ contains
         ! shortcut above rotates only chi/Snu, not the thermodynamic state
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
           error stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
-        call self%long_char_hermite(comp, vec, comp_up)
+        call self%long_char_hermite(comp, vec, comp_up, i_mu)
         case('hermite2')
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
           error stop "rt_output_params solver='hermite2' in 3D requires rotate_atmos=.true."
-        call self%long_char_hermite2(comp, vec, comp_up)
+        call self%long_char_hermite2(comp, vec, comp_up, i_mu)
         case default
         error stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
       end select
@@ -1656,19 +1698,23 @@ contains
       ! lambda iteration.  They remain available for the output pass.
       if (one_dimensional .or. column_by_column) then
         select case(rt_iter%solver)
+          case('linear2')
+            call self%long_char2(vec)
           case('linear')
             call self%long_char_linear(vec)
           case default
-            error stop 'rt_iteration_params solver: only "linear" builds Psi in 1D'
+            error stop 'rt_iteration_params solver: only "linear" and "linear2" build Psi in 1D'
         end select
       else
         select case(rt_iter%solver)
+          case('linear2')
+            call self%short_char2(vec, i_mu)
           case('linear')
             call self%short_char(vec)
           case('hermite')
             call self%short_char_hermite(comp, vec)
           case default
-            error stop 'rt_iteration_params solver: only "linear" and "hermite" build Psi in 3D'
+            error stop 'rt_iteration_params solver: only "linear", "linear2" and "hermite" build Psi in 3D'
         end select
       endif
     endif
@@ -2323,7 +2369,7 @@ contains
     call mem_register(self%opac%scat, label='opac_table')
     all_scat(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac%scat
     call comp%opacity(sp, all_chi, all_scat, include_absmet=include_absmet, &
-      include_llist=include_llist, dlam=dlam, sorted=self%sp%sorted, &
+      include_llist=include_llist, line_margin=line_margin, sorted=self%sp%sorted, &
       disjoint=do_disjoint)
 
     do k=1, nne
@@ -2447,12 +2493,12 @@ contains
       allocate(chi_scat(nnu, ntemp, nne, 1), source=0.)
       call compute_epsilon_stage(1, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,1))
       call compute_epsilon_stage(2, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,2))
-      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam, &
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, line_margin, &
         one_m_eps=one_m_eps, chi_scat=chi_scat, beta=all_beta)
       allocate(self%ll_opac%scat(nnu, ntemp, nne), source=0.)
       call mem_register(self%ll_opac%scat, label='ll_opac_table')
     else
-      call comp%add_linelist_opacities(psp, all_chi, all_eta, dlam)
+      call comp%add_linelist_opacities(psp, all_chi, all_eta, line_margin)
     endif
 
     ! isolate the pure line xhat delta and normalise by chi500 (undone per cell in
@@ -2826,8 +2872,8 @@ contains
     real(4) :: split_bi, split_bj, split_Rij, abs_coef
     real(4) :: psi, eta_u, eta_t, chi_t, eta_other, other, chi_other, up, spont
     real(8), allocatable :: pop_ratio(:,:,:)
-    integer :: i, fs, fe, index
-    logical :: split_rates, per_direction, own_norm, do_scat
+    integer :: i, fs, fe, index, pw, pb
+    logical :: split_rates, per_direction, own_norm, do_scat, use_flags, in_force, raise
     real(4), dimension(:), allocatable :: wqf
     real(4) :: sum_w, wtot
     integer, save :: itimer=0
@@ -2858,6 +2904,10 @@ contains
     do_scat = self%do_line_scat
     ! A fixed-Jnu spectrum takes the rates unnormalised (set_fixed_Jnu)
     per_direction = .not. (self%do_full_sp .and. fixed_Jnu > 0)
+    ! the (line, cell) pairs of the NLTE iteration that take unpreconditioned rates
+    ! (atom_data_t psi_flags); the output pass does not iterate the populations
+    use_flags = .false.
+    if (self%do_full_sp .and. associated(atom%data)) use_flags = allocated(atom%data%psi_flags)
     wtot = sum(rt_iter%wmu)
     allocate(wmunu(self%fs:self%fe), vph(self%fs:self%fe), wqf(self%fs:self%fe))
     ! The preconditioning correction has to subtract the same local term the formal
@@ -2992,13 +3042,32 @@ contains
             ! 1 - Psi*chi_t is built the same way, as (chi_other + escape*chi_t)/chi
             ! with escape = 1 - Psi*chi from the solver: in the core of a very
             ! thick line both 1 - Psi*chi and 1 - chi_t/chi are near the fp32
-            ! rounding of one, and so is their true value, 1/dtau.  Where Psi is
-            ! zero (fixed_Jnu) the unpreconditioned integrands are taken.  The
-            ! tracked contributions carry no beta, and the line-scattering
-            ! emissivity is not among them: it emits into the source term but
-            ! adds no extinction of its own.
+            ! rounding of one, and so is their true value, 1/dtau.  The tracked
+            ! contributions carry no beta, and the line-scattering emissivity is
+            ! not among them: it emits into the source term but adds no
+            ! extinction of its own.
+            !
+            ! Where psi is zero the unpreconditioned integrands are taken: where
+            ! the solver leaves Psi = 0 (fixed_Jnu, or a point its local test
+            ! excludes), and where the transition itself is inverted (chi_t < 0),
+            ! whose local operator would amplify the change of its own
+            ! populations.  Switching per point lets a pair's operator change
+            ! between iterations as a point near the switch crosses it, and the
+            ! iterations then cycle between the two branches: Mg 5g1G-7h1H, which
+            ! overlaps its inverted triplet twin 5g3G-7h3H, alternated with
+            ! period 2 at 0.5-1 % in 3D.  So a (line, cell) pair with psi = 0 at
+            ! any of its points, in any direction, is raised in psi_flags, and
+            ! from the next iteration on takes the unpreconditioned integrands at
+            ! all its points (atom_data_t, nlte_patch fold_psi_flags).
             if (split_rates .and. preconditioning) then
               index = self%split_offset(iatom) + i
+              in_force = .false.
+              if (use_flags) then
+                pw = (line%ntrans-1)/32 + 1
+                pb = mod(line%ntrans-1, 32)
+                in_force = btest(atom%data%psi_flags(x,y,z,pw,1), pb)
+              endif
+              raise = .false.
               do f=fs, fe
                 psi = self%Psi(f,x,y,z)
                 eta_u = vph(f)*eta_coef
@@ -3010,6 +3079,8 @@ contains
                   self%split_chi(f,x,y,z,2), self%split_chi_id(f,x,y,z)) - eta_other
                 other = eta_other
                 if (do_scat) other = other + self%chi_scat(f,x,y,z)*self%dJnu(f,x,y,z)
+                if (chi_t < 0. .or. in_force) psi = 0.
+                raise = raise .or. psi == 0.
                 up = merge(self%work(f,x,y,z,3), self%Irem(f,x,y,z) + psi*other, psi == 0.)
                 spont = merge(1.0, (chi_other + self%escape(f,x,y,z)*chi_t) &
                                    / self%work(f,x,y,z,1), psi == 0.)
@@ -3018,6 +3089,13 @@ contains
                 sum_T = sum_T + vvv*spont*(nb*inv_nref)
                 sum_U = sum_U + vvv*(up - nb*spont)
               end do
+              ! the rt_patches of the slab raise into the same word concurrently
+              if (use_flags .and. raise .and. .not. in_force) then
+                if (.not. btest(atom%data%psi_flags(x,y,z,pw,2), pb)) then
+                  !$omp atomic
+                  atom%data%psi_flags(x,y,z,pw,2) = ior(atom%data%psi_flags(x,y,z,pw,2), ishft(1, pb))
+                endif
+              endif
             else if (split_rates) then
               do f=fs, fe
                 vvv = vph(f) * wmunu(f)
@@ -3182,8 +3260,12 @@ contains
 
   !===============================================================================
   !> Fills the upstream ghost plane of work: no incoming radiation at the top of
-  !> the domain, a plane extrapolated from the first cells at the bottom (with
-  !> Inu = Snu), and the exit plane of the upstream slab (mem) everywhere else.
+  !> the domain, the exit plane of the upstream slab (mem) inside it, and at the
+  !> bottom, where the atmosphere is in LTE, Inu = Snu.  There the solvers of
+  !> lte_ghost_solver take the model one plane below (bottom_ghost): Snu = Bnu(T)
+  !> and chi = x*chi500 with x = chi/chi500 of the first plane, the ratio
+  !> short_char2 interpolates to its upwind points; the others extrapolate chi
+  !> and Snu from the first three planes, clamped at 0.
   !===============================================================================
   SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
     class(rt_patch_t) :: self
@@ -3201,6 +3283,8 @@ contains
 
     if (self%boundaries%is_set(bits%zu)) then
       self%work(:,:,:,z,:) = 0.
+    elseif (self%boundaries%is_set(bits%zl) .and. lte_ghost_solver(self%do_final)) then
+      call lte_ghost()
     elseif (self%boundaries%is_set(bits%zl)) then
       xxold = [(i*self%ds(3), i=1, 3)]
       xxnew = [(i*self%ds(3), i=1-ng, 0)]
@@ -3259,7 +3343,54 @@ contains
       endif
     endif
     call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> The LTE ghost plane at the bottom, in the units of work_to_transfer_units
+    !---------------------------------------------------------------------------
+    subroutine lte_ghost()
+      type(bottom_ghost_t), pointer :: ghost
+      class(composition_type), pointer :: comp
+      real(4) :: r500, h_kT, hv_kT, beta
+      !-------------------------------------------------------------------------
+      if (ng /= 1) error stop 'set_upstream_boundary: the LTE ghost plane needs one ghost plane'
+      ghost => self%bottom_ghost_at(i_mu)
+      comp => self%m3d_parent%composition
+      if (rotate_atmos .and. self%do_final) comp => self%m3d_parent%rotated_composition(i_mu)
+      do y=1, self%ny
+        do x=1, self%nx
+          r500 = ghost%chi500(x,y) / comp%chi500(x,y,1)
+          h_kT = h_k / ghost%temp(x,y)
+          do f=self%fs, self%fe
+            ! the Planck occupation number as lte_background_opacities forms it
+            hv_kT = self%nu(f) * h_kT
+            beta = max(exp(-hv_kT), tiny(1.0))
+            self%work(f,x,y,z,1) = self%work(f,x,y,z+1,1) * r500
+            self%work(f,x,y,z,2) = beta / (1 - beta)
+            self%work(f,x,y,z,3) = self%work(f,x,y,z,2)
+          end do
+        end do
+      end do
+    end subroutine lte_ghost
   END SUBROUTINE set_upstream_boundary
+
+  !===============================================================================
+  !> The model below the bottom of the domain at the cells of the composition
+  !> that direction i_mu solves: the ray-aligned one in the output pass with
+  !> rotate_atmos, else the unrotated one.
+  !===============================================================================
+  FUNCTION bottom_ghost_at (self, i_mu) result(ghost)
+    class(rt_patch_t) :: self
+    integer, intent(in) :: i_mu !< direction
+    type(bottom_ghost_t), pointer :: ghost
+    !-----------------------------------------------------------------------------
+    if (.not. allocated(self%m3d_parent%bottom_ghost)) &
+      error stop 'rt_patch: no model below the bottom of the domain (needs_bottom_ghost)'
+    if (rotate_atmos .and. self%do_final) then
+      ghost => self%m3d_parent%bottom_ghost(1+i_mu)
+    else
+      ghost => self%m3d_parent%bottom_ghost(1)
+    endif
+  END FUNCTION bottom_ghost_at
 
   !===============================================================================
   !> Adds the intensity of the current direction to Jnu with weight 2*wmu, since
@@ -3520,6 +3651,157 @@ contains
   END SUBROUTINE work_to_transfer_units
 
   !===============================================================================
+  !> Fixes where short_char2 and long_char2 take the eta step.  A pair (f, cell) fires where chi
+  !> <= 0 or |chi| < q_eta*(chi + (1-beta)*eta), the near-transparency test of
+  !> the eta step; on the upstream ghost plane, which has no beta, with 1-beta = 1,
+  !> which fires at least as often.  A pair that fired once stays fired (eta_src),
+  !> and its flag goes to every cell whose upwind stencil reaches it: the cell
+  !> itself and the cells within eta_rx, eta_ry of it (periodically) on its own
+  !> plane and on the next one downwind, or for the ghost plane on the first plane
+  !> of the slab.  eta_rx and eta_ry cover the horizontal offset of the upwind
+  !> point plus the cell beyond it, over the slab's directions and the larger of
+  !> its own and the upstream slab's ds(3) (the amr boundary plane).  The flags
+  !> (eta_mask) only grow, so once they stop growing no pair changes its recipe,
+  !> and short_char2 needs only the downwind cell's flag.  The top of the domain,
+  !> whose ghost plane is empty (no incoming radiation), adds no flags.  At
+  !> eta_reset_iter (m3d_patch_mod) the flags of all sets are cleared once, before
+  !> that iteration's first short_char2, and accumulate again from there, so that
+  !> the transients of the first iterations do not keep their flags.
+  !===============================================================================
+  SUBROUTINE update_eta_mask (self, i_set)
+    class(rt_patch_t) :: self
+    integer, intent(in) :: i_set
+    real(4), parameter :: q_eta = 1e-2
+    logical(1), allocatable :: fire(:), new(:)
+    real(4) :: chi
+    real(8) :: dz, sx, sy
+    integer :: x, y, z, f, i, zg, z1, zn, row
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%update_eta_mask', itimer=itimer)
+    if (.not. allocated(self%eta_row)) then
+      allocate(self%eta_row(self%nx,self%ny,self%nz), source=0)
+      self%eta_nrow = 0
+      call grow_rows(max(16, self%nx*self%ny*self%nz/64))
+      allocate(self%eta_gsrc(self%fs:self%fe,self%nx,self%ny,self%n_set), source=.false._1)
+      dz = self%ds(3)
+      if (associated(self%upstream)) dz = max(dz, self%upstream%ds(3))
+      sx = 0d0; sy = 0d0
+      do i=self%mus, self%mue
+        sx = max(sx, abs(rt_iter%vec(1,i)/rt_iter%vec(3,i)))
+        sy = max(sy, abs(rt_iter%vec(2,i)/rt_iter%vec(3,i)))
+      end do
+      if (one_dimensional .or. column_by_column) then
+        ! long characteristics: the upwind point is the previous cell of the column
+        self%eta_rx = 0
+        self%eta_ry = 0
+      else
+        self%eta_rx = floor(sx*dz/self%ds(1)) + 1
+        self%eta_ry = floor(sy*dz/self%ds(2)) + 1
+      endif
+    endif
+    if (i_set > size(self%eta_src,3)) error stop 'update_eta_mask: set beyond the slab''s sets'
+    ! the NLTE iteration drops the flags gathered while the populations were far
+    ! from converged, once; the output pass's Lambda iterations start after the
+    ! NLTE solve with fixed populations and an empty mask, and count their own
+    ! iterations from 0, so they keep every flag
+    if (self%do_full_sp .and. .not. self%eta_reset_done .and. eta_reset_iter >= 0 &
+        .and. self%iter >= eta_reset_iter) then
+      self%eta_row = 0
+      self%eta_nrow = 0
+      self%eta_src = .false.
+      self%eta_mask = .false.
+      self%eta_gsrc = .false.
+      self%eta_reset_done = .true.
+    endif
+    self%eta_set = i_set
+    allocate(fire(self%fs:self%fe), new(self%fs:self%fe))
+
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
+          do f=self%fs, self%fe
+            chi = self%work(f,x,y,z,1)
+            fire(f) = min(chi, abs(chi) - q_eta*(chi + (1.-self%beta(f,x,y,z))*chi*self%work(f,x,y,z,2))) <= 0.
+          end do
+          if (.not. any(fire)) cycle
+          row = self%eta_row(x,y,z)
+          if (row > 0) then
+            new = fire .and. .not. self%eta_src(:,row,i_set)
+          else
+            new = fire
+          endif
+          if (.not. any(new)) cycle
+          row = cell_row(x,y,z)
+          self%eta_src(:,row,i_set) = self%eta_src(:,row,i_set) .or. new
+          zn = z + self%dir
+          call spread_flags(x, y, z)
+          if (zn >= 1 .and. zn <= self%nz) call spread_flags(x, y, zn)
+        end do
+      end do
+    end do
+
+    ! the upstream ghost plane, which only the slab's first plane reaches
+    if (.not. self%boundaries%is_set(bits%zu)) then
+      z1 = merge(1, self%nz, self%dir > 0)
+      zg = z1 - self%dir
+      do y=1, self%ny
+        do x=1, self%nx
+          do f=self%fs, self%fe
+            chi = self%work(f,x,y,zg,1)
+            fire(f) = min(chi, abs(chi) - q_eta*(chi + chi*self%work(f,x,y,zg,2))) <= 0.
+          end do
+          new = fire .and. .not. self%eta_gsrc(:,x,y,i_set)
+          if (.not. any(new)) cycle
+          self%eta_gsrc(:,x,y,i_set) = self%eta_gsrc(:,x,y,i_set) .or. new
+          call spread_flags(x, y, z1)
+        end do
+      end do
+    endif
+
+    call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> OR the new flags into the cells within eta_rx, eta_ry of (x, y) on plane z
+    !---------------------------------------------------------------------------
+    subroutine spread_flags (x, y, z)
+      integer, intent(in) :: x, y, z
+      integer :: i, j, r
+      do j=-self%eta_ry, self%eta_ry
+        do i=-self%eta_rx, self%eta_rx
+          r = cell_row(modulo(x+i-1, self%nx)+1, modulo(y+j-1, self%ny)+1, z)
+          self%eta_mask(:,r,i_set) = self%eta_mask(:,r,i_set) .or. new
+        end do
+      end do
+    end subroutine spread_flags
+    !---------------------------------------------------------------------------
+    !> The row of a cell, appended if it has none yet
+    !---------------------------------------------------------------------------
+    integer function cell_row (x, y, z)
+      integer, intent(in) :: x, y, z
+      if (self%eta_row(x,y,z) == 0) then
+        if (self%eta_nrow == size(self%eta_src,2)) call grow_rows(2*size(self%eta_src,2))
+        self%eta_nrow = self%eta_nrow + 1
+        self%eta_row(x,y,z) = self%eta_nrow
+      endif
+      cell_row = self%eta_row(x,y,z)
+    end function cell_row
+    !---------------------------------------------------------------------------
+    !> Room for n rows, keeping the rows in use
+    !---------------------------------------------------------------------------
+    subroutine grow_rows (n)
+      integer, intent(in) :: n
+      logical(1), allocatable :: tmp(:,:,:)
+      allocate(tmp(self%fs:self%fe,n,self%n_set), source=.false._1)
+      if (allocated(self%eta_src)) tmp(:,1:self%eta_nrow,:) = self%eta_src(:,1:self%eta_nrow,:)
+      call move_alloc(tmp, self%eta_src)
+      allocate(tmp(self%fs:self%fe,n,self%n_set), source=.false._1)
+      if (allocated(self%eta_mask)) tmp(:,1:self%eta_nrow,:) = self%eta_mask(:,1:self%eta_nrow,:)
+      call move_alloc(tmp, self%eta_mask)
+    end subroutine grow_rows
+  END SUBROUTINE update_eta_mask
+
+  !===============================================================================
   !> Shifts each z-plane of array horizontally (periodically, with bilinear
   !> interpolation) so that the rays of direction vec become vertical, with the
   !> plane at pivot_z left in place.
@@ -3741,6 +4023,7 @@ contains
     logical :: cleanup
     ! ----------------------------------------------------------------------------
     call self%m3d_patch_t%finish()
+    if (allocated(self%eta_row)) deallocate(self%eta_row, self%eta_src, self%eta_mask, self%eta_gsrc)
     !-----------------------------------------------------------------------------
     ! Both twins hold a Jnu, and both are freed here, by whichever of the two
     ! finishes last.  They can reach this point at the same time, though, so the

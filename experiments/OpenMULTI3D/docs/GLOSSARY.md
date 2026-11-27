@@ -52,24 +52,10 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   `000` for the natural mixture, so `012014` is 12C14N. HOP's `canonical_iso` and
   `tumult.isotopes` share this convention, and Turbospectrum's species code
   (`0607.012014`) carries the same digits after the point.
-- *pruned line list*: the subset of the configured line list that a synthesis on one
-  atmosphere node keeps, written in the input format by `hop_prune.x`
-  (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node
-  reads it as its `linelist_file`. The selection is HOP's own negligibility test on the
-  node's sampled states over the requested windows widened by the *skirt*
-  (`prune_linelist`, the `linelist_skirt_aa` preference). An older name for the same thing
-  is *preparation* (the per-reference artifact of `prepare_linelist`). *Crop* is reserved
-  for cutting a spectrum to a wavelength range. Distinct from a run's `linelist_out.txt`,
-  which is a derived diagnostic.
-- *skirt*: how far outside a requested window a transition may still be kept when pruning,
-  in Angstrom; it is handed to HOP as the line-wing search radius `dlam`, so a pruned run
-  reads wings only to that distance.
-- *reach*: the half-width around a transition's centre, in Angstrom, out to which its
-  extinction exceeds HOP's tolerance times the continuum, maximised over the states it was
-  computed on. It is the column after *strength* in a pruned line list and in
-  `linelist_out.txt`. A run whose line list carries it visits, in each output patch, only
-  the transitions whose reach touches that patch. Distinct from the *skirt*, which is a
-  selection radius set for the whole list.
+- *pruned line list*: the subset of the configured line list that a synthesis on one atmosphere node keeps, written in the input format by `hop_prune.x` (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node reads it as its `linelist_file`. The selection is HOP's own negligibility test on the node's sampled states over the requested windows, each widened by the *prune margin* (`prune_linelist`, the `prune_margin_aa` preference). An older name for the same thing is *preparation* (the per-reference artifact of `prepare_linelist`). *Crop* is reserved for cutting a spectrum to a wavelength range. Distinct from a run's `linelist_out.txt`, which is a derived diagnostic.
+- *line margin*: `line_margin` in `&linelist_params` and in HOP's opacity calls, in Angstrom: the distance from a window, and in a run from each output patch, within which a transition's opacity is added. The line lists are read over the windows widened by it, and windows closer than twice the margin share one read interval.
+- *prune margin*: `SynthConfig.prune_margin`, in Angstrom: how far outside each requested window a transition is kept when the line list is pruned. The pruner gets it as its `line_margin`, so a pruned run reads wings only to that distance, whatever the runs' own line margin.
+- *reach*: the half-width around a transition's centre, in Angstrom, out to which its extinction exceeds HOP's tolerance times the continuum, maximised over the states it was computed on. It is the column after *strength* in a pruned line list and in `linelist_out.txt`. A run whose line list carries it visits, in each output patch, only the transitions whose reach touches that patch. Distinct from the *line margin* and the *prune margin*, which are selection radii set for the whole list.
 - *use line list*: the per-calculation choice to synthesise the model atoms together with
   the line list (background transitions and blends) rather than the atoms alone. Off is
   `only_atom` in the request; it never blanks the configured path.
@@ -198,9 +184,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   Switched off, an abundance fit or balance synthesises the element's transitions alone
   (`only_elements`) and a correction the model atom's alone (`only_atom`); blend screens
   compare against every species either way.
-- *preparation atmosphere*: the MARCS model a HOP preparation (a pruned line list, an atom's
-  wavelength quadrature) is computed on: an individual MARCS atmosphere itself, the node of
-  a MARCS grid, or the nearest node of the MARCS grid named for any other format.
+- *preparation atmosphere*: the 1D model a HOP preparation (a pruned line list, an atom's prepared wavelength quadrature) is computed on, named by the atmosphere's `preparation` (`tumult.synthesis.preparation`): the atmosphere itself (`True`), an individual atmosphere, the nearest node of a grid, or the <3D> average of a snapshot. Without a `preparation` nothing is prepared.
 - *workflow*: one resolved user calculation, which may prepare inputs and schedule several
   native runs. Its durable form is a record under `_workflows/` with a
   `WorkflowHandle`, run by the workflow daemon or a Slurm driver; it is not a DISPATCH task.
@@ -241,7 +225,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   interpolate like a 1D grid's, each node's spectrum being the mean over its selected
   snapshots; there is no vmic lattice, since the velocity field replaces microturbulence.
 - *snapshot count*: the policy `snapshots="k"` of a snapshot grid, and the `--snapshots k`
-  of a grid download (`tumult.synthesis.grid_catalog`). Both take the first `k` entries of
+  of a grid download (`tumult.downloads`). Both take the first `k` entries of
   `snapshot_grid.halton_order`, an Owen-scrambled base-2 Halton ordering of the node's
   available snapshots with a fixed seed: prefixes nest (fetching or selecting `k + 1`
   keeps the `k`) and spread over the time series without equal spacing, which would alias

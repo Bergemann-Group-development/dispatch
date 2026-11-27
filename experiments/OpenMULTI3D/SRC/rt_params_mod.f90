@@ -66,9 +66,23 @@ MODULE rt_params_mod
   !> switched off for the rungs that would otherwise rewrite it.
   logical, public, save :: save_linelist=.true.
 
-  public :: read_rt_params, echo_rt_params, setup_quadrature
+  public :: read_rt_params, echo_rt_params, setup_quadrature, lte_ghost_solver
 
 CONTAINS
+
+  !===============================================================================
+  !> The pass's formal solver starts the upward rays at the bottom of the domain
+  !> from the LTE ghost plane (set_upstream_boundary): linear2 and hermite in the
+  !> iteration pass, hermite and hermite2 in the output pass.
+  !===============================================================================
+  LOGICAL FUNCTION lte_ghost_solver (final)
+    logical, intent(in) :: final !< the output pass's formal solution, else the iteration pass
+    if (final) then
+      lte_ghost_solver = rt_out%solver == 'hermite' .or. rt_out%solver == 'hermite2'
+    else
+      lte_ghost_solver = rt_iter%solver == 'linear2' .or. rt_iter%solver == 'hermite'
+    endif
+  END FUNCTION lte_ghost_solver
 
   !===============================================================================
   !> Reads &rt_iteration_params into rt_iter and &rt_output_params into rt_out.
@@ -109,7 +123,7 @@ CONTAINS
     else
       ! iteration-pass defaults
       call to_locals (rt_params_t(angle_quad='radau', ntheta=2, nphi=4, &
-        solver='linear', include_linelist=.false., include_absmet=.true., &
+        solver='linear2', include_linelist=.false., include_absmet=.true., &
         maxiter=maxiter_unset))
       READ_NAMELIST(rt_iteration_params)
       call from_locals (rt_iter)

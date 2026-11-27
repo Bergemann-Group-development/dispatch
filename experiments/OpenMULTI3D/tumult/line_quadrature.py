@@ -13,10 +13,15 @@ matched to the trapezoidal weights ``set_weights`` gives each line on the shared
 ``&atom_params line_grid_file=... atom_file=...``: the grid (vacuum Angstrom) and a copy
 of the atom in which each line's ``nq qmax q0`` are rewritten so that its
 ``lam_min``/``lam_max`` span the interval of the grid its rates are integrated over. The
-copy differs from the original only in those three columns.
+copy differs from the original only in those three columns. Several atoms share one grid,
+the union of theirs (:func:`combine_line_quadratures`).
 
-Only the classic (``atom.*``) model-atom format is handled, and only single-component
-lines (``iw <= 1``).
+Only the classic (``atom.*``) model-atom format is handled. The lines are evaluated as
+the run reads them, from the atom's conversion to the table format
+(:func:`read_components`), where a line with hyperfine or isotopic components is one
+line per component. Each component gets its own window, and the copy gives each MULTI
+line the widest window of its components, since the run places every component on its
+line's ``qmax``.
 """
 from __future__ import annotations
 
@@ -30,7 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from .const import CC_KMS, HCE
-from .physics import vac2air
+from .physics import air2vac
 
 CM_TO_EV = HCE * 1e-8            # energy in cm^-1 -> eV
 QNORM_KMS = 10.0                 # the Fortran &atom_params qnorm default the atom copy assumes
@@ -43,15 +48,17 @@ ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
 class ClassicAtom:
     """The parts of a classic model atom the grid generator needs.
 
-    ``lines`` holds one row per bound-bound transition, in file order; ``records`` the
-    line index of every text line of the file that is a bb record, so the file can be
-    rewritten with those records replaced and everything else verbatim.
+    ``lines`` holds one row per bound-bound transition, in file order, with ``ncomp`` the
+    number of lines the conversion writes for it (its components of positive weight, one
+    for a single line); ``records`` the line index of every text line of the file that
+    is a bb record, so the file can be rewritten with those records replaced and
+    everything else verbatim.
     """
     element: str
     ev_cm: np.ndarray            # level energies [cm^-1]
     g: np.ndarray
     ion: np.ndarray              # ionisation stage per level (1 = neutral)
-    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, grad, gvdw, gstk
+    lines: np.ndarray            # structured: i, j (0-based), f, nq, qmax, q0, iw, grad, gvdw, gstk, ncomp
     text: list[str]
     records: dict[int, int]      # text line index -> bb line index
 
@@ -69,9 +76,10 @@ def _is_entry(text):
 def read_classic_atom(path):
     """Parse the header, levels and bound-bound records of a classic model atom.
 
-    Follows dispatch's MULTI parser (HOP/atom_convert_mod.f90): entries are the non-blank lines not starting with
-    ``*``; hyperfine components (``iw > 1``) would follow their line record without
-    comment skipping and are not supported here.
+    Follows dispatch's MULTI parser (HOP/atom_convert_mod.f90): entries are the non-blank
+    lines not starting with ``*``; the ``iw`` component records of a line with ``iw > 1``
+    follow its record without comment skipping, and their weights (second column) give
+    ``ncomp``.
     """
     text = Path(path).read_text().splitlines()
     entries = [k for k, t in enumerate(text) if _is_entry(t)]
@@ -95,45 +103,73 @@ def read_classic_atom(path):
         ion[n] = int(w[-1])
 
     dtype = [('i', int), ('j', int), ('f', float), ('nq', int), ('qmax', float),
-             ('q0', float), ('iw', int), ('grad', float), ('gvdw', float), ('gstk', float)]
+             ('q0', float), ('iw', int), ('grad', float), ('gvdw', float), ('gstk', float),
+             ('ncomp', int)]
     lines = np.empty(nline, dtype=dtype)
     records = {}
     for n in range(nline):
         k, w = entry()
         jj, ii = int(w[0]), int(w[1])
+        iw, ncomp = int(w[6]), 1
+        if iw >= 2:
+            ncomp = sum(float(c.split()[1]) > 0 for c in text[k + 1:k + 1 + iw])
+            while pos < len(entries) and entries[pos] <= k + iw:
+                pos += 1
         lines[n] = (min(ii, jj) - 1, max(ii, jj) - 1, float(w[2]), int(w[3]), float(w[4]),
-                    float(w[5]), int(w[6]), float(w[7]), float(w[8]), float(w[9]))
-        if lines[n]['iw'] > 1:
-            raise NotImplementedError(f'line {n + 1} of {path} has {lines[n]["iw"]} '
-                                      'hyperfine components; not supported')
+                    float(w[5]), iw, float(w[7]), float(w[8]), float(w[9]), ncomp)
         records[k] = n
     return ClassicAtom(element.strip(), ev_cm, g, ion, lines, text, records)
 
 
-def write_atom_linelist(atom, path):
-    """Write the atom's lines as an input line list, one block per ionisation stage.
+def read_components(atom_file, atom):
+    """The bound-bound lines of ``atom_file`` as the run reads them, with their parents.
+
+    The atom is converted to the table format as a run converts it
+    (:meth:`tumult.atom.Atom.read`), which writes one line per component of positive
+    weight. ``parent`` is the index of each written line's MULTI line in ``atom.lines``:
+    the first component keeps its line's position and the others follow the MULTI lines
+    in order (HOP/atom_convert_mod.f90).
+    """
+    from .atom import Atom
+
+    bbt = Atom.read(atom_file).bbt
+    nline = atom.lines.size
+    extra = np.repeat(np.arange(nline), atom.lines['ncomp'] - 1)
+    if len(bbt) != nline + extra.size:
+        raise ValueError(f'{atom_file}: the conversion wrote {len(bbt)} lines, the MULTI '
+                         f'records give {nline + extra.size}')
+    parent = np.concatenate([np.arange(nline), extra])
+    if np.any(bbt['i'].to_numpy() != atom.lines['i'][parent]) or \
+            np.any(bbt['j'].to_numpy() != atom.lines['j'][parent]):
+        raise ValueError(f'{atom_file}: converted lines do not match their MULTI lines')
+    return bbt.assign(parent=parent).reset_index(drop=True)
+
+
+def write_atom_linelist(atom, lines, path):
+    """Write the converted ``lines`` (:func:`read_components`) as an input line list,
+    one block per ionisation stage.
 
     The record layout is the one linelist_out.txt uses (``lam_air evi loggf gvdw grad gstk i
     j``): the lower-level energy is relative to the ground level of the line's ionisation
     stage, and the broadening columns are the atom's own, since atom_mod and the line-list
     reader feed them to the same prepare_* routines.
     """
-    lam_air = vac2air(atom.lam0_vac)
-    i, j = atom.lines['i'], atom.lines['j']
-    loggf = np.log10(atom.g[i] * atom.lines['f'])
+    lam_air = lines['lam0'].to_numpy(float)
+    i, j = lines['i'].to_numpy(), lines['j'].to_numpy()
     stage = atom.ion[i]
     ground = {s: np.flatnonzero(atom.ion == s)[0] for s in np.unique(stage)}
-    evi = np.array([(atom.ev_cm[ii] - atom.ev_cm[ground[s]]) * CM_TO_EV
-                    for ii, s in zip(i, stage)])
+    evi = (atom.ev_cm[i] - atom.ev_cm[[ground[s] for s in stage]]) * CM_TO_EV
+    loggf, gvdw = lines['loggf'].to_numpy(float), lines['gvdw'].to_numpy(float)
+    grad, gstk = lines['grad'].to_numpy(float), lines['gstk'].to_numpy(float)
     with Path(path).open('w') as f:
         for s in sorted(ground):
             sel = np.flatnonzero(stage == s)
-            sel = sel[np.argsort(lam_air[sel])]
+            sel = sel[np.argsort(lam_air[sel], kind='stable')]
             f.write(f"'{atom.element} {ROMAN[s - 1]}'\n'0' {sel.size}\n")
             for n in sel:
                 f.write(f"{lam_air[n]:12.4f}{evi[n]:10.4f}{loggf[n]:9.3f}"
-                        f"{atom.lines['gvdw'][n]:14.6f}{atom.lines['grad'][n]:12.3E}"
-                        f"{atom.lines['gstk'][n]:12.3E}{i[n] + 1:6d}{j[n] + 1:6d}\n")
+                        f"{gvdw[n]:14.6f}{grad[n]:12.3E}{gstk[n]:12.3E}"
+                        f"{i[n] + 1:6d}{j[n] + 1:6d}\n")
     return path
 
 
@@ -185,7 +221,7 @@ def fine_grid(windows, lam0, R):
     return np.unique(np.concatenate(parts))
 
 
-def line_envelope(hop, lam, linelist, dlam, windows, vmic, chunk=500_000):
+def line_envelope(hop, lam, linelist, line_margin, windows, vmic, chunk=500_000):
     """``max`` over the loaded depths of ``chi_line/chi_cont`` on ``lam``.
 
     The depth maximum keeps the narrowest core and the widest wing the line shows
@@ -197,7 +233,7 @@ def line_envelope(hop, lam, linelist, dlam, windows, vmic, chunk=500_000):
     for a in range(0, lam.size, chunk):
         b = min(a + chunk, lam.size)
         cont, _ = hop.opacity(lam[a:b])
-        tot, _ = hop.opacity(lam[a:b], linelist=linelist, dlam=dlam, vmic=vmic,
+        tot, _ = hop.opacity(lam[a:b], linelist=linelist, line_margin=line_margin, vmic=vmic,
                              windows=windows)
         ratio = np.asarray(tot, float) / np.asarray(cont, float) - 1.0
         env[a:b] = np.maximum(ratio, 0.0).max(axis=0)
@@ -272,7 +308,8 @@ def line_extents(lam, env, floor, lam0, cap_lo, cap_hi, rise_dex=0.05):
 
 
 # --- driver -----------------------------------------------------------------------------
-def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS, vmic=1.0,
+def generate_line_quadrature(atom_file, atmos_file, out_dir, *, atmos_format='marcs',
+                             qnorm=QNORM_KMS, vmic=1.0,
                              feh=0.0, abundances='', relative_abundances=True,
                              half_window_kms=300.0, R=1e6, tol_dex=0.05,
                              rel_floor=1e-3, abs_floor=1e-2, lam_range=None,
@@ -280,7 +317,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     """Write ``<out_dir>/line_grid.txt`` and ``<out_dir>/atom.<El>`` for a run.
 
     Steps: the atom's lines become a HOP line list; their opacity is evaluated on
-    :data:`linestrength.NDEPTH` depths of ``atmos_file`` (a MARCS model) over
+    :data:`linestrength.NDEPTH` depths of ``atmos_file`` (a 1D model in ``atmos_format``) over
     ``+-half_window_kms`` around every line at resolving power ``R``; the depth
     envelope of ``chi_line/chi_cont`` is floored per line at ``min(rel_floor * peak,
     abs_floor)``, never below :data:`RATIO_EPS`, and thinned in log10 to ``tol_dex``;
@@ -294,13 +331,14 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     spectrum they produce.
     """
     from hopacity import HopEOS
-    from .linestrength import read_marcs
+    from .linestrength import read_reference
     from .synthesis.runtime import HOP_LOCK
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     atom = read_classic_atom(atom_file)
-    lam0_all = atom.lam0_vac
+    lines = read_components(atom_file, atom)
+    lam0_all = air2vac(lines['lam0'].to_numpy(float))
     use = np.ones(lam0_all.size, bool)
     if lam_range is not None:
         use &= (lam0_all >= lam_range[0]) & (lam0_all <= lam_range[1])
@@ -313,13 +351,13 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     cap_lo, cap_hi = lam0 * (1 - fac), lam0 * (1 + fac)
     windows = merge_windows(cap_lo, cap_hi)
     lam = fine_grid(windows, lam0, R)
-    dlam = float(max(b - a for a, b in windows))
+    line_margin = float(max(b - a for a, b in windows))
     if verbose:
         print(f'{len(windows)} windows, {lam.size} fine-grid points')
 
     linelist = out_dir / f'{atom.element}_lines.txt'
-    write_atom_linelist(atom, linelist)
-    T, rho = read_marcs(atmos_file)
+    write_atom_linelist(atom, lines[use], linelist)
+    T, rho = read_reference(atmos_file, atmos_format)
     options = {}
     if abundances:
         options = {'abundances': str(abundances),
@@ -328,7 +366,7 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
         hop = HopEOS(feh=float(feh), **options)
         try:
             hop.load_state(T, rho=rho, vmic=float(vmic))
-            env = line_envelope(hop, lam, linelist, dlam, windows, vmic)
+            env = line_envelope(hop, lam, linelist, line_margin, windows, vmic)
         finally:
             hop.close()
 
@@ -359,8 +397,10 @@ def generate_line_quadrature(atom_file, atmos_file, out_dir, *, qnorm=QNORM_KMS,
     lo = grid[np.minimum(np.searchsorted(grid, lo, side='right') - 1, ig - 1)]
     hi = grid[np.minimum(np.maximum(np.searchsorted(grid, hi), ig + 1), grid.size - 1)]
     half = np.maximum(centres - lo, hi - centres) / centres * CC_KMS     # [km/s]
-    half_all = np.full(lam0_all.size, np.nan)
-    half_all[np.flatnonzero(use)[order]] = half
+    # a MULTI line takes the widest window of its components
+    half_all = np.full(atom.lines.size, -np.inf)
+    np.maximum.at(half_all, lines['parent'].to_numpy()[np.flatnonzero(use)[order]], half)
+    half_all[np.isinf(half_all)] = np.nan
 
     grid_file = out_dir / 'line_grid.txt'
     with grid_file.open('w') as f:
@@ -413,8 +453,9 @@ class PreparedLineQuadrature:
                                         'atmos_file', 'settings')})
 
 
-def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh=0.0,
-                            abundances='', relative_abundances=True, **params):
+def prepare_line_quadrature(output_root, atom_file, atmos_file, *, atmos_format='marcs',
+                            vmic=1.0, feh=0.0, abundances='', relative_abundances=True,
+                            **params):
     """Generate the grid and atom copy once per (atom, model, settings) under ``output_root``.
 
     The digest covers the identities (path, size, mtime) of the atom and the model, and
@@ -430,7 +471,8 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
                     ratio_eps=RATIO_EPS,
                     **{k: (float(v) if isinstance(v, (int, float)) else v)
                        for k, v in params.items()})
-    identity = {'atom': atom_id, 'atmos': atmos_id, 'settings': settings}
+    identity = {'atom': atom_id, 'atmos': atmos_id, 'atmos_format': str(atmos_format).lower(),
+                'settings': settings}
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str)
                             .encode()).hexdigest()[:16]
     folder = Path(output_root).expanduser().resolve() / f'quadrature-{digest}'
@@ -440,7 +482,8 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
         if Path(prepared.grid_file).is_file() and Path(prepared.atom_file).is_file():
             return prepared
     grid_file, atom_copy = generate_line_quadrature(
-        atom_id['path'], atmos_id['path'], folder, vmic=vmic, feh=feh, abundances=abundances,
+        atom_id['path'], atmos_id['path'], folder, atmos_format=atmos_format, vmic=vmic,
+        feh=feh, abundances=abundances,
         relative_abundances=relative_abundances, verbose=False, **params)
     prepared = PreparedLineQuadrature(str(folder), str(grid_file), str(atom_copy),
                                       atom_id['path'], atmos_id['path'], settings)
@@ -450,11 +493,58 @@ def prepare_line_quadrature(output_root, atom_file, atmos_file, *, vmic=1.0, feh
     return prepared
 
 
+@dataclass(frozen=True)
+class LineQuadrature:
+    """The quadrature of a run's model atoms: each atom's prepared copy, all on one grid.
+
+    A run reads a single ``line_grid_file`` and every atom places its lines on it (the
+    Fortran drops repeated wavelengths), so the grids of several atoms are combined into
+    their union. Each line then integrates on its own grid points and any other atom's
+    points inside its window, never on fewer than its own preparation gave it.
+    """
+    grid_file: str
+    atoms: tuple            # PreparedLineQuadrature per atom, in request order
+
+    @property
+    def atom_files(self):
+        """The atom copies a run uses, in request order."""
+        return [prepared.atom_file for prepared in self.atoms]
+
+    def to_dict(self):
+        return dict(grid_file=self.grid_file, atoms=[p.to_dict() for p in self.atoms])
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(d['grid_file'],
+                   tuple(PreparedLineQuadrature.from_dict(p) for p in d['atoms']))
+
+
+def combine_line_quadratures(output_root, prepared):
+    """The :class:`LineQuadrature` of the prepared atoms ``prepared``: one atom's own grid,
+    or for several the union of their grids, written once under ``output_root`` and named
+    by the grids it joins (each already named by its atom, model and settings)."""
+    prepared = tuple(prepared)
+    if len(prepared) == 1:
+        return LineQuadrature(prepared[0].grid_file, prepared)
+    files = [p.grid_file for p in prepared]
+    digest = hashlib.sha256(json.dumps(files).encode()).hexdigest()[:16]
+    grid_file = Path(output_root).expanduser().resolve() / f'line-grid-{digest}.txt'
+    if not grid_file.is_file():
+        grid = np.unique(np.concatenate([np.loadtxt(f, comments='#', ndmin=1) for f in files]))
+        tmp = grid_file.with_name(f'{grid_file.name}.{os.getpid()}.partial')
+        with tmp.open('w') as f:
+            f.write('# bound-bound grid: the union of ' + ' '.join(files) + ' [vacuum AA]\n')
+            np.savetxt(f, grid, fmt='%.6f')
+        tmp.replace(grid_file)
+    return LineQuadrature(str(grid_file), prepared)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     p.add_argument('atom_file')
     p.add_argument('atmos_file', help='MARCS model')
     p.add_argument('out_dir')
+    p.add_argument('--atmos-format', default='marcs', help="the model's &atmos_params atmos_format")
     p.add_argument('--qnorm', type=float, default=QNORM_KMS, help="the run's &atom_params qnorm")
     p.add_argument('--vmic', type=float, default=1.0)
     p.add_argument('--feh', type=float, default=0.0)
@@ -467,7 +557,8 @@ def main(argv=None):
     p.add_argument('--lam-range', type=float, nargs=2, metavar=('BLUE', 'RED'),
                    help='vacuum AA')
     a = p.parse_args(argv)
-    generate_line_quadrature(a.atom_file, a.atmos_file, a.out_dir, qnorm=a.qnorm,
+    generate_line_quadrature(a.atom_file, a.atmos_file, a.out_dir, atmos_format=a.atmos_format,
+                             qnorm=a.qnorm,
                              vmic=a.vmic, feh=a.feh, abundances=a.abundances,
                              half_window_kms=a.half_window_kms, R=a.R, tol_dex=a.tol_dex,
                              rel_floor=a.rel_floor, abs_floor=a.abs_floor,

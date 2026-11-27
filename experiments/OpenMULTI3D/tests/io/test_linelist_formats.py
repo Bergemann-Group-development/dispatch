@@ -63,7 +63,7 @@ def test_isotope_labels_follow_turbospectrum():
 def test_tumult_writer_keeps_the_molecular_label(tmp_path):
     (tmp_path / 'ts').write_text(TS)
     ts = LineList.from_ts_format(tmp_path / 'ts')
-    ts.reset_index(level=[0, 1]).pipe(LineList).write_to_tumult_format(tmp_path / 'out')
+    ts.reset_index(level=[0, 1]).pipe(LineList).to_file(tmp_path / 'out')
     text = (tmp_path / 'out').read_text()
     assert "'013014' 1" in text
     back = LineList.from_tumult_format(tmp_path / 'out')

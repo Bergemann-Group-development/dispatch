@@ -12,16 +12,16 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab, pca_opac_grid
-  USE osmet_mod, only: osmet, eosmet
+  USE osmet_mod, only: osmet, eosmet, nearest_absmet
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, composition, dlam, &
+  USE m3d_patch_mod,   only: m3d_patch_t, bottom_ghost_t, composition, line_margin, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   rotate_atmos, decouple_continuum, n_windows, n_windows_out, out_patch_offset, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
-  n_nlte_patches, nlte_finished
-  USE rt_params_mod, only: rt_iter, rt_out, pivot_z
+  n_nlte_patches, nlte_finished, column_by_column
+  USE rt_params_mod, only: rt_iter, rt_out, pivot_z, lte_ghost_solver
   USE m3d_debug_mod
   USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
   USE interpol_mod, only: pchip_slopes
@@ -108,12 +108,34 @@ MODULE composition_patch_mod
   character(len=4096), save :: molec_file='./input/molec/molec_data_BC.txt'     !< molecular data
   character(len=4096), save :: opac_table=''                                    !< binned opacity table; sets the output spectrum
   character(len=4096), save :: absmet_file=''                                   !< metal-opacity table for the NLTE iterations
+  character(len=4096), save :: absmet_folder=''                                 !< folder whose table nearest FeH is the absmet_file
   character(len=4096), save :: linelist_folder=''                               !< folder whose files are all read as line lists
   character(len=4096), save, dimension(:), allocatable :: linelist_file         !< line-list files
 
-  public :: read_composition_params, max_n_windows, set_n_windows_out
+  public :: read_composition_params, max_n_windows, set_n_windows_out, needs_upwind_chi500, &
+            needs_bottom_ghost
 
 contains
+
+!===============================================================================
+!> The run solves short_char2 (rt_iteration_params solver='linear2' in 3D), in the
+!> NLTE iterations or in the output pass's scattering iterations, so the
+!> composition patches need chi500 at its upwind points from the model atmosphere.
+!===============================================================================
+LOGICAL FUNCTION needs_upwind_chi500 ()
+  needs_upwind_chi500 = rt_iter%solver == 'linear2' .and. size(rt_iter%vec, 2) > 0 &
+    .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0) &
+    .and. .not. (one_dimensional .or. column_by_column .or. make_eos)
+END FUNCTION needs_upwind_chi500
+
+!===============================================================================
+!> A pass of the run starts its upward rays from the LTE ghost plane
+!> (lte_ghost_solver), so the bottom slab needs the model one plane below it.
+!===============================================================================
+LOGICAL FUNCTION needs_bottom_ghost ()
+  needs_bottom_ghost = .not. make_eos .and. (lte_ghost_solver(.true.) .or. &
+    (lte_ghost_solver(.false.) .and. (rt_iter%maxiter > 0 .or. rt_out%maxiter > 0)))
+END FUNCTION needs_bottom_ghost
 
 !===============================================================================
 !> Reads composition_params, opac_table_params and linelist_params, builds the
@@ -133,8 +155,8 @@ SUBROUTINE read_composition_params ()
   disable_rad, disable_stk, disable_vdw, molecule_damping_estimates, helium_scattering, &
   hydrogen_BPO, hydrogen_profiles, vcs_data_dir, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
-  ldne, ldrho, ldtemp, absmet_file
-  namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
+  ldne, ldrho, ldtemp, absmet_file, absmet_folder
+  namelist /linelist_params/ line_margin, exclude_elements, linelist_file, linelist_folder, &
   tolerance, only_elements, line_scattering, ll_profile, voigt_kernel, anstee_file, &
   match_nlte_levels
   ! ----------------------------------------------------------------------------
@@ -147,6 +169,7 @@ SUBROUTINE read_composition_params ()
   write (io%namelist, composition_params)
 
   READ_NAMELIST(opac_table_params)
+  if (absmet_folder /= '') call choose_absmet_file
   write (io%namelist, opac_table_params)
 
   READ_NAMELIST(linelist_params)
@@ -179,6 +202,38 @@ SUBROUTINE read_composition_params ()
   r_process_enhancement=r_process_enhancement)
   call trace%end(itimer)
 END SUBROUTINE read_composition_params
+
+!===============================================================================
+!> Sets absmet_file to the table in absmet_folder whose [Fe/H] is nearest the run's
+!> FeH (osmet_mod's nearest_absmet). An unset FeH leaves the abundances solar, so
+!> it takes the table nearest [Fe/H] = 0.
+!===============================================================================
+SUBROUTINE choose_absmet_file
+  character(len=256), allocatable :: names(:)
+  character(len=:), allocatable :: name
+  real(8) :: run_feh
+  integer :: n
+  ! ----------------------------------------------------------------------------
+  if (absmet_file /= '') then
+    call console_error('opac_table_params: give absmet_file or absmet_folder, not both')
+    error stop 'absmet_file and absmet_folder'
+  end if
+  run_feh = merge(0d0, FeH, FeH <= -99)
+  call os%get_filenames(absmet_folder, names)
+  if (allocated(names)) then
+    allocate(name, source=nearest_absmet(names, run_feh))
+  else
+    allocate(name, source='')
+  end if
+  if (name == '') then
+    call console_error('opac_table_params: no absmet table named m<[Fe/H]>... in '// &
+                       trim(absmet_folder))
+    error stop 'absmet_folder holds no table'
+  end if
+  n = len_trim(absmet_folder)
+  if (absmet_folder(n:n) == '/') n = n - 1
+  absmet_file = absmet_folder(1:n)//'/'//name
+END SUBROUTINE choose_absmet_file
 
 !===============================================================================
 !> Pre-initialises the patch and its NLTE patch, which holds the spectra and
@@ -234,7 +289,7 @@ SUBROUTINE composition_pre_init (self)
 
   if (first_time) then
     first_time = .false.
-    ! The line-list readers keep lines inside [lam(1)-dlam, lam(end)+dlam], so
+    ! The line-list readers keep lines inside [lam(1)-line_margin, lam(end)+line_margin], so
     ! collect the combined wavelength range of every spectrum whose pass draws on
     ! the line list: the output spectrum when the output pass includes (or samples)
     ! it, or when make_eos bakes it into the tables; the internal iteration
@@ -247,16 +302,16 @@ SUBROUTINE composition_pre_init (self)
       integer :: n_intervals
 
       ll_lam = [huge(1d0), -huge(1d0)]
-      call build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, ll_intervals, n_intervals)
+      call build_linelist_intervals(output_sp, nlte_patch, ll_lam, line_margin, ll_intervals, n_intervals)
 
       if (ll_lam(1) <= ll_lam(2)) then
         do i=1, size(linelist_file)
           ! Pass the intervals to init_linelist so build_linelist selects on the
           ! union of windows, not a single min/max span.
           if (allocated(ll_intervals) .and. n_intervals > 0) then
-            call composition%init_linelist(linelist_file(i), dlam, ll_lam, ll_intervals)
+            call composition%init_linelist(linelist_file(i), line_margin, ll_lam, ll_intervals)
           else
-            call composition%init_linelist(linelist_file(i), dlam, ll_lam)
+            call composition%init_linelist(linelist_file(i), line_margin, ll_lam)
           end if
         end do
       elseif (any(linelist_file /= '')) then
@@ -456,13 +511,13 @@ END SUBROUTINE create_rt_slabs
 !> The wavelength intervals the line list is read for: each segment of the
 !> output spectrum (or its whole range) when the output pass uses the line list,
 !> and the range of each internal spectrum when the iteration pass does. The
-!> intervals are widened by dlam and overlapping ones merged.
+!> intervals are widened by line_margin and overlapping ones merged.
 !===============================================================================
-SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, intervals_out, n_intervals_out)
+SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, line_margin, intervals_out, n_intervals_out)
   class(atomic_spectrum_type), intent(in), pointer :: output_sp  !< the output spectrum
   type(nlte_patch_t), intent(in) :: nlte_patch                   !< holds the internal spectra
-  real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without dlam
-  real(dp), intent(in) :: dlam                                   !< widening of each window
+  real(dp), intent(out) :: ll_lam(2)                             !< span of all windows, without line_margin
+  real(dp), intent(in) :: line_margin                                   !< widening of each window
   type(interval_t), intent(out), allocatable :: intervals_out(:) !< merged intervals
   integer, intent(out) :: n_intervals_out                        !< number of merged intervals
   real(dp), allocatable :: windows(:,:)
@@ -544,8 +599,8 @@ SUBROUTINE build_linelist_intervals(output_sp, nlte_patch, ll_lam, dlam, interva
 
   ! Merge intervals and return them
   if (n_windows > 0 .and. allocated(windows)) then
-    ! Call merge_intervals to build the union of windows with dlam expansion
-    call merge_intervals(windows, n_windows, dlam, intervals_out, n_intervals_out)
+    ! Call merge_intervals to build the union of windows with line_margin expansion
+    call merge_intervals(windows, n_windows, line_margin, intervals_out, n_intervals_out)
 
     ! The span of all windows
     ll_lam(1) = minval(windows(:, 1))
@@ -770,6 +825,14 @@ SUBROUTINE execute (self)
       endif
     end do
 
+    if (needs_upwind_chi500()) call upwind_chi500()
+    if (needs_bottom_ghost() .and. self%patch%boundaries%is_set(bits%zl)) then
+      allocate(self%bottom_ghost(self%nw))
+      do i=1, self%nw
+        call bottom_ghost_state(i, self%bottom_ghost(i))
+      end do
+    endif
+
     call ia%release()
 
     if (save_atmos) then
@@ -799,6 +862,119 @@ SUBROUTINE execute (self)
     !stop
   endif
   call trace%end(itimer)
+contains
+
+  !-----------------------------------------------------------------------------
+  !> chi500 at the upwind point of every cell for each iteration direction, and
+  !> on the ghost plane above the slab, from the model atmosphere interpolated
+  !> there and solved for its equilibrium as the patch mesh itself is.  The
+  !> upwind point lies on the previous plane, displaced against the ray by
+  !> ds(3)/|mu| along it.  short_char2 takes the ghost plane's value only at the
+  !> top of the domain, and the upstream slab's chi500 elsewhere.
+  !-----------------------------------------------------------------------------
+  subroutine upwind_chi500()
+    real(8) :: ds(3), vec(3)
+    real(4), allocatable :: c500(:,:,:)
+    integer :: d, nd
+    !---------------------------------------------------------------------------
+    ! read_external reads the model of a saved atmosphere for this
+    if (.not. allocated(ia%ltemp)) error stop 'upwind_chi500: the model atmosphere is not loaded'
+    ds = self%size / n
+    nd = size(rt_iter%vec, 2)
+    allocate(self%chi500_up(n(1),n(2),n(3),nd), self%chi500_top(n(1),n(2)))
+    allocate(c500(n(1),n(2),n(3)))
+    do d=1, nd
+      vec = rt_iter%vec(:,d)
+      call chi500_at(-ds(3)/abs(vec(3))*vec, c500)
+      self%chi500_up(:,:,:,d) = c500
+    end do
+    call chi500_at([0d0, 0d0, ds(3)], c500)
+    self%chi500_top = c500(:,:,n(3))
+  end subroutine upwind_chi500
+
+  !-----------------------------------------------------------------------------
+  !> chi500 on the patch mesh displaced by shift.
+  !-----------------------------------------------------------------------------
+  subroutine chi500_at(shift, c500)
+    real(8), intent(in) :: shift(3)
+    real(4), intent(out) :: c500(:,:,:)
+    type(composition_type), allocatable :: cu
+    !---------------------------------------------------------------------------
+    call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
+                           shift=shift)
+    temp8 = dble(temp)
+    rho8  = dble(rho)
+    ne8   = dble(ne)
+    allocate(cu, source=composition)
+    call cu%reassign_pointer()
+    call cu%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
+    c500 = cu%chi500
+    deallocate(cu)
+  end subroutine chi500_at
+
+  !-----------------------------------------------------------------------------
+  !> The model one plane below the bottom of composition i (1 unrotated, 1+i_mu
+  !> along output direction i_mu), interpolated as the composition itself and
+  !> solved for its equilibrium.  The mesh holds the ghost plane and the first
+  !> two planes of the slab, so that with use_ne=.false. the Pe gradient at the
+  !> ghost comes from pe_gradients_from_grid, one-sided as at the composition's
+  !> own ends.  Below the bottom of the model the interpolant extrapolates its
+  !> end interval, in ln T, ln Pe and ln rho with log_interpolation.
+  !-----------------------------------------------------------------------------
+  subroutine bottom_ghost_state(i, ghost)
+    integer, intent(in) :: i
+    type(bottom_ghost_t), intent(out) :: ghost
+    integer :: m(3)
+    real(8) :: ds(3), sub(3), pos(3)
+    real(4), dimension(:,:,:), allocatable :: t3, ne3, rho3, vx3, vy3, vz3, vmic3, gtz3, gpz3, gpx3, gpy3
+    real(8), dimension(:,:,:), allocatable :: t8, ne8_3, rho8_3
+    type(composition_type), allocatable :: cu
+    !---------------------------------------------------------------------------
+    if (.not. allocated(ia%ltemp)) error stop 'bottom_ghost_state: the model atmosphere is not loaded'
+    ds = self%size / n
+    m = [n(1), n(2), 3]
+    sub = [self%size(1), self%size(2), 3*ds(3)]
+    ! interpolate_atmos puts plane k at lower(3) + k*ds(3): the ghost plane, one
+    ! below the slab's first, is at the slab's lower(3)
+    pos = self%position
+    pos(3) = self%position(3) - 0.5d0*self%size(3) + 0.5d0*ds(3)
+    allocate(t3(m(1),m(2),3), ne3(m(1),m(2),3), rho3(m(1),m(2),3), vx3(m(1),m(2),3), &
+             vy3(m(1),m(2),3), vz3(m(1),m(2),3), vmic3(m(1),m(2),3), gtz3(m(1),m(2),3), &
+             gpz3(m(1),m(2),3), gpx3(m(1),m(2),3), gpy3(m(1),m(2),3))
+    gtz3 = 0.
+    gpz3 = 0.
+    if (i == 1) then
+      if (need_gradients) then
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               dlnt_dz=gtz3, dpe_dz=gpz3)
+      else
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3)
+      endif
+    else
+      if (need_gradients) then
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               vec=rt_out%vec(:,i-1), bot2pivot=pivot_z, &
+                               dlnt_dz=gtz3, dpe_dz=gpz3)
+      else
+        call interpolate_atmos(m, sub, pos, t3, ne3, rho3, vx3, vy3, vz3, vmic3, &
+                               vec=rt_out%vec(:,i-1), bot2pivot=pivot_z)
+      endif
+    endif
+    allocate(t8, source=dble(t3))
+    allocate(ne8_3, source=dble(ne3))
+    allocate(rho8_3, source=dble(rho3))
+    allocate(cu, source=composition)
+    call cu%reassign_pointer()
+    call cu%load_state_variables(t8, ne8_3, rho8_3, use_rho=use_rho, use_ne=use_ne)
+    if (need_gradients .and. .not. use_ne) &
+      call pe_gradients_from_grid(cu, ds, gpx3, gpy3, gpz3, horizontal=.false.)
+    allocate(ghost%temp, source=real(cu%temp(:,:,1), 4))
+    allocate(ghost%chi500, source=cu%chi500(:,:,1))
+    allocate(ghost%pe, source=real(cu%pe(:,:,1), 4))
+    allocate(ghost%dlnt_dz, source=gtz3(:,:,1))
+    allocate(ghost%dpe_dz, source=gpz3(:,:,1))
+    deallocate(cu)
+  end subroutine bottom_ghost_state
 END SUBROUTINE execute
 
 !===============================================================================

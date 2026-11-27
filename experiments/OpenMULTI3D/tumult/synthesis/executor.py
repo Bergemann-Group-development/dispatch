@@ -51,8 +51,8 @@ def _output_folder(nml_name, nml, cwd=None):
 def job_output(nml_name, nml, launch_kwargs):
     """The run folder a job writes to: the cache identity :func:`_run_batch` keys on."""
     launch_kwargs = launch_kwargs or {}
-    return _output_folder(nml_name, prepare_input(nml, launch_kwargs.get('default')),
-                          launch_kwargs.get('cwd'))
+    cwd = launch_kwargs.get('cwd') or '.'
+    return _output_folder(nml_name, prepare_input(nml, launch_kwargs.get('default'), cwd), cwd)
 
 
 def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=None):
@@ -133,7 +133,7 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
             batch_token.check()
             nml = copy.deepcopy(nml)
             kwargs = copy.deepcopy(launch_kwargs)
-            prepared = prepare_input(nml, kwargs.get('default'))
+            prepared = prepare_input(nml, kwargs.get('default'), kwargs.get('cwd') or '.')
             output = _output_folder(name, prepared, kwargs.get('cwd'))
             # CPU allocation is scheduling metadata, not part of a spectrum's identity.
             signature = json.dumps([prepared, {k: v for k, v in kwargs.items()

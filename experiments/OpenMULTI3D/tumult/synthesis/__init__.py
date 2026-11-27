@@ -2,13 +2,13 @@
 
 The scripting entry point is :func:`synthesize` on a :class:`SynthRequest` built from the
 inputs of :mod:`.inputs` (:class:`SynthConfig`, :class:`Star`, :class:`Abundances`,
-:class:`Atmosphere`, :class:`AtmosphereGrid`, :class:`Snapshot`)::
+:class:`Atmosphere`, :class:`AtmosphereGrid`)::
 
     from tumult import synthesis
     from tumult.synthesis import AtmosphereGrid, Star, SynthConfig, SynthRequest
 
-    config = SynthConfig(root=".", linelist="input/linelists/sun_3000-9000.txt",
-                         abundances="input/abund/abund_magg22.txt")
+    config = SynthConfig(root=".", linelist_file="input/linelists/sun_3000-9000.txt",
+                         abund_file="input/abund/abund_magg22.txt")
     request = SynthRequest(config=config, atmosphere=AtmosphereGrid("input/atmos/MARCS"),
                            star=Star(5777, 4.44, 0.0, 1.0), windows=(5160, 5190))
     spectrum = synthesis.synthesize(request).spectrum
@@ -25,13 +25,13 @@ from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectru
                   get_NLTE_corrections, normalise_windows, preset)
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
-from .inputs import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS, Snapshot,
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, ATMOS_FORMATS,
                      Star, SynthConfig)
 from .request import ResolvedSynthRequest, SpectrumFit, SynthesisResult, SynthRequest
 from ..departures import DepartureGrid, DepartureRequest, Departures
 from .snapshot import (solve_departures, synthesise_snapshot,
                        synthesise as synthesise_from_departures)
-from .operations import check_fit, fit, run_values, synthesize, synthesize_lines
+from .operations import check_fit, clear_cache, fit, run_values, synthesize, synthesize_lines
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .submission import WorkflowHandle, discover_workflows, open_workflow, submit_operation
 from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default_pattern, build_settings, compile_pattern, compute, compute_batch,
@@ -43,7 +43,8 @@ from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default
 __all__ = [
     "SynthRequest", "SynthConfig", "Star", "Abundances", "Atmosphere", "AtmosphereGrid",
     "ATMOS_FORMATS",
-    "Snapshot", "synthesize", "synthesize_lines", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
+    "synthesize", "synthesize_lines", "fit", "check_fit", "run_values", "submit_operation", "SpectrumFit",
+    "clear_cache",
     "DepartureGrid", "DepartureRequest",
     "PRESETS_DIR", "preset",
     "build_stellar_grid", "compute_spectrum", "compute_spectra", "compute_windows",

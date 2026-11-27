@@ -10,8 +10,8 @@ own:
 from benchmarks.api.intended_api import single_lte
 from tumult.synthesis import AtmosphereGrid, Star, SynthConfig
 
-config = SynthConfig(root=".", linelist="input/linelists/sun_3000-9000.txt",
-                     abundances="input/abund/abund_magg22.txt", R_sampling=100_000)
+config = SynthConfig(root=".", linelist_file="input/linelists/sun_3000-9000.txt",
+                     abund_file="input/abund/abund_magg22.txt", R_sampling=100_000)
 result = single_lte(config, AtmosphereGrid("input/atmos/MARCS"),
                     Star(5777, 4.44, 0.0, 1.0), (5160, 5190))
 ```
@@ -21,7 +21,7 @@ atmospheres, `atom.mg86g`, the solar line list, the Fe masks and a default 4000â
 range. It preflights what the selected workflows need, times each calculation and writes a
 `benchmark.json` beside its saved result, reporting computational completion separately
 from the scientific outcome (termination, convergence, exclusions by flag). The target is
-the KPNO atlas in `input/spectra/` (`python -m tumult.synthesis.input_data fetch kpno`):
+the KPNO atlas in `input/spectra/` (`python -m tumult.downloads fetch kpno`):
 
 ```sh
 python -m benchmarks.api.run_reference_benchmarks \

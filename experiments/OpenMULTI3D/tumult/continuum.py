@@ -127,7 +127,7 @@ def local_linear(x, y, percentile=SEED_PERCENTILE, at=None):
     What it is for: the far wings of very strong lines tens of Angstrom outside a narrow
     window depress it as a smooth pseudo-continuum rather than a feature. That depression
     is what a locally renormalised equivalent width divides out, which is also what makes
-    a synthesis over a short line-list skirt usable: the lines it omits contribute almost
+    a synthesis over a short prune margin usable: the lines it omits contribute almost
     only the slope this removes.
 
     Falls back to a flat :func:`flat_level` when a line cannot be fitted.

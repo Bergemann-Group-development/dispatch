@@ -3,9 +3,10 @@
 Public entry points by domain:
 
 - reading runs:      read, read_list, combine, RunGrid  (the run class itself: Run)
-- running dispatch:  launch, monitor
+- running dispatch:  launch (run_async=True returns a Job), monitor, CHECKOUT
 - data containers:   Spectrum, SpectrumGrid, LineList
 - reading spectra:   load_spectrum, load_file, is_run, load_run
+- atmospheres:       read_atmosphere (a model file, plotted as a run's atmos)
 - scripting:         the domain modules `synthesis` (synthesize, fit, SynthRequest), `departures`
                      (solve, request), `abundance` (fit, nlte_corrections) and `sparams`
                      (ionbalance); see the manual's Python Workflows section
@@ -21,13 +22,16 @@ Public entry points by domain:
                      (ctypes interface to libhop.so)
 - plotting:          IDL_DASHES (IDL's LINESTYLE 0-5 as matplotlib dash tuples)
 - constants:         the `const` submodule (frozen CGS; see its docstring)
+- downloads:         the `downloads` submodule: table and fetch the published input data
+                     and model-atmosphere grids
 """
 from . import const
 from .run import Run, RunGrid, read_list
-from .launch import launch, monitor
+from .launch import CHECKOUT, Job, launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
 from .spectrum_io import load_spectrum, load_file, is_run, load_run
+from .atmos import read_atmosphere
 from .spectrum_grid import SpectrumGrid
 from .synthesis import (get_NLTE_correction, get_NLTE_corrections, build_stellar_grid,
                         compute_spectrum, PRESETS_DIR, preset, CancelToken, CancelledError,
@@ -64,9 +68,9 @@ def load_ipython_extension(ipython):
 
 __all__ = [
     "read", "read_list", "combine", "Run", "RunGrid",
-    "launch", "monitor",
+    "launch", "monitor", "Job", "CHECKOUT",
     "Spectrum", "SpectrumGrid", "LineList",
-    "load_spectrum", "load_file", "is_run", "load_run",
+    "load_spectrum", "load_file", "is_run", "load_run", "read_atmosphere",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",
     "get_NLTE_corrections", "preset", "PRESETS_DIR", "CancelToken", "CancelledError",
     "SynthesisResult", "Departures", "SynthRequest", "WorkflowHandle", "resolve_request",
@@ -84,3 +88,12 @@ __all__ = [
     "kpno_spectral_filter", "const", "Atom", "read_atom",
     "HopEOS", "HopError", "logstep", "wavelength_grid", "IDL_DASHES",
 ]
+
+
+def __getattr__(name):
+    # tm.downloads is imported on first access, so that `python -m tumult.downloads` does
+    # not find the module already imported by the package.
+    if name == "downloads":
+        import importlib
+        return importlib.import_module(".downloads", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
