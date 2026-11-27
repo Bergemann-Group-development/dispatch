@@ -644,8 +644,10 @@ contains
           ! global step, so the headroom test that gates it has to see the run's
           ! convergence measure rather than whichever patch happened to decide.
           ! It lags by an iteration, which is immaterial for a coarse "is there
-          ! anything left to gain" test.
-          call atom%ng_acceleration(self%iter, self%global, convlim, ng_emax, ng_epos)
+          ! anything left to gain" test.  A patch already below convlim does not
+          ! extrapolate, so an iteration that converges extrapolated nowhere.
+          call atom%ng_acceleration(self%iter, self%global, convlim, abs(adata%maxerr) >= convlim, &
+                                    ng_emax, ng_epos)
           if (ng_emax /= 0 .and. console_on(ch_m3d, 2)) then
             ng_epos = ng_epos + [0,0,0,self%zs-1]
             write(console_unit,'(A, ES14.7, 4(I6))') 'NG acceleration ', ng_emax, ng_epos
@@ -695,10 +697,12 @@ contains
     ! sets `converged` when it is below: the populations the run delivers are
     ! then the ones whose own update was below convlim.  The RT tasks of this
     ! iteration and the next iteration's nlte updates are skipped
-    ! (m3d_patch_t%pre_update), and each patch finishes with this solve.  An
-    ! iteration that applied an Ng step never converges: its change was
-    ! measured before the extrapolation, which can move the populations by more
-    ! than convlim, so the next, ordinary iteration decides.  The count is
+    ! (m3d_patch_t%pre_update), and each patch finishes with this solve.  A
+    ! change is measured before the Ng extrapolation, which can move the
+    ! populations by more than convlim, so a patch whose own change is already
+    ! below convlim skips a scheduled extrapolation.  An iteration whose largest
+    ! change is below convlim then extrapolated nowhere and converges at once;
+    ! one that extrapolated somewhere had a change above convlim there.  The count is
     ! taken before a patch finishes early (below), which must not remove it
     ! from the iteration it has just solved.  The last patch of an iteration
     ! also reports it: the iteration-table line and the change the closing
