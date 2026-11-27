@@ -98,27 +98,37 @@ end
 standalone_dir() = joinpath(_HOP_DIR, "standalone")
 
 # A library tuned to this host in its own build dir, so its objects never mix with the
-# portable build the Python package loads.  -mprefer-vector-width exists on x86 only.
-const BUILD_DIR = "build-opt"
+# portable build the Python package loads, and one per compiler ($HOP_COMPILER: gfortran,
+# ifort or ifx).  -mprefer-vector-width exists on x86 only.
 const BUILD_OPT = Sys.ARCH === :x86_64 ? "-O3 -march=native -mprefer-vector-width=256" :
                                          "-O3 -mcpu=native"
-const BUILD_LIB = joinpath(BUILD_DIR, "libhop.so")
+compiler() = get(ENV, "HOP_COMPILER", "gfortran")
+build_dir() = "build-opt-" * compiler()
+build_lib() = joinpath(build_dir(), "libhop.so")
+build_cmd(dir=standalone_dir()) =
+    `make -s -C $dir -j$(min(Sys.CPU_THREADS, 8)) COMPILER=$(compiler()) BUILD=$(build_dir()) OPT=$BUILD_OPT HW= $(build_lib())`
 
 function __init__()
     dir = standalone_dir()
     isdir(dir) || return nothing
     mkpidlock(joinpath(dir, "build.lock"); stale_age=600) do
-        run(`make -s -C $dir -j$(min(Sys.CPU_THREADS, 8)) BUILD=$BUILD_DIR OPT=$BUILD_OPT HW= $BUILD_LIB`)
+        try
+            run(build_cmd(dir))
+        catch
+            other = compiler() == "gfortran" ? "ifort" : "gfortran"
+            @error "HOP: building libhop.so with $(compiler()) failed. To use another compiler, set " *
+                   "HOP_COMPILER (gfortran, ifort or ifx) before loading HOP, e.g. `export HOP_COMPILER=$(other)`; " *
+                   "the Intel compilers also need their runtime, e.g. `source /opt/intel/oneapi/setvars.sh`."
+        end
     end
     nothing
 end
 
 function find_library()
     lib = get(ENV, "HOP_LIB", "")
-    path = isempty(lib) ? joinpath(standalone_dir(), BUILD_LIB) : lib
-    isfile(path) || error("libhop.so not found at $path; build it with " *
-                          "`make -C $(standalone_dir()) BUILD=$BUILD_DIR OPT=\"$BUILD_OPT\" HW= $BUILD_LIB` " *
-                          "or set \$HOP_LIB")
+    path = isempty(lib) ? joinpath(standalone_dir(), build_lib()) : lib
+    isfile(path) || error("libhop.so not found at $path; build it with $(build_cmd()), " *
+                          "choose another compiler with \$HOP_COMPILER, or set \$HOP_LIB")
     path
 end
 
