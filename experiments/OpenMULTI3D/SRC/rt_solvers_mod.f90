@@ -200,7 +200,7 @@ contains
   !> the bilinear ones keep the upwind state between its neighbours.  chi500 at
   !> the upwind point itself comes from the model atmosphere interpolated there
   !> (composition_patch upwind_chi500); the ghost plane takes that of the upstream
-  !> slab's exit plane, and on the first plane of an amr slab boundary, whose
+  !> slab's exit plane, or beyond a boundary of the domain the model's there, and on the first plane of an amr slab boundary, whose
   !> upwind point lies on it, the upwind chi500 is interpolated bilinearly in its
   !> log over the inner 2x2 cells there.  Along the step chi500 varies
   !> exponentially, which makes its length in tau500
@@ -233,6 +233,7 @@ contains
     real(4), dimension(4) :: xkern, ykern, xkernel1, ykernel1, xkernel2, ykernel2
     real(4), dimension(:,:), allocatable :: work_up, tw, r500, g500
     real(4), dimension(:,:,:,:), allocatable :: row_red
+    type(bottom_ghost_t), pointer :: ghost
     integer :: xup_t(4,self%nx), yup_t(4,self%ny)
     integer :: zs, ze, yup, zup, ii, jj, upo1, upo2, x1, x2, x3, x4, y1, y2, y3, y4, row
     logical :: get_rates, split_rates, off, special, amr_boundary, amr_plane, rebuild_tables
@@ -282,8 +283,11 @@ contains
       associate (uc => self%upstream%m3d_parent%composition%chi500)
         g500 = uc(:,:,merge(size(uc,3), 1, self%dir > 0))
       end associate
+    else if (self%dir > 0) then
+      ghost => self%bottom_ghost_at(i_mu)
+      g500 = ghost%chi500
     else
-      g500 = self%m3d_parent%chi500_ghost(:,:,merge(1, 2, self%dir > 0))
+      g500 = self%m3d_parent%chi500_top
     endif
 
     associate (chi500 => self%m3d_parent%composition%chi500, &
@@ -515,10 +519,10 @@ contains
   !> constant x.  An inverted line whose chi passes through zero at the cell then
   !> leaves Inu continuous in chi, while S = eta/chi passes through a pole.  The
   !> upwind point is the previous cell of the column, so every value there is the
-  !> cell's own.  chi500 of the ghost plane is the upstream slab's exit plane, or
-  !> beyond a boundary of the domain the outermost cell's continued exponentially
-  !> by one cell.  rt_iteration_params solver='linear2' (the default) selects it
-  !> in 1D.
+  !> cell's own.  chi500 of the ghost plane is the upstream slab's exit plane,
+  !> below the bottom of the domain the model's there (bottom_ghost), and above
+  !> its top the outermost cell's continued exponentially by one cell.
+  !> rt_iteration_params solver='linear2' (the default) selects it in 1D.
   !===============================================================================
   module subroutine long_char2 (self, vec)
     class(rt_patch_t) :: self
@@ -527,6 +531,7 @@ contains
     real(4) :: rxb, rc, rcu, dt500, maser_dtau, Inu_max
     real(8) :: dsup, dsup1, dsup2, c, cu, r
     real(4), allocatable :: g500(:,:), sel(:)
+    type(bottom_ghost_t), pointer :: ghost
     integer :: zs, ze, zup, row, n3
     logical :: amr_boundary, get_rates, split_rates, off, special
     integer, save :: itimer=0
@@ -554,14 +559,13 @@ contains
       associate (uc => self%upstream%m3d_parent%composition%chi500)
         g500 = uc(:,:,merge(size(uc,3), 1, self%dir > 0))
       end associate
+    else if (self%dir > 0) then
+      ghost => self%bottom_ghost_at(1)
+      g500 = ghost%chi500
     else
       n3 = size(chi500,3)
       if (n3 < 2) error stop 'long_char2: a domain boundary slab needs two cells'
-      if (self%dir > 0) then
-        g500 = chi500(:,:,1)**2 / chi500(:,:,2)
-      else
-        g500 = chi500(:,:,n3)**2 / chi500(:,:,n3-1)
-      endif
+      g500 = chi500(:,:,n3)**2 / chi500(:,:,n3-1)
     endif
 
     do z=zs, ze, self%dir
@@ -1040,16 +1044,17 @@ contains
 !>
 !> The first plane integrates from the boundary ghost plane (chi/Snu/Inu from
 !> set_upstream_boundary via halo exchange).  With a real upstream neighbour
-!> (comp_up) or a deep BOTTOM boundary (ghost Pe/T extrapolated by ghost_thermo)
-!> the full step (herm_plane) is used.  Only at the zeroed TOP boundary (chi==0, where the
+!> (comp_up) or at the BOTTOM of the domain (ghost Pe/T of the model there,
+!> bottom_ghost) the full step (herm_plane) is used.  Only at the zeroed TOP boundary (chi==0, where the
 !> analytic dBnu/dtau=.../chi is singular) does the upwind-end source slope
 !> degrade to the interval secant (herm_first).
 !===============================================================================
-  module subroutine long_char_hermite (self, comp, vec, comp_up)
+  module subroutine long_char_hermite (self, comp, vec, comp_up, i_mu)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(composition_type), pointer :: comp_up
     real(8), intent(in) :: vec(3)
+    integer, intent(in) :: i_mu
     real(4) :: ds, dsup, rdsup, dsup1, dsup2, gfac
     real(4) :: Inu, ppsi, aTc
     real(4) :: pec, pedn, rpec, rpedn, gpc
@@ -1057,9 +1062,9 @@ contains
     real(4), dimension(:,:,:,:,:), contiguous, pointer :: w
     real(4), dimension(:,:,:,:), contiguous, pointer :: psi, bk
     real(4), dimension(:), allocatable, target :: hknu, bghost
-    integer :: zs, ze, zup, zdn, zu, z1, z2, z3, dir, nx, ny, fs, fe
+    integer :: zs, ze, zup, zdn, zu, dir, nx, ny, fs, fe
     logical :: get_rates, use_upstream, extrap_bottom
-    real(4) :: xx3g(3)
+    type(bottom_ghost_t), pointer :: ghost
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -1091,24 +1096,18 @@ contains
     hknu = real(h_k * self%nu(fs:fe), 4)
 
     ! first plane: integrate from the boundary ghost plane, whose chi/Snu are
-    ! already set (a real neighbour, or set_upstream_boundary's bottom
-    ! extrapolation / top zeroing).  With a neighbour or bottom boundary the ghost
-    ! Pe/T are available (or extrapolated by ghost_thermo) and the full step runs
-    ! in herm_plane; the zeroed top ghost (chi==0) keeps the secant fallback
-    ! herm_first.
+    ! already set (a real neighbour, set_upstream_boundary's LTE plane at the
+    ! bottom, or its zeroing at the top).  With a neighbour or at the bottom the
+    ! ghost Pe/T are available (ghost_thermo reads the model's there) and the
+    ! full step runs in herm_plane; the zeroed top ghost (chi==0) keeps the
+    ! secant fallback herm_first.
     use_upstream = associated(comp_up)
-    ! ghost extrapolated (not zeroed) exactly when set_upstream_boundary
-    ! extrapolates chi/Snu: the zl branch with zu not also set
+    ! the LTE ghost plane: the zl branch of set_upstream_boundary
     extrap_bottom = (.not. use_upstream) .and. &
                     self%boundaries%is_set(bits%zl) .and. &
                     (.not. self%boundaries%is_set(bits%zu))
     if (use_upstream) zu = merge(self%upstream%nz, 1, dir > 0)
-    if (extrap_bottom) then
-      z1 = zs                                   ! three innermost planes, nearest
-      z2 = zs + dir                             ! the ghost first (distances 1,2,3
-      z3 = zs + 2*dir                           ! * ds from the ghost plane)
-      xx3g = [1.0, 2.0, 3.0]
-    endif
+    if (extrap_bottom) ghost => self%bottom_ghost_at(i_mu)
     allocate(bghost(fs:fe))
     if (use_upstream .or. extrap_bottom) then
       call herm_plane (zs, zs+dir, .true.)
@@ -1203,8 +1202,8 @@ contains
               rTup = 1.0 / real(comp_up%temp(x,y,zu), 4)
               aTu  = gfac * comp_up%dlnt_dz(x,y,zu) * rTup
             else
-              ! ghost Pe/T extrapolated from the three innermost planes,
-              ! mirroring the chi/Snu extrapolation in set_upstream_boundary
+              ! the model's Pe/T below the bottom of the domain, where
+              ! set_upstream_boundary puts the LTE ghost plane
               call ghost_thermo (x, y, peu, rpeu, gpu, rTup, aTu)
             endif
             bghost(fs:fe) = max(exp(-hp*rTup), tiny(1.0))
@@ -1241,34 +1240,20 @@ contains
       end do
     end subroutine herm_plane
     !===========================================================================
-    !> Ghost-plane thermodynamics at a deep (bottom) domain boundary, where there
-    !> is no upstream neighbour.  set_upstream_boundary fills the ghost chi/Snu by
-    !> monotone extrapolation of the three innermost planes; this does the same
-    !> for Pe and T (and their d/dz gradients), returning the exact quantities the
-    !> upstream branch reads from a real neighbour, so herm_plane uses it unchanged.
+    !> Ghost-plane thermodynamics at the bottom of the domain, where there is no
+    !> upstream neighbour: the model's Pe and T one plane below (bottom_ghost),
+    !> as the quantities the upstream branch reads from a real neighbour, so
+    !> herm_plane uses them unchanged.
     !===========================================================================
     subroutine ghost_thermo (x, y, pe_g, rpe_g, gp_g, rT_g, aT_g)
       integer, intent(in) :: x, y
       real(4), intent(out) :: pe_g, rpe_g, gp_g, rT_g, aT_g
-      real(4) :: yv(3), gv(1), T_g, dlnt_g, dpe_g
-      real(4), parameter :: xg(1) = [0.0]        ! ghost sits one plane below z1
       !-------------------------------------------------------------------------
-      yv = [comp%pe4(x,y,z1), comp%pe4(x,y,z2), comp%pe4(x,y,z3)]
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      pe_g = max(gv(1), tiny(1.0))
-      yv = [comp%dpe_dz(x,y,z1), comp%dpe_dz(x,y,z2), comp%dpe_dz(x,y,z3)]
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      dpe_g = gv(1)
-      yv = real([comp%temp(x,y,z1), comp%temp(x,y,z2), comp%temp(x,y,z3)], 4)
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      T_g = max(gv(1), tiny(1.0))
-      yv = [comp%dlnt_dz(x,y,z1), comp%dlnt_dz(x,y,z2), comp%dlnt_dz(x,y,z3)]
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      dlnt_g = gv(1)
+      pe_g  = ghost%pe(x,y)
       rpe_g = 1.0 / pe_g
-      gp_g  = gfac * dpe_g
-      rT_g  = 1.0 / T_g
-      aT_g  = gfac * dlnt_g * rT_g
+      gp_g  = gfac * ghost%dpe_dz(x,y)
+      rT_g  = 1.0 / ghost%temp(x,y)
+      aT_g  = gfac * ghost%dlnt_dz(x,y) * rT_g
     end subroutine ghost_thermo
     !===========================================================================
     !> Cubic-Bezier weights over an interval of optical depth t, in fp32 and
@@ -1548,20 +1533,21 @@ contains
 !> analogous fallback.  Because the source treatment never needs Bnu/beta/T,
 !> this solver only requires the Pe gradients (comp%dpe_dz), not the ln(T) ones.
 !===============================================================================
-  module subroutine long_char_hermite2 (self, comp, vec, comp_up)
+  module subroutine long_char_hermite2 (self, comp, vec, comp_up, i_mu)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(composition_type), pointer :: comp_up
     real(8), intent(in) :: vec(3)
+    integer, intent(in) :: i_mu
     real(4) :: ds, dsup, rdsup, dsup1, dsup2, gfac
     real(4) :: Inu, ppsi
     real(4) :: peu, pec, pedn, rpeu, rpec, rpedn, gpu, gpc, gpdn
     real(4), parameter :: dtmin=1e-20
     real(4), dimension(:,:,:,:,:), contiguous, pointer :: w
     real(4), dimension(:,:,:,:), contiguous, pointer :: psi
-    integer :: zs, ze, zup, zdn, zff, zu, z1, z2, z3, dir, nx, ny, fs, fe
+    integer :: zs, ze, zup, zdn, zff, zu, dir, nx, ny, fs, fe
     logical :: get_rates, use_upstream, extrap_bottom
-    real(4) :: xx3g(3)
+    type(bottom_ghost_t), pointer :: ghost
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
@@ -1590,8 +1576,8 @@ contains
     if (get_rates) psi => self%Psi
 
     ! first plane: as long_char_hermite, integrate from the boundary ghost
-    ! plane.  With a neighbour or bottom boundary the ghost Pe is available (or
-    ! extrapolated by ghost_pe) and herm2_step runs with a real downwind
+    ! plane.  With a neighbour or at the bottom the ghost Pe is available (the
+    ! model's there, by ghost_pe) and herm2_step runs with a real downwind
     ! sample; the zeroed top ghost (chi==0) keeps the secant fallback herm2_first.
     use_upstream = associated(comp_up)
     z = zs
@@ -1601,12 +1587,7 @@ contains
                     self%boundaries%is_set(bits%zl) .and. &
                     (.not. self%boundaries%is_set(bits%zu))
     if (use_upstream) zu = merge(self%upstream%nz, 1, dir > 0)
-    if (extrap_bottom) then
-      z1 = zs
-      z2 = zs + dir
-      z3 = zs + 2*dir
-      xx3g = [1.0, 2.0, 3.0]
-    endif
+    if (extrap_bottom) ghost => self%bottom_ghost_at(i_mu)
     do y=1, ny
       do x=1, nx
         if (use_upstream) then
@@ -1741,25 +1722,18 @@ contains
     call trace%end(itimer)
   contains
     !===========================================================================
-    !> Ghost-plane Pe (and its d/dz) at a deep (bottom) domain boundary, where
-    !> there is no upstream neighbour: monotone extrapolation of the three
-    !> innermost planes, mirroring long_char_hermite's ghost_thermo but
-    !> without the T/beta part that herm2_step never needs.
+    !> Ghost-plane Pe (and its d/dz) at the bottom of the domain, where there is
+    !> no upstream neighbour: the model's one plane below (bottom_ghost), as
+    !> long_char_hermite's ghost_thermo without the T/beta part that herm2_step
+    !> never needs.
     !===========================================================================
     subroutine ghost_pe (x, y, pe_g, rpe_g, gp_g)
       integer, intent(in) :: x, y
       real(4), intent(out) :: pe_g, rpe_g, gp_g
-      real(4) :: yv(3), gv(1), dpe_g
-      real(4), parameter :: xg(1) = [0.0]        ! ghost sits one plane below z1
       !-------------------------------------------------------------------------
-      yv = [comp%pe4(x,y,z1), comp%pe4(x,y,z2), comp%pe4(x,y,z3)]
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      pe_g = max(gv(1), tiny(1.0))
-      yv = [comp%dpe_dz(x,y,z1), comp%dpe_dz(x,y,z2), comp%dpe_dz(x,y,z3)]
-      call pchip_mono (xx3g, yv, xg, gv, sorted=.true.)
-      dpe_g = gv(1)
+      pe_g  = ghost%pe(x,y)
       rpe_g = 1.0 / pe_g
-      gp_g  = gfac * dpe_g
+      gp_g  = gfac * ghost%dpe_dz(x,y)
     end subroutine ghost_pe
     !===========================================================================
     !> One integrated interval [up, c].  chi/Pe slopes as in herm_dtau: a

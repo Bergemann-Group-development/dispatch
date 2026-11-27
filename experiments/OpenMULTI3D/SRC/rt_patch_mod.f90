@@ -14,7 +14,7 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type, radiative_cut
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range, window_range
   USE m3d_halo_mod, only: m3d_halo_t, lock_mem, unlock_mem
-  USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, &
+  USE m3d_patch_mod, only: m3d_patch_t, point_opac_set_t, bg_opac_t, bottom_ghost_t, &
     line_margin, out_patch_offset, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
@@ -29,7 +29,7 @@ MODULE rt_patch_mod
     eta_reset_iter
   USE mpi_mod, only: mpi
   USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z, &
-                           save_linelist
+                           save_linelist, lte_ghost_solver
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
@@ -263,6 +263,7 @@ MODULE rt_patch_mod
     procedure :: work_to_transfer_units
     procedure :: update_eta_mask
     procedure :: set_upstream_boundary
+    procedure :: bottom_ghost_at
     procedure :: integrate_intensity
     procedure :: integrate_rates
     procedure :: set_downstream_boundary
@@ -372,22 +373,24 @@ MODULE rt_patch_mod
     !> Cubic Hermite formal solution along the vertical columns, with the slopes of
     !> chi and Snu from the composition gradients by the chain rule.
     !=============================================================================
-    module subroutine long_char_hermite (self, comp, vec, comp_up)
+    module subroutine long_char_hermite (self, comp, vec, comp_up, i_mu)
       class(rt_patch_t), target :: self
       class(composition_type) :: comp             !< composition of the slab
       class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
       real(8), intent(in) :: vec(3)               !< direction of the ray
+      integer, intent(in) :: i_mu                 !< direction
     end subroutine long_char_hermite
 
     !=============================================================================
     !> long_char_hermite's optical depth with long_char_quadratic's source
     !> treatment, which needs only the Pe gradients.
     !=============================================================================
-    module subroutine long_char_hermite2 (self, comp, vec, comp_up)
+    module subroutine long_char_hermite2 (self, comp, vec, comp_up, i_mu)
       class(rt_patch_t), target :: self
       class(composition_type) :: comp             !< composition of the slab
       class(composition_type), pointer :: comp_up !< composition of the upstream slab, null at the domain boundary
       real(8), intent(in) :: vec(3)               !< direction of the ray
+      integer, intent(in) :: i_mu                 !< direction
     end subroutine long_char_hermite2
 
     !=============================================================================
@@ -1679,11 +1682,11 @@ contains
         ! shortcut above rotates only chi/Snu, not the thermodynamic state
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
           error stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
-        call self%long_char_hermite(comp, vec, comp_up)
+        call self%long_char_hermite(comp, vec, comp_up, i_mu)
         case('hermite2')
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
           error stop "rt_output_params solver='hermite2' in 3D requires rotate_atmos=.true."
-        call self%long_char_hermite2(comp, vec, comp_up)
+        call self%long_char_hermite2(comp, vec, comp_up, i_mu)
         case default
         error stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
       end select
@@ -3257,8 +3260,12 @@ contains
 
   !===============================================================================
   !> Fills the upstream ghost plane of work: no incoming radiation at the top of
-  !> the domain, a plane extrapolated from the first cells at the bottom (with
-  !> Inu = Snu), and the exit plane of the upstream slab (mem) everywhere else.
+  !> the domain, the exit plane of the upstream slab (mem) inside it, and at the
+  !> bottom, where the atmosphere is in LTE, Inu = Snu.  There the solvers of
+  !> lte_ghost_solver take the model one plane below (bottom_ghost): Snu = Bnu(T)
+  !> and chi = x*chi500 with x = chi/chi500 of the first plane, the ratio
+  !> short_char2 interpolates to its upwind points; the others extrapolate chi
+  !> and Snu from the first three planes, clamped at 0.
   !===============================================================================
   SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
     class(rt_patch_t) :: self
@@ -3276,6 +3283,8 @@ contains
 
     if (self%boundaries%is_set(bits%zu)) then
       self%work(:,:,:,z,:) = 0.
+    elseif (self%boundaries%is_set(bits%zl) .and. lte_ghost_solver(self%do_final)) then
+      call lte_ghost()
     elseif (self%boundaries%is_set(bits%zl)) then
       xxold = [(i*self%ds(3), i=1, 3)]
       xxnew = [(i*self%ds(3), i=1-ng, 0)]
@@ -3334,7 +3343,54 @@ contains
       endif
     endif
     call trace%end(itimer)
+  contains
+    !---------------------------------------------------------------------------
+    !> The LTE ghost plane at the bottom, in the units of work_to_transfer_units
+    !---------------------------------------------------------------------------
+    subroutine lte_ghost()
+      type(bottom_ghost_t), pointer :: ghost
+      class(composition_type), pointer :: comp
+      real(4) :: r500, h_kT, hv_kT, beta
+      !-------------------------------------------------------------------------
+      if (ng /= 1) error stop 'set_upstream_boundary: the LTE ghost plane needs one ghost plane'
+      ghost => self%bottom_ghost_at(i_mu)
+      comp => self%m3d_parent%composition
+      if (rotate_atmos .and. self%do_final) comp => self%m3d_parent%rotated_composition(i_mu)
+      do y=1, self%ny
+        do x=1, self%nx
+          r500 = ghost%chi500(x,y) / comp%chi500(x,y,1)
+          h_kT = h_k / ghost%temp(x,y)
+          do f=self%fs, self%fe
+            ! the Planck occupation number as lte_background_opacities forms it
+            hv_kT = self%nu(f) * h_kT
+            beta = max(exp(-hv_kT), tiny(1.0))
+            self%work(f,x,y,z,1) = self%work(f,x,y,z+1,1) * r500
+            self%work(f,x,y,z,2) = beta / (1 - beta)
+            self%work(f,x,y,z,3) = self%work(f,x,y,z,2)
+          end do
+        end do
+      end do
+    end subroutine lte_ghost
   END SUBROUTINE set_upstream_boundary
+
+  !===============================================================================
+  !> The model below the bottom of the domain at the cells of the composition
+  !> that direction i_mu solves: the ray-aligned one in the output pass with
+  !> rotate_atmos, else the unrotated one.
+  !===============================================================================
+  FUNCTION bottom_ghost_at (self, i_mu) result(ghost)
+    class(rt_patch_t) :: self
+    integer, intent(in) :: i_mu !< direction
+    type(bottom_ghost_t), pointer :: ghost
+    !-----------------------------------------------------------------------------
+    if (.not. allocated(self%m3d_parent%bottom_ghost)) &
+      error stop 'rt_patch: no model below the bottom of the domain (needs_bottom_ghost)'
+    if (rotate_atmos .and. self%do_final) then
+      ghost => self%m3d_parent%bottom_ghost(1+i_mu)
+    else
+      ghost => self%m3d_parent%bottom_ghost(1)
+    endif
+  END FUNCTION bottom_ghost_at
 
   !===============================================================================
   !> Adds the intensity of the current direction to Jnu with weight 2*wmu, since
@@ -3606,12 +3662,8 @@ contains
   !> point plus the cell beyond it, over the slab's directions and the larger of
   !> its own and the upstream slab's ds(3) (the amr boundary plane).  The flags
   !> (eta_mask) only grow, so once they stop growing no pair changes its recipe,
-  !> and short_char2 needs only the downwind cell's flag.  Only a ghost plane that
-  !> holds an upstream slab's cells adds flags.  At the top of the domain it is
-  !> empty (no incoming radiation); at the bottom it is extrapolated from the
-  !> first three planes with chi clamped at 0, which says nothing about the sign
-  !> of chi there, and an eta step from it misses S in the optically thick first
-  !> plane by the factor 2x/(x_up + x), up to 2 where the clamp sets x_up = 0.  At
+  !> and short_char2 needs only the downwind cell's flag.  The top of the domain,
+  !> whose ghost plane is empty (no incoming radiation), adds no flags.  At
   !> eta_reset_iter (m3d_patch_mod) the flags of all sets are cleared once, before
   !> that iteration's first short_char2, and accumulate again from there, so that
   !> the transients of the first iterations do not keep their flags.
@@ -3689,10 +3741,8 @@ contains
       end do
     end do
 
-    ! the upstream ghost plane, which only the slab's first plane reaches, where
-    ! it holds an upstream slab's cells: not at the bottom of the domain for
-    ! upward rays, nor at its top for downward rays
-    if (.not. self%boundaries%is_set(merge(bits%zl, bits%zu, self%dir > 0))) then
+    ! the upstream ghost plane, which only the slab's first plane reaches
+    if (.not. self%boundaries%is_set(bits%zu)) then
       z1 = merge(1, self%nz, self%dir > 0)
       zg = z1 - self%dir
       do y=1, self%ny
